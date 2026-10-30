@@ -6,11 +6,12 @@ import { OtpForm } from '@/components/auth/otp-form'
 import { PasswordForm } from '@/components/auth/password-form'
 
 type Method = 'otp' | 'password'
-type GoogleError = 'google' | 'google_unavailable'
+type GoogleError = 'google' | 'google_unavailable' | 'suspended'
 
 const googleErrors: Record<GoogleError, string> = {
   google: "Google sign-in didn't work. Try again or use email.",
   google_unavailable: "Google sign-in isn't set up yet. Use email for now.",
+  suspended: 'This account is suspended.',
 }
 
 export const Route = createFileRoute('/(auth)/signin')({
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/(auth)/signin')({
     return {
       ...(search.method === 'password' && { method: 'password' }),
       ...(search.reset === true && { reset: true }),
-      ...((search.error === 'google' || search.error === 'google_unavailable') && { error: search.error }),
+      ...(typeof search.error === 'string' && search.error in googleErrors && { error: search.error as GoogleError }),
       ...(redirect && { redirect }),
     }
   },

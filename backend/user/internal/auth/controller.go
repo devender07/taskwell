@@ -99,7 +99,10 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		writeErr(w, http.StatusUnauthorized, errBadLogin)
 		return nil
 	}
-	if err := h.startSession(r.Context(), w, u.ID, remember(r)); err != nil {
+	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
+		writeErr(w, http.StatusForbidden, errSuspendedMsg)
+		return nil
+	} else if err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, u)
@@ -192,7 +195,10 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 		writeErr(w, http.StatusUnauthorized, errBadCode)
 		return nil
 	}
-	if err := h.startSession(r.Context(), w, u.ID, remember(r)); err != nil {
+	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
+		writeErr(w, http.StatusForbidden, errSuspendedMsg)
+		return nil
+	} else if err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, u)
@@ -390,7 +396,10 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	if created {
 		h.userCreated(ctx, u)
 	}
-	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); err != nil {
+	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); errors.Is(err, errSuspended) {
+		http.Redirect(w, r, base+"/signin?error=suspended", http.StatusFound)
+		return nil
+	} else if err != nil {
 		return err
 	}
 	http.Redirect(w, r, base+"/", http.StatusFound)

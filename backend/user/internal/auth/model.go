@@ -87,6 +87,16 @@ func (m *model) userIDByEmail(ctx context.Context, email string) (string, error)
 	return id, nil
 }
 
+// suspended reports whether a platform admin has suspended the user.
+func (m *model) suspended(ctx context.Context, id string) (bool, error) {
+	var s bool
+	err := m.db.QueryRow(ctx, `select suspended_at is not null from users where id = $1`, id).Scan(&s)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("read suspension: %w", err)
+	}
+	return s, nil
+}
+
 // Profile is the signed-in user as GET /api/me returns it.
 type Profile struct {
 	User
@@ -274,15 +284,16 @@ func (m *model) insertRefresh(ctx context.Context, tokenHash []byte, userID stri
 }
 
 // rotateRefresh marks a live refresh token used and returns its user and family; ok is false when the token is
-// unknown or expired. A token already rotated within reuseGrace is accepted again; after that, presenting it means
+// unknown, expired or belongs to a suspended user. A token already rotated within reuseGrace is accepted again; after that, presenting it means
 // it leaked, so the whole family is revoked.
 func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (userID string, f family, ok bool, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var usedAt *time.Time
 		err := tx.QueryRow(ctx, `
-			select user_id::text, family_id::text, remember, expires_at, used_at from refresh_tokens
-			where token_hash = $1 and expires_at > now()
-			for update`, tokenHash).Scan(&userID, &f.id, &f.remember, &f.expiresAt, &usedAt)
+			select t.user_id::text, t.family_id::text, t.remember, t.expires_at, t.used_at
+			from refresh_tokens t join users u on u.id = t.user_id
+			where t.token_hash = $1 and t.expires_at > now() and u.suspended_at is null
+			for update of t`, tokenHash).Scan(&userID, &f.id, &f.remember, &f.expiresAt, &usedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

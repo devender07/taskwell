@@ -11,6 +11,7 @@
     "./textarea": "./src/components/textarea/textarea.tsx",
     "./button": "./src/components/button/button.tsx",
     "./validate": "./src/validate/validate.ts",
+    "./time": "./src/time/relative.ts",
     "./logo": "./src/components/logo/logo.tsx",
     "./tabs": "./src/components/tabs/tabs.tsx",
     "./checkbox": "./src/components/checkbox/checkbox.tsx",

@@ -40,8 +40,19 @@ func (h *Handler) Authenticate(r *http.Request) (string, error) {
 	return userID, nil
 }
 
+// errSuspended is returned by startSession for a suspended account; callers tell the user errSuspendedMsg.
+var errSuspended = errors.New("account suspended")
+
+const errSuspendedMsg = "This account is suspended."
+
 // startSession begins a new sign-in that lasts refresh_ttl_hours with "Remember me", short_refresh_ttl_hours without.
+// Every sign-in method goes through here, so it is where suspended accounts are turned away.
 func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userID string, remember bool) error {
+	if suspended, err := h.model.suspended(ctx, userID); err != nil {
+		return err
+	} else if suspended {
+		return errSuspended
+	}
 	key := "short_refresh_ttl_hours"
 	if remember {
 		key = "refresh_ttl_hours"

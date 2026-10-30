@@ -53,9 +53,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Admin app (alongside, as each phase needs it)
 
-- [ ] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
-- [ ] Workspaces and users list, suspend a user
-- [ ] Basic usage stats
+- [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
+- [x] Workspaces and users list, suspend a user
+- [x] Basic usage stats
+- [x] Admin sign-in for platform admins (promote with `tether-admin -promote email`)
 
 ## Later
 

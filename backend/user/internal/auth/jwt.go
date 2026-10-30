@@ -29,7 +29,8 @@ func signAccess(secret []byte, userID string, ttl time.Duration) (string, error)
 	return s, nil
 }
 
-// parseAccess returns the user ID of a valid, unexpired access token. The algorithm is pinned to HS256.
+// parseAccess returns the user ID of a valid, unexpired access token. The algorithm is pinned to HS256, and
+// tokens with an audience (the admin app's, signed with the same secret) are rejected.
 func parseAccess(secret []byte, token string) (string, error) {
 	var claims jwt.RegisteredClaims
 	_, err := jwt.ParseWithClaims(token, &claims, func(*jwt.Token) (any, error) { return secret, nil },
@@ -42,6 +43,9 @@ func parseAccess(secret []byte, token string) (string, error) {
 	}
 	if claims.Subject == "" {
 		return "", fmt.Errorf("access token has no subject")
+	}
+	if len(claims.Audience) > 0 {
+		return "", fmt.Errorf("access token has an audience (admin token?)")
 	}
 	return claims.Subject, nil
 }

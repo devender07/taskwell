@@ -70,11 +70,15 @@ func TestAccessToken(t *testing.T) {
 	hs512 := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.RegisteredClaims{Issuer: issuer, Subject: "user-1",
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute))})
 	hs512Tok, _ := hs512.SignedString(secret)
+	admin := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{Issuer: issuer, Subject: "user-1",
+		Audience: jwt.ClaimStrings{"admin"}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute))})
+	adminTok, _ := admin.SignedString(secret)
 	for name, bad := range map[string]string{
 		"wrong secret": func() string { s, _ := signAccess([]byte("other"), "user-1", time.Minute); return s }(),
 		"expired":      expired,
 		"alg none":     noneTok,
 		"alg HS512":    hs512Tok,
+		"admin aud":    adminTok,
 		"tampered":     tok[:len(tok)-2] + "xx",
 		"garbage":      "not.a.jwt",
 	} {
