@@ -1,13 +1,14 @@
-import { useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useMemo, useOptimistic, type ReactNode } from 'react'
+import { Link, useRouter } from '@tanstack/react-router'
+import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate } from '@tether/shared/validate'
-import { api, toFormErrors, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { issuePath } from './issue-form'
+import { refOption, searchIssues } from './relations'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
 type Patch = { form: FormData; next: Partial<Issue> }
@@ -18,6 +19,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
   const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
+  const found = useRef(new Map<string, IssueRef>())
 
   const [error, save] = useActionState(async (_prev: string | null, { form, next }: Patch) => {
     apply(next)
@@ -40,6 +42,13 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
 
   const late = overdue(issue.due_date, issue.status.category)
   const edit = issue.can_edit
+  const parentable = !issue.sub_issues?.length
+
+  async function loadParents(q: string, signal: AbortSignal) {
+    const refs = await searchIssues(workspace, saved.identifier, saved.project.key)(q, signal)
+    for (const r of refs) found.current.set(r.identifier, r)
+    return [...(q ? [] : [{ value: '', label: 'No parent' }]), ...refs.map(refOption)]
+  }
 
   return (
     <section className="grid gap-4 p-6 bg-surface border rounded-lg" aria-label="Properties">
@@ -83,6 +92,19 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
               if (v !== (issue.due_date ?? '') && !dueDate(v)) update('due_date', [v], { due_date: v || null })
             }}
           />
+          {parentable ? (
+            <SmartAutocomplete
+              label="Parent"
+              placeholder="No parent"
+              loadOptions={loadParents}
+              value={issue.parent ? refOption(issue.parent) : null}
+              onChange={(o) => {
+                const id = o?.value ?? ''
+                if (id === (issue.parent?.identifier ?? '')) return
+                update('parent', [id], { parent: found.current.get(id) ?? null })
+              }}
+            />
+          ) : null}
           <div className="grid gap-2">
             <span className="text-label text-secondary">Labels</span>
             <LabelsPicker
@@ -115,6 +137,17 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
           <Property label="Due date">
             {issue.due_date ? <span className={late ? 'text-accent' : undefined}>{formatDate(issue.due_date)}</span> : <span className="text-secondary">No due date</span>}
           </Property>
+          {parentable ? (
+            <Property label="Parent">
+              {issue.parent ? (
+                <Link to="/$workspace/issue/$identifier" params={{ workspace: workspace.slug, identifier: issue.parent.identifier }}>
+                  {issue.parent.identifier} {issue.parent.title}
+                </Link>
+              ) : (
+                <span className="text-secondary">No parent</span>
+              )}
+            </Property>
+          ) : null}
           <Property label="Labels">
             {issue.labels.length ? <LabelChips labels={issue.labels} /> : <span className="text-secondary">No labels</span>}
           </Property>

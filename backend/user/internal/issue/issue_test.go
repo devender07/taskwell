@@ -53,3 +53,9 @@ func TestParseIdentifier(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapeLike(t *testing.T) {
+	if got, want := escapeLike(`50%_off\`), `50\%\_off\\`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

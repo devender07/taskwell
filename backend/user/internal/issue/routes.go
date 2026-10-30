@@ -1,5 +1,5 @@
-// Package issue implements the user service's issue API: issues inside projects, plus the workspace's statuses
-// and labels.
+// Package issue implements the user service's issue API: issues inside projects with their sub-issues and
+// blocking links, plus the workspace's statuses and labels.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query.
@@ -26,9 +26,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/labels/{id}", h.wrap(h.deleteLabel))
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/issues", h.wrap(h.list))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/issues", h.wrap(h.create))
+	mux.HandleFunc("GET /api/workspaces/{slug}/issues", h.wrap(h.search))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.update))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

@@ -12,6 +12,7 @@ export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
 export type Status = { id: string; name: string; category: StatusCategory; position: number }
 export type Label = { id: string; name: string; color: string }
+export type IssueRef = { id: string; identifier: string; title: string; status: Status }
 export type Issue = {
   id: string
   identifier: string
@@ -29,6 +30,10 @@ export type Issue = {
   updated_at: string
   can_edit: boolean
   can_delete: boolean
+  parent: IssueRef | null
+  sub_issues?: IssueRef[]
+  blocks?: IssueRef[]
+  blocked_by?: IssueRef[]
 }
 export type FieldErrors = Record<string, string | null | undefined>
 
@@ -53,21 +58,22 @@ export class ApiError extends Error {
 }
 
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
+// `signal` aborts the request (e.g. a search superseded by the next keystroke).
 // A 401 outside /auth/* (except password change, which needs a session) refreshes the access token once and retries.
-export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET'): Promise<T> {
-  let res = await send(path, body, method)
+export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
+  let res = await send(path, body, method, signal)
   if (res.status === 401 && (!path.startsWith('/auth/') || path === '/auth/password/change')) {
     await refreshAccess()
-    res = await send(path, body, method)
+    res = await send(path, body, method, signal)
   }
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined)
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }
 
-async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET') {
+async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal) {
   try {
-    return await fetch(`/api${path}`, { method, body })
+    return await fetch(`/api${path}`, { method, body, signal })
   } catch {
     throw new ApiError(0)
   }

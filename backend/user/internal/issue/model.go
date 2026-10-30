@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,7 +19,13 @@ var (
 	errBadOrder   = errors.New("order must list every status once")
 	errInUse      = errors.New("status in use")
 	errLastStatus = errors.New("last status")
+	errLinked     = errors.New("issues already linked")
 )
+
+// parentError is the message for a parent that breaks the sub-issue rules.
+type parentError string
+
+func (e parentError) Error() string { return string(e) }
 
 type Status struct {
 	ID       string `json:"id"`
@@ -43,11 +50,19 @@ type ProjectRef struct {
 	Name string `json:"name"`
 }
 
+type IssueRef struct {
+	ID         string `json:"id"`
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	Status     Status `json:"status"`
+}
+
 type Issue struct {
 	ID          string     `json:"id"`
 	Identifier  string     `json:"identifier"`
 	Number      int        `json:"number"`
 	Project     ProjectRef `json:"project"`
+	Parent      *IssueRef  `json:"parent"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	Status      Status     `json:"status"`
@@ -62,16 +77,32 @@ type Issue struct {
 	CanDelete   bool       `json:"can_delete"`
 }
 
-// fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
-// an empty assigneeID or dueDate clears it. labelIDs replace the issue's labels only when setLabels is true.
-type fields struct {
-	title, description, statusID, assigneeID, dueDate *string
-	priority                                          *int
-	labelIDs                                          []string
-	setLabels                                         bool
+// IssueDetail is a single issue with its relations.
+type IssueDetail struct {
+	*Issue
+	SubIssues []IssueRef `json:"sub_issues"`
+	Blocks    []IssueRef `json:"blocks"`
+	BlockedBy []IssueRef `json:"blocked_by"`
 }
 
-const issueCols = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name, i.title, i.description,
+// fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
+// an empty assigneeID, dueDate or parent clears it. labelIDs replace the issue's labels only when setLabels is true.
+type fields struct {
+	title, description, statusID, assigneeID, dueDate, parent *string
+	priority                                                  *int
+	labelIDs                                                  []string
+	setLabels                                                 bool
+}
+
+// refJSON is an issue ref as JSON, selected with refFrom.
+const (
+	refJSON = `json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title,
+		'status', json_build_object('id', rs.id, 'name', rs.name, 'category', rs.category, 'position', rs.position))`
+	refFrom = ` from issues r join projects rp on rp.id = r.project_id join statuses rs on rs.id = r.status_id`
+)
+
+const issueCols = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name,
+	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, i.description,
 	s.id::text, s.name, s.category, s.position, a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
@@ -82,7 +113,7 @@ const issueCols = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name
 func scanIssue(row pgx.Row) (Issue, error) {
 	var i Issue
 	var aID, aName, cID, cName *string
-	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Title, &i.Description,
+	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status.ID, &i.Status.Name, &i.Status.Category, &i.Status.Position, &aID, &aName, &i.Priority, &i.DueDate,
 		&i.Labels, &cID, &cName, &i.CreatedAt, &i.UpdatedAt)
 	if aID != nil {
@@ -137,6 +168,47 @@ func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
 	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id::text = $1`, id))
 }
 
+// relations returns the issue's sub-issues (by number) and the issues it blocks and is blocked by (oldest link first).
+func (m *model) relations(ctx context.Context, i *Issue) (IssueDetail, error) {
+	d := IssueDetail{Issue: i}
+	err := m.db.QueryRow(ctx,
+		`select coalesce((select json_agg(`+refJSON+` order by r.number)`+refFrom+` where r.parent_id = $1), '[]'),
+		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
+		                  join issue_links l on l.blocked_id = r.id where l.blocker_id = $1), '[]'),
+		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
+		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1), '[]')`,
+		i.ID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy)
+	if err != nil {
+		return d, fmt.Errorf("issue relations: %w", err)
+	}
+	return d, nil
+}
+
+// search returns up to 20 of the workspace's issues, limited to the project key unless it's "": with q "" the
+// newest; otherwise the issue key-number first, then those whose title contains q, newest first.
+// ponytail: ILIKE scan; add a trigram or full-text index when search gets slow (Phase 5).
+func (m *model) search(ctx context.Context, workspaceID, project, q, key string, number int) ([]IssueRef, error) {
+	rows, err := m.db.Query(ctx,
+		`select `+refJSON+refFrom+`
+		 where r.workspace_id = $1 and ($2 = '' or rp.key = $2)
+		   and ($3 = '' or rp.key = $4 and r.number = $5 or r.title ilike '%' || $6 || '%')
+		 order by rp.key = $4 and r.number = $5 desc, r.created_at desc, r.id desc limit 20`,
+		workspaceID, project, q, key, number, escapeLike(q))
+	if err != nil {
+		return nil, fmt.Errorf("search issues: %w", err)
+	}
+	refs, err := pgx.CollectRows(rows, pgx.RowTo[IssueRef])
+	if err != nil {
+		return nil, fmt.Errorf("search issues: %w", err)
+	}
+	return refs, nil
+}
+
+// escapeLike escapes LIKE's wildcards so s matches literally.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
 // checkRefs returns field errors for a status, assignee or labels that aren't the workspace's.
 func (m *model) checkRefs(ctx context.Context, workspaceID string, f fields) (map[string]string, error) {
 	var statusOK, assigneeOK bool
@@ -188,12 +260,17 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID).Scan(&id); err != nil {
 			return err
 		}
+		if f.parent != nil {
+			if err := setParent(ctx, tx, id, *f.parent); err != nil {
+				return err
+			}
+		}
 		return setLabels(ctx, tx, workspaceID, id, f.labelIDs)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
-	if errors.Is(err, errArchived) {
+	if errors.Is(err, errArchived) || errors.As(err, new(parentError)) {
 		return "", err
 	}
 	if err != nil {
@@ -205,6 +282,11 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 // update changes the issue's non-nil fields and sets updated_at.
 func (m *model) update(ctx context.Context, workspaceID, id string, f fields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if f.parent != nil {
+			if err := setParent(ctx, tx, id, *f.parent); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx,
 			`update issues set title = coalesce($2, title), description = coalesce($3, description),
 			   status_id = coalesce($4::uuid, status_id),
@@ -224,10 +306,98 @@ func (m *model) update(ctx context.Context, workspaceID, id string, f fields) er
 		}
 		return setLabels(ctx, tx, workspaceID, id, f.labelIDs)
 	})
+	if errors.As(err, new(parentError)) {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("update issue: %w", err)
 	}
 	return nil
+}
+
+// setParent makes the issue with the id a sub-issue of the one with the identifier in the same workspace, or
+// top-level when identifier is "". Returns a parentError when that breaks the rules. Locking both issues first
+// keeps concurrent changes from nesting deeper than one level.
+func setParent(ctx context.Context, tx pgx.Tx, id, identifier string) error {
+	if identifier == "" {
+		_, err := tx.Exec(ctx, `update issues set parent_id = null where id = $1`, id)
+		return err
+	}
+	key, number, ok := parseIdentifier(identifier)
+	var parentID string
+	if ok {
+		err := tx.QueryRow(ctx,
+			`select i.id::text from issues i join projects p on p.id = i.project_id join issues c on c.workspace_id = i.workspace_id
+			 where c.id = $1 and p.key = $2 and i.number = $3`, id, key, number).Scan(&parentID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	}
+	switch {
+	case parentID == "":
+		return parentError("Issue not found.")
+	case parentID == id:
+		return parentError("An issue can't be its own parent.")
+	}
+	if err := lockIssues(ctx, tx, id, parentID); err != nil {
+		return err
+	}
+	var sameProject, nested, hasSubs bool
+	if err := tx.QueryRow(ctx,
+		`select c.project_id = p.project_id, p.parent_id is not null, exists(select 1 from issues where parent_id = c.id)
+		 from issues c, issues p where c.id = $1 and p.id = $2`, id, parentID).Scan(&sameProject, &nested, &hasSubs); err != nil {
+		return err
+	}
+	switch {
+	case !sameProject:
+		return parentError("Choose an issue in the same project.")
+	case nested:
+		return parentError("Sub-issues can't have sub-issues.")
+	case hasSubs:
+		return parentError("This issue has sub-issues, so it can't be one.")
+	}
+	_, err := tx.Exec(ctx, `update issues set parent_id = $2 where id = $1`, id, parentID)
+	return err
+}
+
+// lockIssues locks the issues in id order, so two transactions locking the same pair can't deadlock.
+func lockIssues(ctx context.Context, tx pgx.Tx, ids ...string) error {
+	_, err := tx.Exec(ctx, `select 1 from issues where id = any($1::uuid[]) order by id for update`, ids)
+	return err
+}
+
+// link records that blocker blocks blocked. Returns errLinked when the two are already linked either way.
+func (m *model) link(ctx context.Context, blockerID, blockedID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssues(ctx, tx, blockerID, blockedID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx,
+			`insert into issue_links (blocker_id, blocked_id) select $1, $2
+			 where not exists(select 1 from issue_links where blocker_id in ($1, $2) and blocked_id in ($1, $2))`,
+			blockerID, blockedID)
+		if err == nil && tag.RowsAffected() == 0 {
+			return errLinked
+		}
+		return err
+	})
+	if errors.Is(err, errLinked) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("link issues: %w", err)
+	}
+	return nil
+}
+
+// unlink removes the link between the two issues, whichever way it goes; false when there's none.
+func (m *model) unlink(ctx context.Context, a, b string) (bool, error) {
+	tag, err := m.db.Exec(ctx,
+		`delete from issue_links where blocker_id = $1 and blocked_id = $2 or blocker_id = $2 and blocked_id = $1`, a, b)
+	if err != nil {
+		return false, fmt.Errorf("unlink issues: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labelIDs []string) error {

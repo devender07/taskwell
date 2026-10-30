@@ -6,7 +6,7 @@ import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { Textarea } from '@tether/shared/textarea'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors, type Issue, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
@@ -15,10 +15,10 @@ type State = { errors?: FieldErrors; error?: string | null }
 export const issuePath = (workspace: Workspace, identifier: string) =>
   `/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
 
-type CreateProps = { workspace: Workspace; project: Project; statuses: Status[]; labels: Label[]; members: Member[] }
+type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; statuses: Status[]; labels: Label[]; members: Member[] }
 
 // Labels are checkboxes here, not the labels popover: a popover can't render above a modal dialog.
-export function CreateIssueForm({ workspace, project, statuses, labels, members }: CreateProps) {
+export function CreateIssueForm({ workspace, project, parent, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -41,6 +41,7 @@ export function CreateIssueForm({ workspace, project, statuses, labels, members 
     form.set('assignee_id', assigneeId)
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
+    if (parent) form.set('parent', parent.identifier)
     let issue: Issue
     try {
       issue = await api<Issue>(`/workspaces/${encodeURIComponent(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
@@ -53,6 +54,12 @@ export function CreateIssueForm({ workspace, project, statuses, labels, members 
 
   return (
     <form action={submit} noValidate className="grid gap-4">
+      {parent ? (
+        <div className="grid gap-1">
+          <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
+          <FormError>{errors?.parent}</FormError>
+        </div>
+      ) : null}
       <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
       <Textarea
         label="Description"

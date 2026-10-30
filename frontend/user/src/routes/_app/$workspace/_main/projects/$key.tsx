@@ -110,6 +110,7 @@ function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
     <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row">
       <StatusIcon category={issue.status.category} label={issue.status.name} />
       <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
+      {issue.parent ? <span className="issue-id flex-noshrink">↳ {issue.parent.identifier}</span> : null}
       <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>
       {issue.labels.length ? (
         <span role="img" aria-label={`Labels: ${issue.labels.map((l) => l.name).join(', ')}`} className="flex items-center gap-1 flex-noshrink">

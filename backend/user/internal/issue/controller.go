@@ -75,6 +75,9 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusConflict, "This project is archived.")
 		return nil
 	}
+	if !checkParent(w, err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -90,25 +93,23 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 	if !ok || err != nil {
 		return err
 	}
-	allow(i, userID, ws.Permissions)
-	writeJSON(w, http.StatusOK, i)
-	return nil
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, i, ok, err := h.issue(w, r, userID)
+	ws, i, ok, err := h.editable(w, r, userID)
 	if !ok || err != nil {
 		return err
-	}
-	if allow(i, userID, ws.Permissions); !i.CanEdit {
-		writeErr(w, http.StatusForbidden, errForbidden)
-		return nil
 	}
 	f, ok, err := h.readFields(w, r, ws.ID, false)
 	if !ok || err != nil {
 		return err
 	}
-	if err := h.model.update(r.Context(), ws.ID, i.ID, f); err != nil {
+	err = h.model.update(r.Context(), ws.ID, i.ID, f)
+	if !checkParent(w, err) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
@@ -130,17 +131,115 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) 
 	return nil
 }
 
+func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	key, number, _ := parseIdentifier(q)
+	refs, err := h.model.search(r.Context(), ws.ID, normKey(r.URL.Query().Get("project")), q, key, number)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, refs)
+	return nil
+}
+
+func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	_ = r.ParseMultipartForm(maxBody)
+	typ := r.PostForm.Get("type")
+	other, err := h.find(r.Context(), ws.ID, r.PostForm.Get("issue"))
+	if err != nil {
+		return err
+	}
+	errs := map[string]string{}
+	if typ != "blocks" && typ != "blocked_by" {
+		errs["type"] = "Choose a link type."
+	}
+	switch {
+	case other == nil:
+		errs["issue"] = errIssueNotFound
+	case other.ID == i.ID:
+		errs["issue"] = "An issue can't block itself."
+	}
+	if !checkFields(w, errs) {
+		return nil
+	}
+	blocker, blocked := i.ID, other.ID
+	if typ == "blocked_by" {
+		blocker, blocked = blocked, blocker
+	}
+	err = h.model.link(r.Context(), blocker, blocked)
+	if errors.Is(err, errLinked) {
+		writeFields(w, http.StatusConflict, map[string]string{"issue": "These issues are already linked."})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusCreated, i.ID, userID, ws)
+}
+
+func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	other, err := h.find(r.Context(), ws.ID, r.PathValue("other"))
+	if err != nil {
+		return err
+	}
+	if other == nil {
+		writeErr(w, http.StatusNotFound, errIssueNotFound)
+		return nil
+	}
+	found, err := h.model.unlink(r.Context(), i.ID, other.ID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		writeErr(w, http.StatusNotFound, "Link not found.")
+		return nil
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// find returns the workspace's issue with the identifier; nil when there's none.
+func (h *Handler) find(ctx context.Context, workspaceID, identifier string) (*Issue, error) {
+	key, number, ok := parseIdentifier(identifier)
+	if !ok {
+		return nil, nil
+	}
+	return h.model.get(ctx, workspaceID, key, number)
+}
+
+// editable is issue, plus a 403 unless the caller may edit it.
+func (h *Handler) editable(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, *Issue, bool, error) {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return nil, nil, false, err
+	}
+	if allow(i, userID, ws.Permissions); !i.CanEdit {
+		writeErr(w, http.StatusForbidden, errForbidden)
+		return nil, nil, false, nil
+	}
+	return ws, i, true, nil
+}
+
 // issue returns the path's workspace and issue, or writes a 404 and returns ok=false.
 func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, *Issue, bool, error) {
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
 		return nil, nil, false, err
 	}
-	var i *Issue
-	if key, number, ok := parseIdentifier(r.PathValue("identifier")); ok {
-		if i, err = h.model.get(r.Context(), ws.ID, key, number); err != nil {
-			return nil, nil, false, err
-		}
+	i, err := h.find(r.Context(), ws.ID, r.PathValue("identifier"))
+	if err != nil {
+		return nil, nil, false, err
 	}
 	if i == nil {
 		writeErr(w, http.StatusNotFound, errIssueNotFound)
@@ -149,7 +248,7 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID string) (
 	return ws, i, true, nil
 }
 
-// respondIssue writes the issue with the id as the caller sees it.
+// respondIssue writes the issue with the id and its relations as the caller sees it.
 func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status int, id, userID string, ws *workspace.Workspace) error {
 	i, err := h.model.byID(r.Context(), id)
 	if err != nil {
@@ -160,8 +259,22 @@ func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status in
 		return nil
 	}
 	allow(i, userID, ws.Permissions)
-	writeJSON(w, status, i)
+	d, err := h.model.relations(r.Context(), i)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, status, d)
 	return nil
+}
+
+// checkParent writes a 400 for a parentError and returns false; true for any other err, nil included.
+func checkParent(w http.ResponseWriter, err error) bool {
+	var pe parentError
+	if errors.As(err, &pe) {
+		writeFields(w, http.StatusBadRequest, map[string]string{"parent": string(pe)})
+		return false
+	}
+	return true
 }
 
 // allow sets the caller's can_edit and can_delete: issues.edit_any, or they created it; editing also when it's
@@ -180,7 +293,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	form := r.PostForm
 	value := func(k string) *string {
 		v, ok := form[k]
-		if !ok || create && v[0] == "" && (k == "status_id" || k == "priority") {
+		if !ok || create && v[0] == "" && (k == "status_id" || k == "priority" || k == "parent") {
 			return nil
 		}
 		return &v[0]
@@ -205,6 +318,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 		errs["due_date"] = checkDueDate(*f.dueDate)
 	}
 	f.assigneeID = value("assignee_id")
+	f.parent = value("parent")
 	if ids, ok := form["label_ids"]; ok {
 		f.setLabels = true
 		f.labelIDs = slices.Compact(slices.Sorted(slices.Values(slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" }))))

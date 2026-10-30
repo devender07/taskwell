@@ -1,22 +1,25 @@
 import { Link, createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
-import { ApiError, api, type Issue, type Label, type Member, type Status } from '@/api'
+import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
+import { Relations, SubIssues } from '@/components/issues/relations'
 import '@/components/issues/issues.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
   loader: async ({ params }) => {
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     try {
-      const [issue, statuses, labels, { members }] = await Promise.all([
+      const key = params.identifier.replace(/-.*/, '').toUpperCase()
+      const [issue, project, statuses, labels, { members }] = await Promise.all([
         api<Issue>(`${path}/issues/${encodeURIComponent(params.identifier)}`),
+        api<Project>(`${path}/projects/${encodeURIComponent(key)}`),
         api<Status[]>(`${path}/statuses`),
         api<Label[]>(`${path}/labels`),
         api<{ members: Member[] }>(`${path}/members`),
       ])
-      return { issue, statuses, labels, members }
+      return { issue, project, statuses, labels, members }
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -27,8 +30,9 @@ export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')
 
 function IssuePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { issue, statuses, labels, members } = Route.useLoaderData()
+  const { issue, project, statuses, labels, members } = Route.useLoaderData()
   const [editing, setEditing] = useState(false)
+  const create = can(workspace, 'issues.create') && !project.archived
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
@@ -37,6 +41,14 @@ function IssuePage() {
           {issue.project.name}
         </Link>
         <span aria-hidden>›</span>
+        {issue.parent ? (
+          <>
+            <Link to="/$workspace/issue/$identifier" params={{ workspace: workspace.slug, identifier: issue.parent.identifier }} className="issue-id flex-noshrink">
+              {issue.parent.identifier}
+            </Link>
+            <span aria-hidden>›</span>
+          </>
+        ) : null}
         <span className="issue-id flex-noshrink" aria-current="page">{issue.identifier}</span>
       </nav>
       <div className="issue-layout">
@@ -60,6 +72,10 @@ function IssuePage() {
               )}
             </>
           )}
+          {issue.parent ? null : (
+            <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
+          )}
+          <Relations key={issue.id} workspace={workspace} issue={issue} />
         </article>
         <aside className="grid gap-4">
           <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} members={members} />
