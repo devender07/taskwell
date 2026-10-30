@@ -25,10 +25,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 3: Views
 
-- [ ] List view with grouping (status, assignee, priority) and sorting
-- [ ] Kanban board with drag between columns
-- [ ] Filters by assignee, status, label, priority, kept in the URL so they can be shared
-- [ ] "My issues" view
+- [x] List view with grouping (status, assignee, priority) and sorting
+- [x] Kanban board with drag between columns (pointer events: mouse and touch, edge auto-scroll)
+- [x] Filters by assignee, status, label, priority, kept in the URL so they can be shared
+- [x] "My issues" view
 
 ## Phase 4: Collaboration
 

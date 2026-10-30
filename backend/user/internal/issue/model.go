@@ -148,7 +148,18 @@ func (m *model) projectID(ctx context.Context, workspaceID, key string) (string,
 
 // list returns the project's issues, newest first.
 func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
-	rows, err := m.db.Query(ctx, `select `+issueCols+` where i.project_id = $1 order by i.number desc`, projectID)
+	return m.issues(ctx, `i.project_id = $1 order by i.number desc`, projectID)
+}
+
+// assigned returns the user's assigned issues in the workspace's active projects, newest first.
+func (m *model) assigned(ctx context.Context, workspaceID, userID string) ([]Issue, error) {
+	return m.issues(ctx, `i.workspace_id = $1 and i.assignee_id = $2 and p.archived_at is null
+		order by i.created_at desc, i.id desc`, workspaceID, userID)
+}
+
+// issues selects issues matching where (a condition plus its order by).
+func (m *model) issues(ctx context.Context, where string, args ...any) ([]Issue, error) {
+	rows, err := m.db.Query(ctx, `select `+issueCols+` where `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}

@@ -19,6 +19,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
+import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
 import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
@@ -80,6 +81,12 @@ const AppWorkspaceMainIndexRoute = AppWorkspaceMainIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
+const AppWorkspaceMainMyIssuesRoute =
+  AppWorkspaceMainMyIssuesRouteImport.update({
+    id: '/my-issues',
+    path: '/my-issues',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainIssueIdentifierRoute =
   AppWorkspaceMainIssueIdentifierRouteImport.update({
     id: '/issue/$identifier',
@@ -161,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -183,6 +191,7 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
+  '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -207,6 +216,7 @@ export interface FileRoutesById {
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
+  '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/$workspace/my-issues'
     | '/$workspace/'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
@@ -253,6 +264,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/$workspace'
     | '/'
+    | '/$workspace/my-issues'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/labels'
@@ -276,6 +288,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace'
     | '/_app/'
     | '/_app/$workspace/_main'
+    | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/'
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/projects/$key'
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainIndexRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/my-issues': {
+      id: '/_app/$workspace/_main/my-issues'
+      path: '/my-issues'
+      fullPath: '/$workspace/my-issues'
+      preLoaderRoute: typeof AppWorkspaceMainMyIssuesRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/issue/$identifier': {
       id: '/_app/$workspace/_main/issue/$identifier'
       path: '/issue/$identifier'
@@ -460,6 +480,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppWorkspaceMainRouteChildren {
+  AppWorkspaceMainMyIssuesRoute: typeof AppWorkspaceMainMyIssuesRoute
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
@@ -476,6 +497,7 @@ interface AppWorkspaceMainRouteChildren {
 }
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
+  AppWorkspaceMainMyIssuesRoute: AppWorkspaceMainMyIssuesRoute,
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
   AppWorkspaceMainIssueIdentifierRoute: AppWorkspaceMainIssueIdentifierRoute,
   AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,

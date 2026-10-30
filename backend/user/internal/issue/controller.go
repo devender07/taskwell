@@ -61,6 +61,23 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	return nil
 }
 
+// myIssues lists the caller's assigned issues across the workspace's active projects.
+func (h *Handler) myIssues(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	is, err := h.model.assigned(r.Context(), ws.ID, userID)
+	if err != nil {
+		return err
+	}
+	for i := range is {
+		allow(&is[i], userID, ws.Permissions)
+	}
+	writeJSON(w, http.StatusOK, is)
+	return nil
+}
+
 func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, workspace.PermIssuesCreate)
 	if !ok || err != nil {

@@ -2,15 +2,16 @@ import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanst
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { Avatar } from '@tether/shared/avatar'
 import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
-import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
 import { CreateIssueForm } from '@/components/issues/issue-form'
+import { IssueView } from '@/components/issues/issue-view'
+import { validateViewSearch } from '@/components/issues/view-search'
 import { ArchiveProject, ProjectForm } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
+  validateSearch: validateViewSearch,
   loader: async ({ params }) => {
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
@@ -35,6 +36,8 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
 function ProjectPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { project, issues, statuses, labels, members } = Route.useLoaderData()
+  const { user } = Route.useRouteContext()
+  const search = Route.useSearch()
   const [editing, setEditing] = useState(false)
   const [creating, setCreating] = useState(false)
   const manage = can(workspace, 'projects.manage')
@@ -83,13 +86,7 @@ function ProjectPage() {
             {create ? <Button onClick={() => setCreating(true)}>New issue</Button> : null}
           </div>
         ) : (
-          <ul className="grid m-0 p-0 bg-surface border rounded-lg overflow-hidden" style={{ listStyle: 'none' }}>
-            {issues.map((issue) => (
-              <li key={issue.id}>
-                <IssueRow workspace={workspace.slug} issue={issue} />
-              </li>
-            ))}
-          </ul>
+          <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
         )}
       </section>
       {create ? (
@@ -103,35 +100,5 @@ function ProjectPage() {
         </Dialog>
       ) : null}
     </main>
-  )
-}
-
-function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
-  return (
-    <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row">
-      <StatusIcon category={issue.status.category} label={issue.status.name} />
-      <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
-      {issue.parent ? <span className="issue-id flex-noshrink">↳ {issue.parent.identifier}</span> : null}
-      <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>
-      {issue.labels.length ? (
-        <span role="img" aria-label={`Labels: ${issue.labels.map((l) => l.name).join(', ')}`} className="flex items-center gap-1 flex-noshrink">
-          {issue.labels.map((l) => (
-            <LabelDot key={l.id} color={l.color} />
-          ))}
-        </span>
-      ) : null}
-      <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
-      {issue.priority ? <span className="text-caption text-secondary flex-noshrink">{priorityLabel(issue.priority)}</span> : null}
-      {issue.due_date ? (
-        <span className={`text-caption flex-noshrink ${overdue(issue.due_date, issue.status.category) ? 'text-accent' : 'text-secondary'}`}>
-          {formatDate(issue.due_date)}
-        </span>
-      ) : null}
-      {issue.assignee ? (
-        <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assignee.name} className="inline-grid flex-noshrink">
-          <Avatar name={issue.assignee.name} size={24} />
-        </span>
-      ) : null}
-    </Link>
   )
 }
