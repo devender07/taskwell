@@ -21,6 +21,7 @@ const (
 	msgAwareness
 	msgCompact
 	msgSave
+	msgSeed
 )
 
 const (
@@ -39,13 +40,15 @@ type hub struct {
 
 type room struct {
 	clients map[*client]struct{}
-	seeded  bool // a connection was told to seed the document from the saved description
+	seeder  *client // the editor told to seed the document from the saved description, until its seed is stored
+	seeded  bool    // the seed update is stored
 }
 
 // client is one connection. The hub queues frames on send; a writer goroutine drains it.
 type client struct {
-	send   chan []byte
-	cancel context.CancelFunc
+	send    chan []byte
+	cancel  context.CancelFunc
+	canEdit bool
 }
 
 func (hb *hub) join(issueID string, c *client) {
@@ -66,20 +69,50 @@ func (hb *hub) leave(issueID string, c *client) {
 		delete(r.clients, c)
 		if len(r.clients) == 0 {
 			delete(hb.rooms, issueID)
+		} else if r.seeder == c {
+			r.passSeed()
 		}
 	}
 }
 
-// claimSeed returns true for the first caller since the room opened.
-func (hb *hub) claimSeed(issueID string) bool {
+// passSeed hands an unfinished seed to another editor in the room, or leaves it for the next one to join.
+// Called with hb.mu held.
+// ponytail: the new seeder skips seeding if its user already typed into the empty document; their text then
+// replaces the saved description. Rare: needs the first editor to leave within a second of opening the issue.
+func (r *room) passSeed() {
+	r.seeder = nil
+	for c := range r.clients {
+		if !c.canEdit {
+			continue
+		}
+		select {
+		case c.send <- []byte{msgSeed}:
+			r.seeder = c
+			return
+		default:
+		}
+	}
+}
+
+// claimSeed returns true for the first editor since the room opened, or since the seeder left without seeding.
+func (hb *hub) claimSeed(issueID string, c *client) bool {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	r := hb.rooms[issueID]
-	if r == nil || r.seeded {
+	if r == nil || r.seeded || r.seeder != nil {
 		return false
 	}
-	r.seeded = true
+	r.seeder = c
 	return true
+}
+
+// stored records that c's update is in the database; the seeder's first one is the seed.
+func (hb *hub) stored(issueID string, c *client) {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	if r := hb.rooms[issueID]; r != nil && r.seeder == c {
+		r.seeder, r.seeded = nil, true
+	}
 }
 
 // broadcast queues msg for every connection on the issue but from, dropping any whose buffer is full.
@@ -99,6 +132,9 @@ func (hb *hub) broadcast(issueID string, from *client, msg []byte) {
 		default:
 			delete(r.clients, c)
 			c.cancel()
+			if r.seeder == c {
+				r.passSeed()
+			}
 		}
 	}
 }
@@ -134,12 +170,12 @@ func (h *Handler) collab(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(maxFrame)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	c := &client{send: make(chan []byte, sendBuffer), cancel: cancel}
+	c := &client{send: make(chan []byte, sendBuffer), cancel: cancel, canEdit: i.CanEdit}
 	// Join before loading: an update stored after the load is broadcast to us, one stored before is in the load
 	// (and maybe broadcast too; Yjs ignores duplicates).
 	h.hub.join(i.ID, c)
 	defer h.hub.leave(i.ID, c)
-	if err := h.sendStored(ctx, conn, i); err != nil {
+	if err := h.sendStored(ctx, conn, i, c); err != nil {
 		slog.Info("collab load failed", "issue", i.ID, "err", err)
 		return
 	}
@@ -148,7 +184,7 @@ func (h *Handler) collab(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendStored sends the issue's stored updates, then ready.
-func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue) error {
+func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue, c *client) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	us, err := h.model.docUpdates(ctx, i.ID)
@@ -167,7 +203,7 @@ func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue
 		flags |= 1
 	}
 	// Only an editor seeds: a read-only client's seed update would be ignored, leaving the room unseeded for good.
-	if i.CanEdit && len(us) == 0 && i.Description != nil && h.hub.claimSeed(i.ID) {
+	if i.CanEdit && len(us) == 0 && i.Description != nil && h.hub.claimSeed(i.ID, c) {
 		flags |= 2
 	}
 	return conn.Write(ctx, websocket.MessageBinary, binary.BigEndian.AppendUint64([]byte{msgReady, flags}, uint64(last)))
@@ -193,6 +229,7 @@ func (h *Handler) readFrames(ctx context.Context, conn *websocket.Conn, c *clien
 				slog.Error("collab update failed", "issue", issueID, "err", err)
 				return
 			}
+			h.hub.stored(issueID, c)
 			h.hub.broadcast(issueID, c, data)
 		case data[0] == msgCompact && len(body) > 8:
 			upTo := binary.BigEndian.Uint64(body)

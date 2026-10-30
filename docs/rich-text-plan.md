@@ -70,8 +70,9 @@ All frames are **binary**; the first byte is the message type, the rest the payl
 | `2` awareness | both | a y-protocols awareness update | Forward to every other connection on the issue (any member); not stored |
 | `3` compact | client → server | 8-byte big-endian id (the `ready` id the client loaded up to), then a Yjs update with the client's whole state | Can edit only. In one transaction: delete this issue's updates with `id <= that id`, insert the payload. Not forwarded |
 | `4` save | client → server | the document as UTF-8 JSON (`editor.getJSON()`) | Can edit only. Validate like the description field (invalid: log + ignore); store as `issues.description` (`updated_at = now()`; null when empty) without clearing updates; send mention emails |
+| `5` seed | server → client | none | Sent to another editor when the seeder disconnects before its seed update was stored; the client seeds as if `ready` had the seed bit |
 
-**Seed:** when an issue has no stored updates but has a saved description, the first connection to that issue gets the seed bit; it builds the Yjs document from the saved JSON and sends it as a normal update. The room remembers it handed out the seed, so later connections don't (they receive the seed update when it arrives). If the room empties before anything was stored, the next connection can be the seeder again.
+**Seed:** when an issue has no stored updates but has a saved description, the first connection to that issue gets the seed bit; it builds the Yjs document from the saved JSON and sends it as a normal update. The room remembers it handed out the seed, so later connections don't (they receive the seed update when it arrives). If the seeder disconnects before its seed update is stored, the seed passes to another editor in the room (type `5`), or to the next editor to join.
 
 Rooms: in memory, one per issue id, in a small hub in the issue package (mutex + map; each connection has a buffered send channel and a writer goroutine; a client whose buffer is full is disconnected). `ponytail:` single API instance only; with several instances, forward updates through Postgres `LISTEN/NOTIFY`.
 

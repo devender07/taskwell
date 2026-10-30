@@ -7,7 +7,7 @@ export type CollabState = { canEdit: boolean; seed: boolean; lastId: bigint; loa
 // Origin of changes applied from the server, so they aren't sent back.
 export const REMOTE = 'remote'
 
-const [READY, UPDATE, AWARENESS, COMPACT, SAVE] = [0, 1, 2, 3, 4]
+const [READY, UPDATE, AWARENESS, COMPACT, SAVE, SEED] = [0, 1, 2, 3, 4, 5]
 const COMPACT_AFTER = 100
 
 // Live editing over the issue's collab WebSocket (protocol in docs/rich-text-plan.md). onState gets the server's
@@ -15,6 +15,7 @@ const COMPACT_AFTER = 100
 export function connectCollab(path: string, doc: Y.Doc, awareness: Awareness, onState: (s: CollabState | null) => void) {
   let ws: WebSocket | null = null
   let ready = false
+  let state: CollabState | null = null
   let delay = 1000
   let timer: ReturnType<typeof setTimeout> | undefined
   let destroyed = false
@@ -79,7 +80,11 @@ export function connectCollab(path: string, doc: Y.Doc, awareness: Awareness, on
           send(COMPACT, body)
         }
         if (awareness.getLocalState()) sendAwareness([awareness.clientID])
-        onState({ canEdit, seed: (flags & 2) !== 0, lastId, loaded })
+        state = { canEdit, seed: (flags & 2) !== 0, lastId, loaded }
+        onState(state)
+      } else if (data[0] === SEED && state) {
+        state = { ...state, seed: true }
+        onState(state)
       }
     }
 
