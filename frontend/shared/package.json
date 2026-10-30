@@ -18,7 +18,8 @@
     "./avatar": "./src/components/avatar/avatar.tsx",
     "./popover": "./src/components/popover/popover.tsx",
     "./dialog": "./src/components/dialog/dialog.tsx",
-    "./smart-autocomplete": "./src/components/smart-autocomplete/smart-autocomplete.tsx"
+    "./smart-autocomplete": "./src/components/smart-autocomplete/smart-autocomplete.tsx",
+    "./date-picker": "./src/components/date-picker/date-picker.tsx"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

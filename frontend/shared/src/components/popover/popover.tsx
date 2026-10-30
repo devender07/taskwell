@@ -74,6 +74,7 @@ export function Popover({ trigger, children, placement = 'bottom-start', arrow =
     const onPointerDown = (e: PointerEvent) => !inside(e.target) && close()
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      e.preventDefault() // inside a modal <dialog>, Esc closes only the popover
       close()
       triggerRef.current?.focus()
     }
@@ -111,7 +112,8 @@ export function Popover({ trigger, children, placement = 'bottom-start', arrow =
               {arrow ? <span className="popover-arrow" aria-hidden /> : null}
               {typeof children === 'function' ? children(close) : children}
             </div>,
-            document.body,
+            // A modal <dialog> sits in the top layer, above anything portaled to <body>.
+            triggerRef.current?.closest('dialog') ?? document.body,
           )}
     </>
   )

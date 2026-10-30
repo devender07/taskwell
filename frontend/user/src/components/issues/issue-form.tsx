@@ -1,6 +1,7 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState, useMemo, useState } from 'react'
 import { Button } from '@tether/shared/button'
+import { DatePicker } from '@tether/shared/date-picker'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
@@ -91,7 +92,7 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
           onChange={(o) => setAssigneeId(o?.value ?? '')}
           error={errors?.assignee_id}
         />
-        <Input label="Due date" type="date" value={due} onChange={(e) => setDue(e.target.value)} error={errors?.due_date} />
+        <DatePicker label="Due date" placeholder="No due date" value={due} onChange={setDue} error={errors?.due_date} />
       </div>
       <fieldset className="grid gap-3 m-0 p-0" style={{ border: 0 }}>
         <legend className="text-label text-secondary mb-2 p-0">Labels</legend>

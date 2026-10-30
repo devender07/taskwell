@@ -1,9 +1,8 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
-import { Input } from '@tether/shared/input'
+import { DatePicker } from '@tether/shared/date-picker'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { dueDate } from '@tether/shared/validate'
 import { api, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
@@ -81,16 +80,11 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
               update('assignee_id', [id], { assignee: m ? { id: m.id, name: m.name } : null })
             }}
           />
-          <Input
-            key={issue.due_date ?? ''}
+          <DatePicker
             label="Due date"
-            type="date"
-            defaultValue={issue.due_date ?? ''}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            onBlur={(e) => {
-              const v = e.target.value
-              if (v !== (issue.due_date ?? '') && !dueDate(v)) update('due_date', [v], { due_date: v || null })
-            }}
+            placeholder="No due date"
+            value={issue.due_date ?? ''}
+            onChange={(v) => v !== (issue.due_date ?? '') && update('due_date', [v], { due_date: v || null })}
           />
           {parentable ? (
             <SmartAutocomplete
