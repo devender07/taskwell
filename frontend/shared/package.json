@@ -19,7 +19,8 @@
     "./popover": "./src/components/popover/popover.tsx",
     "./dialog": "./src/components/dialog/dialog.tsx",
     "./smart-autocomplete": "./src/components/smart-autocomplete/smart-autocomplete.tsx",
-    "./date-picker": "./src/components/date-picker/date-picker.tsx"
+    "./date-picker": "./src/components/date-picker/date-picker.tsx",
+    "./rich-editor": "./src/components/rich-editor/rich-editor.tsx"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",
@@ -28,5 +29,18 @@
   },
   "scripts": {
     "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@tiptap/extension-collaboration": "^3.32.2",
+    "@tiptap/extension-collaboration-caret": "^3.32.2",
+    "@tiptap/extension-mention": "^3.32.2",
+    "@tiptap/extensions": "^3.32.2",
+    "@tiptap/pm": "^3.32.2",
+    "@tiptap/react": "^3.32.2",
+    "@tiptap/starter-kit": "^3.32.2",
+    "@tiptap/suggestion": "^3.32.2",
+    "@tiptap/y-tiptap": "^3.0.12",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33"
   }
 }

@@ -11,6 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/mail"
+	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -27,12 +29,17 @@ type Handler struct {
 	model        *model
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	mail         *mail.Mailer
+	cfg          *sysconfig.Store
+	hub          *hub
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.
 func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
-	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
-	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member}
+	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error),
+	mailer *mail.Mailer, cfg *sysconfig.Store) *Handler {
+	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member, mail: mailer, cfg: cfg,
+		hub: &hub{rooms: map[string]*room{}}}
 }
 
 // --- issues ---
@@ -102,6 +109,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
+	h.notifyMentions(r.Context(), id, userID, nil, f.description)
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
 }
 
@@ -122,12 +130,15 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	err = h.model.update(r.Context(), ws.ID, i.ID, f)
+	old, err := h.model.update(r.Context(), ws.ID, i.ID, f)
 	if !checkParent(w, err) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if f.setDescription {
+		h.notifyMentions(r.Context(), i.ID, userID, old, f.description)
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
 }
@@ -321,8 +332,11 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 		title := strings.TrimSpace(form.Get("title"))
 		f.title, errs["title"] = &title, checkTitle(title)
 	}
-	if f.description = value("description"); f.description != nil {
-		errs["description"] = checkDescription(*f.description)
+	if d := value("description"); d != nil {
+		f.setDescription = true
+		if *d != "" {
+			f.description, errs["description"] = checkDoc([]byte(*d))
+		}
 	}
 	if f.statusID = value("status_id"); f.statusID != nil && *f.statusID == "" {
 		f.statusID, errs["status_id"] = nil, "Choose a status."

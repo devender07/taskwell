@@ -1,0 +1,47 @@
+.rich-editor.input { height: auto; padding: 0; color: var(--text); }
+.rich-editor.input:focus-within { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
+.rich-editor-toolbar { padding: 0 var(--space-1); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.rich-editor-tool { width: 44px; height: 44px; }
+.rich-editor-tool[aria-pressed='true'] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+
+.rich-editor-content { padding: var(--space-2) 14px; font: 400 14px/21px var(--font); color: var(--text); outline: none; overflow-wrap: anywhere; }
+.rich-editor-readonly .rich-editor-content { padding: 0; }
+.rich-editor-content > * + * { margin-top: var(--space-2); }
+.rich-editor-content h1 { font: 590 20px/26.6px var(--font); margin-top: var(--space-4); }
+.rich-editor-content h2 { font: 590 16px/24px var(--font); margin-top: var(--space-4); }
+.rich-editor-content h3 { font: 510 15px/24px var(--font); margin-top: var(--space-3); }
+.rich-editor-content > :first-child { margin-top: 0; }
+.rich-editor-content ul, .rich-editor-content ol { padding-left: var(--space-6); }
+.rich-editor-content li + li { margin-top: var(--space-1); }
+.rich-editor-content blockquote { padding-left: var(--space-3); border-left: 2px solid #3e3e44; color: var(--text-2); }
+.rich-editor-content code { font: 400 13px/19.5px var(--mono); padding: 0 var(--space-1); background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
+.rich-editor-content pre { padding: var(--space-3) var(--space-4); background: rgba(255, 255, 255, 0.03); overflow-x: auto; }
+.rich-editor-content pre code { font: 400 14px/21px var(--mono); padding: 0; background: none; border-radius: 0; }
+.rich-editor-content hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin-block: var(--space-4); }
+.rich-editor-content a { color: var(--link); text-decoration: underline; }
+.rich-editor-content [data-type='mention'] { color: var(--link); font-weight: 510; }
+.rich-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--text-2);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.collaboration-carets__caret { position: relative; margin-inline: -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  padding: 0 var(--space-1);
+  font: 510 13px/19.5px var(--font);
+  color: var(--bg);
+  white-space: nowrap;
+  border-radius: 4px 4px 4px 0;
+  user-select: none;
+}
+
+/* ponytail: fixed at the caret when the list opens; it doesn't follow a scroll or flip at the viewport edge. */
+.rich-editor-mentions { min-width: 200px; max-width: calc(100vw - 32px); }
+@media (pointer: coarse) { .rich-editor-mentions .autocomplete-option { min-height: 44px; } }

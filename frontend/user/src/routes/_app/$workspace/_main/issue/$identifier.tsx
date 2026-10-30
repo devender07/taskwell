@@ -2,6 +2,7 @@ import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanst
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { Description } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { Relations, SubIssues } from '@/components/issues/relations'
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')
 
 function IssuePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
+  const { user } = Route.useRouteContext()
   const { issue, project, statuses, labels, members } = Route.useLoaderData()
   const [editing, setEditing] = useState(false)
   const create = can(workspace, 'issues.create') && !project.archived
@@ -59,22 +61,16 @@ function IssuePage() {
           {editing ? (
             <EditIssueForm workspace={workspace} issue={issue} onDone={() => setEditing(false)} />
           ) : (
-            <>
-              <header className="flex items-start justify-between gap-4">
-                <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
-                {issue.can_edit ? (
-                  <Button variant="secondary" className="flex-noshrink" onClick={() => setEditing(true)}>
-                    Edit
-                  </Button>
-                ) : null}
-              </header>
-              {issue.description ? (
-                <p className="text-body-sm m-0" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{issue.description}</p>
-              ) : (
-                <p className="text-body-sm text-secondary m-0">No description.</p>
-              )}
-            </>
+            <header className="flex items-start justify-between gap-4">
+              <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
+              {issue.can_edit ? (
+                <Button variant="secondary" className="flex-noshrink" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              ) : null}
+            </header>
           )}
+          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} />
           {issue.parent ? null : (
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
           )}

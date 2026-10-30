@@ -2,6 +2,7 @@ package issue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -59,23 +60,23 @@ type IssueRef struct {
 }
 
 type Issue struct {
-	ID          string     `json:"id"`
-	Identifier  string     `json:"identifier"`
-	Number      int        `json:"number"`
-	Project     ProjectRef `json:"project"`
-	Parent      *IssueRef  `json:"parent"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Status      Status     `json:"status"`
-	Assignee    *Person    `json:"assignee"`
-	Priority    int        `json:"priority"`
-	DueDate     *string    `json:"due_date"`
-	Labels      []Label    `json:"labels"`
-	CreatedBy   *Person    `json:"created_by"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	CanEdit     bool       `json:"can_edit"`
-	CanDelete   bool       `json:"can_delete"`
+	ID          string          `json:"id"`
+	Identifier  string          `json:"identifier"`
+	Number      int             `json:"number"`
+	Project     ProjectRef      `json:"project"`
+	Parent      *IssueRef       `json:"parent"`
+	Title       string          `json:"title"`
+	Description json.RawMessage `json:"description"`
+	Status      Status          `json:"status"`
+	Assignee    *Person         `json:"assignee"`
+	Priority    int             `json:"priority"`
+	DueDate     *string         `json:"due_date"`
+	Labels      []Label         `json:"labels"`
+	CreatedBy   *Person         `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	CanEdit     bool            `json:"can_edit"`
+	CanDelete   bool            `json:"can_delete"`
 }
 
 // IssueDetail is a single issue with its relations.
@@ -87,12 +88,15 @@ type IssueDetail struct {
 }
 
 // fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
-// an empty assigneeID, dueDate or parent clears it. labelIDs replace the issue's labels only when setLabels is true.
+// an empty assigneeID, dueDate or parent clears it. labelIDs replace the issue's labels only when setLabels is true,
+// and description (nil clears it) replaces it only when setDescription is true.
 type fields struct {
-	title, description, statusID, assigneeID, dueDate, parent *string
-	priority                                                  *int
-	labelIDs                                                  []string
-	setLabels                                                 bool
+	title, statusID, assigneeID, dueDate, parent *string
+	priority                                     *int
+	labelIDs                                     []string
+	setLabels                                    bool
+	description                                  json.RawMessage
+	setDescription                               bool
 }
 
 // refJSON is an issue ref as JSON, selected with refFrom.
@@ -266,7 +270,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		}
 		if err := tx.QueryRow(ctx,
 			`insert into issues (workspace_id, project_id, number, title, description, status_id, assignee_id, priority, due_date, created_by)
-			 values ($1, $2, $3, $4, coalesce($5, ''),
+			 values ($1, $2, $3, $4, $5,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
 			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10)
 			 returning id::text`,
@@ -292,23 +296,33 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 	return id, nil
 }
 
-// update changes the issue's non-nil fields and sets updated_at.
-func (m *model) update(ctx context.Context, workspaceID, id string, f fields) error {
+// update changes the issue's non-nil fields and sets updated_at. When it sets the description it also drops the
+// issue's live-editing updates and returns the previous description.
+func (m *model) update(ctx context.Context, workspaceID, id string, f fields) (json.RawMessage, error) {
+	var old json.RawMessage
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if f.setDescription {
+			if err := tx.QueryRow(ctx, `select description from issues where id::text = $1 for update`, id).Scan(&old); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id::text = $1`, id); err != nil {
+				return err
+			}
+		}
 		if f.parent != nil {
 			if err := setParent(ctx, tx, id, *f.parent); err != nil {
 				return err
 			}
 		}
 		if _, err := tx.Exec(ctx,
-			`update issues set title = coalesce($2, title), description = coalesce($3, description),
+			`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
 			   status_id = coalesce($4::uuid, status_id),
 			   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
 			   priority = coalesce($6::smallint, priority),
 			   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
 			   updated_at = now()
 			 where id::text = $1`,
-			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate); err != nil {
+			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription); err != nil {
 			return err
 		}
 		if !f.setLabels {
@@ -320,12 +334,12 @@ func (m *model) update(ctx context.Context, workspaceID, id string, f fields) er
 		return setLabels(ctx, tx, workspaceID, id, f.labelIDs)
 	})
 	if errors.As(err, new(parentError)) {
-		return err
+		return nil, err
 	}
 	if err != nil {
-		return fmt.Errorf("update issue: %w", err)
+		return nil, fmt.Errorf("update issue: %w", err)
 	}
-	return nil
+	return old, nil
 }
 
 // setParent makes the issue with the id a sub-issue of the one with the identifier in the same workspace, or
@@ -429,6 +443,87 @@ func (m *model) delete(ctx context.Context, id string) error {
 		return fmt.Errorf("delete issue: %w", err)
 	}
 	return nil
+}
+
+// --- live editing ---
+
+type docUpdate struct {
+	id   int64
+	data []byte
+}
+
+// docUpdates returns the issue's stored Yjs updates, oldest first.
+func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, error) {
+	rows, err := m.db.Query(ctx, `select id, data from issue_doc_updates where issue_id = $1 order by id`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("list doc updates: %w", err)
+	}
+	us, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (docUpdate, error) {
+		var u docUpdate
+		err := row.Scan(&u.id, &u.data)
+		return u, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list doc updates: %w", err)
+	}
+	return us, nil
+}
+
+func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) error {
+	if _, err := m.db.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data); err != nil {
+		return fmt.Errorf("add doc update: %w", err)
+	}
+	return nil
+}
+
+// compactDoc replaces the issue's updates up to and including upTo with data, the merged state.
+func (m *model) compactDoc(ctx context.Context, issueID string, upTo int64, data []byte) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1 and id <= $2`, issueID, upTo); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("compact doc: %w", err)
+	}
+	return nil
+}
+
+// saveDescription sets the issue's description (nil clears it) and returns the previous one.
+func (m *model) saveDescription(ctx context.Context, issueID string, doc json.RawMessage) (json.RawMessage, error) {
+	var old json.RawMessage
+	err := m.db.QueryRow(ctx,
+		`update issues i set description = $2, updated_at = now()
+		 from (select id, description from issues where id = $1 for update) o where i.id = o.id
+		 returning o.description`, issueID, doc).Scan(&old)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("save description: %w", err)
+	}
+	return old, nil
+}
+
+// mention is what a mention email needs: who's notified and where.
+type mention struct {
+	actor, identifier, title, slug string
+	emails                         []string
+}
+
+// mentionTargets returns the mention email details for the issue, with the emails of userIDs who are members of
+// its workspace, leaving out actorID.
+func (m *model) mentionTargets(ctx context.Context, issueID, actorID string, userIDs []string) (mention, error) {
+	var mn mention
+	err := m.db.QueryRow(ctx,
+		`select (select name from users where id = $2), p.key || '-' || i.number, i.title, w.slug,
+		        coalesce((select array_agg(u.email order by u.email) from workspace_members wm join users u on u.id = wm.user_id
+		                  where wm.workspace_id = i.workspace_id and u.id <> $2 and u.id::text = any($3::text[])), '{}')
+		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
+		 where i.id = $1`, issueID, actorID, userIDs).Scan(&mn.actor, &mn.identifier, &mn.title, &mn.slug, &mn.emails)
+	if err != nil {
+		return mn, fmt.Errorf("mention targets: %w", err)
+	}
+	return mn, nil
 }
 
 func oneIssue(row pgx.Row) (*Issue, error) {

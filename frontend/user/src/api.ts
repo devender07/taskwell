@@ -1,4 +1,5 @@
 import { redirect } from '@tanstack/react-router'
+import type { Doc } from '@tether/shared/rich-editor'
 
 export type User = { id: string; name: string; email: string; has_password: boolean }
 export type RoleRef = { id: string; name: string }
@@ -19,7 +20,7 @@ export type Issue = {
   number: number
   project: { key: string; name: string }
   title: string
-  description: string
+  description: Doc | null
   status: Status
   assignee: PersonRef | null
   priority: number
@@ -81,7 +82,7 @@ async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET
 
 // One refresh at a time per tab; concurrent 401s wait on the same request.
 let refreshing: Promise<unknown> | null = null
-function refreshAccess() {
+export function refreshAccess() {
   refreshing ??= send('/auth/refresh', new FormData()).finally(() => (refreshing = null))
   return refreshing
 }

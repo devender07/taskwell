@@ -4,8 +4,8 @@ import { Button } from '@tether/shared/button'
 import { DatePicker } from '@tether/shared/date-picker'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
+import { RichEditor, type Doc } from '@tether/shared/rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { Textarea } from '@tether/shared/textarea'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
@@ -22,7 +22,7 @@ type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; 
 export function CreateIssueForm({ workspace, project, parent, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: null, length: 0 })
   const [statusId, setStatusId] = useState(statuses[0]?.id ?? '')
   const [priority, setPriority] = useState('0')
   const [assigneeId, setAssigneeId] = useState('')
@@ -30,13 +30,14 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
   const [labelIds, setLabelIds] = useState<string[]>([])
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
+  const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
-    const errors = { title: issueTitle(title), description: issueDescription(description), due_date: dueDate(due) }
+    const errors = { title: issueTitle(title), description: issueDescription(description.length), due_date: dueDate(due) }
     if (Object.values(errors).some(Boolean)) return { errors }
     const form = new FormData()
     form.set('title', title.trim())
-    form.set('description', description)
+    form.set('description', description.doc ? JSON.stringify(description.doc) : '')
     if (statusId) form.set('status_id', statusId)
     if (priority) form.set('priority', priority)
     form.set('assignee_id', assigneeId)
@@ -62,11 +63,11 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
         </div>
       ) : null}
       <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
-      <Textarea
+      <RichEditor
         label="Description"
-        placeholder="Add details in markdown"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Add a description… Type @ to mention someone"
+        mentions={mentions}
+        onChange={(doc, length) => setDescription({ doc, length })}
         error={errors?.description}
       />
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
@@ -110,14 +111,12 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
 export function EditIssueForm({ workspace, issue, onDone }: { workspace: Workspace; issue: Issue; onDone: () => void }) {
   const router = useRouter()
   const [title, setTitle] = useState(issue.title)
-  const [description, setDescription] = useState(issue.description)
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
-    const errors = { title: issueTitle(title), description: issueDescription(description) }
-    if (Object.values(errors).some(Boolean)) return { errors }
+    const errors = { title: issueTitle(title) }
+    if (errors.title) return { errors }
     const form = new FormData()
     form.set('title', title.trim())
-    form.set('description', description)
     try {
       await api<Issue>(issuePath(workspace, issue.identifier), form)
     } catch (e) {
@@ -131,7 +130,6 @@ export function EditIssueForm({ workspace, issue, onDone }: { workspace: Workspa
   return (
     <form action={submit} noValidate className="grid gap-4">
       <Input label="Title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
-      <Textarea label="Description" placeholder="Add details in markdown" value={description} onChange={(e) => setDescription(e.target.value)} error={errors?.description} style={{ minHeight: 240 }} />
       <FormError>{error}</FormError>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>

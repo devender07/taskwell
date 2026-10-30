@@ -2,7 +2,8 @@
 // blocking links, plus the workspace's statuses and labels.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
-// and model.go owns every SQL query.
+// and model.go owns every SQL query. doc.go checks rich-text descriptions, collab.go relays live edits
+// and notify.go emails mentions.
 package issue
 
 import (
@@ -33,6 +34,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))
+	// The WebSocket isn't wrapped: its connection is hijacked, so it does its own auth checks before upgrading.
+	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/collab", h.collab)
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

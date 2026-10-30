@@ -21,9 +21,9 @@ Quick reference:
 Build order, do not skip ahead:
 
 1. Workspace, auth (magic link or Google), team invites, custom roles with permissions
-2. Projects and issues: title, markdown description, status, assignee, priority, due date, labels
+2. Projects and issues: title, rich text description, status, assignee, priority, due date, labels
 3. List and kanban views only, with filters by assignee/status/label
-4. Comments and activity log on issues, mentions notify by email
+4. Comments and activity log on issues, mentions notify by email, live collaborative editing of descriptions
 5. Keyboard-first: command palette, quick-create, fast search
 6. Notifications (email and in-app)
 

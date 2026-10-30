@@ -31,13 +31,6 @@ func checkTitle(s string) string {
 	return ""
 }
 
-func checkDescription(s string) string {
-	if jsLen(s) > 50000 {
-		return "Description must be 50,000 characters or fewer."
-	}
-	return ""
-}
-
 // parsePriority returns the priority 0–4, or ok=false.
 func parsePriority(s string) (int, bool) {
 	n, err := strconv.Atoi(s)

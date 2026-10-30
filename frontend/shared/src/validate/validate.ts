@@ -116,7 +116,8 @@ export const issueTitle: Check = (v) => {
   return null
 }
 
-export const issueDescription: Check = (v) => (v.length > 50000 ? 'Description must be 50,000 characters or fewer.' : null)
+// Takes the rich text's length (text + mention labels, UTF-16 units), as RichEditor's onChange reports it.
+export const issueDescription = (length: number) => (length > 50000 ? 'Description must be 50,000 characters or fewer.' : null)
 
 export const issuePriority: Check = (v) => (/^[0-4]$/.test(v) ? null : 'Choose a priority.')
 

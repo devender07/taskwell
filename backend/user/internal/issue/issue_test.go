@@ -12,8 +12,6 @@ func TestValidation(t *testing.T) {
 		{checkTitle(""), "Title is required."},
 		{checkTitle(strings.Repeat("é", 201)), "Title must be 200 characters or fewer."},
 		{checkTitle(strings.Repeat("é", 200)), ""},
-		{checkDescription(strings.Repeat("a", 50001)), "Description must be 50,000 characters or fewer."},
-		{checkDescription(strings.Repeat("a", 50000)), ""},
 		{checkPriority("0"), ""},
 		{checkPriority("4"), ""},
 		{checkPriority("5"), "Choose a priority."},

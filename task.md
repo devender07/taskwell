@@ -18,7 +18,7 @@ Legend: `[x]` done, `[ ]` to do.
 ## Phase 2: Projects and issues
 
 - [x] Projects: name, key (`ENG`), description, archive (sidebar → Projects; `projects.manage` permission)
-- [x] Issues: title, markdown description (plain text for now), status, assignee, priority, due date, labels
+- [x] Issues: title, rich text description (Tiptap), status, assignee, priority, due date, labels
 - [x] Readable issue IDs (`ENG-142`) used in URLs (`/{workspace}/issue/ENG-142`)
 - [x] Default statuses (Backlog, Todo, In progress, Done, Cancelled), editable per workspace (Settings → Workflow; labels in Settings → Labels)
 - [x] Sub-issues (one level, same project) and "blocks / blocked by" links; issue search by ID or title
@@ -32,9 +32,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 4: Collaboration
 
-- [ ] Comments on issues (markdown)
+- [x] Rich text descriptions (Tiptap): formatting toolbar, markdown shortcuts, live collaborative editing with named cursors (Yjs relayed and stored by the Go API)
+- [ ] Comments on issues (rich text, reusing the shared editor)
 - [ ] Activity log (status changes, reassignments, edits)
-- [ ] `@mentions` in comments and descriptions, notified by email
+- [ ] `@mentions` in comments and descriptions, notified by email (descriptions done)
 - [ ] Image and file attachments in descriptions and comments
 
 ## Phase 5: Keyboard-first
