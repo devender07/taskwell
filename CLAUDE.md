@@ -14,6 +14,7 @@ Quick reference:
 - Radius: pill `9999px` for buttons, `6px` inputs, `8px` cards, `0` full-width sections
 - Breakpoints 640 / 1024 / 1440. Z-index 1, 2-3, 50, 100+, 995-997
 - Contrast 4.5:1, touch targets 44px, line-height >= 1.4x
+- Sentence case for all UI text and user-facing messages: headings, buttons, labels, tabs, menus, placeholders, page titles, errors and email subjects ("Create account", "Forgot password?", not "Create Account"). Only proper nouns keep capitals (Tether, Google).
 
 ## Product scope
 
@@ -45,6 +46,18 @@ Load the matching skill before writing or reviewing code. Project skills live in
 - Go: `golang-*` matching the task (project-layout, code-style, naming, error-handling, structs-interfaces, context, concurrency, database, security, testing)
 - React/frontend: `react-best-practices`
 - Reviews: `code-review` for bugs, `simplify` / `ponytail-review` for over-engineering, `security-review` before merging auth or data changes
+
+## Feature workflow
+
+Every new feature from `task.md` goes through these steps:
+
+1. **Plan first.** Write `docs/<feature>-plan.md` before any code: scope, schema/migrations, `system_config` keys, the API contract (method, path, FormData fields, JSON responses, error codes), and the frontend routes and forms. The contract is fixed once agents start.
+2. **Split into two agents, run in parallel**, each briefed with the plan path, this file, and its scope:
+   - **Backend agent**: only `backend/` and `docker-compose.yml`. Reads the `golang-*` skills in `.claude/skills/` that fit the work (always `golang-database`, `golang-security`, `golang-error-handling`; add others as needed). Follows the routes/controller/model layout. Verifies with `go vet`, `go test` and curl against the running API.
+   - **Frontend agent**: only `frontend/`. Reads `.claude/skills/react-best-practices/SKILL.md`. Uses TanStack Router for loading and guards, `src/api.ts` for calls, shared components and validators. Verifies with `npm run build`.
+3. **Integrate in the main session:** run both against each other, click through every flow end to end, fix gaps, update `task.md`, then commit.
+
+Small fixes and follow-ups to a shipped feature don't need a plan or agents.
 
 ## Repo layout
 
