@@ -31,7 +31,7 @@ function Projects() {
   const manage = can(workspace, 'projects.manage')
 
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="flex items-end justify-between gap-4">
         <h1 className="text-h2">Projects</h1>
         {manage ? <Button onClick={() => setCreating(true)}>Create project</Button> : null}

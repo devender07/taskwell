@@ -25,7 +25,7 @@ function ProjectPage() {
   const manage = can(workspace, 'projects.manage')
 
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
         <Link
           to="/$workspace/projects"
