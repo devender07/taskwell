@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -80,5 +81,30 @@ func TestAccessToken(t *testing.T) {
 		if _, err := parseAccess(secret, bad); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestGoogleIDToken(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	enc := func(claims string) string {
+		return "h." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".s"
+	}
+	good := `{"sub":"1","email":"a@b.co","email_verified":true,"aud":"cid","iss":"https://accounts.google.com","exp":2000}`
+	if id, err := parseGoogleIDToken(enc(good), "cid", now); err != nil || id.Sub != "1" || !id.EmailVerified {
+		t.Fatalf("valid token: %+v, %v", id, err)
+	}
+	for name, claims := range map[string]string{
+		"wrong aud": `{"sub":"1","email":"a@b.co","aud":"other","iss":"accounts.google.com","exp":2000}`,
+		"wrong iss": `{"sub":"1","email":"a@b.co","aud":"cid","iss":"https://evil.example","exp":2000}`,
+		"expired":   `{"sub":"1","email":"a@b.co","aud":"cid","iss":"accounts.google.com","exp":999}`,
+		"no email":  `{"sub":"1","aud":"cid","iss":"accounts.google.com","exp":2000}`,
+	} {
+		if _, err := parseGoogleIDToken(enc(claims), "cid", now); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// RFC 7636 appendix B test vector.
+	if got := pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"); got != "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" {
+		t.Errorf("pkce challenge = %s", got)
 	}
 }

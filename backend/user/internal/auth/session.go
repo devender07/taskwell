@@ -11,6 +11,7 @@ import (
 const (
 	accessCookie  = "tether_access"
 	refreshCookie = "tether_refresh"
+	googleCookie  = "tether_google" // state, PKCE verifier and remember flag for one Google round trip
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.

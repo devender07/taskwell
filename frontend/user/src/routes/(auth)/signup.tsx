@@ -1,7 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Button } from '@tether/shared/button'
 import { redirectIfSignedIn } from '@/api'
-import { AuthCard, OrDivider } from '@/components/auth/auth-card'
+import { AuthCard, GoogleButton, OrDivider } from '@/components/auth/auth-card'
 import { SignupForm } from '@/components/auth/signup-form'
 
 export const Route = createFileRoute('/(auth)/signup')({
@@ -20,9 +19,7 @@ function SignUp() {
         </>
       }
     >
-      <Button variant="secondary" className="w-full">
-        Continue with Google
-      </Button>
+      <GoogleButton />
       <OrDivider />
       <SignupForm />
     </AuthCard>

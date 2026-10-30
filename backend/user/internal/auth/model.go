@@ -107,6 +107,32 @@ func (m *model) userByID(ctx context.Context, id string) (*User, error) {
 	return &u, nil
 }
 
+// userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,
+// else creates one without a password.
+func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (User, error) {
+	var u User
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `select id::text, name, email from users where google_sub = $1`, sub).Scan(&u.ID, &u.Name, &u.Email)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		err = tx.QueryRow(ctx, `update users set google_sub = $2 where email = $1 and google_sub is null returning id::text, name, email`,
+			email, sub).Scan(&u.ID, &u.Name, &u.Email)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		return tx.QueryRow(ctx, `insert into users (name, email, google_sub) values ($1, $2, $3) returning id::text, name, email`,
+			name, email, sub).Scan(&u.ID, &u.Name, &u.Email)
+	})
+	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return User{}, errEmailTaken // the email belongs to an account linked to a different Google account
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("google user: %w", err)
+	}
+	return u, nil
+}
+
 // --- sign-in codes and reset links ---
 
 // replaceToken voids the user's unused tokens of this purpose and stores a new one.

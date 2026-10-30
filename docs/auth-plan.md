@@ -1,6 +1,6 @@
 # Auth backend plan
 
-Scope: email auth for the user app (sign-up, password sign-in, email-code sign-in, forgot/reset password, sign-out, current user). Google sign-in is out of scope for now; its keys get added to `system_config` when we build it.
+Scope: auth for the user app: sign-up, password sign-in, email-code sign-in, Google sign-in, forgot/reset password, sign-out, current user.
 
 ## Infra
 
@@ -88,6 +88,8 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 | `POST /api/auth/password/reset` | `token`, `password` | `204`; revokes all refresh tokens of that user (access tokens run out within `access_ttl_minutes`) | 400; 401 `{"error":"This reset link is invalid or expired."}` |
 | `POST /api/auth/refresh` | — | `204`, new access + refresh cookies | `401`, clears cookies |
 | `POST /api/auth/signout` | — | `204`, clears both cookies, revokes the sign-in family | — |
+| `GET /api/auth/google` | `remember` (query, optional) | `302` to Google (state + PKCE in `tether_google` cookie) | `302` to `/signin?error=google_unavailable` when keys are empty |
+| `GET /api/auth/google/callback` | `code`, `state` (from Google) | `302` to `/`, signed in; finds user by Google id, else links the verified email, else creates the user | `302` to `/signin?error=google`; cancel → `/signin` |
 | `GET /api/me` | — | `200` user | `401` |
 
 Sending a new code or reset link invalidates earlier unused ones of the same purpose for that user.

@@ -1,9 +1,12 @@
 package auth
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -259,6 +262,100 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, u)
 	return nil
+}
+
+// googleStart sends the browser to Google. Without keys in system_config it bounces back to /signin with an error.
+func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) error {
+	cfg, base, err := h.googleConfig(r.Context())
+	if err != nil {
+		return err
+	}
+	if cfg.clientID == "" || cfg.clientSecret == "" {
+		http.Redirect(w, r, base+"/signin?error=google_unavailable", http.StatusFound)
+		return nil
+	}
+	state, verifier := newToken(), newToken()
+	rememberFlag := "0"
+	if remember(r) {
+		rememberFlag = "1"
+	}
+	secure, err := h.secure(r.Context())
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{Name: googleCookie, Value: state + "." + verifier + "." + rememberFlag,
+		Path: "/api/auth/google", MaxAge: 600, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	http.Redirect(w, r, googleConsentURL(cfg, state, verifier), http.StatusFound)
+	return nil
+}
+
+// googleCallback finishes the Google round trip: checks state, exchanges the code, signs the user in and
+// redirects to the app. Every failure lands on /signin?error=google.
+func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	cfg, base, err := h.googleConfig(ctx)
+	if err != nil {
+		return err
+	}
+	fail := func(reason string, err error) error {
+		slog.Warn("google sign-in failed", "reason", reason, "err", err)
+		http.Redirect(w, r, base+"/signin?error=google", http.StatusFound)
+		return nil
+	}
+	http.SetCookie(w, &http.Cookie{Name: googleCookie, Path: "/api/auth/google", MaxAge: -1, HttpOnly: true})
+	if r.URL.Query().Get("error") == "access_denied" {
+		http.Redirect(w, r, base+"/signin", http.StatusFound) // the user cancelled on Google's screen
+		return nil
+	}
+	c, err := r.Cookie(googleCookie)
+	if err != nil {
+		return fail("missing state cookie", err)
+	}
+	parts := strings.Split(c.Value, ".")
+	if len(parts) != 3 || subtle.ConstantTimeCompare([]byte(parts[0]), []byte(r.URL.Query().Get("state"))) != 1 {
+		return fail("state mismatch", nil)
+	}
+	id, err := exchangeGoogleCode(ctx, cfg, r.URL.Query().Get("code"), parts[1])
+	if err != nil {
+		return fail("code exchange", err)
+	}
+	if !id.EmailVerified {
+		return fail("email not verified", nil)
+	}
+	name := strings.TrimSpace(id.Name)
+	if name == "" {
+		name, _, _ = strings.Cut(id.Email, "@")
+	}
+	u, err := h.model.userForGoogle(ctx, id.Sub, normEmail(id.Email), name)
+	if errors.Is(err, errEmailTaken) {
+		return fail("email linked to another Google account", err)
+	}
+	if err != nil {
+		return err
+	}
+	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); err != nil {
+		return err
+	}
+	http.Redirect(w, r, base+"/", http.StatusFound)
+	return nil
+}
+
+// googleConfig reads the OAuth client from system_config; the redirect URI is derived from app_base_url.
+func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error) {
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return googleConfig{}, "", err
+	}
+	base = strings.TrimRight(base, "/")
+	id, err := h.cfg.Get(ctx, "google_client_id")
+	if err != nil {
+		return googleConfig{}, "", err
+	}
+	secret, err := h.cfg.Get(ctx, "google_client_secret")
+	if err != nil {
+		return googleConfig{}, "", err
+	}
+	return googleConfig{clientID: id, clientSecret: secret, redirectURI: base + "/api/auth/google/callback"}, base, nil
 }
 
 func (h *Handler) signedOut(w http.ResponseWriter, r *http.Request) error {
