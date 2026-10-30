@@ -7,7 +7,7 @@ import { Input } from '@tether/shared/input'
 import { RichEditor, type Doc } from '@tether/shared/rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, toFormErrors, uploadFile, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
@@ -69,6 +69,7 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
         mentions={mentions}
         onChange={(doc, length) => setDescription({ doc, length })}
         error={errors?.description}
+        upload={(file) => uploadFile(workspace.slug, file)}
       />
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
         <SmartAutocomplete

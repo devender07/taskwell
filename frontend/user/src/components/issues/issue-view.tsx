@@ -6,7 +6,7 @@ import { Checkbox } from '@tether/shared/checkbox'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { Tabs } from '@tether/shared/tabs'
-import { api, toFormErrors, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, avatarSrc, toFormErrors, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
 import { issuePath } from './issue-form'
@@ -259,7 +259,7 @@ function FilterMenu({ choices, search, onChange }: { choices: Choice[]; search: 
 
 function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
   if (group.status) return <StatusIcon category={group.status.category} />
-  if (by === 'assignee' && group.key) return <Avatar name={group.label} size={20} />
+  if (by === 'assignee' && group.key) return <Avatar name={group.label} size={20} src={avatarSrc(group.key)} />
   return null
 }
 
@@ -303,7 +303,7 @@ function Assignee({ issue }: { issue: Issue }) {
   if (!issue.assignee) return null
   return (
     <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assignee.name} className="inline-grid flex-noshrink">
-      <Avatar name={issue.assignee.name} size={24} />
+      <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
     </span>
   )
 }

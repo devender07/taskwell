@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
-import type { Issue, Member, User, Workspace } from '@/api'
+import { uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
 import { REMOTE, connectCollab, type CollabState } from './collab'
 import { issuePath } from './issue-form'
 
@@ -82,6 +82,7 @@ export function Description({ workspace, issue, user, members }: { workspace: Wo
               placeholder="Add a description… Type @ to mention someone"
               mentions={mentions}
               minHeight={160}
+              upload={(file) => uploadFile(workspace.slug, file)}
               onChange={(doc) => setEmpty(!doc)}
             />
           </div>

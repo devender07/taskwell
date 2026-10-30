@@ -1,7 +1,7 @@
 import { redirect } from '@tanstack/react-router'
 import type { Doc } from '@tether/shared/rich-editor'
 
-export type User = { id: string; name: string; email: string; has_password: boolean }
+export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null }
 export type RoleRef = { id: string; name: string }
 export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
 export type Member = { id: string; name: string; email: string; role: RoleRef }
@@ -110,6 +110,24 @@ export function refreshAccess() {
   refreshing ??= send('/auth/refresh', new FormData()).finally(() => (refreshing = null))
   return refreshing
 }
+
+export type UploadedFile = { id: string; url: string; name: string; content_type: string; size: number; image: boolean }
+
+// Rejects with an Error whose message is ready to show ("Files must be 10 MB or smaller.").
+export async function uploadFile(workspace: string, file: File) {
+  const form = new FormData()
+  form.set('file', file)
+  try {
+    return await api<UploadedFile>(`/workspaces/${encodeURIComponent(workspace)}/files`, form)
+  } catch (e) {
+    throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
+  }
+}
+
+// The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
+const avatarVersions = new Map<string, number>()
+export const avatarSrc = (userId: string) => `/api/users/${encodeURIComponent(userId)}/avatar${avatarVersions.has(userId) ? `?v=${avatarVersions.get(userId)}` : ''}`
+export const bumpAvatar = (userId: string) => avatarVersions.set(userId, Date.now())
 
 export async function getMe(): Promise<User | null> {
   try {

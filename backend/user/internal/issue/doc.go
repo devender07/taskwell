@@ -3,6 +3,7 @@ package issue
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -23,15 +24,20 @@ type mark struct {
 
 var (
 	nodeTypes = []string{"doc", "paragraph", "text", "heading", "bulletList", "orderedList", "listItem", "blockquote",
-		"codeBlock", "horizontalRule", "hardBreak", "mention"}
+		"codeBlock", "horizontalRule", "hardBreak", "mention", "image"}
 	markTypes   = []string{"bold", "italic", "strike", "underline", "code", "link"}
 	hrefSchemes = []string{"http://", "https://", "mailto:"}
+	// imageParents are the nodes an image (a block) may sit in.
+	imageParents = []string{"doc", "blockquote", "listItem"}
+	// fileURL is an upload served by GET /api/files/{id}/{name}.
+	fileURL = regexp.MustCompile(`^/api/files/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[^/?#]+$`)
 )
 
 const (
 	maxDocDepth       = 32
 	maxDescriptionLen = 50000
 	maxCommentLen     = 20000
+	maxAltLen         = 200
 )
 
 // checkDoc validates a rich-text document (a description, or a comment) up to maxLen characters, and returns it
@@ -42,8 +48,8 @@ func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 		return nil, name + " is not valid."
 	}
 	length, solid := 0, false
-	var walk func(n node, depth int) bool
-	walk = func(n node, depth int) bool {
+	var walk func(n node, parent string, depth int) bool
+	walk = func(n node, parent string, depth int) bool {
 		if depth > maxDocDepth || !slices.Contains(nodeTypes, n.Type) || n.Type == "doc" && depth > 1 {
 			return false
 		}
@@ -61,6 +67,14 @@ func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 			length, solid = length+jsLen(label), true
 		case "horizontalRule":
 			solid = true
+		case "image":
+			src, _ := n.Attrs["src"].(string)
+			alt, altOK := n.Attrs["alt"].(string)
+			if !slices.Contains(imageParents, parent) || !fileURL.MatchString(src) ||
+				n.Attrs["alt"] != nil && (!altOK || jsLen(alt) > maxAltLen) {
+				return false
+			}
+			solid = true
 		}
 		length += jsLen(n.Text)
 		for _, m := range n.Marks {
@@ -69,19 +83,20 @@ func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 			}
 			if m.Type == "link" {
 				href, _ := m.Attrs["href"].(string)
-				if !slices.ContainsFunc(hrefSchemes, func(s string) bool { return strings.HasPrefix(strings.ToLower(href), s) }) {
+				if !fileURL.MatchString(href) &&
+					!slices.ContainsFunc(hrefSchemes, func(s string) bool { return strings.HasPrefix(strings.ToLower(href), s) }) {
 					return false
 				}
 			}
 		}
 		for _, c := range n.Content {
-			if !walk(c, depth+1) {
+			if !walk(c, n.Type, depth+1) {
 				return false
 			}
 		}
 		return true
 	}
-	if !walk(doc, 1) {
+	if !walk(doc, "", 1) {
 		return nil, name + " has unsupported content."
 	}
 	if length > maxLen {

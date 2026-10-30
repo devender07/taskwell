@@ -13,7 +13,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Team invites: invite by email from Settings → Members, accept link (`/invite`, email must match), resend or cancel; member list
 - [x] Roles: built-in Admin and Member plus custom roles with permissions (Settings → Roles), change role, remove member, leave
 - [x] Profile: name, change or set password (Settings → Profile; signs out other devices)
-- [ ] Avatar upload (waits for file storage, with attachments in Phase 4; initials until then)
+- [x] Avatar upload (Settings → Profile; initials when none)
 
 ## Phase 2: Projects and issues
 
@@ -36,7 +36,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Comments on issues (rich text, reusing the shared editor; edit and delete; `comments.create` / `comments.manage`)
 - [x] Activity log (status changes, reassignments, edits)
 - [x] `@mentions` in comments and descriptions, notified by email
-- [ ] Image and file attachments in descriptions and comments
+- [x] Image and file attachments in descriptions and comments (local disk under `UPLOAD_DIR`; paste, drop or the attach button)
 
 ## Phase 5: Keyboard-first
 

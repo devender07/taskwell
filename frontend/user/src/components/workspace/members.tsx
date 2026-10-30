@@ -6,7 +6,7 @@ import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { email as checkEmail } from '@tether/shared/validate'
-import { api, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace } from '@/api'
+import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
@@ -118,7 +118,7 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
   return (
     <li className="grid gap-2 px-6 py-3">
       <div className="flex items-center gap-3">
-        <Avatar name={member.name} />
+        <Avatar name={member.name} src={avatarSrc(member.id)} />
         <div className="grid flex-grow" style={{ minWidth: 0 }}>
           <span className="text-label text-primary ellipsis">
             {member.name}

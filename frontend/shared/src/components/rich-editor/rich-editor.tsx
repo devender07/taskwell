@@ -1,5 +1,5 @@
-import { useId, useReducer, useRef } from 'react'
-import { EditorContent, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor, type JSONContent } from '@tiptap/react'
+import { useId, useReducer, useRef, useState } from 'react'
+import { EditorContent, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Placeholder } from '@tiptap/extensions'
 import Mention from '@tiptap/extension-mention'
@@ -29,21 +29,36 @@ type RichEditorProps = {
   error?: string | null
   collab?: { doc: Y.Doc; awareness: Awareness; user: { name: string; color: string } }
   minHeight?: number
+  upload?: (file: File) => Promise<{ url: string; name: string; image: boolean }>
 }
 
 type Suggest = { items: Option[]; index: number; rect: DOMRect | null; pick: (o: Option) => void }
 
+type Upload = { id: number; name: string; error?: string }
+
 const SAFE_HREF = /^(https?:\/\/|mailto:)/i
+const FILE_URL = /^\/api\/files\/[0-9a-f-]{36}\/[^/?#]+$/i
+
+const Image = Node.create({
+  name: 'image',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes: () => ({ src: { default: null }, alt: { default: '' } }),
+  parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(el.getAttribute('src') ?? '') && null }],
+  renderHTML: ({ HTMLAttributes }) => ['img', HTMLAttributes],
+})
+
 const starterKit = (editable: boolean, collab: boolean) =>
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
-    link: { openOnClick: !editable, autolink: true, isAllowedUri: (url) => SAFE_HREF.test(url) },
+    link: { openOnClick: !editable, autolink: true, isAllowedUri: (url) => SAFE_HREF.test(url) || FILE_URL.test(url) },
     undoRedo: collab ? false : undefined,
   })
 
 // Builds a Y.Doc's content from a saved document, for the first client of a live session (the "seed").
 export function seedYDoc(doc: Y.Doc, json: Doc) {
-  prosemirrorJSONToYXmlFragment(getSchema([starterKit(true, true), Mention]), json, doc.getXmlFragment('default'))
+  prosemirrorJSONToYXmlFragment(getSchema([starterKit(true, true), Mention, Image]), json, doc.getXmlFragment('default'))
 }
 
 // The live document as editor.getJSON() would return it, read straight from the Y.Doc.
@@ -60,12 +75,15 @@ export function RichEditor({
   error: rawError,
   collab,
   minHeight = 96,
+  upload,
 }: RichEditorProps) {
   const [error, onEdit] = useFieldError(rawError)
   const id = useId()
   const errorId = `${id}-error`
-  const latest = useRef({ onChange, onEdit, mentions })
-  latest.current = { onChange, onEdit, mentions }
+  const [uploads, setUploads] = useState<Upload[]>([])
+  const uploadSeq = useRef(0)
+  const latest = useRef({ onChange, onEdit, mentions, upload, attach })
+  latest.current = { onChange, onEdit, mentions, upload, attach }
   const suggest = useRef<Suggest | null>(null)
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const show = (s: Suggest | null) => {
@@ -79,6 +97,7 @@ export function RichEditor({
       content: collab ? undefined : (content ?? ''),
       extensions: [
         starterKit(editable, !!collab),
+        Image,
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         Mention.configure({
           suggestion: {
@@ -128,12 +147,50 @@ export function RichEditor({
           'aria-describedby': errorId,
           ...(editable ? { style: `min-height: ${minHeight}px` } : {}),
         },
+        handlePaste: (_view, event) => {
+          const files = Array.from(event.clipboardData?.files ?? [])
+          if (!files.length || !latest.current.upload) return false
+          latest.current.attach(files)
+          return true
+        },
+        handleDrop: (view, event, _slice, moved) => {
+          const files = Array.from(event.dataTransfer?.files ?? [])
+          if (moved || !files.length || !latest.current.upload) return false
+          event.preventDefault()
+          latest.current.attach(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos)
+          return true
+        },
       },
       onCreate: ({ editor }) => queueMicrotask(() => report(editor, false)),
       onUpdate: ({ editor }) => queueMicrotask(() => report(editor, true)),
     },
     [collab?.doc, editable],
   )
+
+  function attach(files: File[], at?: number) {
+    if (!upload || !editor) return
+    if (at != null) editor.commands.setTextSelection(at)
+    setUploads((list) => list.filter((u) => !u.error))
+    for (const file of files) {
+      const id = ++uploadSeq.current
+      setUploads((list) => [...list, { id, name: file.name }])
+      upload(file).then(
+        (f) => {
+          setUploads((list) => list.filter((u) => u.id !== id))
+          if (editor.isDestroyed) return
+          editor.commands.insertContent(
+            f.image
+              ? [{ type: 'image', attrs: { src: f.url, alt: f.name } }, { type: 'paragraph' }]
+              : [{ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: f.url } }] }, { type: 'text', text: ' ' }],
+          )
+        },
+        (e: unknown) => {
+          const error = e instanceof Error ? e.message : 'Something went wrong. Try again.'
+          setUploads((list) => list.map((u) => (u.id === id ? { ...u, error } : u)))
+        },
+      )
+    }
+  }
 
   function report(editor: Editor, edited: boolean) {
     const doc = editor.getJSON()
@@ -151,7 +208,7 @@ export function RichEditor({
         </span>
       ) : null}
       <div className={editable ? 'input rich-editor' : 'rich-editor rich-editor-readonly'} aria-invalid={error ? true : undefined}>
-        {editable && editor ? <Toolbar editor={editor} /> : null}
+        {editable && editor ? <Toolbar editor={editor} attach={upload ? attach : undefined} /> : null}
         <EditorContent editor={editor} />
         {s && s.rect ? (
           <div className="autocomplete-panel rich-editor-mentions" style={{ position: 'fixed', top: s.rect.bottom + 4, left: s.rect.left, right: 'auto' }}>
@@ -177,6 +234,11 @@ export function RichEditor({
           </div>
         ) : null}
       </div>
+      {uploads.map((u) => (
+        <span key={u.id} role={u.error ? 'alert' : 'status'} className={`text-caption ${u.error ? 'text-accent' : 'text-secondary'}`}>
+          {u.error ? `Couldn't upload ${u.name}: ${u.error}` : `Uploading ${u.name}…`}
+        </span>
+      ))}
       {error ? <span id={errorId} className="text-caption text-accent">{error}</span> : null}
     </div>
   )
@@ -199,8 +261,19 @@ const TOOLS: { name: string; label: string; d: string; run: (c: ChainedCommands)
   },
 ]
 
-function Toolbar({ editor }: { editor: Editor }) {
+const PAPERCLIP = 'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'
+
+function ToolIcon({ d }: { d: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  )
+}
+
+function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) => void }) {
   const active = useEditorState({ editor, selector: ({ editor }) => TOOLS.map((t) => editor.isActive(t.name)) })
+  const picker = useRef<HTMLInputElement>(null)
   return (
     <div role="toolbar" aria-label="Formatting" className="rich-editor-toolbar flex flex-wrap">
       {TOOLS.map((t, i) => (
@@ -213,11 +286,32 @@ function Toolbar({ editor }: { editor: Editor }) {
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => t.run(editor.chain().focus()).run()}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d={t.d} />
-          </svg>
+          <ToolIcon d={t.d} />
         </IconButton>
       ))}
+      {attach ? (
+        <>
+          <IconButton
+            className="rich-editor-tool"
+            aria-label="Attach file"
+            title="Attach file"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => picker.current?.click()}
+          >
+            <ToolIcon d={PAPERCLIP} />
+          </IconButton>
+          <input
+            ref={picker}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              attach(Array.from(e.currentTarget.files ?? []))
+              e.currentTarget.value = ''
+            }}
+          />
+        </>
+      ) : null}
     </div>
   )
 }

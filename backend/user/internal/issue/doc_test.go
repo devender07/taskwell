@@ -10,6 +10,7 @@ func TestCheckDoc(t *testing.T) {
 	para := func(inner string) string {
 		return `{"type":"doc","content":[{"type":"paragraph","content":[` + inner + `]}]}`
 	}
+	file := "/api/files/0192f0c4-7b1a-7c3e-8d2f-1a2b3c4d5e6f/screen%20shot.png"
 	nested := `{"type":"paragraph"}`
 	for range 32 {
 		nested = `{"type":"blockquote","content":[` + nested + `]}`
@@ -31,6 +32,15 @@ func TestCheckDoc(t *testing.T) {
 		{"heading 4", `{"type":"doc","content":[{"type":"heading","attrs":{"level":4}}]}`, "Description has unsupported content.", true},
 		{"too deep", `{"type":"doc","content":[` + nested + `]}`, "Description has unsupported content.", true},
 		{"too long", para(`{"type":"text","text":"` + strings.Repeat("é", 49999) + `"},{"type":"mention","attrs":{"id":"u","label":"ab"}}`), "Description must be 50,000 characters or fewer.", true},
+		{"image", `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + file + `","alt":"Shot"}}]}`, "", false},
+		{"image in list", `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"image","attrs":{"src":"` + file + `"}}]}]}]}`, "", false},
+		{"image external src", `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://evil.dev/x.png"}}]}`, "Description has unsupported content.", true},
+		{"image traversal src", `{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/../x"}}]}`, "Description has unsupported content.", true},
+		{"image long alt", `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + file + `","alt":"` + strings.Repeat("a", 201) + `"}}]}`, "Description has unsupported content.", true},
+		{"image inline", para(`{"type":"image","attrs":{"src":"` + file + `"}}`), "Description has unsupported content.", true},
+		{"file link", para(`{"type":"text","text":"notes.txt","marks":[{"type":"link","attrs":{"href":"` + file + `"}}]}`), "", false},
+		{"file link traversal", para(`{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":"/api/files/../x"}}]}`), "Description has unsupported content.", true},
+		{"file link query", para(`{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":"` + file + `?x=1"}}]}`), "Description has unsupported content.", true},
 		{"max length", para(`{"type":"text","text":"` + strings.Repeat("é", 50000) + `"}`), "", false},
 	}
 	for _, c := range cases {

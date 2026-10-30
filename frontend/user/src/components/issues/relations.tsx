@@ -5,7 +5,7 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { StatusIcon } from './fields'
 import { CreateIssueForm, issuePath } from './issue-form'
@@ -32,7 +32,7 @@ function RefRow({ workspace, issue, children }: { workspace: string; issue: Issu
         <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
         {issue.assignee ? (
           <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assignee.name} className="inline-grid flex-noshrink">
-            <Avatar name={issue.assignee.name} size={24} />
+            <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
           </span>
         ) : null}
       </Link>

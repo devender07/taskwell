@@ -19,6 +19,8 @@
 .rich-editor-content pre code { font: 400 14px/21px var(--mono); padding: 0; background: none; border-radius: 0; }
 .rich-editor-content hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin-block: var(--space-4); }
 .rich-editor-content a { color: var(--link); text-decoration: underline; }
+.rich-editor-content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.rich-editor-content img.ProseMirror-selectednode { outline: 2px solid var(--link); outline-offset: 2px; }
 .rich-editor-content [data-type='mention'] { color: var(--link); font-weight: 510; }
 .rich-editor-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

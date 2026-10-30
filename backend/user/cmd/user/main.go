@@ -8,6 +8,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/project"
@@ -45,6 +46,13 @@ func main() {
 	issueH := issue.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
 	issueH.Register(mux)
 	go issueH.Listen(context.Background())
+	fileH, err := file.New(pool, env("UPLOAD_DIR", "./uploads"), authH.Authenticate, wsH.Member, cfg,
+		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
+	if err != nil {
+		slog.Error("startup", "err", err)
+		os.Exit(1)
+	}
+	fileH.Register(mux)
 
 	slog.Info("user listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts; add http.Server with timeouts + signal handling before production.

@@ -3,7 +3,7 @@ import { startTransition, useActionState, useMemo, useOptimistic, useRef, type R
 import { Avatar } from '@tether/shared/avatar'
 import { DatePicker } from '@tether/shared/date-picker'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { api, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, avatarSrc, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { issuePath } from './issue-form'
@@ -121,7 +121,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
           <Property label="Assignee">
             {issue.assignee ? (
               <span className="flex items-center gap-2">
-                <Avatar name={issue.assignee.name} size={24} />
+                <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
                 {issue.assignee.name}
               </span>
             ) : (

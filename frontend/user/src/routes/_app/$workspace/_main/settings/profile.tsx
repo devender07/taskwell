@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { AvatarForm } from '@/components/settings/avatar-form'
 import { PasswordForm } from '@/components/settings/password-form'
 import { ProfileForm } from '@/components/settings/profile-form'
 
@@ -14,6 +15,9 @@ function ProfileSettings() {
         <h1 className="text-h2">Profile</h1>
         <p className="text-body-sm text-secondary">How you appear to people in your workspaces.</p>
       </header>
+      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+        <AvatarForm user={user} />
+      </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <ProfileForm key={user.id} user={user} />
       </section>

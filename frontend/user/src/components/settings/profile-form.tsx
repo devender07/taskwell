@@ -28,7 +28,7 @@ export function ProfileForm({ user }: { user: User }) {
   return (
     <form action={submit} noValidate className="grid gap-4">
       <div className="flex items-center gap-3">
-        <Avatar name={name || user.name} size={48} />
+        <Avatar name={name || user.name} size={48} src={user.avatar_url} />
         <div className="grid">
           <span className="text-label text-primary">{user.name}</span>
           <span className="text-caption text-secondary">{user.email}</span>

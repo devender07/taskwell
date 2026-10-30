@@ -39,7 +39,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
           placement="bottom-end"
           trigger={(props) => (
             <button type="button" className="navbar-avatar" aria-label="Account" {...props}>
-              <Avatar name={user.name} />
+              <Avatar name={user.name} src={user.avatar_url} />
             </button>
           )}
         >
@@ -119,7 +119,7 @@ function AccountMenu({ user }: { user: User }) {
   return (
     <div style={{ width: 264 }}>
       <div className="flex items-center gap-3 px-3 py-2">
-        <Avatar name={user.name} size={36} />
+        <Avatar name={user.name} size={36} src={user.avatar_url} />
         <div className="grid" style={{ minWidth: 0 }}>
           <span className="text-label text-primary ellipsis">{user.name}</span>
           <span className="text-caption text-secondary ellipsis">{user.email}</span>

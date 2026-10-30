@@ -305,6 +305,11 @@ func (h *Handler) signout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// Profile returns the user as GET /api/me answers it; nil when there is no such user.
+func (h *Handler) Profile(ctx context.Context, userID string) (*Profile, error) {
+	return h.model.profile(ctx, userID)
+}
+
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
 	userID, err := h.Authenticate(r)
 	if err != nil {

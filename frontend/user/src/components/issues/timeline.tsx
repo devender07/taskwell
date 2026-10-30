@@ -8,7 +8,7 @@ import { Popover } from '@tether/shared/popover'
 import { RichEditor, type Doc } from '@tether/shared/rich-editor'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { commentBody } from '@tether/shared/validate'
-import { api, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
+import { api, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { StatusIcon, formatDate, priorityLabel } from './fields'
 import { issuePath } from './issue-form'
@@ -123,7 +123,7 @@ function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }
   return (
     <li className="flex items-start gap-2 text-caption text-secondary" style={{ paddingInline: 16 }}>
       <span className="inline-grid place-center flex-noshrink" style={{ width: 20, height: 20 }}>
-        {event.kind === 'status' ? <StatusIcon category={event.data.to.category} /> : <Avatar name={actor} size={20} />}
+        {event.kind === 'status' ? <StatusIcon category={event.data.to.category} /> : <Avatar name={actor} size={20} src={event.actor && avatarSrc(event.actor.id)} />}
       </span>
       <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
         <span className="text-primary">{actor}</span> {text} · <Time at={event.created_at} />
@@ -140,7 +140,7 @@ function CommentCard({ workspace, comment, mentions }: { workspace: Workspace; c
   return (
     <article className="grid gap-2 p-4 bg-surface border rounded-lg" aria-label={`Comment by ${author}`}>
       <header className="flex items-center gap-2" style={{ minHeight: 40 }}>
-        <Avatar name={author} size={24} />
+        <Avatar name={author} size={24} src={comment.author && avatarSrc(comment.author.id)} />
         <span className="text-label text-primary ellipsis">{author}</span>
         <span className="text-caption text-secondary flex-noshrink">
           <Time at={comment.created_at} />
@@ -226,6 +226,7 @@ function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue:
         mentions={mentions}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
+        upload={(file) => uploadFile(workspace.slug, file)}
       />
       <FormError>{error}</FormError>
       <Button type="submit" style={{ justifySelf: 'end' }} disabled={pending || !draft.doc}>
@@ -241,7 +242,14 @@ function EditComment({ workspace, comment, mentions, onDone }: { workspace: Work
 
   return (
     <form action={submit} noValidate onKeyDownCapture={submitOnModEnter} className="grid gap-3">
-      <RichEditor aria-label="Edit comment" content={comment.body} mentions={mentions} onChange={(doc, length) => setDraft({ doc, length })} error={errors?.body} />
+      <RichEditor
+        aria-label="Edit comment"
+        content={comment.body}
+        mentions={mentions}
+        onChange={(doc, length) => setDraft({ doc, length })}
+        error={errors?.body}
+        upload={(file) => uploadFile(workspace.slug, file)}
+      />
       <FormError>{error}</FormError>
       <div className="flex items-center justify-end gap-3">
         <Button variant="ghost" onClick={onDone} disabled={pending}>
