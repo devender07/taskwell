@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@tether/shared/tabs'
-import { redirectIfSignedIn } from '@/api'
+import { redirectIfSignedIn, safeRedirect } from '@/api'
 import { AuthCard, FormError, GoogleButton, OrDivider } from '@/components/auth/auth-card'
 import { OtpForm } from '@/components/auth/otp-form'
 import { PasswordForm } from '@/components/auth/password-form'
@@ -15,12 +15,17 @@ const googleErrors: Record<GoogleError, string> = {
 
 export const Route = createFileRoute('/(auth)/signin')({
   beforeLoad: redirectIfSignedIn,
-  // `reset` is set by the reset-password page to show a one-off success note; `error` by the Google callback.
-  validateSearch: (search): { method?: Method; reset?: true; error?: GoogleError } => ({
-    ...(search.method === 'password' && { method: 'password' }),
-    ...(search.reset === true && { reset: true }),
-    ...((search.error === 'google' || search.error === 'google_unavailable') && { error: search.error }),
-  }),
+  // `reset` is set by the reset-password page to show a one-off success note; `error` by the Google callback;
+  // `redirect` by the invite page to come back after signing in.
+  validateSearch: (search): { method?: Method; reset?: true; error?: GoogleError; redirect?: string } => {
+    const redirect = safeRedirect(search.redirect)
+    return {
+      ...(search.method === 'password' && { method: 'password' }),
+      ...(search.reset === true && { reset: true }),
+      ...((search.error === 'google' || search.error === 'google_unavailable') && { error: search.error }),
+      ...(redirect && { redirect }),
+    }
+  },
   component: SignIn,
 })
 
@@ -30,7 +35,7 @@ const methods: { value: Method; label: string }[] = [
 ]
 
 function SignIn() {
-  const { method = 'otp', reset, error } = Route.useSearch()
+  const { method = 'otp', reset, error, redirect } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
 
   return (
@@ -39,7 +44,7 @@ function SignIn() {
       subtitle="Welcome back. Choose how you'd like to continue."
       footer={
         <>
-          Don't have an account? <Link to="/signup" className="auth-link">Sign up</Link>
+          Don't have an account? <Link to="/signup" search={redirect ? { redirect } : {}} className="auth-link">Sign up</Link>
         </>
       }
     >
@@ -55,9 +60,9 @@ function SignIn() {
         aria-label="Sign-in method"
         items={methods}
         value={method}
-        onChange={(m) => navigate({ search: m === 'password' ? { method: m } : {}, replace: true })}
+        onChange={(m) => navigate({ search: { ...(m === 'password' && { method: m }), ...(redirect && { redirect }) }, replace: true })}
       />
-      {method === 'otp' ? <OtpForm /> : <PasswordForm />}
+      {method === 'otp' ? <OtpForm redirect={redirect} /> : <PasswordForm redirect={redirect} />}
     </AuthCard>
   )
 }

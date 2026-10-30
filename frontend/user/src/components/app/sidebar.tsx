@@ -1,12 +1,22 @@
-import { Link, useMatchRoute } from '@tanstack/react-router'
+import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import './sidebar.css'
 
 // Main navigation inside a workspace. Add a link here when a new workspace section ships.
 export function AppSidebar({ workspace }: { workspace: string }) {
   const onSettings = Boolean(useMatchRoute()({ to: '/$workspace/settings', params: { workspace }, fuzzy: true }))
-  const [settingsOpen, setSettingsOpen] = useState(onSettings)
-  const expanded = settingsOpen || onSettings
+  const navigate = useNavigate()
+  const [expanded, setExpanded] = useState(onSettings)
+  const [wasOnSettings, setWasOnSettings] = useState(onSettings)
+  if (onSettings !== wasOnSettings) {
+    setWasOnSettings(onSettings)
+    if (onSettings) setExpanded(true)
+  }
+
+  function toggleSettings() {
+    setExpanded(!expanded)
+    if (!expanded) navigate({ to: '/$workspace/settings/profile', params: { workspace } })
+  }
 
   return (
     <nav className="sidebar" aria-label="Workspace">
@@ -19,7 +29,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         className="sidebar-group"
         aria-expanded={expanded}
         aria-controls="sidebar-settings"
-        onClick={() => setSettingsOpen(!expanded)}
+        onClick={toggleSettings}
       >
         <SettingsIcon />
         Settings
@@ -32,6 +42,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           </Link>
           <Link to="/$workspace/settings/workspace" params={{ workspace }}>
             Workspace
+          </Link>
+          <Link to="/$workspace/settings/members" params={{ workspace }}>
+            Members
+          </Link>
+          <Link to="/$workspace/settings/roles" params={{ workspace }}>
+            Roles
           </Link>
         </div>
       ) : null}

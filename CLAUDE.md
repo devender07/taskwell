@@ -20,7 +20,7 @@ Quick reference:
 
 Build order, do not skip ahead:
 
-1. Workspace, auth (magic link or Google), team invites, admin/member roles
+1. Workspace, auth (magic link or Google), team invites, custom roles with permissions
 2. Projects and issues: title, markdown description, status, assignee, priority, due date, labels
 3. List and kanban views only, with filters by assignee/status/label
 4. Comments and activity log on issues, mentions notify by email
@@ -29,7 +29,7 @@ Build order, do not skip ahead:
 
 Later: cycles/sprints, GitHub/GitLab PR linking, Slack, roadmap view, customer feedback intake, public API and webhooks.
 
-Not building until a customer asks: time tracking, gantt, resource planning, custom fields, permission matrices, SSO/SAML, automation builder, multiple issue types, portfolios.
+Not building until a customer asks: time tracking, gantt, resource planning, custom fields, SSO/SAML, automation builder, multiple issue types, portfolios.
 
 ## Working style
 

@@ -5,7 +5,7 @@ import './auth.css'
 
 const line = { height: 1, background: 'rgba(255, 255, 255, 0.08)' }
 
-export function AuthCard({ title, subtitle, footer, children }: { title: string; subtitle: string; footer: ReactNode; children: ReactNode }) {
+export function AuthCard({ title, subtitle, footer, children }: { title: string; subtitle: string; footer?: ReactNode; children: ReactNode }) {
   return (
     <main className="grid place-center min-h-screen p-4">
       <div className="grid gap-5 w-full p-8 bg-surface border rounded-lg" style={{ maxWidth: 400 }}>
@@ -17,7 +17,7 @@ export function AuthCard({ title, subtitle, footer, children }: { title: string;
           <p className="text-body-sm text-secondary">{subtitle}</p>
         </header>
         {children}
-        <p className="text-caption text-secondary text-center">{footer}</p>
+        {footer ? <p className="text-caption text-secondary text-center">{footer}</p> : null}
       </div>
     </main>
   )

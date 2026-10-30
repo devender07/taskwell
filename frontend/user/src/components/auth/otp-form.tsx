@@ -36,12 +36,12 @@ async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
   return { ...prev, done: true }
 }
 
-export function OtpForm() {
+export function OtpForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (prev: OtpState, form: FormData) => {
     const next = await otpAction(prev, form)
     if (next.done) {
-      await navigate({ to: '/' })
+      await navigate({ href: redirect ?? '/' })
     }
     return next
   }, { step: 'email', email: '' })

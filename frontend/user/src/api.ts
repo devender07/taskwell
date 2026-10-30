@@ -1,8 +1,16 @@
 import { redirect } from '@tanstack/react-router'
 
 export type User = { id: string; name: string; email: string }
-export type Workspace = { id: string; name: string; slug: string; role: 'admin' | 'member' }
+export type RoleRef = { id: string; name: string }
+export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
+export type Member = { id: string; name: string; email: string; role: RoleRef }
+export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
+export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
+export type Permission = { key: string; group: string; label: string; active: boolean }
 export type FieldErrors = Record<string, string | null | undefined>
+
+// The caller's effective permission, for gating UI; the API enforces it.
+export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
 const FALLBACK = 'Something went wrong. Try again.'
 
@@ -58,9 +66,14 @@ export async function getMe(): Promise<User | null> {
   }
 }
 
+// An in-app path to return to after signing in. Anything else (another origin, "//x", "/\x") is dropped.
+export function safeRedirect(v: unknown): string | undefined {
+  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') ? v : undefined
+}
+
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.
-export async function redirectIfSignedIn() {
-  if (await getMe().catch(() => null)) throw redirect({ to: '/' })
+export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
+  if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
 }
 
 // Any thrown value → { errors, error } for a form's state.

@@ -1,5 +1,7 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
+import { can } from '@/api'
 import { DeleteWorkspace } from '@/components/workspace/delete-workspace'
+import { InviteForm } from '@/components/workspace/members'
 import { WorkspaceSettingsForm } from '@/components/workspace/settings-form'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/workspace')({
@@ -18,7 +20,12 @@ function WorkspaceSettings() {
         {/* Keyed by id so switching workspaces resets the form; a rename of this one keeps it (and "Saved."). */}
         <WorkspaceSettingsForm key={workspace.id} workspace={workspace} />
       </section>
-      {workspace.role === 'admin' ? <DeleteWorkspace workspace={workspace} /> : null}
+      {can(workspace, 'members.invite') ? (
+        <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+          <InviteForm key={workspace.id} workspace={workspace} />
+        </section>
+      ) : null}
+      {can(workspace, 'workspace.delete') ? <DeleteWorkspace workspace={workspace} /> : null}
     </main>
   )
 }

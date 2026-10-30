@@ -7,22 +7,29 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/mail"
+	"github.com/devender07/tether/backend/user/internal/sysconfig"
 )
 
 const (
-	errNotFound  = "Workspace not found."
-	errNotAdmin  = "Only admins can change workspace settings."
-	errSlugTaken = "That URL is taken."
+	errNotFound   = "Workspace not found."
+	errForbidden  = "You don't have permission to do that."
+	errEscalation = "You can't grant permissions you don't have."
+	errNoAdmin    = "A workspace needs at least one admin."
+	errSlugTaken  = "That URL is taken."
 )
 
 type Handler struct {
 	model        *model
 	authenticate func(*http.Request) (string, error)
+	mail         *mail.Mailer
+	cfg          *sysconfig.Store
 }
 
 // New takes the auth handler's Authenticate, which returns the signed-in user ID or "".
-func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error)) *Handler {
-	return &Handler{model: &model{db: db}, authenticate: authenticate}
+func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error), mailer *mail.Mailer, cfg *sysconfig.Store) *Handler {
+	return &Handler{model: &model{db: db}, authenticate: authenticate, mail: mailer, cfg: cfg}
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -65,24 +72,15 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
-	ctx, current := r.Context(), normSlug(r.PathValue("slug"))
-	role, err := h.model.role(ctx, userID, current)
-	if err != nil {
+	ws, ok, err := h.access(w, r, userID, permWorkspaceEdit)
+	if !ok || err != nil {
 		return err
-	}
-	switch role {
-	case "":
-		writeErr(w, http.StatusNotFound, errNotFound)
-		return nil
-	case roleMember:
-		writeErr(w, http.StatusForbidden, errNotAdmin)
-		return nil
 	}
 	name, slug, ok := readForm(w, r)
 	if !ok {
 		return nil
 	}
-	ws, err := h.model.update(ctx, userID, current, name, slug)
+	err = h.model.update(r.Context(), ws.ID, name, slug)
 	if errors.Is(err, errTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
@@ -90,12 +88,26 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return err
 	}
-	if ws == nil { // removed or demoted between the role check and the update
-		writeErr(w, http.StatusNotFound, errNotFound)
-		return nil
-	}
+	ws.Name, ws.Slug = name, slug
 	writeJSON(w, http.StatusOK, ws)
 	return nil
+}
+
+// access returns the path's workspace with the caller's role and permissions. It writes a 404 when the caller
+// isn't a member, or a 403 when perm isn't "" and they lack it, and returns ok=false.
+func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm string) (*Workspace, bool, error) {
+	ws, err := h.model.membership(r.Context(), userID, normSlug(r.PathValue("slug")))
+	switch {
+	case err != nil:
+		return nil, false, err
+	case ws == nil:
+		writeErr(w, http.StatusNotFound, errNotFound)
+		return nil, false, nil
+	case perm != "" && !has(ws.Permissions, perm):
+		writeErr(w, http.StatusForbidden, errForbidden)
+		return nil, false, nil
+	}
+	return ws, true, nil
 }
 
 // readForm returns the normalized name and slug, or writes a 400 with field errors and returns ok=false.
@@ -133,25 +145,20 @@ func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
 	writeJSON(w, status, map[string]map[string]string{"errors": errs})
 }
 
-// remove deletes the workspace and its memberships. Admins only.
+// remove deletes the workspace with its members, roles and invites.
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) error {
-	ctx, slug := r.Context(), normSlug(r.PathValue("slug"))
-	deleted, err := h.model.delete(ctx, userID, slug)
-	if err != nil {
+	ws, ok, err := h.access(w, r, userID, permWorkspaceDelete)
+	if !ok || err != nil {
 		return err
 	}
-	if deleted {
-		w.WriteHeader(http.StatusNoContent)
-		return nil
-	}
-	role, err := h.model.role(ctx, userID, slug)
-	if err != nil {
+	if err := h.model.delete(r.Context(), ws.ID); err != nil {
 		return err
 	}
-	if role == roleMember {
-		writeErr(w, http.StatusForbidden, errNotAdmin)
-		return nil
-	}
-	writeErr(w, http.StatusNotFound, errNotFound)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (h *Handler) permissions(w http.ResponseWriter, _ *http.Request, _ string) error {
+	writeJSON(w, http.StatusOK, catalog)
 	return nil
 }

@@ -1,0 +1,280 @@
+package workspace
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+const (
+	errChooseRole     = "Choose a role."
+	errMemberNotFound = "Member not found."
+	errInviteNotFound = "Invite not found."
+	errInviteInvalid  = "This invite link is invalid or has expired."
+	errNoMail         = "Email is not configured. Contact your administrator."
+)
+
+// members lists the workspace's members; people who can invite also get its invites.
+func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	ms, err := h.model.members(ctx, ws.ID)
+	if err != nil {
+		return err
+	}
+	invs := []Invite{}
+	if has(ws.Permissions, permMembersInvite) {
+		if invs, err = h.model.invites(ctx, ws.ID); err != nil {
+			return err
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs})
+	return nil
+}
+
+func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	ws, ok, err := h.access(w, r, userID, permMembersInvite)
+	if !ok || err != nil {
+		return err
+	}
+	email := r.FormValue("email")
+	if msg := checkEmail(email); msg != "" {
+		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
+		return nil
+	}
+	role, ok, err := h.assignable(w, r, ws, r.FormValue("role_id"))
+	if !ok || err != nil {
+		return err
+	}
+	email = normEmail(email)
+	if in, err := h.model.isMember(ctx, ws.ID, email); err != nil {
+		return err
+	} else if in {
+		writeFields(w, http.StatusConflict, map[string]string{"email": "They're already in this workspace."})
+		return nil
+	}
+	if ok, err := h.mailReady(w, r); !ok || err != nil {
+		return err
+	}
+	days, err := h.cfg.GetInt(ctx, "invite_ttl_days")
+	if err != nil {
+		return err
+	}
+	token := newToken()
+	inv, err := h.model.invite(ctx, ws.ID, email, userID, role.ID, hash(token), days)
+	if err != nil {
+		return err
+	}
+	if err := h.sendInvite(ctx, ws.Name, inv, token, days); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, inv)
+	return nil
+}
+
+func (h *Handler) resendInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	ws, ok, err := h.access(w, r, userID, permMembersInvite)
+	if !ok || err != nil {
+		return err
+	}
+	if ok, err := h.mailReady(w, r); !ok || err != nil {
+		return err
+	}
+	days, err := h.cfg.GetInt(ctx, "invite_ttl_days")
+	if err != nil {
+		return err
+	}
+	token := newToken()
+	inv, err := h.model.renew(ctx, ws.ID, r.PathValue("id"), hash(token), days)
+	if err != nil {
+		return err
+	}
+	if inv == nil {
+		writeErr(w, http.StatusNotFound, errInviteNotFound)
+		return nil
+	}
+	if err := h.sendInvite(ctx, ws.Name, *inv, token, days); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, inv)
+	return nil
+}
+
+func (h *Handler) cancelInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, permMembersInvite)
+	if !ok || err != nil {
+		return err
+	}
+	deleted, err := h.model.cancelInvite(r.Context(), ws.ID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		writeErr(w, http.StatusNotFound, errInviteNotFound)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// showInvite is public: the invite page needs it before the visitor signs in.
+func (h *Handler) showInvite(w http.ResponseWriter, r *http.Request) error {
+	info, err := h.model.inviteInfo(r.Context(), hash(r.PathValue("token")))
+	if err != nil {
+		return err
+	}
+	if info == nil {
+		writeErr(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, info)
+	return nil
+}
+
+func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, email, err := h.model.accept(r.Context(), userID, hash(r.PathValue("token")))
+	if errors.Is(err, errWrongEmail) {
+		writeErr(w, http.StatusForbidden, "This invite is for "+email+". Sign in with that email to accept it.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		writeErr(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, ws)
+	return nil
+}
+
+// assignable returns the workspace's role with this id ("" is Member) when the caller may give it to someone.
+// Otherwise it writes a 400 (no such role) or 403 (escalation) and returns ok=false.
+func (h *Handler) assignable(w http.ResponseWriter, r *http.Request, ws *Workspace, id string) (*Role, bool, error) {
+	role, err := h.model.role(r.Context(), ws.ID, id)
+	switch {
+	case err != nil:
+		return nil, false, err
+	case role == nil:
+		writeFields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
+		return nil, false, nil
+	case !subset(role.Permissions, ws.Permissions):
+		writeErr(w, http.StatusForbidden, errEscalation)
+		return nil, false, nil
+	}
+	return role, true, nil
+}
+
+// manageable writes a 404 (not a member) or 403 unless the caller holds every permission of the target's current
+// role, so nobody demotes or removes someone with more access than they have.
+func (h *Handler) manageable(w http.ResponseWriter, r *http.Request, ws *Workspace, userID string) (bool, error) {
+	target := r.PathValue("userId")
+	if target == userID {
+		return true, nil
+	}
+	role, err := h.model.memberRole(r.Context(), ws.ID, target)
+	switch {
+	case err != nil:
+		return false, err
+	case role == nil:
+		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		return false, nil
+	case !subset(role.Permissions, ws.Permissions):
+		writeErr(w, http.StatusForbidden, errForbidden)
+		return false, nil
+	}
+	return true, nil
+}
+
+func (h *Handler) changeMember(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, permMembersManage)
+	if !ok || err != nil {
+		return err
+	}
+	id := strings.TrimSpace(r.FormValue("role_id"))
+	if id == "" {
+		writeFields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
+		return nil
+	}
+	if ok, err := h.manageable(w, r, ws, userID); !ok || err != nil {
+		return err
+	}
+	role, ok, err := h.assignable(w, r, ws, id)
+	if !ok || err != nil {
+		return err
+	}
+	mb, err := h.model.setMemberRole(r.Context(), ws.ID, r.PathValue("userId"), role.ID)
+	if errors.Is(err, errLastAdmin) {
+		writeErr(w, http.StatusConflict, errNoAdmin)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if mb == nil {
+		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, mb)
+	return nil
+}
+
+// removeMember removes someone from the workspace, or lets the caller leave it.
+func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	target := r.PathValue("userId")
+	if target != userID {
+		if !has(ws.Permissions, permMembersManage) {
+			writeErr(w, http.StatusForbidden, errForbidden)
+			return nil
+		}
+		if ok, err := h.manageable(w, r, ws, userID); !ok || err != nil {
+			return err
+		}
+	}
+	removed, err := h.model.removeMember(r.Context(), ws.ID, target)
+	if errors.Is(err, errLastAdmin) {
+		writeErr(w, http.StatusConflict, errNoAdmin)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !removed {
+		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// mailReady writes a 503 and returns false when SMTP isn't configured.
+func (h *Handler) mailReady(w http.ResponseWriter, r *http.Request) (bool, error) {
+	ok, err := h.mail.Configured(r.Context())
+	if err == nil && !ok {
+		writeErr(w, http.StatusServiceUnavailable, errNoMail)
+	}
+	return ok, err
+}
+
+func (h *Handler) sendInvite(ctx context.Context, workspace string, inv Invite, token string, days int) error {
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return err
+	}
+	link := strings.TrimRight(base, "/") + "/invite?token=" + url.QueryEscape(token)
+	return h.mail.Send(ctx, inv.Email, inv.InvitedBy+" invited you to "+workspace+" on Tether",
+		fmt.Sprintf("%s invited you to join %s on Tether.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
+			inv.InvitedBy, workspace, link, days))
+}

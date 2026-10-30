@@ -3,6 +3,7 @@ package workspace
 import (
 	"regexp"
 	"slices"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -28,6 +29,16 @@ func checkName(s string) string {
 	return ""
 }
 
+func checkRoleName(s string) string {
+	if s == "" {
+		return "Role name is required."
+	}
+	if jsLen(s) > 40 {
+		return "Role name must be 40 characters or fewer."
+	}
+	return ""
+}
+
 func checkSlug(s string) string {
 	switch {
 	case s == "":
@@ -41,3 +52,19 @@ func checkSlug(s string) string {
 	}
 	return ""
 }
+
+// checkEmail and normEmail are copies of auth's.
+var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
+func checkEmail(v string) string {
+	s := strings.TrimSpace(v)
+	if s == "" {
+		return "Email is required."
+	}
+	if jsLen(s) > 254 || !emailRe.MatchString(s) {
+		return "Enter a valid email address."
+	}
+	return ""
+}
+
+func normEmail(s string) string { return strings.ToLower(strings.TrimSpace(s)) }

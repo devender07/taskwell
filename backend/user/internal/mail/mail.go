@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -26,7 +27,8 @@ func (m *Mailer) Configured(ctx context.Context) (bool, error) {
 	return host != "", err
 }
 
-// Send delivers a plain-text message to one recipient.
+// Send delivers a plain-text message to one recipient. The subject is Q-encoded when needed, which also
+// neutralizes CR/LF from user-supplied names.
 // ponytail: net/smtp ignores ctx and dials synchronously; move to a queue/worker if SMTP latency hurts requests.
 func (m *Mailer) Send(ctx context.Context, to, subject, body string) error {
 	var c [5]string
@@ -49,7 +51,7 @@ func (m *Mailer) Send(ctx context.Context, to, subject, body string) error {
 	if user != "" {
 		auth = smtp.PlainAuth("", user, pass, host)
 	}
-	msg := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject +
+	msg := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + mime.QEncoding.Encode("UTF-8", subject) +
 		"\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" +
 		strings.ReplaceAll(body, "\n", "\r\n")
 	if err := smtp.SendMail(net.JoinHostPort(host, port), auth, sender.Address, []string{to}, []byte(msg)); err != nil {

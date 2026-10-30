@@ -9,7 +9,7 @@ import { FormError } from './auth-card'
 
 type PasswordState = { email: string; remember: boolean; errors?: FieldErrors; error?: string | null }
 
-export function PasswordForm() {
+export function PasswordForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (_prev: PasswordState, form: FormData): Promise<PasswordState> => {
     const email = String(form.get('email') ?? '').trim()
@@ -21,7 +21,7 @@ export function PasswordForm() {
     } catch (e) {
       return { email, remember, ...toFormErrors(e) }
     }
-    await navigate({ to: '/' })
+    await navigate({ href: redirect ?? '/' })
     return { email, remember }
   }, { email: '', remember: false })
 

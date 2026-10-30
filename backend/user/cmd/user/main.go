@@ -32,11 +32,12 @@ func main() {
 	cfg := sysconfig.New(pool)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	authH := auth.New(pool, cfg, mail.New(cfg), func(ctx context.Context, userID, name string) error {
+	mailer := mail.New(cfg)
+	authH := auth.New(pool, cfg, mailer, func(ctx context.Context, userID, name string) error {
 		return workspace.CreateDefault(ctx, pool, userID, name)
 	})
 	authH.Register(mux)
-	workspace.New(pool, authH.Authenticate).Register(mux)
+	workspace.New(pool, authH.Authenticate, mailer, cfg).Register(mux)
 
 	slog.Info("user listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts; add http.Server with timeouts + signal handling before production.

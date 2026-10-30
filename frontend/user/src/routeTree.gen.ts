@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as InviteRouteImport } from './routes/invite'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
@@ -19,11 +20,20 @@ import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
+import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
 import { Route as AppWorkspaceMainSettingsProfileRouteImport } from './routes/_app/$workspace/_main/settings/profile'
 import { Route as AppWorkspaceMainSettingsWorkspaceRouteImport } from './routes/_app/$workspace/_main/settings/workspace'
+import { Route as AppWorkspaceMainSettingsRolesIndexRouteImport } from './routes/_app/$workspace/_main/settings/roles/index'
+import { Route as AppWorkspaceMainSettingsRolesRoleIdRouteImport } from './routes/_app/$workspace/_main/settings/roles/$roleId'
+import { Route as AppWorkspaceMainSettingsRolesNewRouteImport } from './routes/_app/$workspace/_main/settings/roles/new'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteRoute = InviteRouteImport.update({
+  id: '/invite',
+  path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
@@ -71,6 +81,12 @@ const AppWorkspaceMainSettingsIndexRoute =
     path: '/settings/',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainSettingsMembersRoute =
+  AppWorkspaceMainSettingsMembersRouteImport.update({
+    id: '/settings/members',
+    path: '/settings/members',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainSettingsProfileRoute =
   AppWorkspaceMainSettingsProfileRouteImport.update({
     id: '/settings/profile',
@@ -83,33 +99,62 @@ const AppWorkspaceMainSettingsWorkspaceRoute =
     path: '/settings/workspace',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainSettingsRolesIndexRoute =
+  AppWorkspaceMainSettingsRolesIndexRouteImport.update({
+    id: '/settings/roles/',
+    path: '/settings/roles/',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainSettingsRolesRoleIdRoute =
+  AppWorkspaceMainSettingsRolesRoleIdRouteImport.update({
+    id: '/settings/roles/$roleId',
+    path: '/settings/roles/$roleId',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainSettingsRolesNewRoute =
+  AppWorkspaceMainSettingsRolesNewRouteImport.update({
+    id: '/settings/roles/new',
+    path: '/settings/roles/new',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/invite': typeof InviteRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
+  '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/$workspace/settings/': typeof AppWorkspaceMainSettingsIndexRoute
+  '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
+  '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/$workspace/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
 }
 export interface FileRoutesByTo {
+  '/invite': typeof InviteRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
+  '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsIndexRoute
+  '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
+  '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/$workspace/settings/roles': typeof AppWorkspaceMainSettingsRolesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/invite': typeof InviteRoute
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/reset-password': typeof authResetPasswordRoute
   '/(auth)/signin': typeof authSigninRoute
@@ -118,37 +163,52 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
+  '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/_app/$workspace/_main/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/_app/$workspace/_main/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/_app/$workspace/_main/settings/': typeof AppWorkspaceMainSettingsIndexRoute
+  '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
+  '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/_app/$workspace/_main/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/invite'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
     | '/$workspace/'
+    | '/$workspace/settings/members'
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workspace'
     | '/$workspace/settings/'
+    | '/$workspace/settings/roles/$roleId'
+    | '/$workspace/settings/roles/new'
+    | '/$workspace/settings/roles/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/invite'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
     | '/'
+    | '/$workspace/settings/members'
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workspace'
     | '/$workspace/settings'
+    | '/$workspace/settings/roles/$roleId'
+    | '/$workspace/settings/roles/new'
+    | '/$workspace/settings/roles'
   id:
     | '__root__'
     | '/_app'
+    | '/invite'
     | '/(auth)/forgot-password'
     | '/(auth)/reset-password'
     | '/(auth)/signin'
@@ -157,13 +217,18 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/$workspace/_main'
     | '/_app/$workspace/_main/'
+    | '/_app/$workspace/_main/settings/members'
     | '/_app/$workspace/_main/settings/profile'
     | '/_app/$workspace/_main/settings/workspace'
     | '/_app/$workspace/_main/settings/'
+    | '/_app/$workspace/_main/settings/roles/$roleId'
+    | '/_app/$workspace/_main/settings/roles/new'
+    | '/_app/$workspace/_main/settings/roles/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  InviteRoute: typeof InviteRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authResetPasswordRoute: typeof authResetPasswordRoute
   authSigninRoute: typeof authSigninRoute
@@ -177,6 +242,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite': {
+      id: '/invite'
+      path: '/invite'
+      fullPath: '/invite'
+      preLoaderRoute: typeof InviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(auth)/forgot-password': {
@@ -242,6 +314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsIndexRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/settings/members': {
+      id: '/_app/$workspace/_main/settings/members'
+      path: '/settings/members'
+      fullPath: '/$workspace/settings/members'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsMembersRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/settings/profile': {
       id: '/_app/$workspace/_main/settings/profile'
       path: '/settings/profile'
@@ -256,22 +335,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsWorkspaceRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/settings/roles/': {
+      id: '/_app/$workspace/_main/settings/roles/'
+      path: '/settings/roles'
+      fullPath: '/$workspace/settings/roles/'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsRolesIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/settings/roles/$roleId': {
+      id: '/_app/$workspace/_main/settings/roles/$roleId'
+      path: '/settings/roles/$roleId'
+      fullPath: '/$workspace/settings/roles/$roleId'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsRolesRoleIdRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/settings/roles/new': {
+      id: '/_app/$workspace/_main/settings/roles/new'
+      path: '/settings/roles/new'
+      fullPath: '/$workspace/settings/roles/new'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsRolesNewRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
   }
 }
 
 interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
+  AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
   AppWorkspaceMainSettingsProfileRoute: typeof AppWorkspaceMainSettingsProfileRoute
   AppWorkspaceMainSettingsWorkspaceRoute: typeof AppWorkspaceMainSettingsWorkspaceRoute
   AppWorkspaceMainSettingsIndexRoute: typeof AppWorkspaceMainSettingsIndexRoute
+  AppWorkspaceMainSettingsRolesRoleIdRoute: typeof AppWorkspaceMainSettingsRolesRoleIdRoute
+  AppWorkspaceMainSettingsRolesNewRoute: typeof AppWorkspaceMainSettingsRolesNewRoute
+  AppWorkspaceMainSettingsRolesIndexRoute: typeof AppWorkspaceMainSettingsRolesIndexRoute
 }
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
+  AppWorkspaceMainSettingsMembersRoute: AppWorkspaceMainSettingsMembersRoute,
   AppWorkspaceMainSettingsProfileRoute: AppWorkspaceMainSettingsProfileRoute,
   AppWorkspaceMainSettingsWorkspaceRoute:
     AppWorkspaceMainSettingsWorkspaceRoute,
   AppWorkspaceMainSettingsIndexRoute: AppWorkspaceMainSettingsIndexRoute,
+  AppWorkspaceMainSettingsRolesRoleIdRoute:
+    AppWorkspaceMainSettingsRolesRoleIdRoute,
+  AppWorkspaceMainSettingsRolesNewRoute: AppWorkspaceMainSettingsRolesNewRoute,
+  AppWorkspaceMainSettingsRolesIndexRoute:
+    AppWorkspaceMainSettingsRolesIndexRoute,
 }
 
 const AppWorkspaceMainRouteWithChildren =
@@ -303,6 +413,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  InviteRoute: InviteRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authResetPasswordRoute: authResetPasswordRoute,
   authSigninRoute: authSigninRoute,

@@ -4,58 +4,91 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	roleAdmin  = "admin"
-	roleMember = "member"
+// roleAdmin is the Admin role's workspace_roles.builtin.
+const roleAdmin = "admin"
+
+// memberDefaults are a new workspace's Member role permissions.
+var memberDefaults = []string{"issues.create", "comments.create"}
+
+var (
+	errTaken     = errors.New("workspace slug taken")
+	errLastAdmin = errors.New("last admin")
+	errNameTaken = errors.New("role name taken")
 )
 
-var errTaken = errors.New("workspace slug taken")
-
-// Workspace is a workspace as seen by one member; Role is that member's role.
-type Workspace struct {
+type RoleRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	Slug string `json:"slug"`
-	Role string `json:"role"`
 }
 
-// model owns every query for workspaces and their members.
+// Workspace is a workspace as seen by one member: their role and its effective permissions.
+type Workspace struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Slug        string   `json:"slug"`
+	Role        RoleRef  `json:"role"`
+	Permissions []string `json:"permissions"`
+}
+
+// wsCols selects a Workspace from workspaces w and workspace_roles r; scan it with scanWorkspace.
+const wsCols = `w.id::text, w.name, w.slug, r.id::text, r.name, coalesce(r.builtin, ''), r.permissions`
+
+// wsFrom joins a member m to their workspace w and role r.
+const wsFrom = `workspace_members m join workspaces w on w.id = m.workspace_id join workspace_roles r on r.id = m.role_id`
+
+func scanWorkspace(row pgx.Row) (Workspace, error) {
+	var ws Workspace
+	var builtin string
+	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions)
+	ws.Permissions = effective(builtin, ws.Permissions)
+	return ws, err
+}
+
+// model owns every query for workspaces, their roles and members.
 type model struct{ db *pgxpool.Pool }
 
 // list returns the user's workspaces, most recently opened first.
 func (m *model) list(ctx context.Context, userID string) ([]Workspace, error) {
 	rows, err := m.db.Query(ctx,
-		`select w.id::text, w.name, w.slug, m.role
-		   from workspace_members m join workspaces w on w.id = m.workspace_id
+		`select `+wsCols+` from `+wsFrom+`
 		  where m.user_id = $1
 		  order by m.last_opened_at desc, w.created_at desc`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
-	ws, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Workspace])
+	ws, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Workspace, error) { return scanWorkspace(row) })
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 	return ws, nil
 }
 
-// create inserts the workspace and makes the user its admin. Returns errTaken on a duplicate slug.
+// create inserts the workspace with its built-in roles and makes the user its admin.
+// Returns errTaken on a duplicate slug.
 func (m *model) create(ctx context.Context, userID, name, slug string) (Workspace, error) {
-	ws := Workspace{Name: name, Slug: slug, Role: roleAdmin}
+	ws := Workspace{Name: name, Slug: slug, Role: RoleRef{Name: "Admin"}, Permissions: allPermissions()}
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx,
 			`insert into workspaces (name, slug, created_by) values ($1, $2, $3) returning id::text`,
 			name, slug, userID).Scan(&ws.ID); err != nil {
 			return err
 		}
+		if err := tx.QueryRow(ctx,
+			`with r as (insert into workspace_roles (workspace_id, name, builtin, permissions)
+			   values ($1, 'Admin', 'admin', '{}'), ($1, 'Member', 'member', $2) returning id, builtin)
+			 select id::text from r where builtin = 'admin'`,
+			ws.ID, memberDefaults).Scan(&ws.Role.ID); err != nil {
+			return err
+		}
 		_, err := tx.Exec(ctx,
-			`insert into workspace_members (workspace_id, user_id, role) values ($1, $2, $3)`, ws.ID, userID, roleAdmin)
+			`insert into workspace_members (workspace_id, user_id, role_id) values ($1, $2, $3)`, ws.ID, userID, ws.Role.ID)
 		return err
 	})
 	if isUniqueViolation(err) {
@@ -69,12 +102,11 @@ func (m *model) create(ctx context.Context, userID, name, slug string) (Workspac
 
 // open marks the workspace as opened now by the user and returns it; nil when it's missing or the user isn't a member.
 func (m *model) open(ctx context.Context, userID, slug string) (*Workspace, error) {
-	var ws Workspace
-	err := m.db.QueryRow(ctx,
+	ws, err := scanWorkspace(m.db.QueryRow(ctx,
 		`update workspace_members m set last_opened_at = now()
-		   from workspaces w
-		  where w.id = m.workspace_id and w.slug = $1 and m.user_id = $2
-		  returning w.id::text, w.name, w.slug, m.role`, slug, userID).Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role)
+		   from workspaces w, workspace_roles r
+		  where w.id = m.workspace_id and r.id = m.role_id and w.slug = $1 and m.user_id = $2
+		  returning `+wsCols, slug, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -84,40 +116,29 @@ func (m *model) open(ctx context.Context, userID, slug string) (*Workspace, erro
 	return &ws, nil
 }
 
-// role returns the user's role in the workspace, or "" when it's missing or the user isn't a member.
-func (m *model) role(ctx context.Context, userID, slug string) (string, error) {
-	var role string
-	err := m.db.QueryRow(ctx,
-		`select m.role from workspace_members m join workspaces w on w.id = m.workspace_id
-		  where w.slug = $1 and m.user_id = $2`, slug, userID).Scan(&role)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("workspace role: %w", err)
-	}
-	return role, nil
-}
-
-// update renames the workspace and changes its slug if the user is its admin; nil when they aren't (any more).
-// Returns errTaken when the new slug belongs to another workspace.
-func (m *model) update(ctx context.Context, userID, slug, newName, newSlug string) (*Workspace, error) {
-	ws := Workspace{Name: newName, Slug: newSlug, Role: roleAdmin}
-	err := m.db.QueryRow(ctx,
-		`update workspaces w set name = $3, slug = $4
-		  where w.slug = $1 and exists (select 1 from workspace_members m
-		         where m.workspace_id = w.id and m.user_id = $2 and m.role = 'admin')
-		  returning w.id::text`, slug, userID, newName, newSlug).Scan(&ws.ID)
+// membership returns the workspace with the user's role and permissions; nil when it's missing or the user isn't a member.
+func (m *model) membership(ctx context.Context, userID, slug string) (*Workspace, error) {
+	ws, err := scanWorkspace(m.db.QueryRow(ctx,
+		`select `+wsCols+` from `+wsFrom+` where w.slug = $1 and m.user_id = $2`, slug, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if isUniqueViolation(err) {
-		return nil, errTaken
-	}
 	if err != nil {
-		return nil, fmt.Errorf("update workspace: %w", err)
+		return nil, fmt.Errorf("workspace membership: %w", err)
 	}
 	return &ws, nil
+}
+
+// update renames the workspace and changes its slug. Returns errTaken when the new slug belongs to another workspace.
+func (m *model) update(ctx context.Context, id, name, slug string) error {
+	_, err := m.db.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, id, name, slug)
+	if isUniqueViolation(err) {
+		return errTaken
+	}
+	if err != nil {
+		return fmt.Errorf("update workspace: %w", err)
+	}
+	return nil
 }
 
 func isUniqueViolation(err error) bool {
@@ -125,14 +146,399 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// delete removes the workspace when userID is one of its admins; members go with it (on delete cascade).
-func (m *model) delete(ctx context.Context, userID, slug string) (bool, error) {
-	tag, err := m.db.Exec(ctx,
-		`delete from workspaces w
-		  where w.slug = $1 and exists (select 1 from workspace_members m
-		         where m.workspace_id = w.id and m.user_id = $2 and m.role = 'admin')`, slug, userID)
+// delete removes the workspace; members, roles and invites go with it (on delete cascade).
+func (m *model) delete(ctx context.Context, id string) error {
+	if _, err := m.db.Exec(ctx, `delete from workspaces where id = $1`, id); err != nil {
+		return fmt.Errorf("delete workspace: %w", err)
+	}
+	return nil
+}
+
+// --- members and invites ---
+
+var errWrongEmail = errors.New("invite is for another email")
+
+type Member struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Role  RoleRef `json:"role"`
+}
+
+// Invite is a pending invite; InvitedBy is the inviter's name, "" once they're deleted.
+type Invite struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	InvitedBy string    `json:"invited_by"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Role      RoleRef   `json:"role"`
+}
+
+// InviteInfo is what the public invite page shows.
+type InviteInfo struct {
+	Workspace string `json:"workspace"`
+	Email     string `json:"email"`
+	InvitedBy string `json:"invited_by"`
+}
+
+// memberCols selects a Member from workspace_members m, users u and workspace_roles r.
+const memberCols = `u.id::text, u.name, u.email, r.id::text, r.name`
+
+func scanMember(row pgx.Row) (Member, error) {
+	var mb Member
+	err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name)
+	return mb, err
+}
+
+// members returns the workspace's members, admins first, then by name.
+func (m *model) members(ctx context.Context, workspaceID string) ([]Member, error) {
+	rows, err := m.db.Query(ctx,
+		`select `+memberCols+`
+		   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
+		  where m.workspace_id = $1
+		  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email`, workspaceID)
 	if err != nil {
-		return false, fmt.Errorf("delete workspace: %w", err)
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+	ms, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) { return scanMember(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list members: %w", err)
+	}
+	return ms, nil
+}
+
+// inviteCols selects an Invite from a CTE or table aliased i; a null role_id is the Member role.
+const inviteCols = `select i.id::text, i.email, coalesce(u.name, ''), i.expires_at, r.id::text, r.name
+	from i left join users u on u.id = i.invited_by
+	join workspace_roles r on r.workspace_id = i.workspace_id and (r.id = i.role_id or i.role_id is null and r.builtin = 'member')`
+
+func scanInvite(row pgx.Row) (Invite, error) {
+	var inv Invite
+	err := row.Scan(&inv.ID, &inv.Email, &inv.InvitedBy, &inv.ExpiresAt, &inv.Role.ID, &inv.Role.Name)
+	inv.ExpiresAt = inv.ExpiresAt.UTC()
+	return inv, err
+}
+
+// invites returns the workspace's invites, expired included, newest first.
+func (m *model) invites(ctx context.Context, workspaceID string) ([]Invite, error) {
+	rows, err := m.db.Query(ctx,
+		`with i as (select * from workspace_invites where workspace_id = $1) `+inviteCols+` order by i.created_at desc`,
+		workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list invites: %w", err)
+	}
+	invs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Invite, error) { return scanInvite(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list invites: %w", err)
+	}
+	return invs, nil
+}
+
+// isMember reports whether an account with this email is in the workspace.
+func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, error) {
+	var ok bool
+	err := m.db.QueryRow(ctx,
+		`select exists(select 1 from workspace_members m join users u on u.id = m.user_id
+		  where m.workspace_id = $1 and u.email = $2)`, workspaceID, email).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check member: %w", err)
+	}
+	return ok, nil
+}
+
+// invite creates the invite, or replaces the token, expiry, inviter and role of a pending one for the same email.
+func (m *model) invite(ctx context.Context, workspaceID, email, invitedBy, roleID string, tokenHash []byte, days int) (Invite, error) {
+	inv, err := scanInvite(m.db.QueryRow(ctx,
+		`with i as (
+		   insert into workspace_invites (workspace_id, email, invited_by, role_id, token_hash, expires_at)
+		   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
+		   on conflict (workspace_id, email) do update
+		     set invited_by = excluded.invited_by, role_id = excluded.role_id,
+		         token_hash = excluded.token_hash, expires_at = excluded.expires_at
+		   returning *) `+inviteCols,
+		workspaceID, email, invitedBy, roleID, tokenHash, days))
+	if err != nil {
+		return Invite{}, fmt.Errorf("create invite: %w", err)
+	}
+	return inv, nil
+}
+
+// renew gives the workspace's invite a new token and expiry; nil when there's no such invite.
+func (m *model) renew(ctx context.Context, workspaceID, id string, tokenHash []byte, days int) (*Invite, error) {
+	inv, err := scanInvite(m.db.QueryRow(ctx,
+		`with i as (
+		   update workspace_invites set token_hash = $3, expires_at = now() + make_interval(days => $4)
+		    where workspace_id = $1 and id::text = $2
+		   returning *) `+inviteCols,
+		workspaceID, id, tokenHash, days))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("renew invite: %w", err)
+	}
+	return &inv, nil
+}
+
+// cancelInvite deletes the workspace's invite; false when there's no such invite.
+func (m *model) cancelInvite(ctx context.Context, workspaceID, id string) (bool, error) {
+	tag, err := m.db.Exec(ctx, `delete from workspace_invites where workspace_id = $1 and id::text = $2`, workspaceID, id)
+	if err != nil {
+		return false, fmt.Errorf("cancel invite: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// inviteInfo returns the unexpired invite with this token hash; nil when there's none.
+func (m *model) inviteInfo(ctx context.Context, tokenHash []byte) (*InviteInfo, error) {
+	var info InviteInfo
+	err := m.db.QueryRow(ctx,
+		`select w.name, i.email, coalesce(u.name, '')
+		   from workspace_invites i join workspaces w on w.id = i.workspace_id left join users u on u.id = i.invited_by
+		  where i.token_hash = $1 and i.expires_at > now()`, tokenHash).Scan(&info.Workspace, &info.Email, &info.InvitedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read invite: %w", err)
+	}
+	return &info, nil
+}
+
+// accept adds the user to the invite's workspace with the invite's role (keeping any existing role) and deletes the invite.
+// Returns nil when the token is unknown or expired, and errWrongEmail plus the invite's email when the user's differs.
+func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*Workspace, string, error) {
+	var ws *Workspace
+	var inviteEmail string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var id, workspaceID, userEmail string
+		err := tx.QueryRow(ctx,
+			`select i.id::text, i.workspace_id::text, i.email, u.email
+			   from workspace_invites i, users u
+			  where i.token_hash = $1 and i.expires_at > now() and u.id = $2
+			    for update of i`, tokenHash, userID).Scan(&id, &workspaceID, &inviteEmail, &userEmail)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if userEmail != inviteEmail {
+			return errWrongEmail
+		}
+		if _, err := tx.Exec(ctx,
+			`insert into workspace_members (workspace_id, user_id, role_id)
+			 select i.workspace_id, $2, coalesce(i.role_id, r.id)
+			   from workspace_invites i join workspace_roles r on r.workspace_id = i.workspace_id and r.builtin = 'member'
+			  where i.id = $1
+			 on conflict do nothing`, id, userID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `delete from workspace_invites where id = $1`, id); err != nil {
+			return err
+		}
+		w, err := scanWorkspace(tx.QueryRow(ctx,
+			`select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, workspaceID, userID))
+		ws = &w
+		return err
+	})
+	if errors.Is(err, errWrongEmail) {
+		return nil, inviteEmail, err
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("accept invite: %w", err)
+	}
+	return ws, inviteEmail, nil
+}
+
+// --- roles ---
+
+// Role is a workspace role; Builtin is nil for custom roles, and Admin's Permissions are the whole catalog.
+type Role struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Builtin     *string  `json:"builtin"`
+	Permissions []string `json:"permissions"`
+	MemberCount int      `json:"member_count"`
+}
+
+// roleCols selects a Role from workspace_roles r.
+const roleCols = `r.id::text, r.name, r.builtin, r.permissions,
+	(select count(*) from workspace_members m where m.role_id = r.id)`
+
+func scanRole(row pgx.Row) (Role, error) {
+	var r Role
+	err := row.Scan(&r.ID, &r.Name, &r.Builtin, &r.Permissions, &r.MemberCount)
+	if r.Builtin != nil {
+		r.Permissions = effective(*r.Builtin, r.Permissions)
+	}
+	return r, err
+}
+
+// roles returns the workspace's roles: Admin, Member, then custom ones by name.
+func (m *model) roles(ctx context.Context, workspaceID string) ([]Role, error) {
+	rows, err := m.db.Query(ctx,
+		`select `+roleCols+` from workspace_roles r where r.workspace_id = $1
+		  order by case r.builtin when 'admin' then 0 when 'member' then 1 else 2 end, lower(r.name)`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	rs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Role, error) { return scanRole(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	return rs, nil
+}
+
+// role returns the workspace's role with this id, or its Member role when id is ""; nil when there's no such role.
+func (m *model) role(ctx context.Context, workspaceID, id string) (*Role, error) {
+	r, err := scanRole(m.db.QueryRow(ctx,
+		`select `+roleCols+` from workspace_roles r
+		  where r.workspace_id = $1 and (r.id::text = $2 or $2 = '' and r.builtin = 'member')`, workspaceID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read role: %w", err)
+	}
+	return &r, nil
+}
+
+// memberRole returns the member's role; nil when they aren't a member.
+func (m *model) memberRole(ctx context.Context, workspaceID, userID string) (*Role, error) {
+	r, err := scanRole(m.db.QueryRow(ctx,
+		`select `+roleCols+` from workspace_roles r join workspace_members m on m.role_id = r.id
+		  where m.workspace_id = $1 and m.user_id::text = $2`, workspaceID, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read member role: %w", err)
+	}
+	return &r, nil
+}
+
+// createRole adds a custom role. Returns errNameTaken when the workspace has a role with that name (any case).
+func (m *model) createRole(ctx context.Context, workspaceID, name string, perms []string) (Role, error) {
+	r, err := scanRole(m.db.QueryRow(ctx,
+		`with r as (insert into workspace_roles (workspace_id, name, permissions) values ($1, $2, $3) returning *)
+		 select `+roleCols+` from r`, workspaceID, name, perms))
+	if isUniqueViolation(err) {
+		return Role{}, errNameTaken
+	}
+	if err != nil {
+		return Role{}, fmt.Errorf("create role: %w", err)
+	}
+	return r, nil
+}
+
+// updateRole renames the role and replaces its permissions; nil when there's no such role.
+// Returns errNameTaken like createRole.
+func (m *model) updateRole(ctx context.Context, workspaceID, id, name string, perms []string) (*Role, error) {
+	r, err := scanRole(m.db.QueryRow(ctx,
+		`with r as (update workspace_roles set name = $3, permissions = $4
+		             where workspace_id = $1 and id::text = $2 returning *)
+		 select `+roleCols+` from r`, workspaceID, id, name, perms))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if isUniqueViolation(err) {
+		return nil, errNameTaken
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update role: %w", err)
+	}
+	return &r, nil
+}
+
+// deleteRole deletes a custom role, moving its members and invites to the Member role; false when there's no such role.
+func (m *model) deleteRole(ctx context.Context, workspaceID, id string) (bool, error) {
+	deleted := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var memberRole string
+		if err := tx.QueryRow(ctx, `select id::text from workspace_roles where workspace_id = $1 and builtin = 'member'`,
+			workspaceID).Scan(&memberRole); err != nil {
+			return err
+		}
+		for _, q := range []string{
+			`update workspace_members set role_id = $3 where workspace_id = $1 and role_id::text = $2`,
+			`update workspace_invites set role_id = $3 where workspace_id = $1 and role_id::text = $2`,
+		} {
+			if _, err := tx.Exec(ctx, q, workspaceID, id, memberRole); err != nil {
+				return err
+			}
+		}
+		tag, err := tx.Exec(ctx,
+			`delete from workspace_roles where workspace_id = $1 and id::text = $2 and builtin is null`, workspaceID, id)
+		deleted = tag.RowsAffected() == 1
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("delete role: %w", err)
+	}
+	return deleted, nil
+}
+
+// setMemberRole changes a member's role; nil when they aren't a member. Returns errLastAdmin when it would leave no admin.
+func (m *model) setMemberRole(ctx context.Context, workspaceID, userID, roleID string) (*Member, error) {
+	var mb *Member
+	err := m.keepingAdmin(ctx, workspaceID, func(tx pgx.Tx) error {
+		r, err := scanMember(tx.QueryRow(ctx,
+			`with m as (update workspace_members set role_id = $3 where workspace_id = $1 and user_id::text = $2 returning *)
+			 select `+memberCols+` from m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id`,
+			workspaceID, userID, roleID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		mb = &r
+		return err
+	})
+	if errors.Is(err, errLastAdmin) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("set member role: %w", err)
+	}
+	return mb, nil
+}
+
+// removeMember takes the user out of the workspace; false when they aren't a member.
+// Returns errLastAdmin when it would leave no admin.
+func (m *model) removeMember(ctx context.Context, workspaceID, userID string) (bool, error) {
+	removed := false
+	err := m.keepingAdmin(ctx, workspaceID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id::text = $2`, workspaceID, userID)
+		removed = tag.RowsAffected() == 1
+		return err
+	})
+	if errors.Is(err, errLastAdmin) {
+		return false, err
+	}
+	if err != nil {
+		return false, fmt.Errorf("remove member: %w", err)
+	}
+	return removed, nil
+}
+
+// keepingAdmin runs fn in a transaction and rolls it back with errLastAdmin if the workspace is left without an admin.
+// Locking the Admin role row serializes concurrent changes, so two admins can't demote each other at once.
+func (m *model) keepingAdmin(ctx context.Context, workspaceID string, fn func(pgx.Tx) error) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var adminRole string
+		if err := tx.QueryRow(ctx, `select id::text from workspace_roles where workspace_id = $1 and builtin = 'admin' for update`,
+			workspaceID).Scan(&adminRole); err != nil {
+			return err
+		}
+		if err := fn(tx); err != nil {
+			return err
+		}
+		var ok bool
+		if err := tx.QueryRow(ctx, `select exists(select 1 from workspace_members where role_id::text = $1)`, adminRole).Scan(&ok); err != nil {
+			return err
+		}
+		if !ok {
+			return errLastAdmin
+		}
+		return nil
+	})
 }

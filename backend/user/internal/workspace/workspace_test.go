@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,6 +47,60 @@ func TestSlugify(t *testing.T) {
 	} {
 		if got := slugify(in); got != want {
 			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestEmail(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                                 "Email is required.",
+		"  ":                               "Email is required.",
+		"bob":                              "Enter a valid email address.",
+		"bob@acme":                         "Enter a valid email address.",
+		"b ob@acme.com":                    "Enter a valid email address.",
+		strings.Repeat("a", 250) + "@a.co": "Enter a valid email address.",
+		" Bob@Acme.com ":                   "",
+	} {
+		if got := checkEmail(in); got != want {
+			t.Errorf("checkEmail(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if normEmail(" Bob@Acme.COM ") != "bob@acme.com" {
+		t.Error("normEmail does not lowercase and trim")
+	}
+}
+
+func TestPermissions(t *testing.T) {
+	if got := effective(roleAdmin, nil); !slices.Equal(got, allPermissions()) || len(got) != len(catalog) {
+		t.Errorf("admin effective = %v, want the whole catalog", got)
+	}
+	if got := effective("member", []string{"issues.create"}); !slices.Equal(got, []string{"issues.create"}) {
+		t.Errorf("member effective = %v", got)
+	}
+	member := []string{"issues.create", "comments.create"}
+	if !subset(nil, member) || !subset([]string{"comments.create"}, member) {
+		t.Error("subset rejects a subset")
+	}
+	if subset([]string{"issues.create", permRolesManage}, member) {
+		t.Error("subset allows escalation")
+	}
+	if !subset(member, allPermissions()) {
+		t.Error("admin can't grant everything")
+	}
+	if got, ok := normPerms([]string{"comments.create", permWorkspaceEdit, "comments.create"}); !ok ||
+		!slices.Equal(got, []string{permWorkspaceEdit, "comments.create"}) {
+		t.Errorf("normPerms = %v, %v", got, ok)
+	}
+	if _, ok := normPerms([]string{"nope"}); ok {
+		t.Error("normPerms accepts an unknown key")
+	}
+	for in, want := range map[string]string{
+		"":                      "Role name is required.",
+		strings.Repeat("é", 40): "",
+		strings.Repeat("é", 41): "Role name must be 40 characters or fewer.",
+	} {
+		if got := checkRoleName(in); got != want {
+			t.Errorf("checkRoleName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

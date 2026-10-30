@@ -9,7 +9,7 @@ import { FormError } from './auth-card'
 type Values = { name: string; email: string }
 type SignupState = { values: Values; errors?: FieldErrors; error?: string | null }
 
-export function SignupForm() {
+export function SignupForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
   const [{ values, errors, error }, submit, pending] = useActionState(async (_prev: SignupState, form: FormData): Promise<SignupState> => {
     const get = (key: string) => String(form.get(key) ?? '').trim()
@@ -21,7 +21,7 @@ export function SignupForm() {
     } catch (e) {
       return { values, ...toFormErrors(e) }
     }
-    await navigate({ to: '/' })
+    await navigate({ href: redirect ?? '/' })
     return { values }
   }, { values: { name: '', email: '' } })
 

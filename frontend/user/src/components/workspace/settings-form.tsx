@@ -3,7 +3,7 @@ import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
 import { workspaceName, workspaceSlug } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors, type Workspace } from '@/api'
+import { api, can, toFormErrors, type FieldErrors, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type Values = { name: string; slug: string }
@@ -12,7 +12,7 @@ type State = { values: Values; errors?: FieldErrors; error?: string | null; save
 export function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
   const router = useRouter()
   const navigate = useNavigate()
-  const readOnly = workspace.role !== 'admin'
+  const readOnly = !can(workspace, 'workspace.edit')
 
   const [{ values, errors, error, saved }, submit, pending] = useActionState(async (_prev: State, form: FormData): Promise<State> => {
     const values = { name: String(form.get('name') ?? '').trim(), slug: String(form.get('slug') ?? '').trim().toLowerCase() }
@@ -46,7 +46,7 @@ export function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
         error={errors?.slug}
       />
       {readOnly ? (
-        <p className="text-caption text-secondary">Only admins can change workspace settings.</p>
+        <p className="text-caption text-secondary">You don't have permission to change workspace settings.</p>
       ) : (
         <>
           <FormError>{error}</FormError>

@@ -60,6 +60,13 @@ export const workspaceSlug: Check = (v) => {
   return null
 }
 
+export const roleName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Role name is required.'
+  if (s.length > 40) return 'Role name must be 40 characters or fewer.'
+  return null
+}
+
 // "Acme, Inc." → "acme-inc". Accents are dropped ("Café" → "cafe"). Cut after trimming, then trim again so a
 // cut never ends on a hyphen.
 export const slugify = (name: string) =>

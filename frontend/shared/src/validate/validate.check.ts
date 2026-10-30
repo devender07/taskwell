@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { email, name, password, required, slugify, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
+import { email, name, password, required, roleName, slugify, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -34,4 +34,7 @@ assert.equal(slugify('  Acme, Inc.! '), 'acme-inc')
 assert.equal(slugify('Ünïcode Café'), 'unicode-cafe')
 assert.equal(slugify('a'.repeat(31) + ' b'), 'a'.repeat(31))
 assert.equal(workspaceSlug(slugify('Big Co ' + 'x'.repeat(40))), null)
+assert.equal(roleName(' Triage '), null)
+assert.equal(roleName('  '), 'Role name is required.')
+assert.equal(roleName('x'.repeat(41)), 'Role name must be 40 characters or fewer.')
 console.log('validate: ok')
