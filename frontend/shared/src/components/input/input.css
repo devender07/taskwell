@@ -16,6 +16,10 @@
 .input:disabled { opacity: 0.4; cursor: not-allowed; }
 .input[aria-invalid] { border-color: var(--accent); }
 
+/* iOS renders date inputs natively: wider than the field, centered, taller. Make them behave like text inputs. */
+.input[type='date'] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; color-scheme: dark; }
+.input[type='date']::-webkit-date-and-time-value { text-align: left; margin: 0; }
+
 /* Prefixed: the wrapper draws the field, the inner input is bare and takes the rest of the row. */
 .input-prefixed { display: flex; align-items: center; }
 .input-prefixed > span { color: var(--text-2); white-space: nowrap; user-select: none; }
