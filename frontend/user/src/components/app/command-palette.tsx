@@ -1,0 +1,328 @@
+import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { filterOptions, type Option } from '@tether/shared/match'
+import { api, toFormErrors, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
+import './shortcuts.css'
+
+export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
+export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
+
+type Props = { workspace: Workspace; mode: Mode | null; issue?: IssueContext; onCreate?: () => void; onClose: () => void }
+type Item = { id: string; label: string; lead?: ReactNode; hint?: ReactNode; checked?: boolean; run: () => void }
+type Group = { label: string; items: Item[] }
+
+const MODE_LABEL: Record<Exclude<Mode, 'root'>, string> = { status: 'Status', assignee: 'Assignee', priority: 'Priority', labels: 'Labels' }
+const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
+  status: ['Change status…', 'S'],
+  assignee: ['Assign to…', 'A'],
+  priority: ['Set priority…', 'P'],
+  labels: ['Change labels…', 'L'],
+}
+const SETTINGS = ['Profile', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
+
+export function CommandPalette({ mode, onClose, ...rest }: Props) {
+  const ref = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    if (mode && !dialog.open) {
+      dialog.showModal()
+      dialog.querySelector('input')?.focus()
+    } else if (!mode && dialog.open) dialog.close()
+  }, [mode])
+
+  return (
+    <dialog
+      ref={ref}
+      className="dialog palette"
+      aria-label="Command palette"
+      onCancel={(e) => {
+        e.preventDefault()
+        onClose()
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      {mode ? <PaletteBody initial={mode} onClose={onClose} {...rest} /> : null}
+    </dialog>
+  )
+}
+
+function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
+  const id = useId()
+  const navigate = useNavigate()
+  const router = useRouter()
+  const [mode, setMode] = useState<Mode>(initial)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const [found, setFound] = useState<{ q: string; data: SearchResult } | null>(null)
+  const [queued, setQueued] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
+  const listRef = useRef<HTMLDivElement>(null)
+  const q = query.trim()
+  const slug = workspace.slug
+
+  useEffect(() => {
+    if (mode !== 'root') return
+    const ctrl = new AbortController()
+    const t = setTimeout(() => {
+      api<SearchResult>(`/workspaces/${encodeURIComponent(slug)}/search?q=${encodeURIComponent(q)}`, undefined, 'GET', ctrl.signal).then(
+        (data) => setFound({ q, data }),
+        () => !ctrl.signal.aborted && setFound({ q, data: { issues: [], projects: [] } }),
+      )
+    }, 120)
+    return () => {
+      clearTimeout(t)
+      ctrl.abort()
+    }
+  }, [mode, q, slug])
+
+  async function save(field: string, values: string[], stay = false) {
+    if (!ctx) return
+    const form = new FormData()
+    if (values.length === 0) form.set(field, '')
+    for (const v of values) form.append(field, v)
+    setError(null)
+    try {
+      await api<Issue>(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}`, form)
+    } catch (e) {
+      const { errors, error } = toFormErrors(e)
+      setError(Object.values(errors).find(Boolean) ?? error)
+      return false
+    }
+    if (!stay) onClose()
+    router.invalidate()
+    return true
+  }
+
+  function go(path: string) {
+    onClose()
+    navigate({ href: `/${encodeURIComponent(slug)}/${path}` })
+  }
+
+  function enter(next: Mode) {
+    setMode(next)
+    setQuery('')
+    setActive(0)
+    setError(null)
+  }
+
+  const groups: Group[] = []
+  if (mode === 'root') {
+    const data = found?.data
+    if (data?.issues.length) {
+      groups.push({
+        label: q ? 'Issues' : 'Recent',
+        items: data.issues.map((i) => ({
+          id: `issue-${i.id}`,
+          label: i.title,
+          lead: (
+            <>
+              <StatusIcon category={i.status.category} />
+              <span className="issue-id flex-noshrink">{i.identifier}</span>
+            </>
+          ),
+          hint: i.status.name,
+          run: () => go(`issue/${encodeURIComponent(i.identifier)}`),
+        })),
+      })
+    }
+    if (data?.projects.length) {
+      groups.push({
+        label: 'Projects',
+        items: data.projects.map((p) => ({
+          id: `project-${p.key}`,
+          label: p.name,
+          lead: <span className="issue-id flex-noshrink">{p.key}</span>,
+          hint: p.archived ? 'Archived' : undefined,
+          run: () => go(`projects/${encodeURIComponent(p.key)}`),
+        })),
+      })
+    }
+    const actions: (Option & { run: () => void })[] = []
+    if (onCreate) actions.push({ value: 'create', label: 'Create issue', hint: 'C', run: onCreate })
+    actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
+    actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
+    for (const name of SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
+    if (ctx) {
+      if (ctx.issue.can_edit) {
+        for (const m of ['status', 'assignee', 'priority', 'labels'] as const) {
+          actions.push({ value: m, label: MODE_ACTION[m][0], hint: MODE_ACTION[m][1], run: () => enter(m) })
+        }
+      }
+      const copy = (text: string) => () =>
+        navigator.clipboard.writeText(text).then(onClose, () => setError("Couldn't copy. Try again."))
+      actions.push({ value: 'copy-link', label: 'Copy issue link', run: copy(`${location.origin}/${slug}/issue/${ctx.issue.identifier}`) })
+      actions.push({ value: 'copy-id', label: 'Copy issue ID', run: copy(ctx.issue.identifier) })
+    }
+    const matched = filterOptions(actions, q) as typeof actions
+    if (matched.length) {
+      groups.push({
+        label: 'Actions',
+        items: matched.map((a) => ({ id: `action-${a.value}`, label: a.label, hint: a.hint ? <kbd className="kbd">{a.hint}</kbd> : undefined, run: a.run })),
+      })
+    }
+  } else if (ctx) {
+    const { issue } = ctx
+    if (mode === 'status') {
+      const opts = filterOptions(statusOptions(ctx.statuses), q)
+      groups.push({
+        label: 'Status',
+        items: opts.map((o) => {
+          const status = ctx.statuses.find((s) => s.id === o.value)!
+          return { id: o.value, label: o.label, lead: <StatusIcon category={status.category} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
+        }),
+      })
+    } else if (mode === 'assignee') {
+      const opts = filterOptions(assigneeOptions(ctx.members), q)
+      groups.push({
+        label: 'Assignee',
+        items: opts.map((o) => ({ id: o.value || 'none', label: o.label, hint: o.hint, checked: o.value === (issue.assignee?.id ?? ''), run: () => save('assignee_id', [o.value]) })),
+      })
+    } else if (mode === 'priority') {
+      const opts = filterOptions(priorityOptions, q)
+      groups.push({
+        label: 'Priority',
+        items: opts.map((o) => ({ id: o.value, label: o.label, checked: o.value === String(issue.priority), run: () => save('priority', [o.value]) })),
+      })
+    } else {
+      const opts = filterOptions(ctx.labels.map((l) => ({ value: l.id, label: l.name })), q)
+      groups.push({
+        label: 'Labels',
+        items: opts.map((o) => {
+          const checked = labelIds.includes(o.value)
+          return {
+            id: o.value,
+            label: o.label,
+            lead: <LabelDot color={ctx.labels.find((l) => l.id === o.value)!.color} />,
+            checked,
+            run: () => {
+              const prev = labelIds
+              const next = checked ? prev.filter((x) => x !== o.value) : [...prev, o.value]
+              setLabelIds(next)
+              save('label_ids', next, true).then((ok) => !ok && setLabelIds(prev))
+            },
+          }
+        }),
+      })
+    }
+  }
+
+  const items = groups.flatMap((g) => g.items)
+  const current = Math.min(active, items.length - 1)
+  const stale = mode === 'root' && found?.q !== q
+
+  useEffect(() => {
+    listRef.current?.querySelector('[data-active]')?.scrollIntoView({ block: 'nearest' })
+  }, [current])
+
+  useEffect(() => {
+    if (!queued || stale) return
+    setQueued(false)
+    items[current]?.run()
+  })
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (items.length) setActive((current + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (stale && q) setQueued(true)
+      else items[current]?.run()
+    } else if (e.key === 'Backspace' && query === '' && mode !== 'root') {
+      e.preventDefault()
+      enter('root')
+    }
+  }
+
+  const multi = mode === 'labels'
+  let index = 0
+  return (
+    <div className="grid">
+      <div className="palette-input-row">
+        {mode !== 'root' && ctx ? (
+          <span className="palette-chip">
+            {ctx.issue.identifier} › {MODE_LABEL[mode]}
+          </span>
+        ) : null}
+        <input
+          className="palette-input"
+          role="combobox"
+          aria-label={mode === 'root' ? 'Search or type a command' : MODE_ACTION[mode][0]}
+          aria-expanded
+          aria-controls={`${id}-list`}
+          aria-autocomplete="list"
+          aria-activedescendant={current >= 0 ? `${id}-${current}` : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder={mode === 'root' ? 'Search or type a command…' : MODE_ACTION[mode][0]}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setActive(0)
+          }}
+          onKeyDown={onKeyDown}
+        />
+      </div>
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="px-4 pt-2 m-0 text-caption text-accent">
+          {error}
+        </p>
+      ) : null}
+      <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Results" aria-multiselectable={multi || undefined} className="palette-list">
+        {items.length === 0 ? (
+          <p className="palette-note" role="status">
+            {mode === 'root' && !found ? 'Searching…' : 'No results'}
+          </p>
+        ) : (
+          groups.map((g) => (
+            <div key={g.label} role="group" aria-labelledby={`${id}-${g.label}`}>
+              <div id={`${id}-${g.label}`} role="presentation" className="palette-group">
+                {g.label}
+              </div>
+              {g.items.map((item) => {
+                const i = index++
+                return (
+                  <div
+                    key={item.id}
+                    id={`${id}-${i}`}
+                    role="option"
+                    aria-selected={mode === 'root' ? i === current : Boolean(item.checked)}
+                    data-active={i === current || undefined}
+                    className="palette-option"
+                    onPointerDown={(e) => e.preventDefault()}
+                    onPointerMove={() => i !== current && setActive(i)}
+                    onClick={() => {
+                      setActive(i)
+                      item.run()
+                    }}
+                  >
+                    {item.lead}
+                    <span className="ellipsis flex-grow" style={{ color: 'var(--text)' }}>
+                      {item.label}
+                    </span>
+                    {item.hint ? <span className="palette-hint">{item.hint}</span> : null}
+                    {item.checked ? <CheckIcon /> : null}
+                  </div>
+                )
+              })}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-noshrink">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}

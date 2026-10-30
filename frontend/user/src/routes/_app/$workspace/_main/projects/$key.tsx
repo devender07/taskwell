@@ -78,12 +78,12 @@ function ProjectPage() {
       <section className="grid gap-4" aria-labelledby="issues-heading">
         <div className="flex items-center justify-between gap-4">
           <h2 id="issues-heading" className="text-label">Issues</h2>
-          {create && issues.length > 0 ? <Button onClick={() => setCreating(true)}>New issue</Button> : null}
+          {create && issues.length > 0 ? <Button title="New issue (C)" onClick={() => setCreating(true)}>New issue</Button> : null}
         </div>
         {issues.length === 0 ? (
           <div className="grid gap-4 p-6 bg-surface border rounded-lg justify-items-center text-center">
             <p className="text-body-sm text-secondary">No issues yet.</p>
-            {create ? <Button onClick={() => setCreating(true)}>New issue</Button> : null}
+            {create ? <Button title="New issue (C)" onClick={() => setCreating(true)}>New issue</Button> : null}
           </div>
         ) : (
           <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />

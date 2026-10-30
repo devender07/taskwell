@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute, notFound } from '@tanstack/react-router'
 import { ApiError, api, type Workspace } from '@/api'
+import { Shortcuts } from '@/components/app/shortcuts'
 
 // Children read the workspace with useLoaderData({ from: '/_app/$workspace' }); a 404 renders not found.
 export const Route = createFileRoute('/_app/$workspace')({
@@ -11,5 +12,13 @@ export const Route = createFileRoute('/_app/$workspace')({
       throw e
     }
   },
-  component: Outlet,
+  component: WorkspaceLayout,
 })
+
+function WorkspaceLayout() {
+  return (
+    <Shortcuts>
+      <Outlet />
+    </Shortcuts>
+  )
+}

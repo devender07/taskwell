@@ -176,6 +176,22 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) 
 	return nil
 }
 
+// searchAll answers the command palette: issues and projects matching q (see model.searchAll).
+func (h *Handler) searchAll(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	key, number, _ := parseIdentifier(q)
+	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, q, key, number)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"issues": issues, "projects": projects})
+	return nil
+}
+
 func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, i, ok, err := h.editable(w, r, userID)
 	if !ok || err != nil {

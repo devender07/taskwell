@@ -66,4 +66,17 @@ func TestCheckDoc(t *testing.T) {
 	if !slices.Equal(got, []string{"a", "b"}) {
 		t.Errorf("mentions: got %v", got)
 	}
+	texts := []struct{ name, doc, want string }{
+		{"text, marks and mention", para(`{"type":"text","text":"Fix "},{"type":"text","text":"login","marks":[{"type":"bold"}]},
+			{"type":"text","text":" for "},{"type":"mention","attrs":{"id":"u1","label":"Maya"}}`), "Fix login for Maya"},
+		{"blocks and break", `{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Steps"}]},
+			{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"a"},
+			{"type":"hardBreak"},{"type":"text","text":"b"}]}]}]},{"type":"image","attrs":{"src":"` + file + `"}}]}`, "Steps\na\nb"},
+		{"nil", ``, ""},
+	}
+	for _, c := range texts {
+		if got := plainText([]byte(c.doc)); got != c.want {
+			t.Errorf("plainText %s: got %q, want %q", c.name, got, c.want)
+		}
+	}
 }

@@ -40,10 +40,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 5: Keyboard-first
 
-- [ ] Command palette (`⌘K`): jump to anything, run any action
-- [ ] Quick-create issue (`C`) from anywhere
-- [ ] Fast search across issues and projects
-- [ ] Single-key shortcuts on an issue: `A` assign, `S` status, `P` priority, `L` label
+- [x] Command palette (`⌘K`): jump to anything, run any action
+- [x] Quick-create issue (`C`) from anywhere
+- [x] Fast search across issues and projects
+- [x] Single-key shortcuts on an issue: `A` assign, `S` status, `P` priority, `L` label
 
 ## Phase 6: Notifications
 

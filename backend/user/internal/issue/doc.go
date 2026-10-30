@@ -147,3 +147,29 @@ func mentions(raw []byte) []string {
 	walk(doc)
 	return ids
 }
+
+// plainText returns a document's searchable text: its text and mention labels, with a newline after each block and
+// hard break. A nil or invalid doc has none.
+func plainText(raw []byte) string {
+	var doc node
+	if json.Unmarshal(raw, &doc) != nil {
+		return ""
+	}
+	var b strings.Builder
+	var walk func(n node)
+	walk = func(n node) {
+		b.WriteString(n.Text)
+		if label, _ := n.Attrs["label"].(string); n.Type == "mention" {
+			b.WriteString(label)
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+		switch n.Type {
+		case "paragraph", "heading", "codeBlock", "hardBreak":
+			b.WriteString("\n")
+		}
+	}
+	walk(doc)
+	return strings.TrimSpace(b.String())
+}

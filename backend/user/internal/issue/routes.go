@@ -28,6 +28,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/issues", h.wrap(h.list))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/issues", h.wrap(h.create))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues", h.wrap(h.search))
+	mux.HandleFunc("GET /api/workspaces/{slug}/search", h.wrap(h.searchAll))
 	mux.HandleFunc("GET /api/workspaces/{slug}/my-issues", h.wrap(h.myIssues))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.update))

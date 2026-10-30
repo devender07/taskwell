@@ -14,6 +14,8 @@ export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' |
 export type Status = { id: string; name: string; category: StatusCategory; position: number }
 export type Label = { id: string; name: string; color: string }
 export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
+export type SearchIssue = IssueRef & { project: { key: string; name: string }; match: 'title' | 'description' | 'identifier' | null }
+export type SearchResult = { issues: SearchIssue[]; projects: Pick<Project, 'key' | 'name' | 'archived'>[] }
 export type Issue = {
   id: string
   identifier: string

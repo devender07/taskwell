@@ -1,11 +1,13 @@
 import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import './sidebar.css'
 
 // Main navigation inside a workspace. Add a link here when a new workspace section ships.
 export function AppSidebar({ workspace }: { workspace: string }) {
   const onSettings = Boolean(useMatchRoute()({ to: '/$workspace/settings', params: { workspace }, fuzzy: true }))
   const navigate = useNavigate()
+  const { openPalette } = useShortcuts()
   const [expanded, setExpanded] = useState(onSettings)
   const [wasOnSettings, setWasOnSettings] = useState(onSettings)
   if (onSettings !== wasOnSettings) {
@@ -20,6 +22,11 @@ export function AppSidebar({ workspace }: { workspace: string }) {
 
   return (
     <nav className="sidebar" aria-label="Workspace">
+      <button type="button" className="sidebar-group" aria-keyshortcuts={isApple ? 'Meta+K' : 'Control+K'} onClick={openPalette}>
+        <SearchIcon />
+        Search
+        <kbd className="kbd" style={{ marginLeft: 'auto' }}>{paletteKey}</kbd>
+      </button>
       <Link to="/$workspace" params={{ workspace }} activeOptions={{ exact: true }}>
         <HomeIcon />
         Home
@@ -70,6 +77,15 @@ export function AppSidebar({ workspace }: { workspace: string }) {
 }
 
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
+
+function SearchIcon() {
+  return (
+    <svg {...iconProps}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  )
+}
 
 function HomeIcon() {
   return (

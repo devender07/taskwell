@@ -203,7 +203,6 @@ func (m *model) relations(ctx context.Context, i *Issue) (IssueDetail, error) {
 
 // search returns up to 20 of the workspace's issues, limited to the project key unless it's "": with q "" the
 // newest; otherwise the issue key-number first, then those whose title contains q, newest first.
-// ponytail: ILIKE scan; add a trigram or full-text index when search gets slow (Phase 5).
 func (m *model) search(ctx context.Context, workspaceID, project, q, key string, number int) ([]IssueRef, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+refJSON+refFrom+`
@@ -219,6 +218,83 @@ func (m *model) search(ctx context.Context, workspaceID, project, q, key string,
 		return nil, fmt.Errorf("search issues: %w", err)
 	}
 	return refs, nil
+}
+
+// Hit is an issue found by the workspace search, with what matched ("identifier", "title" or "description"; nil
+// for the recent issues an empty search returns).
+type Hit struct {
+	IssueRef
+	Project ProjectRef `json:"project"`
+	Match   *string    `json:"match"`
+}
+
+// ProjectHit is a project found by the workspace search.
+type ProjectHit struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Archived bool   `json:"archived"`
+}
+
+const (
+	hitJSON = `(` + refJSON + `)::jsonb || jsonb_build_object('project', jsonb_build_object('key', rp.key, 'name', rp.name),
+		'match', (array['identifier', 'title', 'description'])[m.rank])`
+	// identified is the id of the issue whose identifier is key $2, number $3 (old keys too); null when there's none.
+	identified = `(select i.id from issues i join projects p on p.id = i.project_id
+		where i.workspace_id = $1 and p.key = (select canonical_key($1, $2)) and i.number = $3)`
+)
+
+// searchAll finds the workspace's issues (up to 12) and projects (up to 8) for the palette. Issues match on their
+// exact identifier first, then title (substring, or a trigram word match for typos), then description text; each
+// kind newest first, with archived projects' issues after the rest. Projects match on key, then name. With q ""
+// it returns the 8 most recently updated issues and the first 8 active projects.
+func (m *model) searchAll(ctx context.Context, workspaceID, q, key string, number int) ([]Hit, []ProjectHit, error) {
+	var hits []Hit
+	var projects []ProjectHit
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var issueSQL, projectSQL string
+		args, projectArgs := []any{workspaceID}, []any{workspaceID}
+		if q == "" {
+			issueSQL = `select ` + hitJSON + refFrom + ` cross join (select 0) m(rank)
+				where r.workspace_id = $1 order by r.updated_at desc, r.id desc limit 8`
+			projectSQL = `select key, name, false from projects where workspace_id = $1 and archived_at is null
+				order by lower(name), key limit 8`
+		} else {
+			// <% uses the trigram indexes at this threshold; word_similarity's default (0.6) misses most typos.
+			if _, err := tx.Exec(ctx, `select set_config('pg_trgm.word_similarity_threshold', '0.3', true)`); err != nil {
+				return err
+			}
+			issueSQL = `select ` + hitJSON + refFrom + `
+				cross join lateral (select case when r.id = ` + identified + ` then 1
+				  when r.title ilike $4 or $5 <% r.title then 2 else 3 end) m(rank)
+				where r.workspace_id = $1
+				  and (r.id = ` + identified + ` or r.title ilike $4 or $5 <% r.title or r.description_text ilike $4)
+				order by m.rank = 1 desc, rp.archived_at is not null, m.rank, r.updated_at desc, r.id desc limit 12`
+			projectSQL = `select key, name, archived_at is not null from projects
+				where workspace_id = $1 and (key = (select canonical_key($1, upper($3))) or name ilike $2 or $3 <% name)
+				order by key = (select canonical_key($1, upper($3))) desc, archived_at is not null, name ilike $2 desc,
+				  lower(name), key limit 8`
+			pattern := "%" + escapeLike(q) + "%"
+			args = append(args, key, number, pattern, q)
+			projectArgs = append(projectArgs, pattern, q)
+		}
+		rows, err := tx.Query(ctx, issueSQL, args...)
+		if err != nil {
+			return err
+		}
+		if hits, err = pgx.CollectRows(rows, pgx.RowTo[Hit]); err != nil {
+			return err
+		}
+		rows, err = tx.Query(ctx, projectSQL, projectArgs...)
+		if err != nil {
+			return err
+		}
+		projects, err = pgx.CollectRows(rows, pgx.RowToStructByPos[ProjectHit])
+		return err
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("search workspace: %w", err)
+	}
+	return hits, projects, nil
 }
 
 // escapeLike escapes LIKE's wildcards so s matches literally.
@@ -269,12 +345,14 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			return errArchived
 		}
 		if err := tx.QueryRow(ctx,
-			`insert into issues (workspace_id, project_id, number, title, description, status_id, assignee_id, priority, due_date, created_by)
-			 values ($1, $2, $3, $4, $5,
+			`insert into issues (workspace_id, project_id, number, title, description, description_text, status_id, assignee_id, priority,
+			   due_date, created_by)
+			 values ($1, $2, $3, $4, $5, $11,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
 			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10)
 			 returning id::text`,
-			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID).Scan(&id); err != nil {
+			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
+			plainText(f.description)).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -320,13 +398,15 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		}
 		if _, err := tx.Exec(ctx,
 			`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
+			   description_text = case when $8 then $9 else description_text end,
 			   status_id = coalesce($4::uuid, status_id),
 			   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
 			   priority = coalesce($6::smallint, priority),
 			   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
 			   updated_at = now()
 			 where id::text = $1`,
-			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription); err != nil {
+			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
+			plainText(f.description)); err != nil {
 			return err
 		}
 		if f.setLabels {
@@ -626,9 +706,9 @@ func (m *model) saveDescription(ctx context.Context, issueID, actorID string, do
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var changed bool
 		if err := tx.QueryRow(ctx,
-			`update issues i set description = $2, updated_at = now()
+			`update issues i set description = $2, description_text = $3, updated_at = now()
 			 from (select id, description from issues where id = $1 for update) o where i.id = o.id
-			 returning o.description, o.description is distinct from $2::jsonb`, issueID, doc).Scan(&old, &changed); err != nil {
+			 returning o.description, o.description is distinct from $2::jsonb`, issueID, doc, plainText(doc)).Scan(&old, &changed); err != nil {
 			return err
 		}
 		if !changed {
