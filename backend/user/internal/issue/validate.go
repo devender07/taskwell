@@ -1,0 +1,113 @@
+package issue
+
+import (
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf16"
+)
+
+// Same rules and messages as frontend/shared/src/validate/validate.ts.
+// Lengths count UTF-16 units to match JS String.length. Callers pass names and titles trimmed.
+
+var (
+	colorRe      = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	dateRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
+	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
+)
+
+func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
+
+func checkTitle(s string) string {
+	if s == "" {
+		return "Title is required."
+	}
+	if jsLen(s) > 200 {
+		return "Title must be 200 characters or fewer."
+	}
+	return ""
+}
+
+func checkDescription(s string) string {
+	if jsLen(s) > 50000 {
+		return "Description must be 50,000 characters or fewer."
+	}
+	return ""
+}
+
+// parsePriority returns the priority 0–4, or ok=false.
+func parsePriority(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	return n, err == nil && n >= 0 && n <= 4
+}
+
+func checkPriority(s string) string {
+	if _, ok := parsePriority(s); !ok {
+		return "Choose a priority."
+	}
+	return ""
+}
+
+// checkDueDate accepts YYYY-MM-DD for a real date, or empty.
+func checkDueDate(s string) string {
+	if s == "" {
+		return ""
+	}
+	if _, err := time.Parse(time.DateOnly, s); err != nil || !dateRe.MatchString(s) {
+		return "Enter a valid date."
+	}
+	return ""
+}
+
+func checkStatusName(s string) string {
+	if s == "" {
+		return "Status name is required."
+	}
+	if jsLen(s) > 30 {
+		return "Status name must be 30 characters or fewer."
+	}
+	return ""
+}
+
+func checkCategory(s string) string {
+	if !slices.Contains(categories, s) {
+		return "Choose a category."
+	}
+	return ""
+}
+
+func checkLabelName(s string) string {
+	if s == "" {
+		return "Label name is required."
+	}
+	if jsLen(s) > 30 {
+		return "Label name must be 30 characters or fewer."
+	}
+	return ""
+}
+
+// checkColor takes the color normalized by normColor.
+func checkColor(s string) string {
+	if !colorRe.MatchString(s) {
+		return "Choose a color."
+	}
+	return ""
+}
+
+func normColor(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// parseIdentifier splits "eng-142" into "ENG" and 142; ok=false when it isn't an identifier.
+func parseIdentifier(s string) (key string, number int, ok bool) {
+	m := identifierRe.FindStringSubmatch(s)
+	if m == nil {
+		return "", 0, false
+	}
+	n, err := strconv.ParseInt(m[2], 10, 32)
+	if err != nil {
+		return "", 0, false
+	}
+	return strings.ToUpper(m[1]), int(n), true
+}

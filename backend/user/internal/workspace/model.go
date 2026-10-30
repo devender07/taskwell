@@ -502,13 +502,16 @@ func (m *model) setMemberRole(ctx context.Context, workspaceID, userID, roleID s
 	return mb, nil
 }
 
-// removeMember takes the user out of the workspace; false when they aren't a member.
+// removeMember takes the user out of the workspace and unassigns their issues there; false when they aren't a member.
 // Returns errLastAdmin when it would leave no admin.
 func (m *model) removeMember(ctx context.Context, workspaceID, userID string) (bool, error) {
 	removed := false
 	err := m.keepingAdmin(ctx, workspaceID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id::text = $2`, workspaceID, userID)
-		removed = tag.RowsAffected() == 1
+		if removed = tag.RowsAffected() == 1; err != nil || !removed {
+			return err
+		}
+		_, err = tx.Exec(ctx, `update issues set assignee_id = null where workspace_id = $1 and assignee_id::text = $2`, workspaceID, userID)
 		return err
 	})
 	if errors.Is(err, errLastAdmin) {

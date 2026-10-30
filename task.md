@@ -18,9 +18,9 @@ Legend: `[x]` done, `[ ]` to do.
 ## Phase 2: Projects and issues
 
 - [x] Projects: name, key (`ENG`), description, archive (sidebar → Projects; `projects.manage` permission)
-- [ ] Issues: title, markdown description, status, assignee, priority, due date, labels
-- [ ] Readable issue IDs (`ENG-142`) used in URLs
-- [ ] Default statuses (Backlog, Todo, In progress, Done, Cancelled), editable per workspace
+- [x] Issues: title, markdown description (plain text for now), status, assignee, priority, due date, labels
+- [x] Readable issue IDs (`ENG-142`) used in URLs (`/{workspace}/issue/ENG-142`)
+- [x] Default statuses (Backlog, Todo, In progress, Done, Cancelled), editable per workspace (Settings → Workflow; labels in Settings → Labels)
 - [ ] Sub-issues (one level) and "blocks / blocked by" links
 
 ## Phase 3: Views

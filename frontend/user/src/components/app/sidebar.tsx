@@ -53,6 +53,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <Link to="/$workspace/settings/roles" params={{ workspace }}>
             Roles
           </Link>
+          <Link to="/$workspace/settings/workflow" params={{ workspace }}>
+            Workflow
+          </Link>
+          <Link to="/$workspace/settings/labels" params={{ workspace }}>
+            Labels
+          </Link>
         </div>
       ) : null}
     </nav>

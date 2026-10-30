@@ -1,7 +1,7 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import './checkbox.css'
 
-type CheckboxProps = Omit<ComponentProps<'input'>, 'type'> & { label: string }
+type CheckboxProps = Omit<ComponentProps<'input'>, 'type'> & { label: ReactNode }
 
 export function Checkbox({ label, className, ...props }: CheckboxProps) {
   return (

@@ -8,6 +8,28 @@ export type Invite = { id: string; email: string; invited_by: string; expires_at
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
 export type Project = { id: string; name: string; key: string; description: string; archived: boolean; created_at: string }
+export type PersonRef = { id: string; name: string }
+export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
+export type Status = { id: string; name: string; category: StatusCategory; position: number }
+export type Label = { id: string; name: string; color: string }
+export type Issue = {
+  id: string
+  identifier: string
+  number: number
+  project: { key: string; name: string }
+  title: string
+  description: string
+  status: Status
+  assignee: PersonRef | null
+  priority: number
+  due_date: string | null
+  labels: Label[]
+  created_by: PersonRef | null
+  created_at: string
+  updated_at: string
+  can_edit: boolean
+  can_delete: boolean
+}
 export type FieldErrors = Record<string, string | null | undefined>
 
 // The caller's effective permission, for gating UI; the API enforces it.

@@ -19,6 +19,12 @@ const (
 
 	// PermProjectsManage gates creating, editing and archiving projects.
 	PermProjectsManage = "projects.manage"
+	// PermIssuesCreate gates creating issues.
+	PermIssuesCreate = "issues.create"
+	// PermIssuesEditAny lets a member edit and delete issues they neither created nor are assigned.
+	PermIssuesEditAny = "issues.edit_any"
+	// PermWorkflowManage gates creating, editing, reordering and deleting statuses and labels.
+	PermWorkflowManage = "workflow.manage"
 )
 
 // catalog is every permission in display order.
@@ -29,8 +35,9 @@ var catalog = []Permission{
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},
 	{PermProjectsManage, "Projects", "Create, edit and archive projects", true},
-	{"issues.create", "Issues", "Create issues", false},
-	{"issues.edit_any", "Issues", "Edit and delete anyone's issues", false},
+	{PermIssuesCreate, "Issues", "Create issues", true},
+	{PermIssuesEditAny, "Issues", "Edit and delete anyone's issues", true},
+	{PermWorkflowManage, "Issues", "Manage statuses and labels", true},
 	{"comments.create", "Comments", "Comment on issues", false},
 	{"comments.manage", "Comments", "Edit and delete anyone's comments", false},
 }

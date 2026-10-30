@@ -108,3 +108,44 @@ export function projectKey(name: string) {
   if (words.length > 1) return words.map((w) => w[0]).join('').replace(/^[0-9]+/, '').slice(0, 5)
   return (words[0] ?? '').replace(/^[0-9]+/, '').slice(0, 3)
 }
+
+export const issueTitle: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Title is required.'
+  if (s.length > 200) return 'Title must be 200 characters or fewer.'
+  return null
+}
+
+export const issueDescription: Check = (v) => (v.length > 50000 ? 'Description must be 50,000 characters or fewer.' : null)
+
+export const issuePriority: Check = (v) => (/^[0-4]$/.test(v) ? null : 'Choose a priority.')
+
+const DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+// Empty (no date) or a real calendar date as YYYY-MM-DD.
+export const dueDate: Check = (v) => {
+  if (!v) return null
+  const m = DATE.exec(v)
+  const d = m ? new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!)) : null
+  return d && d.toISOString().slice(0, 10) === v ? null : 'Enter a valid date.'
+}
+
+export const statusName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Status name is required.'
+  if (s.length > 30) return 'Status name must be 30 characters or fewer.'
+  return null
+}
+
+const STATUS_CATEGORIES = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const
+
+export const statusCategory: Check = (v) => ((STATUS_CATEGORIES as readonly string[]).includes(v) ? null : 'Choose a category.')
+
+export const labelName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Label name is required.'
+  if (s.length > 30) return 'Label name must be 30 characters or fewer.'
+  return null
+}
+
+export const labelColor: Check = (v) => (/^#[0-9a-f]{6}$/.test(v.toLowerCase()) ? null : 'Choose a color.')
