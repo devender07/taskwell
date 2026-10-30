@@ -1,12 +1,13 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
+import { Checkbox } from '@tether/shared/checkbox'
 import { Input } from '@tether/shared/input'
 import { email as checkEmail } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
-type OtpState = { step: 'email' | 'code'; email: string; resent?: boolean; errors?: FieldErrors; error?: string | null; done?: boolean }
+type OtpState = { step: 'email' | 'code'; email: string; resent?: boolean; remember?: boolean; errors?: FieldErrors; error?: string | null; done?: boolean }
 
 // The code step carries the email in a hidden input, so every post is just the form's own FormData.
 async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
@@ -24,12 +25,13 @@ async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
     return { step: 'code', email, resent: intent === 'resend' }
   }
   const code = String(form.get('code') ?? '').trim()
-  if (!/^\d{6}$/.test(code)) return { ...prev, errors: { code: 'Enter the 6-digit code.' }, error: null }
+  const remember = form.has('remember')
+  if (!/^\d{6}$/.test(code)) return { ...prev, remember, errors: { code: 'Enter the 6-digit code.' }, error: null }
   try {
     await api('/auth/otp/verify', form)
   } catch (e) {
     const { errors, error } = toFormErrors(e)
-    return { ...prev, errors, error: error ?? errors.email }
+    return { ...prev, remember, errors, error: error ?? errors.email }
   }
   return { ...prev, done: true }
 }
@@ -83,6 +85,7 @@ export function OtpForm() {
         autoFocus
         error={state.errors?.code}
       />
+      <Checkbox name="remember" label="Remember me" defaultChecked={state.remember} />
       <FormError>{state.error}</FormError>
       {/* ponytail: one pending flag for all three buttons, so a resend also reads "Verifying…"; track the submitter if that confuses anyone. */}
       <Button type="submit" className="w-full" disabled={pending}>

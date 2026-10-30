@@ -72,6 +72,7 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 - Tokens (all cookies HttpOnly, SameSite=Lax, Secure when `app_base_url` is https):
   - `tether_access`: HS256 JWT (`iss=tether`, `sub=<user id>`, `exp`), Path=/api, lives `access_ttl_minutes`. Verified without a DB lookup; not revocable before it expires.
   - `tether_refresh`: opaque random token, Path=/api/auth, lives `refresh_ttl_hours` from its last use. Only its SHA-256 is stored. Every refresh rotates it; presenting an already-rotated token more than 10 s later revokes the whole sign-in family (theft detection).
+  - Remember me (`remember` = `on`/`true`/`1` on sign-in): persistent cookies, sign-in lasts `refresh_ttl_hours` (30 days). Otherwise both cookies are browser-session cookies and the sign-in is capped at `short_refresh_ttl_hours` (24 h). Both count from sign-in; refreshes keep the family's expiry. Sign-up always remembers.
   - The frontend retries any 401 (outside `/auth/*`) once after `POST /api/auth/refresh`.
 - User JSON: `{"id": "...", "name": "...", "email": "..."}`
 - Validation error: `400 {"errors": {"<field>": "<message>"}}` with the same messages and rules as `frontend/shared/src/validate/validate.ts` (email, name, password = 8+ chars and ≤72 bytes).
@@ -80,9 +81,9 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 | Method & path | Form fields | Success | Failures |
 |---|---|---|---|
 | `POST /api/auth/signup` | `name`, `email`, `password` | `201` user, sets cookie | 400 field errors; 409 `{"errors":{"email":"An account with this email already exists."}}` |
-| `POST /api/auth/signin` | `email`, `password` | `200` user, sets cookie | 400; 401 `{"error":"Wrong email or password."}` |
+| `POST /api/auth/signin` | `email`, `password`, `remember` (optional) | `200` user, sets cookie | 400; 401 `{"error":"Wrong email or password."}` |
 | `POST /api/auth/otp/send` | `email` | `204` always (no account enumeration); emails a 6-digit code if the account exists | 400; 503 if SMTP is not configured |
-| `POST /api/auth/otp/verify` | `email`, `code` | `200` user, sets cookie | 400; 401 `{"error":"That code is invalid or expired."}`; max 5 attempts per code, then it's dead |
+| `POST /api/auth/otp/verify` | `email`, `code`, `remember` (optional) | `200` user, sets cookie | 400; 401 `{"error":"That code is invalid or expired."}`; max 5 attempts per code, then it's dead |
 | `POST /api/auth/password/forgot` | `email` | `204` always; emails `{app_base_url}/reset-password?token=…` if the account exists | 400; 503 |
 | `POST /api/auth/password/reset` | `token`, `password` | `204`; revokes all refresh tokens of that user (access tokens run out within `access_ttl_minutes`) | 400; 401 `{"error":"This reset link is invalid or expired."}` |
 | `POST /api/auth/refresh` | — | `204`, new access + refresh cookies | `401`, clears cookies |
@@ -98,7 +99,7 @@ cmd/user/main.go          wire: env → pgxpool → migrate → handlers → htt
 internal/db/              pool, migrate, migrations/*.sql (embed)
 internal/sysconfig/       Get(ctx, key) / GetInt from system_config
 internal/mail/            Send(ctx, to, subject, body) via net/smtp using sysconfig
-internal/auth/            handlers, store queries, session cookie, validation
+internal/auth/            routes.go, controller.go (HTTP), model.go (SQL), session.go (cookies/JWT), validate.go
 ```
 
 Dependencies: `github.com/jackc/pgx/v5` (Postgres), `golang.org/x/crypto/bcrypt` (passwords). Everything else stdlib (`net/http` ServeMux patterns, `net/smtp`, `crypto/rand`).

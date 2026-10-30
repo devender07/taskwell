@@ -11,7 +11,8 @@
     "./button": "./src/components/button/button.tsx",
     "./validate": "./src/validate/validate.ts",
     "./logo": "./src/components/logo/logo.tsx",
-    "./tabs": "./src/components/tabs/tabs.tsx"
+    "./tabs": "./src/components/tabs/tabs.tsx",
+    "./checkbox": "./src/components/checkbox/checkbox.tsx"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

@@ -1,29 +1,31 @@
 import { Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
+import { Checkbox } from '@tether/shared/checkbox'
 import { Input } from '@tether/shared/input'
 import { email as checkEmail, required } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
-type PasswordState = { email: string; errors?: FieldErrors; error?: string | null }
+type PasswordState = { email: string; remember: boolean; errors?: FieldErrors; error?: string | null }
 
 export function PasswordForm() {
   const router = useRouter()
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (_prev: PasswordState, form: FormData): Promise<PasswordState> => {
     const email = String(form.get('email') ?? '').trim()
+    const remember = form.has('remember')
     const errors = { email: checkEmail(email), password: required('Password')(String(form.get('password') ?? '')) }
-    if (errors.email || errors.password) return { email, errors }
+    if (errors.email || errors.password) return { email, remember, errors }
     try {
       await api('/auth/signin', form)
     } catch (e) {
-      return { email, ...toFormErrors(e) }
+      return { email, remember, ...toFormErrors(e) }
     }
     await router.invalidate()
     await navigate({ to: '/' })
-    return { email }
-  }, { email: '' })
+    return { email, remember }
+  }, { email: '', remember: false })
 
   return (
     <form action={submit} noValidate className="grid gap-4">
@@ -44,9 +46,12 @@ export function PasswordForm() {
         placeholder="••••••••"
         error={state.errors?.password}
       />
-      <Link to="/forgot-password" className="auth-link text-caption" style={{ justifySelf: 'end' }}>
-        Forgot password?
-      </Link>
+      <div className="flex items-center justify-between">
+        <Checkbox name="remember" label="Remember me" defaultChecked={state.remember} />
+        <Link to="/forgot-password" className="auth-link text-caption">
+          Forgot password?
+        </Link>
+      </div>
       <FormError>{state.error}</FormError>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? 'Signing in…' : 'Sign in'}
