@@ -27,7 +27,9 @@
   text-decoration: none;
   border-radius: 6px;
 }
-.sidebar a:hover, .sidebar-group:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+@media (hover: hover) {
+  .sidebar a:hover, .sidebar-group:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+}
 .sidebar a[aria-current='page'] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 .sidebar a:focus-visible, .sidebar-group:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 
