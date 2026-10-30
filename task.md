@@ -9,10 +9,10 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Email + password sign-up and sign-in, email-code sign-in, forgot/reset password
 - [x] JWT access token + rotating refresh token, Remember me, sign-out
 - [x] Continue with Google (code done; add `google_client_id` / `google_client_secret` in `system_config` to turn it on)
-- [ ] Workspace: created at sign-up, name, URL slug (`tether.app/acme`)
+- [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`tether.app/acme`), switcher, settings (rename, change URL), admin/member role on membership
 - [ ] Team invites: invite by email, accept link, resend or cancel
 - [ ] Roles: admin (billing, members, settings) and member
-- [ ] Profile: name, avatar, change password
+- [ ] Profile: ~~name~~ (done: Settings → Profile), avatar, change password
 
 ## Phase 2: Projects and issues
 

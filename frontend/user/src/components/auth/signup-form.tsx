@@ -1,4 +1,4 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
@@ -10,7 +10,6 @@ type Values = { name: string; email: string }
 type SignupState = { values: Values; errors?: FieldErrors; error?: string | null }
 
 export function SignupForm() {
-  const router = useRouter()
   const navigate = useNavigate()
   const [{ values, errors, error }, submit, pending] = useActionState(async (_prev: SignupState, form: FormData): Promise<SignupState> => {
     const get = (key: string) => String(form.get(key) ?? '').trim()
@@ -22,7 +21,6 @@ export function SignupForm() {
     } catch (e) {
       return { values, ...toFormErrors(e) }
     }
-    await router.invalidate()
     await navigate({ to: '/' })
     return { values }
   }, { values: { name: '', email: '' } })

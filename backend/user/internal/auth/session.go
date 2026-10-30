@@ -23,8 +23,8 @@ func remember(r *http.Request) bool {
 	return false
 }
 
-// authenticate returns the user ID from a valid access token cookie, or "" when there is none.
-func (h *Handler) authenticate(r *http.Request) (string, error) {
+// Authenticate returns the user ID from a valid access token cookie, or "" when there is none.
+func (h *Handler) Authenticate(r *http.Request) (string, error) {
 	c, err := r.Cookie(accessCookie)
 	if err != nil {
 		return "", nil

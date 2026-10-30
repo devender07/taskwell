@@ -1,6 +1,7 @@
 import { redirect } from '@tanstack/react-router'
 
 export type User = { id: string; name: string; email: string }
+export type Workspace = { id: string; name: string; slug: string; role: 'admin' | 'member' }
 export type FieldErrors = Record<string, string | null | undefined>
 
 const FALLBACK = 'Something went wrong. Try again.'
@@ -20,22 +21,22 @@ export class ApiError extends Error {
   }
 }
 
-// GET when there is no body, POST the FormData otherwise. 204 resolves to undefined.
+// GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // A 401 outside /auth/* refreshes the access token once and retries.
-export async function api<T = void>(path: string, body?: FormData): Promise<T> {
-  let res = await send(path, body)
+export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET'): Promise<T> {
+  let res = await send(path, body, method)
   if (res.status === 401 && !path.startsWith('/auth/')) {
     await refreshAccess()
-    res = await send(path, body)
+    res = await send(path, body, method)
   }
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined)
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }
 
-async function send(path: string, body?: FormData) {
+async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET') {
   try {
-    return await fetch(`/api${path}`, body ? { method: 'POST', body } : undefined)
+    return await fetch(`/api${path}`, { method, body })
   } catch {
     throw new ApiError(0)
   }

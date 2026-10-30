@@ -15,7 +15,8 @@
     "./checkbox": "./src/components/checkbox/checkbox.tsx",
     "./icon-button": "./src/components/icon-button/icon-button.tsx",
     "./avatar": "./src/components/avatar/avatar.tsx",
-    "./popover": "./src/components/popover/popover.tsx"
+    "./popover": "./src/components/popover/popover.tsx",
+    "./dialog": "./src/components/dialog/dialog.tsx"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

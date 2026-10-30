@@ -24,6 +24,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/google", h.wrap(h.googleStart))
 	mux.HandleFunc("GET /api/auth/google/callback", h.wrap(h.googleCallback))
 	mux.HandleFunc("GET /api/me", h.wrap(h.me))
+	mux.HandleFunc("POST /api/me", h.wrap(h.updateMe))
 }
 
 // wrap caps the body size and turns a returned error into a logged 500.

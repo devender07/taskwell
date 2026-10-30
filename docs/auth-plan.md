@@ -71,7 +71,7 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 - All endpoints under `/api`. Request bodies are **FormData** (`multipart/form-data` or `application/x-www-form-urlencoded`; the server reads both via `r.FormValue`). Responses are JSON.
 - Tokens (all cookies HttpOnly, SameSite=Lax, Secure when `app_base_url` is https):
   - `tether_access`: HS256 JWT (`iss=tether`, `sub=<user id>`, `exp`), Path=/api, lives `access_ttl_minutes`. Verified without a DB lookup; not revocable before it expires.
-  - `tether_refresh`: opaque random token, Path=/api/auth, lives `refresh_ttl_hours` from its last use. Only its SHA-256 is stored. Every refresh rotates it; presenting an already-rotated token more than 10 s later revokes the whole sign-in family (theft detection).
+  - `tether_refresh`: opaque random token, Path=/api/auth, lives `refresh_ttl_hours` from its last use. Only its SHA-256 is stored. Every refresh rotates it; an already-rotated token is accepted again within 10 s (parallel tabs, or a page that navigated away before the new cookies arrived); presenting it later revokes the whole sign-in family (theft detection).
   - Remember me (`remember` = `on`/`true`/`1` on sign-in): persistent cookies, sign-in lasts `refresh_ttl_hours` (30 days). Otherwise both cookies are browser-session cookies and the sign-in is capped at `short_refresh_ttl_hours` (24 h). Both count from sign-in; refreshes keep the family's expiry. Sign-up always remembers.
   - The frontend retries any 401 (outside `/auth/*`) once after `POST /api/auth/refresh`.
 - User JSON: `{"id": "...", "name": "...", "email": "..."}`
@@ -90,6 +90,7 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 | `POST /api/auth/signout` | — | `204`, clears both cookies, revokes the sign-in family | — |
 | `GET /api/auth/google` | `remember` (query, optional) | `302` to Google (state + PKCE in `tether_google` cookie) | `302` to `/signin?error=google_unavailable` when keys are empty |
 | `GET /api/auth/google/callback` | `code`, `state` (from Google) | `302` to `/`, signed in; finds user by Google id, else links the verified email, else creates the user | `302` to `/signin?error=google`; cancel → `/signin` |
+| `POST /api/me` | `name` | `200` user | 400 name errors; 401 |
 | `GET /api/me` | — | `200` user | `401` |
 
 Sending a new code or reset link invalidates earlier unused ones of the same purpose for that user.

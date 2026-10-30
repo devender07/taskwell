@@ -29,13 +29,23 @@ const (
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
 
 type Handler struct {
-	model *model
-	cfg   *sysconfig.Store
-	mail  *mail.Mailer
+	model         *model
+	cfg           *sysconfig.Store
+	mail          *mail.Mailer
+	onUserCreated func(ctx context.Context, userID, name string) error
 }
 
-func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer) *Handler {
-	return &Handler{model: &model{db: db}, cfg: cfg, mail: m}
+// New takes onUserCreated, run after sign-up or a first Google sign-in (it creates the default workspace).
+func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, onUserCreated func(ctx context.Context, userID, name string) error) *Handler {
+	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, onUserCreated: onUserCreated}
+}
+
+// userCreated runs the onUserCreated hook. A failure is logged, not returned: the account exists and the
+// app offers to create a workspace when the user has none.
+func (h *Handler) userCreated(ctx context.Context, u User) {
+	if err := h.onUserCreated(ctx, u.ID, u.Name); err != nil {
+		slog.Error("after user created", "user_id", u.ID, "err", err)
+	}
 }
 
 func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
@@ -56,6 +66,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	h.userCreated(r.Context(), u)
 	if err := h.startSession(r.Context(), w, u.ID, true); err != nil {
 		return err
 	}
@@ -213,17 +224,12 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return h.signedOut(w, r)
 	}
-	userID, f, result, err := h.model.rotateRefresh(r.Context(), hash(c.Value))
+	userID, f, ok, err := h.model.rotateRefresh(r.Context(), hash(c.Value))
 	if err != nil {
 		return err
 	}
-	switch result {
-	case refreshInvalid:
+	if !ok {
 		return h.signedOut(w, r)
-	case refreshRaced:
-		// Another request just rotated it and set fresh cookies; don't clear them.
-		writeErr(w, http.StatusUnauthorized, errSignedOut)
-		return nil
 	}
 	if err := h.setTokens(r.Context(), w, userID, f); err != nil {
 		return err
@@ -246,7 +252,7 @@ func (h *Handler) signout(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
-	userID, err := h.authenticate(r)
+	userID, err := h.Authenticate(r)
 	if err != nil {
 		return err
 	}
@@ -326,12 +332,15 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	if name == "" {
 		name, _, _ = strings.Cut(id.Email, "@")
 	}
-	u, err := h.model.userForGoogle(ctx, id.Sub, normEmail(id.Email), name)
+	u, created, err := h.model.userForGoogle(ctx, id.Sub, normEmail(id.Email), name)
 	if errors.Is(err, errEmailTaken) {
 		return fail("email linked to another Google account", err)
 	}
 	if err != nil {
 		return err
+	}
+	if created {
+		h.userCreated(ctx, u)
 	}
 	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); err != nil {
 		return err
@@ -356,6 +365,33 @@ func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error
 		return googleConfig{}, "", err
 	}
 	return googleConfig{clientID: id, clientSecret: secret, redirectURI: base + "/api/auth/google/callback"}, base, nil
+}
+
+// updateMe changes the signed-in user's profile. Only the name for now; email changes need re-verification.
+func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) error {
+	userID, err := h.Authenticate(r)
+	if err != nil {
+		return err
+	}
+	if userID == "" {
+		writeErr(w, http.StatusUnauthorized, errSignedOut)
+		return nil
+	}
+	name := r.FormValue("name")
+	if msg := checkName(name); msg != "" {
+		writeFields(w, http.StatusBadRequest, map[string]string{"name": msg})
+		return nil
+	}
+	u, err := h.model.updateName(r.Context(), userID, strings.TrimSpace(name))
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		writeErr(w, http.StatusUnauthorized, errSignedOut)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, u)
+	return nil
 }
 
 func (h *Handler) signedOut(w http.ResponseWriter, r *http.Request) error {

@@ -16,7 +16,8 @@ import (
 const (
 	maxAttempts = 5
 
-	// reuseGrace lets two tabs refresh at the same moment without the second one looking like token theft.
+	// reuseGrace lets a just-rotated token refresh again (two tabs at once, or a page that navigated away before the
+	// rotated cookies arrived) instead of looking like theft.
 	reuseGrace = 10 * time.Second
 
 	purposeCode  = "signin_code"
@@ -37,14 +38,6 @@ type family struct {
 	remember  bool
 	expiresAt time.Time
 }
-
-type refreshResult int
-
-const (
-	refreshInvalid refreshResult = iota // unknown, expired, or reused (family revoked)
-	refreshRaced                        // already rotated moments ago by a parallel request
-	refreshOK
-)
 
 // model owns every query for users, sign-in codes, reset links and refresh tokens.
 type model struct{ db *pgxpool.Pool }
@@ -108,10 +101,9 @@ func (m *model) userByID(ctx context.Context, id string) (*User, error) {
 }
 
 // userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,
-// else creates one without a password.
-func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (User, error) {
-	var u User
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+// else creates one without a password. created reports the last case.
+func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u User, created bool, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `select id::text, name, email from users where google_sub = $1`, sub).Scan(&u.ID, &u.Name, &u.Email)
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -121,16 +113,31 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (Use
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		created = true
 		return tx.QueryRow(ctx, `insert into users (name, email, google_sub) values ($1, $2, $3) returning id::text, name, email`,
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email)
 	})
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return User{}, errEmailTaken // the email belongs to an account linked to a different Google account
+		return User{}, false, errEmailTaken // the email belongs to an account linked to a different Google account
 	}
 	if err != nil {
-		return User{}, fmt.Errorf("google user: %w", err)
+		return User{}, false, fmt.Errorf("google user: %w", err)
 	}
-	return u, nil
+	return u, created, nil
+}
+
+// updateName returns the updated user, or nil when there is no such user.
+func (m *model) updateName(ctx context.Context, id, name string) (*User, error) {
+	var u User
+	err := m.db.QueryRow(ctx, `update users set name = $2 where id = $1 returning id::text, name, email`, id, name).
+		Scan(&u.ID, &u.Name, &u.Email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update name: %w", err)
+	}
+	return &u, nil
 }
 
 // --- sign-in codes and reset links ---
@@ -233,13 +240,11 @@ func (m *model) insertRefresh(ctx context.Context, tokenHash []byte, userID stri
 	return nil
 }
 
-// rotateRefresh marks a live refresh token used and returns its user and family. Presenting an already rotated
-// token after reuseGrace means it leaked, so the whole family is revoked.
-func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (string, family, refreshResult, error) {
-	var userID string
-	var f family
-	result := refreshInvalid
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+// rotateRefresh marks a live refresh token used and returns its user and family; ok is false when the token is
+// unknown or expired. A token already rotated within reuseGrace is accepted again; after that, presenting it means
+// it leaked, so the whole family is revoked.
+func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (userID string, f family, ok bool, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var usedAt *time.Time
 		err := tx.QueryRow(ctx, `
 			select user_id::text, family_id::text, remember, expires_at, used_at from refresh_tokens
@@ -253,7 +258,7 @@ func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (string, fa
 		}
 		if usedAt != nil {
 			if time.Since(*usedAt) <= reuseGrace {
-				result = refreshRaced
+				ok = true
 				return nil
 			}
 			slog.Warn("refresh token reuse, revoking family", "user_id", userID, "family_id", f.id)
@@ -265,10 +270,10 @@ func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (string, fa
 		if _, err := tx.Exec(ctx, `update refresh_tokens set used_at = now() where token_hash = $1`, tokenHash); err != nil {
 			return fmt.Errorf("rotate refresh token: %w", err)
 		}
-		result = refreshOK
+		ok = true
 		return nil
 	})
-	return userID, f, result, err
+	return userID, f, ok, err
 }
 
 // revokeFamily deletes every refresh token of the sign-in that tokenHash belongs to.

@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types shared/src/components/popover/position.check.ts
-import assert from 'node:assert/strict'
+import { assert } from '../../check.ts'
 import { computePosition } from './position.ts'
 
 const vp = { width: 1000, height: 800 }

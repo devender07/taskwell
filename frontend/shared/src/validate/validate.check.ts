@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
-import assert from 'node:assert/strict'
-import { email, name, password, required, username, usernameOrEmail } from './validate.ts'
+import { assert } from '../check.ts'
+import { email, name, password, required, slugify, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -19,4 +19,19 @@ assert.ok(password('é'.repeat(40)))
 assert.equal(usernameOrEmail('dev07'), null)
 assert.ok(usernameOrEmail('dev@'))
 assert.ok(required('Code')(' '))
+assert.equal(workspaceName(' Acme '), null)
+assert.equal(workspaceName(' '), 'Workspace name is required.')
+assert.equal(workspaceName('x'.repeat(51)), 'Workspace name must be 50 characters or fewer.')
+assert.equal(workspaceSlug('acme-2'), null)
+assert.equal(workspaceSlug(''), 'Workspace URL is required.')
+assert.equal(workspaceSlug('ab'), 'Workspace URL must be 3 to 32 characters.')
+assert.equal(workspaceSlug('a'.repeat(33)), 'Workspace URL must be 3 to 32 characters.')
+assert.equal(workspaceSlug('Acme'), 'Use lowercase letters, numbers and single hyphens.')
+assert.equal(workspaceSlug('ac--me'), 'Use lowercase letters, numbers and single hyphens.')
+assert.equal(workspaceSlug('-acme'), 'Use lowercase letters, numbers and single hyphens.')
+assert.equal(workspaceSlug('new-workspace'), 'That URL is reserved.')
+assert.equal(slugify('  Acme, Inc.! '), 'acme-inc')
+assert.equal(slugify('Ünïcode Café'), 'unicode-cafe')
+assert.equal(slugify('a'.repeat(31) + ' b'), 'a'.repeat(31))
+assert.equal(workspaceSlug(slugify('Big Co ' + 'x'.repeat(40))), null)
 console.log('validate: ok')

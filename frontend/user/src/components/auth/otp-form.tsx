@@ -1,4 +1,4 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
@@ -37,12 +37,10 @@ async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
 }
 
 export function OtpForm() {
-  const router = useRouter()
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (prev: OtpState, form: FormData) => {
     const next = await otpAction(prev, form)
     if (next.done) {
-      await router.invalidate()
       await navigate({ to: '/' })
     }
     return next

@@ -15,3 +15,12 @@
 .input:focus { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
 .input:disabled { opacity: 0.4; cursor: not-allowed; }
 .input[aria-invalid] { border-color: var(--accent); }
+
+/* Prefixed: the wrapper draws the field, the inner input is bare and takes the rest of the row. */
+.input-prefixed { display: flex; align-items: center; }
+.input-prefixed > span { color: var(--text-2); white-space: nowrap; user-select: none; }
+.input-prefixed > input { flex: 1; min-width: 0; height: 100%; padding: 0; font: inherit; color: inherit; background: none; border: 0; outline: none; }
+.input-prefixed:hover { border-color: rgba(255, 255, 255, 0.1); }
+.input-prefixed:focus-within { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
+.input-prefixed:has(:disabled) { opacity: 0.4; cursor: not-allowed; }
+.input-prefixed:has([aria-invalid]) { border-color: var(--accent); }

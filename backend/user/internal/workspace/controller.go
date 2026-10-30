@@ -1,0 +1,157 @@
+package workspace
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	errNotFound  = "Workspace not found."
+	errNotAdmin  = "Only admins can change workspace settings."
+	errSlugTaken = "That URL is taken."
+)
+
+type Handler struct {
+	model        *model
+	authenticate func(*http.Request) (string, error)
+}
+
+// New takes the auth handler's Authenticate, which returns the signed-in user ID or "".
+func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error)) *Handler {
+	return &Handler{model: &model{db: db}, authenticate: authenticate}
+}
+
+func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.list(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, ws)
+	return nil
+}
+
+func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
+	name, slug, ok := readForm(w, r)
+	if !ok {
+		return nil
+	}
+	ws, err := h.model.create(r.Context(), userID, name, slug)
+	if errors.Is(err, errTaken) {
+		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, ws)
+	return nil
+}
+
+func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.open(r.Context(), userID, normSlug(r.PathValue("slug")))
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		writeErr(w, http.StatusNotFound, errNotFound)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, ws)
+	return nil
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx, current := r.Context(), normSlug(r.PathValue("slug"))
+	role, err := h.model.role(ctx, userID, current)
+	if err != nil {
+		return err
+	}
+	switch role {
+	case "":
+		writeErr(w, http.StatusNotFound, errNotFound)
+		return nil
+	case roleMember:
+		writeErr(w, http.StatusForbidden, errNotAdmin)
+		return nil
+	}
+	name, slug, ok := readForm(w, r)
+	if !ok {
+		return nil
+	}
+	ws, err := h.model.update(ctx, userID, current, name, slug)
+	if errors.Is(err, errTaken) {
+		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if ws == nil { // removed or demoted between the role check and the update
+		writeErr(w, http.StatusNotFound, errNotFound)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, ws)
+	return nil
+}
+
+// readForm returns the normalized name and slug, or writes a 400 with field errors and returns ok=false.
+func readForm(w http.ResponseWriter, r *http.Request) (name, slug string, ok bool) {
+	name, slug = strings.TrimSpace(r.FormValue("name")), normSlug(r.FormValue("slug"))
+	errs := map[string]string{}
+	if msg := checkName(name); msg != "" {
+		errs["name"] = msg
+	}
+	if msg := checkSlug(slug); msg != "" {
+		errs["slug"] = msg
+	}
+	if len(errs) > 0 {
+		writeFields(w, http.StatusBadRequest, errs)
+		return "", "", false
+	}
+	return name, slug, true
+}
+
+func normSlug(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// --- responses ---
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
+	writeJSON(w, status, map[string]map[string]string{"errors": errs})
+}
+
+// remove deletes the workspace and its memberships. Admins only.
+func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx, slug := r.Context(), normSlug(r.PathValue("slug"))
+	deleted, err := h.model.delete(ctx, userID, slug)
+	if err != nil {
+		return err
+	}
+	if deleted {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	role, err := h.model.role(ctx, userID, slug)
+	if err != nil {
+		return err
+	}
+	if role == roleMember {
+		writeErr(w, http.StatusForbidden, errNotAdmin)
+		return nil
+	}
+	writeErr(w, http.StatusNotFound, errNotFound)
+	return nil
+}

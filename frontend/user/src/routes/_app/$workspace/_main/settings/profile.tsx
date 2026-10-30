@@ -1,0 +1,21 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { ProfileForm } from '@/components/settings/profile-form'
+
+export const Route = createFileRoute('/_app/$workspace/_main/settings/profile')({
+  component: ProfileSettings,
+})
+
+function ProfileSettings() {
+  const { user } = Route.useRouteContext()
+  return (
+    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720 }}>
+      <header className="grid gap-2">
+        <h1 className="text-h2">Profile</h1>
+        <p className="text-body-sm text-secondary">How you appear to people in your workspaces.</p>
+      </header>
+      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+        <ProfileForm key={user.id} user={user} />
+      </section>
+    </main>
+  )
+}

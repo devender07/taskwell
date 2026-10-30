@@ -15,6 +15,12 @@ import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-pas
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
+import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
+import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
+import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
+import { Route as AppWorkspaceMainSettingsProfileRouteImport } from './routes/_app/$workspace/_main/settings/profile'
+import { Route as AppWorkspaceMainSettingsWorkspaceRouteImport } from './routes/_app/$workspace/_main/settings/workspace'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -45,6 +51,38 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
+  id: '/$workspace',
+  path: '/$workspace',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWorkspaceMainRoute = AppWorkspaceMainRouteImport.update({
+  id: '/_main',
+  getParentRoute: () => AppWorkspaceRoute,
+} as any)
+const AppWorkspaceMainIndexRoute = AppWorkspaceMainIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
+const AppWorkspaceMainSettingsIndexRoute =
+  AppWorkspaceMainSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainSettingsProfileRoute =
+  AppWorkspaceMainSettingsProfileRouteImport.update({
+    id: '/settings/profile',
+    path: '/settings/profile',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainSettingsWorkspaceRoute =
+  AppWorkspaceMainSettingsWorkspaceRouteImport.update({
+    id: '/settings/workspace',
+    path: '/settings/workspace',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -52,13 +90,22 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
+  '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/$workspace/': typeof AppWorkspaceMainIndexRoute
+  '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/settings/': typeof AppWorkspaceMainSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
+  '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
+  '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/settings': typeof AppWorkspaceMainSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -67,14 +114,38 @@ export interface FileRoutesById {
   '/(auth)/reset-password': typeof authResetPasswordRoute
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
+  '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
   '/_app/': typeof AppIndexRoute
+  '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
+  '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
+  '/_app/$workspace/_main/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/_app/$workspace/_main/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/_app/$workspace/_main/settings/': typeof AppWorkspaceMainSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/forgot-password' | '/reset-password' | '/signin' | '/signup'
+    | '/'
+    | '/forgot-password'
+    | '/reset-password'
+    | '/signin'
+    | '/signup'
+    | '/$workspace'
+    | '/$workspace/'
+    | '/$workspace/settings/profile'
+    | '/$workspace/settings/workspace'
+    | '/$workspace/settings/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/forgot-password' | '/reset-password' | '/signin' | '/signup' | '/'
+  to:
+    | '/forgot-password'
+    | '/reset-password'
+    | '/signin'
+    | '/signup'
+    | '/$workspace'
+    | '/'
+    | '/$workspace/settings/profile'
+    | '/$workspace/settings/workspace'
+    | '/$workspace/settings'
   id:
     | '__root__'
     | '/_app'
@@ -82,7 +153,13 @@ export interface FileRouteTypes {
     | '/(auth)/reset-password'
     | '/(auth)/signin'
     | '/(auth)/signup'
+    | '/_app/$workspace'
     | '/_app/'
+    | '/_app/$workspace/_main'
+    | '/_app/$workspace/_main/'
+    | '/_app/$workspace/_main/settings/profile'
+    | '/_app/$workspace/_main/settings/workspace'
+    | '/_app/$workspace/_main/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -137,14 +214,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/$workspace': {
+      id: '/_app/$workspace'
+      path: '/$workspace'
+      fullPath: '/$workspace'
+      preLoaderRoute: typeof AppWorkspaceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/$workspace/_main': {
+      id: '/_app/$workspace/_main'
+      path: ''
+      fullPath: '/$workspace'
+      preLoaderRoute: typeof AppWorkspaceMainRouteImport
+      parentRoute: typeof AppWorkspaceRoute
+    }
+    '/_app/$workspace/_main/': {
+      id: '/_app/$workspace/_main/'
+      path: '/'
+      fullPath: '/$workspace/'
+      preLoaderRoute: typeof AppWorkspaceMainIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/settings/': {
+      id: '/_app/$workspace/_main/settings/'
+      path: '/settings'
+      fullPath: '/$workspace/settings/'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/settings/profile': {
+      id: '/_app/$workspace/_main/settings/profile'
+      path: '/settings/profile'
+      fullPath: '/$workspace/settings/profile'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsProfileRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/settings/workspace': {
+      id: '/_app/$workspace/_main/settings/workspace'
+      path: '/settings/workspace'
+      fullPath: '/$workspace/settings/workspace'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsWorkspaceRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
   }
 }
 
+interface AppWorkspaceMainRouteChildren {
+  AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
+  AppWorkspaceMainSettingsProfileRoute: typeof AppWorkspaceMainSettingsProfileRoute
+  AppWorkspaceMainSettingsWorkspaceRoute: typeof AppWorkspaceMainSettingsWorkspaceRoute
+  AppWorkspaceMainSettingsIndexRoute: typeof AppWorkspaceMainSettingsIndexRoute
+}
+
+const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
+  AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
+  AppWorkspaceMainSettingsProfileRoute: AppWorkspaceMainSettingsProfileRoute,
+  AppWorkspaceMainSettingsWorkspaceRoute:
+    AppWorkspaceMainSettingsWorkspaceRoute,
+  AppWorkspaceMainSettingsIndexRoute: AppWorkspaceMainSettingsIndexRoute,
+}
+
+const AppWorkspaceMainRouteWithChildren =
+  AppWorkspaceMainRoute._addFileChildren(AppWorkspaceMainRouteChildren)
+
+interface AppWorkspaceRouteChildren {
+  AppWorkspaceMainRoute: typeof AppWorkspaceMainRouteWithChildren
+}
+
+const AppWorkspaceRouteChildren: AppWorkspaceRouteChildren = {
+  AppWorkspaceMainRoute: AppWorkspaceMainRouteWithChildren,
+}
+
+const AppWorkspaceRouteWithChildren = AppWorkspaceRoute._addFileChildren(
+  AppWorkspaceRouteChildren,
+)
+
 interface AppRouteChildren {
+  AppWorkspaceRoute: typeof AppWorkspaceRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppWorkspaceRoute: AppWorkspaceRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
 }
 

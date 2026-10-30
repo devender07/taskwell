@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouter } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
@@ -10,7 +10,6 @@ import { FormError } from './auth-card'
 type PasswordState = { email: string; remember: boolean; errors?: FieldErrors; error?: string | null }
 
 export function PasswordForm() {
-  const router = useRouter()
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (_prev: PasswordState, form: FormData): Promise<PasswordState> => {
     const email = String(form.get('email') ?? '').trim()
@@ -22,7 +21,6 @@ export function PasswordForm() {
     } catch (e) {
       return { email, remember, ...toFormErrors(e) }
     }
-    await router.invalidate()
     await navigate({ to: '/' })
     return { email, remember }
   }, { email: '', remember: false })

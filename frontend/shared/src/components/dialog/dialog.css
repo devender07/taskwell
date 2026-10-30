@@ -1,0 +1,45 @@
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: rgba(0, 0, 0, 0.6) 0 0 0 1px, rgba(0, 0, 0, 0.1) 0 4px 4px 0;
+  opacity: 1;
+  transform: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.dialog::backdrop { background: rgba(0, 0, 0, 0.6); opacity: 1; transition: opacity 120ms ease; }
+@starting-style {
+  .dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); }
+  .dialog[open]::backdrop { opacity: 0; }
+}
+.dialog[data-state='closing'] { opacity: 0; transform: translateY(8px) scale(0.98); }
+.dialog[data-state='closing']::backdrop { opacity: 0; }
+
+.dialog-body { position: relative; padding: 32px; }
+@media (max-width: 640px) { .dialog-body { padding: 24px; } }
+
+.dialog-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.dialog-close:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.dialog-close:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog, .dialog::backdrop { transition: none; }
+}

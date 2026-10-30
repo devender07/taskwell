@@ -1,18 +1,24 @@
-import { Link, useNavigate } from '@tanstack/react-router'
-import { useActionState } from 'react'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { useActionState, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
+import { Button } from '@tether/shared/button'
+import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { Logo } from '@tether/shared/logo'
 import { Popover } from '@tether/shared/popover'
-import { api, toFormErrors, type User } from '@/api'
+import { api, toFormErrors, type User, type Workspace } from '@/api'
+import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import './navbar.css'
 
-export function Navbar({ user }: { user: User }) {
+export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
   return (
     <header className="navbar sticky top-0 z-sticky flex items-center justify-between px-4">
-      <Link to="/" aria-label="Tether home" className="navbar-home">
-        <Logo size={24} />
-      </Link>
+      <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+        <Link to="/" aria-label="Tether home" className="navbar-home">
+          <Logo size={24} />
+        </Link>
+        <WorkspaceSwitcher workspaces={workspaces} />
+      </div>
       <div className="flex items-center gap-2">
         <Popover
           aria-label="Notifications"
@@ -41,6 +47,60 @@ export function Navbar({ user }: { user: User }) {
         </Popover>
       </div>
     </header>
+  )
+}
+
+// Only inside /$workspace routes; an unknown slug (not found) shows no switcher either.
+function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
+  const slug = useParams({ strict: false }).workspace
+  const current = workspaces.find((w) => w.slug === slug)
+  const [creating, setCreating] = useState(false)
+  if (!current) return null
+  const closeDialog = () => setCreating(false)
+
+  return (
+    <>
+      <Popover
+        aria-label="Workspaces"
+        placement="bottom-start"
+        trigger={(props) => (
+          <Button variant="ghost" aria-label={`Workspace: ${current.name}`} style={{ minWidth: 0, color: 'var(--text)', fontWeight: 510 }} {...props}>
+            <span className="ellipsis" style={{ maxWidth: 200 }}>{current.name}</span>
+            <ChevronIcon />
+          </Button>
+        )}
+      >
+        {(close) => (
+          <nav style={{ width: 264 }}>
+            <p className="popover-title">Workspaces</p>
+            {workspaces.map((w) => (
+              <Link
+                key={w.id}
+                to="/$workspace"
+                params={{ workspace: w.slug }}
+                preload={false} // the loader marks a workspace as opened; hovering must not reorder the list
+                className="popover-item justify-between gap-2"
+                aria-current={w.id === current.id ? 'page' : undefined}
+                onClick={close}
+              >
+                <span className="ellipsis">{w.name}</span>
+                {w.id === current.id ? <CheckIcon /> : null}
+              </Link>
+            ))}
+            <hr className="popover-divider" />
+            <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
+              Workspace settings
+            </Link>
+            <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
+              Create workspace
+            </button>
+          </nav>
+        )}
+      </Popover>
+      <Dialog open={creating} onClose={closeDialog} title="Create workspace" description="A workspace holds a team's projects and issues.">
+        <CreateWorkspaceForm onDone={closeDialog} />
+      </Dialog>
+    </>
   )
 }
 
@@ -81,6 +141,22 @@ function BellIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  )
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-noshrink">
+      <path d="M20 6 9 17l-5-5" />
     </svg>
   )
 }
