@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+bin/
+*.exe
+*.test
+*.out
+.env
+.env.*
+.DS_Store
+.claude

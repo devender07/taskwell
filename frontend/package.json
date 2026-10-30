@@ -1,0 +1,5 @@
+{
+  "name": "tether-frontend",
+  "private": true,
+  "workspaces": ["admin", "user"]
+}
