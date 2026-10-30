@@ -1,0 +1,17 @@
+.input {
+  height: 40px;
+  width: 100%;
+  padding: 0 14px;
+  font: 400 13.3333px/normal var(--font);
+  color: #d0d6e0;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+  outline: none;
+}
+.input::placeholder { color: var(--text-2); opacity: 0.6; }
+.input:hover { border-color: rgba(255, 255, 255, 0.1); }
+.input:focus { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
+.input:disabled { opacity: 0.4; cursor: not-allowed; }
+.input[aria-invalid] { border-color: var(--accent); }

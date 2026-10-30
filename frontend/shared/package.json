@@ -1,0 +1,23 @@
+{
+  "name": "@tether/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./src/styles/tokens.css",
+    "./utilities.css": "./src/styles/utilities.css",
+    "./boundaries": "./src/components/boundaries/boundaries.tsx",
+    "./input": "./src/components/input/input.tsx",
+    "./button": "./src/components/button/button.tsx",
+    "./validate": "./src/validate/validate.ts",
+    "./logo": "./src/components/logo/logo.tsx",
+    "./tabs": "./src/components/tabs/tabs.tsx"
+  },
+  "peerDependencies": {
+    "@tanstack/react-router": "*",
+    "react": "*"
+  },
+  "scripts": {
+    "build": "tsc -p ."
+  }
+}

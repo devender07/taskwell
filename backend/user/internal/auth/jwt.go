@@ -1,0 +1,59 @@
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const issuer = "tether"
+
+// signAccess returns an HS256 JWT for userID that expires after ttl.
+func signAccess(secret []byte, userID string, ttl time.Duration) (string, error) {
+	now := time.Now()
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+	})
+	s, err := t.SignedString(secret)
+	if err != nil {
+		return "", fmt.Errorf("sign access token: %w", err)
+	}
+	return s, nil
+}
+
+// parseAccess returns the user ID of a valid, unexpired access token. The algorithm is pinned to HS256.
+func parseAccess(secret []byte, token string) (string, error) {
+	var claims jwt.RegisteredClaims
+	_, err := jwt.ParseWithClaims(token, &claims, func(*jwt.Token) (any, error) { return secret, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(issuer),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		return "", err
+	}
+	if claims.Subject == "" {
+		return "", fmt.Errorf("access token has no subject")
+	}
+	return claims.Subject, nil
+}
+
+// EnsureJWTSecret fills an empty jwt_secret with 256 random bits. Safe to run from several instances at once.
+func EnsureJWTSecret(ctx context.Context, db *pgxpool.Pool) error {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error (Go 1.24+)
+	_, err := db.Exec(ctx, `update system_config set value = $1, updated_at = now() where key = 'jwt_secret' and value = ''`,
+		base64.RawStdEncoding.EncodeToString(b))
+	if err != nil {
+		return fmt.Errorf("ensure jwt secret: %w", err)
+	}
+	return nil
+}

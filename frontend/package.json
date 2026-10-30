@@ -1,5 +1,14 @@
 {
   "name": "tether-frontend",
   "private": true,
-  "workspaces": ["admin", "user"]
+  "workspaces": [
+    "shared",
+    "admin",
+    "user"
+  ],
+  "scripts": {
+    "dev:user": "npm run dev -w user",
+    "dev:admin": "npm run dev -w admin",
+    "build": "npm run build --workspaces --if-present"
+  }
 }

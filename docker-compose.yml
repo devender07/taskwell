@@ -1,0 +1,30 @@
+name: tether
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: tether-postgres
+    environment:
+      POSTGRES_USER: tether
+      POSTGRES_PASSWORD: tether
+      POSTGRES_DB: tether
+    ports:
+      - "5433:5432"
+    volumes:
+      - tether-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tether -d tether"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: tether-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  tether-pgdata:
+    name: tether-pgdata
