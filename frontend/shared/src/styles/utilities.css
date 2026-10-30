@@ -237,6 +237,7 @@
 .inline-flex{display: inline-flex;}
 .block {display: block;}
 .grid {display: grid;}
+.inline-grid { display: inline-grid; }
 .hidden { display: none;}
 
 /* grid helpers */

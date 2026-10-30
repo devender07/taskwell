@@ -1,0 +1,23 @@
+.navbar {
+  height: 56px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: rgba(0, 0, 0, 0.4) 0 1px 0 0;
+}
+@media (min-width: 1024px) { .navbar { padding-inline: 24px; } }
+
+.navbar-home { display: inline-flex; }
+.navbar-home, .navbar-avatar { border-radius: 8px; color: var(--text); text-decoration: none; }
+.navbar-home:focus-visible, .navbar-avatar:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.navbar-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.navbar-avatar:hover > span { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15); }

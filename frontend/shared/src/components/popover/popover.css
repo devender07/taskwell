@@ -1,0 +1,66 @@
+.popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 996; /* above the sticky navbar (995) so the panel and its arrow are never cut off */
+  min-width: 200px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: rgba(0, 0, 0, 0.6) 0 0 0 1px, rgba(0, 0, 0, 0.4) 0 8px 24px 0;
+  outline: none;
+  opacity: 1;
+  transform: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+/* Enter from and exit to a slight offset toward the trigger. */
+@starting-style {
+  .popover { opacity: 0; transform: translate(var(--dx, 0), var(--dy, 0)); }
+}
+.popover[data-state='closing'] { opacity: 0; transform: translate(var(--dx, 0), var(--dy, 0)); }
+.popover[data-side='bottom'] { --dy: -4px; }
+.popover[data-side='top'] { --dy: 4px; }
+.popover[data-side='right'] { --dx: -4px; }
+.popover[data-side='left'] { --dx: 4px; }
+
+/* Triangle pointing at the trigger: a rotated square showing two bordered edges outside the panel. */
+.popover-arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+.popover[data-side='bottom'] .popover-arrow { top: -6px; left: var(--arrow); transform: translateX(-50%) rotate(45deg); border-width: 1px 0 0 1px; }
+.popover[data-side='top'] .popover-arrow { bottom: -6px; left: var(--arrow); transform: translateX(-50%) rotate(45deg); border-width: 0 1px 1px 0; }
+.popover[data-side='right'] .popover-arrow { left: -6px; top: var(--arrow); transform: translateY(-50%) rotate(45deg); border-width: 0 0 1px 1px; }
+.popover[data-side='left'] .popover-arrow { right: -6px; top: var(--arrow); transform: translateY(-50%) rotate(45deg); border-width: 1px 1px 0 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .popover { transition: none; }
+}
+
+.popover-title { padding: 8px 12px; color: var(--text-2); font: 510 13px/19.5px var(--font); }
+.popover-divider { height: 1px; margin: 4px 0; background: rgba(255, 255, 255, 0.08); border: 0; }
+.popover-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  color: var(--text);
+  font: 400 13px/19.5px var(--font);
+  text-align: left;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.popover-item:hover { background: rgba(255, 255, 255, 0.05); }
+.popover-item:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.popover-item:disabled { opacity: 0.4; cursor: not-allowed; }
