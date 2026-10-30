@@ -17,7 +17,7 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 2: Projects and issues
 
-- [ ] Projects: name, key (`ENG`), description, archive
+- [x] Projects: name, key (`ENG`), description, archive (sidebar → Projects; `projects.manage` permission)
 - [ ] Issues: title, markdown description, status, assignee, priority, due date, labels
 - [ ] Readable issue IDs (`ENG-142`) used in URLs
 - [ ] Default statuses (Backlog, Todo, In progress, Done, Cancelled), editable per workspace

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -103,11 +104,16 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 	case ws == nil:
 		writeErr(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
-	case perm != "" && !has(ws.Permissions, perm):
+	case perm != "" && !Has(ws.Permissions, perm):
 		writeErr(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
+}
+
+// Member returns the workspace with the user's role and permissions; nil when it's missing or the user isn't a member.
+func (h *Handler) Member(ctx context.Context, userID, slug string) (*Workspace, error) {
+	return h.model.membership(ctx, userID, normSlug(slug))
 }
 
 // readForm returns the normalized name and slug, or writes a 400 with field errors and returns ok=false.

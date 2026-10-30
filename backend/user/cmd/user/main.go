@@ -9,6 +9,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/mail"
+	"github.com/devender07/tether/backend/user/internal/project"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
@@ -37,7 +38,9 @@ func main() {
 		return workspace.CreateDefault(ctx, pool, userID, name)
 	})
 	authH.Register(mux)
-	workspace.New(pool, authH.Authenticate, mailer, cfg).Register(mux)
+	wsH := workspace.New(pool, authH.Authenticate, mailer, cfg)
+	wsH.Register(mux)
+	project.New(pool, authH.Authenticate, wsH.Member).Register(mux)
 
 	slog.Info("user listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts; add http.Server with timeouts + signal handling before production.

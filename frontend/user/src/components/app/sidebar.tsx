@@ -24,6 +24,10 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
+      <Link to="/$workspace/projects" params={{ workspace }}>
+        <FolderIcon />
+        Projects
+      </Link>
       <button
         type="button"
         className="sidebar-group"
@@ -61,6 +65,14 @@ function HomeIcon() {
   return (
     <svg {...iconProps}>
       <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
     </svg>
   )
 }

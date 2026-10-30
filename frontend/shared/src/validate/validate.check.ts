@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { email, name, password, required, roleName, slugify, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
+import { email, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -37,4 +37,24 @@ assert.equal(workspaceSlug(slugify('Big Co ' + 'x'.repeat(40))), null)
 assert.equal(roleName(' Triage '), null)
 assert.equal(roleName('  '), 'Role name is required.')
 assert.equal(roleName('x'.repeat(41)), 'Role name must be 40 characters or fewer.')
+assert.equal(projectName(' Engineering '), null)
+assert.equal(projectName(' '), 'Project name is required.')
+assert.equal(projectName('x'.repeat(61)), 'Project name must be 60 characters or fewer.')
+assert.equal(projectKeyFormat(' eng '), null)
+assert.equal(projectKeyFormat('A1B2C'), null)
+assert.equal(projectKeyFormat(''), 'Project key is required.')
+assert.equal(projectKeyFormat('E'), 'Use 2 to 5 letters or numbers, starting with a letter.')
+assert.equal(projectKeyFormat('ABCDEF'), 'Use 2 to 5 letters or numbers, starting with a letter.')
+assert.equal(projectKeyFormat('1AB'), 'Use 2 to 5 letters or numbers, starting with a letter.')
+assert.equal(projectKeyFormat('E-1'), 'Use 2 to 5 letters or numbers, starting with a letter.')
+assert.equal(projectDescription('x'.repeat(10000)), null)
+assert.equal(projectDescription('x'.repeat(10001)), 'Description must be 10,000 characters or fewer.')
+assert.equal(projectKey('Engineering'), 'ENG')
+assert.equal(projectKey('mobile app'), 'MA')
+assert.equal(projectKey('A b c d e f g'), 'ABCDE')
+assert.equal(projectKey('Café'), 'CAF')
+assert.equal(projectKey('2024 roadmap'), 'R')
+assert.equal(projectKey('123abc'), 'ABC')
+assert.equal(projectKey(' -- '), '')
+assert.equal(projectKeyFormat(projectKey('Design system')), null)
 console.log('validate: ok')

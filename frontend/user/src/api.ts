@@ -7,6 +7,7 @@ export type Member = { id: string; name: string; email: string; role: RoleRef }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; created_at: string }
 export type FieldErrors = Record<string, string | null | undefined>
 
 // The caller's effective permission, for gating UI; the API enforces it.

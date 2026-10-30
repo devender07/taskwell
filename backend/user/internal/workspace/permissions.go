@@ -16,6 +16,9 @@ const (
 	permMembersInvite   = "members.invite"
 	permMembersManage   = "members.manage"
 	permRolesManage     = "roles.manage"
+
+	// PermProjectsManage gates creating, editing and archiving projects.
+	PermProjectsManage = "projects.manage"
 )
 
 // catalog is every permission in display order.
@@ -25,7 +28,7 @@ var catalog = []Permission{
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},
-	{"projects.manage", "Projects", "Create, edit and archive projects", false},
+	{PermProjectsManage, "Projects", "Create, edit and archive projects", true},
 	{"issues.create", "Issues", "Create issues", false},
 	{"issues.edit_any", "Issues", "Edit and delete anyone's issues", false},
 	{"comments.create", "Comments", "Comment on issues", false},
@@ -48,12 +51,13 @@ func effective(builtin string, perms []string) []string {
 	return perms
 }
 
-func has(perms []string, key string) bool { return slices.Contains(perms, key) }
+// Has reports whether perms includes key.
+func Has(perms []string, key string) bool { return slices.Contains(perms, key) }
 
 // subset reports whether every permission in want is in have (the no-escalation rule).
 func subset(want, have []string) bool {
 	for _, k := range want {
-		if !has(have, k) {
+		if !Has(have, k) {
 			return false
 		}
 	}
@@ -69,7 +73,7 @@ func normPerms(keys []string) (out []string, ok bool) {
 		}
 	}
 	for _, p := range catalog {
-		if has(keys, p.Key) {
+		if Has(keys, p.Key) {
 			out = append(out, p.Key)
 		}
 	}

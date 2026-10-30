@@ -19,6 +19,8 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
+import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
+import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
 import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
 import { Route as AppWorkspaceMainSettingsProfileRouteImport } from './routes/_app/$workspace/_main/settings/profile'
@@ -75,6 +77,18 @@ const AppWorkspaceMainIndexRoute = AppWorkspaceMainIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
+const AppWorkspaceMainProjectsIndexRoute =
+  AppWorkspaceMainProjectsIndexRouteImport.update({
+    id: '/projects/',
+    path: '/projects/',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainProjectsKeyRoute =
+  AppWorkspaceMainProjectsKeyRouteImport.update({
+    id: '/projects/$key',
+    path: '/projects/$key',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainSettingsIndexRoute =
   AppWorkspaceMainSettingsIndexRouteImport.update({
     id: '/settings/',
@@ -127,9 +141,11 @@ export interface FileRoutesByFullPath {
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
+  '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings/': typeof AppWorkspaceMainSettingsIndexRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
@@ -143,9 +159,11 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
+  '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/projects': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsIndexRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
@@ -163,9 +181,11 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
+  '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/_app/$workspace/_main/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/_app/$workspace/_main/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/_app/$workspace/_main/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/_app/$workspace/_main/settings/': typeof AppWorkspaceMainSettingsIndexRoute
   '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
@@ -182,9 +202,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/$workspace'
     | '/$workspace/'
+    | '/$workspace/projects/$key'
     | '/$workspace/settings/members'
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workspace'
+    | '/$workspace/projects/'
     | '/$workspace/settings/'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
@@ -198,9 +220,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/$workspace'
     | '/'
+    | '/$workspace/projects/$key'
     | '/$workspace/settings/members'
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workspace'
+    | '/$workspace/projects'
     | '/$workspace/settings'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
@@ -217,9 +241,11 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/$workspace/_main'
     | '/_app/$workspace/_main/'
+    | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/members'
     | '/_app/$workspace/_main/settings/profile'
     | '/_app/$workspace/_main/settings/workspace'
+    | '/_app/$workspace/_main/projects/'
     | '/_app/$workspace/_main/settings/'
     | '/_app/$workspace/_main/settings/roles/$roleId'
     | '/_app/$workspace/_main/settings/roles/new'
@@ -307,6 +333,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainIndexRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/projects/': {
+      id: '/_app/$workspace/_main/projects/'
+      path: '/projects'
+      fullPath: '/$workspace/projects/'
+      preLoaderRoute: typeof AppWorkspaceMainProjectsIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/projects/$key': {
+      id: '/_app/$workspace/_main/projects/$key'
+      path: '/projects/$key'
+      fullPath: '/$workspace/projects/$key'
+      preLoaderRoute: typeof AppWorkspaceMainProjectsKeyRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/settings/': {
       id: '/_app/$workspace/_main/settings/'
       path: '/settings'
@@ -361,9 +401,11 @@ declare module '@tanstack/react-router' {
 
 interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
+  AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
   AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
   AppWorkspaceMainSettingsProfileRoute: typeof AppWorkspaceMainSettingsProfileRoute
   AppWorkspaceMainSettingsWorkspaceRoute: typeof AppWorkspaceMainSettingsWorkspaceRoute
+  AppWorkspaceMainProjectsIndexRoute: typeof AppWorkspaceMainProjectsIndexRoute
   AppWorkspaceMainSettingsIndexRoute: typeof AppWorkspaceMainSettingsIndexRoute
   AppWorkspaceMainSettingsRolesRoleIdRoute: typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   AppWorkspaceMainSettingsRolesNewRoute: typeof AppWorkspaceMainSettingsRolesNewRoute
@@ -372,10 +414,12 @@ interface AppWorkspaceMainRouteChildren {
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
+  AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,
   AppWorkspaceMainSettingsMembersRoute: AppWorkspaceMainSettingsMembersRoute,
   AppWorkspaceMainSettingsProfileRoute: AppWorkspaceMainSettingsProfileRoute,
   AppWorkspaceMainSettingsWorkspaceRoute:
     AppWorkspaceMainSettingsWorkspaceRoute,
+  AppWorkspaceMainProjectsIndexRoute: AppWorkspaceMainProjectsIndexRoute,
   AppWorkspaceMainSettingsIndexRoute: AppWorkspaceMainSettingsIndexRoute,
   AppWorkspaceMainSettingsRolesRoleIdRoute:
     AppWorkspaceMainSettingsRolesRoleIdRoute,

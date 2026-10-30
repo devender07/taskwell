@@ -78,3 +78,33 @@ export const slugify = (name: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 32)
     .replace(/-+$/, '')
+
+const PROJECT_KEY = /^[A-Z][A-Z0-9]{1,4}$/
+
+export const projectName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Project name is required.'
+  if (s.length > 60) return 'Project name must be 60 characters or fewer.'
+  return null
+}
+
+export const projectKeyFormat: Check = (v) => {
+  const s = v.trim().toUpperCase()
+  if (!s) return 'Project key is required.'
+  if (!PROJECT_KEY.test(s)) return 'Use 2 to 5 letters or numbers, starting with a letter.'
+  return null
+}
+
+export const projectDescription: Check = (v) => (v.trim().length > 10000 ? 'Description must be 10,000 characters or fewer.' : null)
+
+// A key suggestion from the name: "Mobile app" → "MA", "Engineering" → "ENG". '' when nothing usable.
+export function projectKey(name: string) {
+  const words = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+  if (words.length > 1) return words.map((w) => w[0]).join('').replace(/^[0-9]+/, '').slice(0, 5)
+  return (words[0] ?? '').replace(/^[0-9]+/, '').slice(0, 3)
+}

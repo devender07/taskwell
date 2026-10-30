@@ -29,7 +29,7 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string)
 		return err
 	}
 	invs := []Invite{}
-	if has(ws.Permissions, permMembersInvite) {
+	if Has(ws.Permissions, permMembersInvite) {
 		if invs, err = h.model.invites(ctx, ws.ID); err != nil {
 			return err
 		}
@@ -235,7 +235,7 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	}
 	target := r.PathValue("userId")
 	if target != userID {
-		if !has(ws.Permissions, permMembersManage) {
+		if !Has(ws.Permissions, permMembersManage) {
 			writeErr(w, http.StatusForbidden, errForbidden)
 			return nil
 		}

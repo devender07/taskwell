@@ -8,6 +8,7 @@
     "./utilities.css": "./src/styles/utilities.css",
     "./boundaries": "./src/components/boundaries/boundaries.tsx",
     "./input": "./src/components/input/input.tsx",
+    "./textarea": "./src/components/textarea/textarea.tsx",
     "./button": "./src/components/button/button.tsx",
     "./validate": "./src/validate/validate.ts",
     "./logo": "./src/components/logo/logo.tsx",
