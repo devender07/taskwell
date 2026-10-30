@@ -53,6 +53,9 @@ export function SmartAutocomplete({
   const [loaded, setLoaded] = useState<Option[]>([])
   const [loading, setLoading] = useState(false)
   const listRef = useRef<HTMLUListElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const pressing = useRef(false)
   const loadRef = useRef(loadOptions)
 
   if (selected !== prevSelected) {
@@ -95,6 +98,19 @@ export function SmartAutocomplete({
     }
   }, [remote, open, term])
 
+  // iOS blurs the input when an option is tapped, before the click lands: a press in the list keeps it open
+  // through that blur, and a press outside closes it.
+  useEffect(() => {
+    if (!open) return
+    const down = (e: PointerEvent) => {
+      const target = e.target as Node
+      pressing.current = !!panelRef.current?.contains(target)
+      if (!rootRef.current?.contains(target)) close()
+    }
+    document.addEventListener('pointerdown', down, true)
+    return () => document.removeEventListener('pointerdown', down, true)
+  })
+
   useEffect(() => {
     if (open && current >= 0) listRef.current?.children[current]?.scrollIntoView({ block: 'nearest' })
   }, [open, current])
@@ -106,7 +122,14 @@ export function SmartAutocomplete({
     setActive(Math.max(0, results.findIndex((o) => o.value === selected?.value)))
   }
 
+  function close() {
+    pressing.current = false
+    setOpen(false)
+    setQuery(selected?.label ?? '')
+  }
+
   function choose(option: Option | null) {
+    pressing.current = false
     onEdit()
     setOwn(option)
     onChange?.(option)
@@ -115,6 +138,7 @@ export function SmartAutocomplete({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    pressing.current = false
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       if (!open) return openList()
@@ -124,15 +148,14 @@ export function SmartAutocomplete({
       choose(results[current])
     } else if (e.key === 'Escape' && open) {
       e.preventDefault()
-      setOpen(false)
-      setQuery(selected?.label ?? '')
+      close()
     }
   }
 
   return (
     <div className="grid gap-2">
       {label ? <label htmlFor={id} className="text-label text-secondary">{label}</label> : null}
-      <div className="autocomplete">
+      <div ref={rootRef} className="autocomplete">
         <input
           id={id}
           className="input autocomplete-input"
@@ -161,14 +184,11 @@ export function SmartAutocomplete({
           }}
           onClick={openList}
           onKeyDown={onKeyDown}
-          onBlur={() => {
-            setOpen(false)
-            setQuery(selected?.label ?? '')
-          }}
+          onBlur={() => !pressing.current && close()}
         />
         {name ? <input type="hidden" name={name} value={selected?.value ?? ''} /> : null}
         {open ? (
-          <div className="autocomplete-panel">
+          <div ref={panelRef} className="autocomplete-panel">
             {loading || results.length === 0 ? (
               <p className="autocomplete-note" role="status">{loading ? 'Searching…' : emptyText}</p>
             ) : (
