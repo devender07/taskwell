@@ -1,10 +1,12 @@
 import { useId, type ComponentProps } from 'react'
+import { useFieldError } from './field-error'
 import './input.css'
 
 // prefix: fixed text shown inside the field before the value, e.g. "tether.app/".
 type InputProps = Omit<ComponentProps<'input'>, 'prefix'> & { label?: string; error?: string | null; prefix?: string }
 
-export function Input({ className, type = 'text', label, error, prefix, id, ...props }: InputProps) {
+export function Input({ className, type = 'text', label, error: rawError, prefix, id, onChange, ...props }: InputProps) {
+  const [error, onEdit] = useFieldError(rawError, props.value)
   const autoId = useId()
   const inputId = id ?? autoId
   const errorId = `${inputId}-error`
@@ -16,6 +18,10 @@ export function Input({ className, type = 'text', label, error, prefix, id, ...p
       className={prefix ? className : className ? `input ${className}` : 'input'}
       aria-invalid={error ? true : undefined}
       aria-describedby={error ? errorId : undefined}
+      onChange={(e) => {
+        onEdit()
+        onChange?.(e)
+      }}
       {...props}
     />
   )

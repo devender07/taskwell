@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
+import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
@@ -10,20 +10,23 @@ import '@/components/issues/issues.css'
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
   loader: async ({ params }) => {
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
-    try {
-      const key = params.identifier.replace(/-.*/, '').toUpperCase()
-      const [issue, project, statuses, labels, { members }] = await Promise.all([
-        api<Issue>(`${path}/issues/${encodeURIComponent(params.identifier)}`),
-        api<Project>(`${path}/projects/${encodeURIComponent(key)}`),
-        api<Status[]>(`${path}/statuses`),
-        api<Label[]>(`${path}/labels`),
-        api<{ members: Member[] }>(`${path}/members`),
-      ])
-      return { issue, project, statuses, labels, members }
-    } catch (e) {
+    const key = params.identifier.replace(/-.*/, '').toUpperCase()
+    const data = await Promise.all([
+      api<Issue>(`${path}/issues/${encodeURIComponent(params.identifier)}`),
+      api<Project>(`${path}/projects/${encodeURIComponent(key)}`),
+      api<Status[]>(`${path}/statuses`),
+      api<Label[]>(`${path}/labels`),
+      api<{ members: Member[] }>(`${path}/members`),
+    ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
+    })
+    const [issue, project, statuses, labels, { members }] = data
+    // An old project key or lowercase ID still resolves; show the canonical URL.
+    if (issue.identifier !== params.identifier) {
+      throw redirect({ to: '/$workspace/issue/$identifier', params: { workspace: params.workspace, identifier: issue.identifier }, replace: true })
     }
+    return { issue, project, statuses, labels, members }
   },
   component: IssuePage,
 })

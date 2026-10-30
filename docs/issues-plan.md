@@ -4,7 +4,7 @@ Scope (Phase 2, part 1): issues inside projects with title, description, status,
 
 Out of scope: sub-issues and blocks/blocked-by links (Phase 2 part 2, own plan), list grouping/sorting, kanban, filters, "My issues" (Phase 3), comments and activity (Phase 4), markdown rendering (descriptions are stored as markdown and **shown as plain text with line breaks**; decided, no dependency).
 
-Known limit: an issue's ID uses its project's current key, so changing a project key changes its issue IDs and old issue URLs 404. `ponytail:` keep old keys as aliases if that bites.
+Update (shipped follow-up): old project keys are kept as aliases (`project_key_aliases`, migration 011; `canonical_key()` in SQL), so old project and issue URLs redirect to the current key. A key taken by another project stops being an alias.
 
 ## Schema
 

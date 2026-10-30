@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
+import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
@@ -14,19 +14,20 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
   loader: async ({ params }) => {
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
-    try {
-      const [project, issues, statuses, labels, { members }] = await Promise.all([
-        api<Project>(projectPath),
-        api<Issue[]>(`${projectPath}/issues`),
-        api<Status[]>(`${path}/statuses`),
-        api<Label[]>(`${path}/labels`),
-        api<{ members: Member[] }>(`${path}/members`),
-      ])
-      return { project, issues, statuses, labels, members }
-    } catch (e) {
+    const [project, issues, statuses, labels, { members }] = await Promise.all([
+      api<Project>(projectPath),
+      api<Issue[]>(`${projectPath}/issues`),
+      api<Status[]>(`${path}/statuses`),
+      api<Label[]>(`${path}/labels`),
+      api<{ members: Member[] }>(`${path}/members`),
+    ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
+    })
+    if (project.key !== params.key) {
+      throw redirect({ to: '/$workspace/projects/$key', params: { workspace: params.workspace, key: project.key }, replace: true })
     }
+    return { project, issues, statuses, labels, members }
   },
   component: ProjectPage,
 })

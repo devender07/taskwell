@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useFieldError } from '../input/field-error'
 import { filterOptions, splitMatch, type Option } from './match'
 import '../input/input.css'
 import './smart-autocomplete.css'
@@ -28,7 +29,7 @@ const DEBOUNCE_MS = 200
 export function SmartAutocomplete({
   label,
   'aria-label': ariaLabel,
-  error,
+  error: rawError,
   name,
   placeholder,
   options = [],
@@ -42,6 +43,7 @@ export function SmartAutocomplete({
   const id = useId()
   const listId = `${id}-list`
   const errorId = `${id}-error`
+  const [error, onEdit] = useFieldError(rawError)
   const [own, setOwn] = useState(defaultValue)
   const selected = value !== undefined ? value : own
   const [query, setQuery] = useState(selected?.label ?? '')
@@ -105,6 +107,7 @@ export function SmartAutocomplete({
   }
 
   function choose(option: Option | null) {
+    onEdit()
     setOwn(option)
     onChange?.(option)
     setQuery(option?.label ?? '')
@@ -147,6 +150,7 @@ export function SmartAutocomplete({
           disabled={disabled}
           value={query}
           onChange={(e) => {
+            onEdit()
             setQuery(e.target.value)
             setActive(0)
             setOpen(true)

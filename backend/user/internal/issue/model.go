@@ -51,10 +51,11 @@ type ProjectRef struct {
 }
 
 type IssueRef struct {
-	ID         string `json:"id"`
-	Identifier string `json:"identifier"`
-	Title      string `json:"title"`
-	Status     Status `json:"status"`
+	ID         string  `json:"id"`
+	Identifier string  `json:"identifier"`
+	Title      string  `json:"title"`
+	Status     Status  `json:"status"`
+	Assignee   *Person `json:"assignee"`
 }
 
 type Issue struct {
@@ -97,7 +98,8 @@ type fields struct {
 // refJSON is an issue ref as JSON, selected with refFrom.
 const (
 	refJSON = `json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title,
-		'status', json_build_object('id', rs.id, 'name', rs.name, 'category', rs.category, 'position', rs.position))`
+		'status', json_build_object('id', rs.id, 'name', rs.name, 'category', rs.category, 'position', rs.position),
+		'assignee', (select json_build_object('id', ru.id, 'name', ru.name) from users ru where ru.id = r.assignee_id))`
 	refFrom = ` from issues r join projects rp on rp.id = r.project_id join statuses rs on rs.id = r.status_id`
 )
 
@@ -134,7 +136,7 @@ type model struct{ db *pgxpool.Pool }
 // projectID returns the id of the project with the key; "" when there's none.
 func (m *model) projectID(ctx context.Context, workspaceID, key string) (string, error) {
 	var id string
-	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and key = $2`, workspaceID, key).Scan(&id)
+	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and key = canonical_key($1, $2)`, workspaceID, key).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -158,9 +160,9 @@ func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
 }
 
 // get returns the issue with the project key and number; nil when there's none.
-// ponytail: matches the project's current key only, so renaming a key breaks old issue URLs; keep old keys as aliases if that bites.
+// The key may be a project's old key (canonical_key resolves aliases), so issue URLs survive key changes.
 func (m *model) get(ctx context.Context, workspaceID, key string, number int) (*Issue, error) {
-	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.workspace_id = $1 and p.key = $2 and i.number = $3`,
+	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3`,
 		workspaceID, key, number))
 }
 
@@ -190,9 +192,9 @@ func (m *model) relations(ctx context.Context, i *Issue) (IssueDetail, error) {
 func (m *model) search(ctx context.Context, workspaceID, project, q, key string, number int) ([]IssueRef, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+refJSON+refFrom+`
-		 where r.workspace_id = $1 and ($2 = '' or rp.key = $2)
-		   and ($3 = '' or rp.key = $4 and r.number = $5 or r.title ilike '%' || $6 || '%')
-		 order by rp.key = $4 and r.number = $5 desc, r.created_at desc, r.id desc limit 20`,
+		 where r.workspace_id = $1 and ($2 = '' or rp.key = canonical_key($1, $2))
+		   and ($3 = '' or rp.key = canonical_key($1, $4) and r.number = $5 or r.title ilike '%' || $6 || '%')
+		 order by rp.key = canonical_key($1, $4) and r.number = $5 desc, r.created_at desc, r.id desc limit 20`,
 		workspaceID, project, q, key, number, escapeLike(q))
 	if err != nil {
 		return nil, fmt.Errorf("search issues: %w", err)
@@ -244,7 +246,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		var number int
 		var archived bool
 		if err := tx.QueryRow(ctx,
-			`update projects set issue_seq = issue_seq + 1 where workspace_id = $1 and key = $2
+			`update projects set issue_seq = issue_seq + 1 where workspace_id = $1 and key = canonical_key($1, $2)
 			 returning id::text, issue_seq, archived_at is not null`, workspaceID, key).Scan(&projectID, &number, &archived); err != nil {
 			return err
 		}
@@ -328,7 +330,7 @@ func setParent(ctx context.Context, tx pgx.Tx, id, identifier string) error {
 	if ok {
 		err := tx.QueryRow(ctx,
 			`select i.id::text from issues i join projects p on p.id = i.project_id join issues c on c.workspace_id = i.workspace_id
-			 where c.id = $1 and p.key = $2 and i.number = $3`, id, key, number).Scan(&parentID)
+			 where c.id = $1 and p.key = canonical_key(c.workspace_id, $2) and i.number = $3`, id, key, number).Scan(&parentID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}

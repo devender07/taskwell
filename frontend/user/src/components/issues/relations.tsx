@@ -1,5 +1,6 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState, type ReactNode } from 'react'
+import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
@@ -29,6 +30,11 @@ function RefRow({ workspace, issue, children }: { workspace: string; issue: Issu
         <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
         <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>
         <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
+        {issue.assignee ? (
+          <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assignee.name} className="inline-grid flex-noshrink">
+            <Avatar name={issue.assignee.name} size={24} />
+          </span>
+        ) : null}
       </Link>
       {children}
     </li>

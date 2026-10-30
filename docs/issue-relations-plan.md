@@ -30,7 +30,7 @@ Rules (checked in Go, inside the write's transaction):
 
 Same conventions as the issues plan (FormData in, JSON out, 401/404 workspace/403 messages). Edit rule = `issues.edit_any`, or creator, or assignee (of the issue named in the path).
 
-Issue ref: `{"id","identifier","title","status": status}`
+Issue ref: `{"id","identifier","title","status": status,"assignee": person|null}` (assignee added in a follow-up)
 
 Issue JSON changes:
 - Every issue (list and single): `"parent": issueRef|null`.

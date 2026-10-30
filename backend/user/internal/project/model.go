@@ -66,14 +66,14 @@ func (m *model) create(ctx context.Context, workspaceID, userID, name, key, desc
 
 // get returns the project with the key; nil when there's none.
 func (m *model) get(ctx context.Context, workspaceID, key string) (*Project, error) {
-	return one(m.db.QueryRow(ctx, `select `+cols+` from projects where workspace_id = $1 and key = $2`, workspaceID, key))
+	return one(m.db.QueryRow(ctx, `select `+cols+` from projects where workspace_id = $1 and key = canonical_key($1, $2)`, workspaceID, key))
 }
 
 // update changes the project's name, key and description; nil when there's no project with the key.
 // Returns errTaken when the new key belongs to another project.
 func (m *model) update(ctx context.Context, workspaceID, key, name, newKey, description string) (*Project, error) {
 	p, err := one(m.db.QueryRow(ctx,
-		`update projects set name = $3, key = $4, description = $5 where workspace_id = $1 and key = $2 returning `+cols,
+		`update projects set name = $3, key = $4, description = $5 where workspace_id = $1 and key = canonical_key($1, $2) returning `+cols,
 		workspaceID, key, name, newKey, description))
 	if isUniqueViolation(err) {
 		return nil, errTaken
@@ -86,7 +86,7 @@ func (m *model) update(ctx context.Context, workspaceID, key, name, newKey, desc
 func (m *model) setArchived(ctx context.Context, workspaceID, key string, archived bool) (*Project, error) {
 	return one(m.db.QueryRow(ctx,
 		`update projects set archived_at = case when $3 then coalesce(archived_at, now()) end
-		  where workspace_id = $1 and key = $2 returning `+cols, workspaceID, key, archived))
+		  where workspace_id = $1 and key = canonical_key($1, $2) returning `+cols, workspaceID, key, archived))
 }
 
 // one scans a single project; nil when there's no row.

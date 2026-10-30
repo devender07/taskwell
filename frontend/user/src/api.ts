@@ -12,7 +12,7 @@ export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
 export type Status = { id: string; name: string; category: StatusCategory; position: number }
 export type Label = { id: string; name: string; color: string }
-export type IssueRef = { id: string; identifier: string; title: string; status: Status }
+export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
 export type Issue = {
   id: string
   identifier: string
