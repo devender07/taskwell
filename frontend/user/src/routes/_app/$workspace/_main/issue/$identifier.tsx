@@ -7,6 +7,7 @@ import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
+import { WatchButton } from '@/components/issues/watch-button'
 import '@/components/issues/issues.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
@@ -65,11 +66,14 @@ function IssuePage() {
           ) : (
             <header className="flex items-start justify-between gap-4">
               <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
-              {issue.can_edit ? (
-                <Button variant="secondary" className="flex-noshrink" onClick={() => setEditing(true)}>
-                  Edit
-                </Button>
-              ) : null}
+              <div className="flex items-start gap-2 flex-noshrink">
+                <WatchButton key={issue.id} workspace={workspace} issue={issue} />
+                {issue.can_edit ? (
+                  <Button variant="secondary" onClick={() => setEditing(true)}>
+                    Edit
+                  </Button>
+                ) : null}
+              </div>
             </header>
           )}
           <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} />

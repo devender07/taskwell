@@ -3,7 +3,7 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
-// activity events, collab.go relays live edits and notify.go emails mentions.
+// activity events and collab.go relays live edits. Changes record their notifications with notify.Record.
 package issue
 
 import (
@@ -35,6 +35,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/watch", h.wrap(h.watch(true)))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/watch", h.wrap(h.watch(false)))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/timeline", h.wrap(h.timeline))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/comments", h.wrap(h.createComment))
 	mux.HandleFunc("POST /api/workspaces/{slug}/comments/{id}", h.wrap(h.updateComment))

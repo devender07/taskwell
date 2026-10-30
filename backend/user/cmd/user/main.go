@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/mail"
+	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/project"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
@@ -43,9 +45,12 @@ func main() {
 	wsH := workspace.New(pool, authH.Authenticate, mailer, cfg)
 	wsH.Register(mux)
 	project.New(pool, authH.Authenticate, wsH.Member).Register(mux)
-	issueH := issue.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
+	issueH := issue.New(pool, authH.Authenticate, wsH.Member)
 	issueH.Register(mux)
 	go issueH.Listen(context.Background())
+	notifyH := notify.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
+	notifyH.Register(mux)
+	go notifyH.Run(context.Background(), duration("NOTIFY_INTERVAL", time.Minute), duration("NOTIFY_SETTLE", 30*time.Second))
 	fileH, err := file.New(pool, env("UPLOAD_DIR", "./uploads"), authH.Authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	if err != nil {
@@ -65,6 +70,14 @@ func main() {
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+// duration reads key as a time.Duration ("90s", "1m"), or def when it's unset or invalid.
+func duration(key string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(os.Getenv(key)); err == nil && d > 0 {
+		return d
 	}
 	return def
 }

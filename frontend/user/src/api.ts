@@ -33,6 +33,7 @@ export type Issue = {
   updated_at: string
   can_edit: boolean
   can_delete: boolean
+  watching: boolean
   parent: IssueRef | null
   sub_issues?: IssueRef[]
   blocks?: IssueRef[]
@@ -62,6 +63,17 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
 )
 export type Timeline = { comments: Comment[]; events: IssueEvent[] }
+export type Notification = {
+  id: string
+  kind: 'mention' | 'assigned' | 'status' | 'comment'
+  actor: PersonRef | null
+  issue: { identifier: string; title: string; status: Status }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string }
+  read: boolean
+  created_at: string
+}
+export type NotificationPage = { notifications: Notification[]; has_more: boolean }
+export type NotificationSettings = { email: 'instant' | 'digest' | 'off'; mentions: boolean; assignments: boolean; status: boolean; comments: boolean }
 export type FieldErrors = Record<string, string | null | undefined>
 
 // The caller's effective permission, for gating UI; the API enforces it.

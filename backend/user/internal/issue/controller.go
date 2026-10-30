@@ -11,8 +11,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -31,17 +29,13 @@ type Handler struct {
 	model        *model
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
-	mail         *mail.Mailer
-	cfg          *sysconfig.Store
 	hub          *hub
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.
 func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
-	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error),
-	mailer *mail.Mailer, cfg *sysconfig.Store) *Handler {
-	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member, mail: mailer, cfg: cfg,
-		hub: &hub{rooms: map[string]*room{}}}
+	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
+	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member, hub: &hub{rooms: map[string]*room{}}}
 }
 
 // --- issues ---
@@ -111,7 +105,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
-	h.notifyMentions(r.Context(), id, userID, nil, f.description, false)
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
 }
 
@@ -132,15 +125,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	old, err := h.model.update(r.Context(), ws.ID, i.ID, userID, f)
+	err = h.model.update(r.Context(), ws.ID, i.ID, userID, f)
 	if !checkParent(w, err) {
 		return nil
 	}
 	if err != nil {
 		return err
-	}
-	if f.setDescription {
-		h.notifyMentions(r.Context(), i.ID, userID, old, f.description, false)
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
 }
@@ -255,6 +245,21 @@ func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) 
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
 }
 
+// watch starts or stops the caller watching the issue, as on says.
+func (h *Handler) watch(on bool) func(w http.ResponseWriter, r *http.Request, userID string) error {
+	return func(w http.ResponseWriter, r *http.Request, userID string) error {
+		_, i, ok, err := h.issue(w, r, userID)
+		if !ok || err != nil {
+			return err
+		}
+		if err := h.model.setWatching(r.Context(), i.ID, userID, on); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"watching": on})
+		return nil
+	}
+}
+
 // find returns the workspace's issue with the identifier; nil when there's none.
 func (h *Handler) find(ctx context.Context, workspaceID, identifier string) (*Issue, error) {
 	key, number, ok := parseIdentifier(identifier)
@@ -305,7 +310,7 @@ func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status in
 		return nil
 	}
 	allow(i, userID, ws.Permissions)
-	d, err := h.model.relations(r.Context(), i)
+	d, err := h.model.relations(r.Context(), i, userID)
 	if err != nil {
 		return err
 	}
@@ -425,7 +430,6 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, userID s
 	if err != nil {
 		return err
 	}
-	h.notifyMentions(r.Context(), i.ID, userID, nil, body, true)
 	return h.respondComment(w, r, http.StatusCreated, id, userID, ws)
 }
 
@@ -438,11 +442,9 @@ func (h *Handler) updateComment(w http.ResponseWriter, r *http.Request, userID s
 	if !ok {
 		return nil
 	}
-	old, err := h.model.updateComment(r.Context(), c.ID, body)
-	if err != nil {
+	if err := h.model.updateComment(r.Context(), c.ID, c.issueID, userID, body); err != nil {
 		return err
 	}
-	h.notifyMentions(r.Context(), c.issueID, userID, old, body, true)
 	return h.respondComment(w, r, http.StatusOK, c.ID, userID, ws)
 }
 

@@ -34,6 +34,8 @@
 .checkbox input:checked::before { transform: scale(1); }
 .checkbox input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .checkbox input:disabled { opacity: 0.4; cursor: not-allowed; }
+.checkbox input[type='radio'] { border-radius: 9999px; }
+.checkbox input[type='radio']::before { width: 6px; height: 6px; clip-path: circle(50%); }
 
 @media (prefers-reduced-motion: reduce) {
   .checkbox input, .checkbox input::before { transition: none; }

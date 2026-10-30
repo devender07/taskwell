@@ -288,12 +288,10 @@ func (h *Handler) readFrames(ctx context.Context, conn *websocket.Conn, c *clien
 				slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
 				continue
 			}
-			old, err := h.model.saveDescription(ctx, issueID, userID, doc)
-			if err != nil {
+			if err := h.model.saveDescription(ctx, issueID, userID, doc); err != nil {
 				slog.Error("collab save failed", "issue", issueID, "err", err)
 				return
 			}
-			h.notifyMentions(ctx, issueID, userID, old, doc, false)
 		}
 	}
 }

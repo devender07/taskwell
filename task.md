@@ -47,9 +47,9 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 6: Notifications
 
-- [ ] In-app inbox: mentions, assignments, status changes on watched issues
-- [ ] Email notifications with per-user settings and a daily digest option
-- [ ] Watch / unwatch an issue
+- [x] In-app inbox: mentions, assignments, status changes on watched issues
+- [x] Email notifications with per-user settings and a daily digest option
+- [x] Watch / unwatch an issue
 
 ## Admin app (alongside, as each phase needs it)
 
@@ -74,4 +74,4 @@ Time tracking, gantt, resource planning, custom fields, permission matrices, SSO
 
 ## Next up
 
-Workspace + invites + roles. Every later table (projects, issues, comments) belongs to a workspace and checks a role, so they come first.
+Phases 1–6 and the admin app are built. Next: pick from Later (cycles, PR linking, Slack, roadmap) once real users ask.

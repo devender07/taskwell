@@ -1,6 +1,7 @@
 import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
+import { useUnread } from './unread'
 import './sidebar.css'
 
 // Main navigation inside a workspace. Add a link here when a new workspace section ships.
@@ -8,6 +9,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const onSettings = Boolean(useMatchRoute()({ to: '/$workspace/settings', params: { workspace }, fuzzy: true }))
   const navigate = useNavigate()
   const { openPalette } = useShortcuts()
+  const { count } = useUnread()
   const [expanded, setExpanded] = useState(onSettings)
   const [wasOnSettings, setWasOnSettings] = useState(onSettings)
   if (onSettings !== wasOnSettings) {
@@ -31,8 +33,13 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
-      <Link to="/$workspace/my-issues" params={{ workspace }}>
+      <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined}>
         <InboxIcon />
+        Inbox
+        {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
+      </Link>
+      <Link to="/$workspace/my-issues" params={{ workspace }}>
+        <UserIcon />
         My issues
       </Link>
       <Link to="/$workspace/projects" params={{ workspace }}>
@@ -54,6 +61,9 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <div id="sidebar-settings" className="sidebar-children">
           <Link to="/$workspace/settings/profile" params={{ workspace }}>
             Profile
+          </Link>
+          <Link to="/$workspace/settings/notifications" params={{ workspace }}>
+            Notifications
           </Link>
           <Link to="/$workspace/settings/workspace" params={{ workspace }}>
             Workspace
@@ -100,6 +110,15 @@ function InboxIcon() {
     <svg {...iconProps}>
       <path d="M22 12h-6l-2 3h-4l-2-3H2" />
       <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </svg>
+  )
+}
+
+function UserIcon() {
+  return (
+    <svg {...iconProps}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
     </svg>
   )
 }

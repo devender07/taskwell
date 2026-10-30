@@ -3,11 +3,11 @@ import { useActionState, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { IconButton } from '@tether/shared/icon-button'
 import { Logo } from '@tether/shared/logo'
 import { Popover } from '@tether/shared/popover'
 import { api, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
+import { useUnread } from './unread'
 import './navbar.css'
 
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
@@ -20,20 +20,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         <WorkspaceSwitcher workspaces={workspaces} />
       </div>
       <div className="flex items-center gap-2">
-        <Popover
-          aria-label="Notifications"
-          placement="bottom-end"
-          trigger={(props) => (
-            <IconButton aria-label="Notifications" {...props}>
-              <BellIcon />
-            </IconButton>
-          )}
-        >
-          <p className="popover-title">Notifications</p>
-          <p className="px-3 py-6 text-caption text-secondary text-center" style={{ width: 264 }}>
-            You're all caught up.
-          </p>
-        </Popover>
+        <InboxBell />
         <Popover
           aria-label="Account"
           placement="bottom-end"
@@ -47,6 +34,18 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         </Popover>
       </div>
     </header>
+  )
+}
+
+function InboxBell() {
+  const slug = useParams({ strict: false }).workspace
+  const { count } = useUnread()
+  if (!slug) return null
+  return (
+    <Link to="/$workspace/inbox" params={{ workspace: slug }} className="navbar-bell" aria-label={count ? `Inbox, ${count} unread` : 'Inbox'}>
+      <BellIcon />
+      {count ? <span className="navbar-badge" aria-hidden>{count > 9 ? '9+' : count}</span> : null}
+    </Link>
   )
 }
 

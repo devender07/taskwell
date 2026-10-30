@@ -1,0 +1,83 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { Checkbox } from '@tether/shared/checkbox'
+import { api, toFormErrors, type NotificationSettings } from '@/api'
+
+export const Route = createFileRoute('/_app/$workspace/_main/settings/notifications')({
+  loader: () => api<NotificationSettings>('/me/notification-settings'),
+  component: NotificationSettingsPage,
+})
+
+type Kind = 'mentions' | 'assignments' | 'status' | 'comments'
+
+const modes: { value: NotificationSettings['email']; label: string }[] = [
+  { value: 'instant', label: 'Right away' },
+  { value: 'digest', label: 'Once a day (daily digest)' },
+  { value: 'off', label: 'Never' },
+]
+const kinds: { value: Kind; label: string }[] = [
+  { value: 'mentions', label: 'Mentions' },
+  { value: 'assignments', label: 'Assigned to me' },
+  { value: 'status', label: 'Status changes on issues I watch' },
+  { value: 'comments', label: 'Comments on issues I watch' },
+]
+
+function NotificationSettingsPage() {
+  const [settings, setSettings] = useState<NotificationSettings>(Route.useLoaderData())
+  const [saved, setSaved] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!saved) return
+    const t = setTimeout(() => setSaved(0), 2000)
+    return () => clearTimeout(t)
+  }, [saved])
+
+  async function save(next: NotificationSettings) {
+    const prev = settings
+    setSettings(next)
+    setSaved(0)
+    setError(null)
+    const form = new FormData()
+    for (const [k, v] of Object.entries(next)) form.set(k, String(v))
+    try {
+      setSettings(await api<NotificationSettings>('/me/notification-settings', form))
+      setSaved(Date.now())
+    } catch (e) {
+      setSettings(prev)
+      const { errors, error } = toFormErrors(e)
+      setError(errors.email ?? error)
+    }
+  }
+
+  return (
+    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+      <header className="grid gap-2">
+        <h1 className="text-h2">Notifications</h1>
+        <p className="text-body-sm text-secondary">Your inbox always gets every notification. These settings choose what is emailed to you, in every workspace.</p>
+      </header>
+      <section className="grid gap-6 p-6 bg-surface border rounded-lg">
+        <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }}>
+          <legend className="text-label text-primary mb-2 p-0">Email me</legend>
+          {modes.map((m) => (
+            <label key={m.value} className="checkbox" style={{ minHeight: 44 }}>
+              <input type="radio" name="email" value={m.value} checked={settings.email === m.value} onChange={() => save({ ...settings, email: m.value })} />
+              {m.label}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }} disabled={settings.email === 'off'}>
+          <legend className="text-label text-primary mb-2 p-0">Email me about</legend>
+          {kinds.map((k) => (
+            <div key={k.value} className="flex items-center" style={{ minHeight: 44 }}>
+              <Checkbox label={k.label} checked={settings[k.value]} onChange={(e) => save({ ...settings, [k.value]: e.target.checked })} />
+            </div>
+          ))}
+        </fieldset>
+        <div role="status" className="text-caption" style={{ minHeight: 20 }}>
+          {error ? <span className="text-accent">{error}</span> : saved ? <span className="text-success">Saved.</span> : null}
+        </div>
+      </section>
+    </main>
+  )
+}

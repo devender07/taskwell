@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/notify"
 )
 
 var (
@@ -85,6 +87,7 @@ type IssueDetail struct {
 	SubIssues []IssueRef `json:"sub_issues"`
 	Blocks    []IssueRef `json:"blocks"`
 	BlockedBy []IssueRef `json:"blocked_by"`
+	Watching  bool       `json:"watching"`
 }
 
 // fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
@@ -185,16 +188,18 @@ func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
 	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id::text = $1`, id))
 }
 
-// relations returns the issue's sub-issues (by number) and the issues it blocks and is blocked by (oldest link first).
-func (m *model) relations(ctx context.Context, i *Issue) (IssueDetail, error) {
+// relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first) and
+// whether the user watches it.
+func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDetail, error) {
 	d := IssueDetail{Issue: i}
 	err := m.db.QueryRow(ctx,
 		`select coalesce((select json_agg(`+refJSON+` order by r.number)`+refFrom+` where r.parent_id = $1), '[]'),
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
 		                  join issue_links l on l.blocked_id = r.id where l.blocker_id = $1), '[]'),
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
-		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1), '[]')`,
-		i.ID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy)
+		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1), '[]'),
+		        exists(select 1 from issue_watchers where issue_id = $1 and user_id = $2)`,
+		i.ID, userID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy, &d.Watching)
 	if err != nil {
 		return d, fmt.Errorf("issue relations: %w", err)
 	}
@@ -363,7 +368,11 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
 			return err
 		}
-		return addEvents(ctx, tx, id, userID, []event{{"created", struct{}{}}})
+		if err := addEvents(ctx, tx, id, userID, []event{{"created", struct{}{}}}); err != nil {
+			return err
+		}
+		return notify.Record(ctx, tx, notify.Change{IssueID: id, ActorID: userID, Watch: []string{userID},
+			Assignee: deref(f.assigneeID), Mentioned: mentions(f.description)})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -377,13 +386,12 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 	return id, nil
 }
 
-// update changes the issue's non-nil fields, sets updated_at, logs each real change as the actor's event and
-// returns the previous description. When it sets the description it also drops the issue's live-editing updates.
-func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) (json.RawMessage, error) {
-	var before snapshot
+// update changes the issue's non-nil fields, sets updated_at, and logs each real change as the actor's event, with
+// its notifications. When it sets the description it also drops the issue's live-editing updates.
+func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var err error
-		if before, err = snap(ctx, tx, id); err != nil {
+		before, err := snap(ctx, tx, id)
+		if err != nil {
 			return err
 		}
 		if f.setDescription {
@@ -421,15 +429,28 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		if err != nil {
 			return err
 		}
-		return addEvents(ctx, tx, id, actorID, diff(before, after))
+		es := diff(before, after)
+		if err := addEvents(ctx, tx, id, actorID, es); err != nil {
+			return err
+		}
+		c := notify.Change{IssueID: id, ActorID: actorID, Mentioned: newMentions(before.description, after.description)}
+		for _, e := range es {
+			switch e.kind {
+			case "status":
+				c.Status = e.data
+			case "assignee":
+				c.Assignee = personID(after.assignee)
+			}
+		}
+		return notify.Record(ctx, tx, c)
 	})
 	if errors.As(err, new(parentError)) {
-		return nil, err
+		return err
 	}
 	if err != nil {
-		return nil, fmt.Errorf("update issue: %w", err)
+		return fmt.Errorf("update issue: %w", err)
 	}
-	return before.description, nil
+	return nil
 }
 
 // snap reads the issue's logged fields, locking it.
@@ -699,11 +720,11 @@ func (m *model) compactDoc(ctx context.Context, issueID string, upTo int64, data
 	return nil
 }
 
-// saveDescription sets the issue's description (nil clears it), logging the actor's edit when it changed, and
-// returns the previous one.
-func (m *model) saveDescription(ctx context.Context, issueID, actorID string, doc json.RawMessage) (json.RawMessage, error) {
-	var old json.RawMessage
+// saveDescription sets the issue's description (nil clears it), logging the actor's edit and notifying the newly
+// mentioned when it changed.
+func (m *model) saveDescription(ctx context.Context, issueID, actorID string, doc json.RawMessage) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var old json.RawMessage
 		var changed bool
 		if err := tx.QueryRow(ctx,
 			`update issues i set description = $2, description_text = $3, updated_at = now()
@@ -714,34 +735,15 @@ func (m *model) saveDescription(ctx context.Context, issueID, actorID string, do
 		if !changed {
 			return nil
 		}
-		return addEvents(ctx, tx, issueID, actorID, []event{{"description", struct{}{}}})
+		if err := addEvents(ctx, tx, issueID, actorID, []event{{"description", struct{}{}}}); err != nil {
+			return err
+		}
+		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: newMentions(old, doc)})
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("save description: %w", err)
+		return fmt.Errorf("save description: %w", err)
 	}
-	return old, nil
-}
-
-// mention is what a mention email needs: who's notified and where.
-type mention struct {
-	actor, identifier, title, slug string
-	emails                         []string
-}
-
-// mentionTargets returns the mention email details for the issue, with the emails of userIDs who are members of
-// its workspace, leaving out actorID.
-func (m *model) mentionTargets(ctx context.Context, issueID, actorID string, userIDs []string) (mention, error) {
-	var mn mention
-	err := m.db.QueryRow(ctx,
-		`select (select name from users where id = $2), p.key || '-' || i.number, i.title, w.slug,
-		        coalesce((select array_agg(u.email order by u.email) from workspace_members wm join users u on u.id = wm.user_id
-		                  where wm.workspace_id = i.workspace_id and u.id <> $2 and u.id::text = any($3::text[])), '{}')
-		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
-		 where i.id = $1`, issueID, actorID, userIDs).Scan(&mn.actor, &mn.identifier, &mn.title, &mn.slug, &mn.emails)
-	if err != nil {
-		return mn, fmt.Errorf("mention targets: %w", err)
-	}
-	return mn, nil
+	return nil
 }
 
 // --- comments and activity ---
@@ -832,27 +834,53 @@ func (m *model) archived(ctx context.Context, issueID string) (bool, error) {
 	return archived, nil
 }
 
+// createComment adds the author's comment and notifies the issue's watchers and the mentioned; the author starts
+// watching.
 func (m *model) createComment(ctx context.Context, issueID, authorID string, body json.RawMessage) (string, error) {
 	var id string
-	err := m.db.QueryRow(ctx, `insert into comments (issue_id, author_id, body) values ($1, $2, $3) returning id::text`,
-		issueID, authorID, body).Scan(&id)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `insert into comments (issue_id, author_id, body) values ($1, $2, $3) returning id::text`,
+			issueID, authorID, body).Scan(&id); err != nil {
+			return err
+		}
+		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: authorID, Watch: []string{authorID},
+			CommentID: id, Excerpt: notify.Excerpt(plainText(body)), NewComment: true, Mentioned: mentions(body)})
+	})
 	if err != nil {
 		return "", fmt.Errorf("create comment: %w", err)
 	}
 	return id, nil
 }
 
-// updateComment replaces the comment's body, marks it edited and returns the previous body.
-func (m *model) updateComment(ctx context.Context, id string, body json.RawMessage) (json.RawMessage, error) {
-	var old json.RawMessage
-	err := m.db.QueryRow(ctx,
-		`update comments c set body = $2, edited_at = now()
-		 from (select id, body from comments where id = $1 for update) o where c.id = o.id
-		 returning o.body`, id, body).Scan(&old)
+// updateComment replaces the body of the issue's comment, marks it edited and notifies the newly mentioned.
+func (m *model) updateComment(ctx context.Context, id, issueID, actorID string, body json.RawMessage) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var old json.RawMessage
+		if err := tx.QueryRow(ctx,
+			`update comments c set body = $2, edited_at = now()
+			 from (select id, body from comments where id = $1 for update) o where c.id = o.id
+			 returning o.body`, id, body).Scan(&old); err != nil {
+			return err
+		}
+		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, CommentID: id,
+			Excerpt: notify.Excerpt(plainText(body)), Mentioned: newMentions(old, body)})
+	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("update comment: %w", err)
+		return fmt.Errorf("update comment: %w", err)
 	}
-	return old, nil
+	return nil
+}
+
+// setWatching starts or stops the user watching the issue.
+func (m *model) setWatching(ctx context.Context, issueID, userID string, on bool) error {
+	sql := `delete from issue_watchers where issue_id = $1 and user_id = $2`
+	if on {
+		sql = `insert into issue_watchers (issue_id, user_id) values ($1, $2) on conflict do nothing`
+	}
+	if _, err := m.db.Exec(ctx, sql, issueID, userID); err != nil {
+		return fmt.Errorf("set watching: %w", err)
+	}
+	return nil
 }
 
 func (m *model) deleteComment(ctx context.Context, id string) error {

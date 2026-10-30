@@ -19,7 +19,7 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
   priority: ['Set priority…', 'P'],
   labels: ['Change labels…', 'L'],
 }
-const SETTINGS = ['Profile', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
+const SETTINGS = ['Profile', 'Notifications', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -145,6 +145,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     if (onCreate) actions.push({ value: 'create', label: 'Create issue', hint: 'C', run: onCreate })
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
+    actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
     for (const name of SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
     if (ctx) {
       if (ctx.issue.can_edit) {
@@ -152,6 +153,19 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
           actions.push({ value: m, label: MODE_ACTION[m][0], hint: MODE_ACTION[m][1], run: () => enter(m) })
         }
       }
+      const watching = ctx.issue.watching
+      actions.push({
+        value: 'watch',
+        label: watching ? 'Unwatch issue' : 'Watch issue',
+        run: () =>
+          api(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
+            () => {
+              onClose()
+              router.invalidate()
+            },
+            (e) => setError(toFormErrors(e).error),
+          ),
+      })
       const copy = (text: string) => () =>
         navigator.clipboard.writeText(text).then(onClose, () => setError("Couldn't copy. Try again."))
       actions.push({ value: 'copy-link', label: 'Copy issue link', run: copy(`${location.origin}/${slug}/issue/${ctx.issue.identifier}`) })

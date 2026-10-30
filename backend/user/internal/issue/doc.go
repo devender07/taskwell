@@ -148,6 +148,12 @@ func mentions(raw []byte) []string {
 	return ids
 }
 
+// newMentions returns the user ids mentioned in doc but not in old.
+func newMentions(old, doc []byte) []string {
+	before := mentions(old)
+	return slices.DeleteFunc(mentions(doc), func(id string) bool { return slices.Contains(before, id) })
+}
+
 // plainText returns a document's searchable text: its text and mention labels, with a newline after each block and
 // hard break. A nil or invalid doc has none.
 func plainText(raw []byte) string {
