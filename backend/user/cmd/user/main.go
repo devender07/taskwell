@@ -42,7 +42,9 @@ func main() {
 	wsH := workspace.New(pool, authH.Authenticate, mailer, cfg)
 	wsH.Register(mux)
 	project.New(pool, authH.Authenticate, wsH.Member).Register(mux)
-	issue.New(pool, authH.Authenticate, wsH.Member, mailer, cfg).Register(mux)
+	issueH := issue.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
+	issueH.Register(mux)
+	go issueH.Listen(context.Background())
 
 	slog.Info("user listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts; add http.Server with timeouts + signal handling before production.

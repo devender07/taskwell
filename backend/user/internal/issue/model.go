@@ -469,9 +469,53 @@ func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, er
 	return us, nil
 }
 
+// addDocUpdate stores an update and tells the other API instances its id, in one statement (one transaction).
 func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) error {
-	if _, err := m.db.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data); err != nil {
+	_, err := m.db.Exec(ctx,
+		`with u as (insert into issue_doc_updates (issue_id, data) values ($1, $2) returning id)
+		 select pg_notify('collab', $3::text || u.id) from u`, issueID, data, notePrefix(issueID, noteUpdate))
+	if err != nil {
 		return fmt.Errorf("add doc update: %w", err)
+	}
+	return nil
+}
+
+// docUpdate returns one stored update's data; nil when it's gone (compacted).
+func (m *model) docUpdate(ctx context.Context, id int64) ([]byte, error) {
+	var data []byte
+	err := m.db.QueryRow(ctx, `select data from issue_doc_updates where id = $1`, id).Scan(&data)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("load doc update: %w", err)
+	}
+	return data, nil
+}
+
+// notify sends payload to every API instance listening on collab.
+func (m *model) notify(ctx context.Context, payload string) error {
+	if _, err := m.db.Exec(ctx, `select pg_notify('collab', $1)`, payload); err != nil {
+		return fmt.Errorf("notify collab: %w", err)
+	}
+	return nil
+}
+
+// claimSeed claims seeding the issue's live document when nothing is stored yet and no fresh claim exists.
+// A concurrent claim waits on the row lock, then sees the new seed_claimed_at and fails.
+func (m *model) claimSeed(ctx context.Context, issueID string) (bool, error) {
+	tag, err := m.db.Exec(ctx,
+		`update issues set seed_claimed_at = now()
+		 where id = $1 and (seed_claimed_at is null or seed_claimed_at < now() - interval '10 seconds')
+		   and not exists (select 1 from issue_doc_updates where issue_id = $1)`, issueID)
+	if err != nil {
+		return false, fmt.Errorf("claim seed: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// setSeedClaim refreshes the seed claim (handed to another editor here) or clears it (free for any instance).
+func (m *model) setSeedClaim(ctx context.Context, issueID string, claimed bool) error {
+	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = case when $2 then now() end where id = $1`, issueID, claimed)
+	if err != nil {
+		return fmt.Errorf("set seed claim: %w", err)
 	}
 	return nil
 }
