@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { dueDate, email, issueDescription, issuePriority, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
+import { commentBody, dueDate, email, issueDescription, issuePriority, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -82,4 +82,7 @@ assert.equal(labelName('x'.repeat(31)), 'Label name must be 30 characters or few
 assert.equal(labelColor('#F91880'), null)
 assert.equal(labelColor('#f9188'), 'Choose a color.')
 assert.equal(labelColor('red'), 'Choose a color.')
+assert.equal(commentBody(false, 20000), null)
+assert.equal(commentBody(true, 0), 'Write a comment.')
+assert.equal(commentBody(false, 20001), 'Comment must be 20,000 characters or fewer.')
 console.log('validate: ok')

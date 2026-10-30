@@ -1,9 +1,9 @@
 // Package issue implements the user service's issue API: issues inside projects with their sub-issues and
-// blocking links, plus the workspace's statuses and labels.
+// blocking links, the workspace's statuses and labels, and issue comments and activity.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
-// and model.go owns every SQL query. doc.go checks rich-text descriptions, collab.go relays live edits
-// and notify.go emails mentions.
+// and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
+// activity events, collab.go relays live edits and notify.go emails mentions.
 package issue
 
 import (
@@ -34,6 +34,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))
+	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/timeline", h.wrap(h.timeline))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/comments", h.wrap(h.createComment))
+	mux.HandleFunc("POST /api/workspaces/{slug}/comments/{id}", h.wrap(h.updateComment))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/comments/{id}", h.wrap(h.deleteComment))
 	// The WebSocket isn't wrapped: its connection is hijacked, so it does its own auth checks before upgrading.
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/collab", h.collab)
 }

@@ -32,10 +32,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Phase 4: Collaboration
 
-- [x] Rich text descriptions (Tiptap): formatting toolbar, markdown shortcuts, live collaborative editing with named cursors (Yjs relayed and stored by the Go API)
-- [ ] Comments on issues (rich text, reusing the shared editor)
-- [ ] Activity log (status changes, reassignments, edits)
-- [ ] `@mentions` in comments and descriptions, notified by email (descriptions done)
+- [x] Rich text descriptions (Tiptap): formatting toolbar, markdown shortcuts, live collaborative editing with named cursors (Yjs relayed and stored by the Go API, across instances via Postgres LISTEN/NOTIFY)
+- [x] Comments on issues (rich text, reusing the shared editor; edit and delete; `comments.create` / `comments.manage`)
+- [x] Activity log (status changes, reassignments, edits)
+- [x] `@mentions` in comments and descriptions, notified by email
 - [ ] Image and file attachments in descriptions and comments
 
 ## Phase 5: Keyboard-first

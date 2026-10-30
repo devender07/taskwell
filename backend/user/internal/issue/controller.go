@@ -23,6 +23,8 @@ const (
 	errStatusNotFound  = "Status not found."
 	errLabelNotFound   = "Label not found."
 	errForbidden       = "You don't have permission to do that."
+	errCommentNotFound = "Comment not found."
+	errArchivedProject = "This project is archived."
 )
 
 type Handler struct {
@@ -96,7 +98,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	id, err := h.model.create(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, f)
 	if errors.Is(err, errArchived) {
-		writeErr(w, http.StatusConflict, "This project is archived.")
+		writeErr(w, http.StatusConflict, errArchivedProject)
 		return nil
 	}
 	if !checkParent(w, err) {
@@ -109,7 +111,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
-	h.notifyMentions(r.Context(), id, userID, nil, f.description)
+	h.notifyMentions(r.Context(), id, userID, nil, f.description, false)
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
 }
 
@@ -130,7 +132,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	old, err := h.model.update(r.Context(), ws.ID, i.ID, f)
+	old, err := h.model.update(r.Context(), ws.ID, i.ID, userID, f)
 	if !checkParent(w, err) {
 		return nil
 	}
@@ -138,7 +140,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if f.setDescription {
-		h.notifyMentions(r.Context(), i.ID, userID, old, f.description)
+		h.notifyMentions(r.Context(), i.ID, userID, old, f.description, false)
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
 }
@@ -202,7 +204,7 @@ func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) er
 	if typ == "blocked_by" {
 		blocker, blocked = blocked, blocker
 	}
-	err = h.model.link(r.Context(), blocker, blocked)
+	err = h.model.link(r.Context(), blocker, blocked, userID)
 	if errors.Is(err, errLinked) {
 		writeFields(w, http.StatusConflict, map[string]string{"issue": "These issues are already linked."})
 		return nil
@@ -226,7 +228,7 @@ func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusNotFound, errIssueNotFound)
 		return nil
 	}
-	found, err := h.model.unlink(r.Context(), i.ID, other.ID)
+	found, err := h.model.unlink(r.Context(), i.ID, other.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -335,7 +337,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	if d := value("description"); d != nil {
 		f.setDescription = true
 		if *d != "" {
-			f.description, errs["description"] = checkDoc([]byte(*d))
+			f.description, errs["description"] = checkDescription([]byte(*d))
 		}
 	}
 	if f.statusID = value("status_id"); f.statusID != nil && *f.statusID == "" {
@@ -362,6 +364,137 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 		return f, false, err
 	}
 	return f, true, nil
+}
+
+// --- comments and activity ---
+
+func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	cs, es, err := h.model.timeline(r.Context(), i.ID)
+	if err != nil {
+		return err
+	}
+	for i := range cs {
+		allowComment(&cs[i], userID, ws.Permissions)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es})
+	return nil
+}
+
+func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if !workspace.Has(ws.Permissions, workspace.PermCommentsCreate) {
+		writeErr(w, http.StatusForbidden, errForbidden)
+		return nil
+	}
+	archived, err := h.model.archived(r.Context(), i.ID)
+	if err != nil {
+		return err
+	}
+	if archived {
+		writeErr(w, http.StatusForbidden, errArchivedProject)
+		return nil
+	}
+	body, ok := readComment(w, r)
+	if !ok {
+		return nil
+	}
+	id, err := h.model.createComment(r.Context(), i.ID, userID, body)
+	if err != nil {
+		return err
+	}
+	h.notifyMentions(r.Context(), i.ID, userID, nil, body, true)
+	return h.respondComment(w, r, http.StatusCreated, id, userID, ws)
+}
+
+func (h *Handler) updateComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, c, ok, err := h.ownComment(w, r, userID, func(c *Comment) bool { return c.CanEdit })
+	if !ok || err != nil {
+		return err
+	}
+	body, ok := readComment(w, r)
+	if !ok {
+		return nil
+	}
+	old, err := h.model.updateComment(r.Context(), c.ID, body)
+	if err != nil {
+		return err
+	}
+	h.notifyMentions(r.Context(), c.issueID, userID, old, body, true)
+	return h.respondComment(w, r, http.StatusOK, c.ID, userID, ws)
+}
+
+func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, c, ok, err := h.ownComment(w, r, userID, func(c *Comment) bool { return c.CanDelete })
+	if !ok || err != nil {
+		return err
+	}
+	if err := h.model.deleteComment(r.Context(), c.ID); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// ownComment returns the path's workspace and comment when the caller may change it (can reports that), or writes
+// a 404 or 403 and returns ok=false.
+func (h *Handler) ownComment(w http.ResponseWriter, r *http.Request, userID string, can func(*Comment) bool) (*workspace.Workspace, *Comment, bool, error) {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return nil, nil, false, err
+	}
+	c, err := h.model.comment(r.Context(), ws.ID, r.PathValue("id"))
+	switch {
+	case err != nil:
+		return nil, nil, false, err
+	case c == nil:
+		writeErr(w, http.StatusNotFound, errCommentNotFound)
+		return nil, nil, false, nil
+	case c.archived:
+		writeErr(w, http.StatusForbidden, errArchivedProject)
+		return nil, nil, false, nil
+	}
+	if allowComment(c, userID, ws.Permissions); !can(c) {
+		writeErr(w, http.StatusForbidden, errForbidden)
+		return nil, nil, false, nil
+	}
+	return ws, c, true, nil
+}
+
+func (h *Handler) respondComment(w http.ResponseWriter, r *http.Request, status int, id, userID string, ws *workspace.Workspace) error {
+	c, err := h.model.comment(r.Context(), ws.ID, id)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		writeErr(w, http.StatusNotFound, errCommentNotFound)
+		return nil
+	}
+	allowComment(c, userID, ws.Permissions)
+	writeJSON(w, status, c)
+	return nil
+}
+
+// allowComment sets the caller's can_edit and can_delete: comments.manage, or they wrote it (and editing still needs
+// comments.create). Nothing in an archived project.
+func allowComment(c *Comment, userID string, perms []string) {
+	manage := workspace.Has(perms, workspace.PermCommentsManage)
+	author := c.Author != nil && c.Author.ID == userID
+	c.CanEdit = !c.archived && (manage || author && workspace.Has(perms, workspace.PermCommentsCreate))
+	c.CanDelete = !c.archived && (manage || author)
+}
+
+// readComment returns the form's checked body, or writes a 400 and returns ok=false.
+func readComment(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
+	_ = r.ParseMultipartForm(maxBody)
+	body, msg := checkComment(r.PostForm.Get("body"))
+	return body, checkFields(w, map[string]string{"body": msg})
 }
 
 // --- statuses ---

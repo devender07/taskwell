@@ -2,6 +2,7 @@ package issue
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -28,19 +29,17 @@ var (
 )
 
 const (
-	errDocInvalid     = "Description is not valid."
-	errDocUnsupported = "Description has unsupported content."
-	errDocTooLong     = "Description must be 50,000 characters or fewer."
 	maxDocDepth       = 32
-	maxDocLen         = 50000
+	maxDescriptionLen = 50000
+	maxCommentLen     = 20000
 )
 
-// checkDoc validates a description document and returns it normalized, or nil when it's empty, plus an error
-// message ("" when valid).
-func checkDoc(raw []byte) (json.RawMessage, string) {
+// checkDoc validates a rich-text document (a description, or a comment) up to maxLen characters, and returns it
+// normalized, or nil when it's empty, plus an error message naming it ("" when valid).
+func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 	var doc node
 	if err := json.Unmarshal(raw, &doc); err != nil || doc.Type != "doc" {
-		return nil, errDocInvalid
+		return nil, name + " is not valid."
 	}
 	length, solid := 0, false
 	var walk func(n node, depth int) bool
@@ -83,19 +82,35 @@ func checkDoc(raw []byte) (json.RawMessage, string) {
 		return true
 	}
 	if !walk(doc, 1) {
-		return nil, errDocUnsupported
+		return nil, name + " has unsupported content."
 	}
-	if length > maxDocLen {
-		return nil, errDocTooLong
+	if length > maxLen {
+		return nil, fmt.Sprintf("%s must be %d,%03d characters or fewer.", name, maxLen/1000, maxLen%1000)
 	}
 	if length == 0 && !solid {
 		return nil, ""
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {
-		return nil, errDocInvalid
+		return nil, name + " is not valid."
 	}
 	return out, ""
+}
+
+func checkDescription(raw []byte) (json.RawMessage, string) {
+	return checkDoc(raw, "Description", maxDescriptionLen)
+}
+
+// checkComment is checkDoc for a comment, which can't be empty.
+func checkComment(raw string) (json.RawMessage, string) {
+	if raw == "" {
+		return nil, "Write a comment."
+	}
+	doc, msg := checkDoc([]byte(raw), "Comment", maxCommentLen)
+	if doc == nil && msg == "" {
+		msg = "Write a comment."
+	}
+	return doc, msg
 }
 
 // mentions returns the user ids mentioned in a document, each once, in order. A nil or invalid doc has none.

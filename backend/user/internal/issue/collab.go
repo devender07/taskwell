@@ -283,17 +283,17 @@ func (h *Handler) readFrames(ctx context.Context, conn *websocket.Conn, c *clien
 				return
 			}
 		case data[0] == msgSave:
-			doc, msg := checkDoc(body)
+			doc, msg := checkDescription(body)
 			if msg != "" {
 				slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
 				continue
 			}
-			old, err := h.model.saveDescription(ctx, issueID, doc)
+			old, err := h.model.saveDescription(ctx, issueID, userID, doc)
 			if err != nil {
 				slog.Error("collab save failed", "issue", issueID, "err", err)
 				return
 			}
-			h.notifyMentions(ctx, issueID, userID, old, doc)
+			h.notifyMentions(ctx, issueID, userID, old, doc, false)
 		}
 	}
 }

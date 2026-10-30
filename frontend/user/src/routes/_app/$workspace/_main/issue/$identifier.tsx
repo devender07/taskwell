@@ -1,11 +1,12 @@
 import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
-import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData } from '@/api'
 import { Description } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { Relations, SubIssues } from '@/components/issues/relations'
+import { Timeline } from '@/components/issues/timeline'
 import '@/components/issues/issues.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
@@ -18,16 +19,17 @@ export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')
       api<Status[]>(`${path}/statuses`),
       api<Label[]>(`${path}/labels`),
       api<{ members: Member[] }>(`${path}/members`),
+      api<TimelineData>(`${path}/issues/${encodeURIComponent(params.identifier)}/timeline`),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
     })
-    const [issue, project, statuses, labels, { members }] = data
+    const [issue, project, statuses, labels, { members }, timeline] = data
     // An old project key or lowercase ID still resolves; show the canonical URL.
     if (issue.identifier !== params.identifier) {
       throw redirect({ to: '/$workspace/issue/$identifier', params: { workspace: params.workspace, identifier: issue.identifier }, replace: true })
     }
-    return { issue, project, statuses, labels, members }
+    return { issue, project, statuses, labels, members, timeline }
   },
   component: IssuePage,
 })
@@ -35,7 +37,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')
 function IssuePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { user } = Route.useRouteContext()
-  const { issue, project, statuses, labels, members } = Route.useLoaderData()
+  const { issue, project, statuses, labels, members, timeline } = Route.useLoaderData()
   const [editing, setEditing] = useState(false)
   const create = can(workspace, 'issues.create') && !project.archived
 
@@ -75,6 +77,7 @@ function IssuePage() {
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
           )}
           <Relations key={issue.id} workspace={workspace} issue={issue} />
+          <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} members={members} />
         </article>
         <aside className="grid gap-4">
           <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} members={members} />

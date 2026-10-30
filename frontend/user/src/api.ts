@@ -36,6 +36,30 @@ export type Issue = {
   blocks?: IssueRef[]
   blocked_by?: IssueRef[]
 }
+export type Comment = {
+  id: string
+  author: PersonRef | null
+  body: Doc
+  created_at: string
+  edited_at: string | null
+  can_edit: boolean
+  can_delete: boolean
+}
+type StatusSnap = Pick<Status, 'id' | 'name' | 'category'>
+type EventRef = Pick<IssueRef, 'id' | 'identifier' | 'title'>
+type Change<T> = { from: T; to: T }
+export type IssueEvent = { id: string; actor: PersonRef | null; created_at: string } & (
+  | { kind: 'created' | 'description'; data: Record<string, never> }
+  | { kind: 'title'; data: Change<string> }
+  | { kind: 'status'; data: Change<StatusSnap> }
+  | { kind: 'assignee'; data: Change<PersonRef | null> }
+  | { kind: 'priority'; data: Change<number> }
+  | { kind: 'due_date'; data: Change<string | null> }
+  | { kind: 'labels'; data: { added: Label[]; removed: Label[] } }
+  | { kind: 'parent'; data: Change<EventRef | null> }
+  | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
+)
+export type Timeline = { comments: Comment[]; events: IssueEvent[] }
 export type FieldErrors = Record<string, string | null | undefined>
 
 // The caller's effective permission, for gating UI; the API enforces it.

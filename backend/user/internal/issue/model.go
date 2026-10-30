@@ -282,7 +282,10 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 				return err
 			}
 		}
-		return setLabels(ctx, tx, workspaceID, id, f.labelIDs)
+		if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
+			return err
+		}
+		return addEvents(ctx, tx, id, userID, []event{{"created", struct{}{}}})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -296,15 +299,16 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 	return id, nil
 }
 
-// update changes the issue's non-nil fields and sets updated_at. When it sets the description it also drops the
-// issue's live-editing updates and returns the previous description.
-func (m *model) update(ctx context.Context, workspaceID, id string, f fields) (json.RawMessage, error) {
-	var old json.RawMessage
+// update changes the issue's non-nil fields, sets updated_at, logs each real change as the actor's event and
+// returns the previous description. When it sets the description it also drops the issue's live-editing updates.
+func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) (json.RawMessage, error) {
+	var before snapshot
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if before, err = snap(ctx, tx, id); err != nil {
+			return err
+		}
 		if f.setDescription {
-			if err := tx.QueryRow(ctx, `select description from issues where id::text = $1 for update`, id).Scan(&old); err != nil {
-				return err
-			}
 			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id::text = $1`, id); err != nil {
 				return err
 			}
@@ -325,13 +329,19 @@ func (m *model) update(ctx context.Context, workspaceID, id string, f fields) (j
 			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription); err != nil {
 			return err
 		}
-		if !f.setLabels {
-			return nil
+		if f.setLabels {
+			if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id::text = $1`, id); err != nil {
+				return err
+			}
+			if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
+				return err
+			}
 		}
-		if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id::text = $1`, id); err != nil {
+		after, err := snap(ctx, tx, id)
+		if err != nil {
 			return err
 		}
-		return setLabels(ctx, tx, workspaceID, id, f.labelIDs)
+		return addEvents(ctx, tx, id, actorID, diff(before, after))
 	})
 	if errors.As(err, new(parentError)) {
 		return nil, err
@@ -339,7 +349,65 @@ func (m *model) update(ctx context.Context, workspaceID, id string, f fields) (j
 	if err != nil {
 		return nil, fmt.Errorf("update issue: %w", err)
 	}
-	return old, nil
+	return before.description, nil
+}
+
+// snap reads the issue's logged fields, locking it.
+func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
+	var s snapshot
+	err := tx.QueryRow(ctx,
+		`select i.title, i.description, s.id::text, s.name, s.category,
+		        (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = i.assignee_id),
+		        i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
+		        coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
+		                  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
+		        (select json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title)
+		         from issues r join projects rp on rp.id = r.project_id where r.id = i.parent_id)
+		 from issues i join statuses s on s.id = i.status_id where i.id::text = $1 for update of i`, id).
+		Scan(&s.title, &s.description, &s.status.ID, &s.status.Name, &s.status.Category, &s.assignee, &s.priority, &s.dueDate,
+			&s.labels, &s.parent)
+	return s, err
+}
+
+// addEvents logs the events as the actor's. A description edit within 10 minutes of the actor's latest event on the
+// issue, itself a description edit, bumps that event's time instead.
+func addEvents(ctx context.Context, tx pgx.Tx, issueID, actorID string, es []event) error {
+	for _, e := range es {
+		var err error
+		if e.kind == "description" {
+			_, err = tx.Exec(ctx,
+				`with last as (select id from issue_events where issue_id = $1 and actor_id = $2 order by id desc limit 1),
+				 bumped as (update issue_events e set created_at = now() from last
+				            where e.id = last.id and e.kind = 'description' and e.created_at > now() - interval '10 minutes' returning e.id)
+				 insert into issue_events (issue_id, actor_id, kind) select $1, $2, 'description' where not exists (select 1 from bumped)`,
+				issueID, actorID)
+		} else {
+			var data []byte
+			if data, err = json.Marshal(e.data); err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx, `insert into issue_events (issue_id, actor_id, kind, data) values ($1, $2, $3, $4)`,
+				issueID, actorID, e.kind, data)
+		}
+		if err != nil {
+			return fmt.Errorf("add %s event: %w", e.kind, err)
+		}
+	}
+	return nil
+}
+
+// addLinkEvents logs a new or removed link on both issues, each from its own side.
+func addLinkEvents(ctx context.Context, tx pgx.Tx, blockerID, blockedID, actorID string, removed bool) error {
+	_, err := tx.Exec(ctx,
+		`insert into issue_events (issue_id, actor_id, kind, data)
+		 select v.id, $3, 'link', jsonb_build_object('type', v.type, 'removed', $4::bool,
+		          'issue', jsonb_build_object('id', o.id, 'identifier', p.key || '-' || o.number, 'title', o.title))
+		 from (values ($1::uuid, $2::uuid, 'blocks'), ($2::uuid, $1::uuid, 'blocked_by')) v(id, other, type)
+		 join issues o on o.id = v.other join projects p on p.id = o.project_id`, blockerID, blockedID, actorID, removed)
+	if err != nil {
+		return fmt.Errorf("add link events: %w", err)
+	}
+	return nil
 }
 
 // setParent makes the issue with the id a sub-issue of the one with the identifier in the same workspace, or
@@ -393,8 +461,8 @@ func lockIssues(ctx context.Context, tx pgx.Tx, ids ...string) error {
 	return err
 }
 
-// link records that blocker blocks blocked. Returns errLinked when the two are already linked either way.
-func (m *model) link(ctx context.Context, blockerID, blockedID string) error {
+// link records that blocker blocks blocked, as the actor. Returns errLinked when the two are already linked either way.
+func (m *model) link(ctx context.Context, blockerID, blockedID, actorID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if err := lockIssues(ctx, tx, blockerID, blockedID); err != nil {
 			return err
@@ -403,10 +471,13 @@ func (m *model) link(ctx context.Context, blockerID, blockedID string) error {
 			`insert into issue_links (blocker_id, blocked_id) select $1, $2
 			 where not exists(select 1 from issue_links where blocker_id in ($1, $2) and blocked_id in ($1, $2))`,
 			blockerID, blockedID)
-		if err == nil && tag.RowsAffected() == 0 {
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
 			return errLinked
 		}
-		return err
+		return addLinkEvents(ctx, tx, blockerID, blockedID, actorID, false)
 	})
 	if errors.Is(err, errLinked) {
 		return err
@@ -417,14 +488,27 @@ func (m *model) link(ctx context.Context, blockerID, blockedID string) error {
 	return nil
 }
 
-// unlink removes the link between the two issues, whichever way it goes; false when there's none.
-func (m *model) unlink(ctx context.Context, a, b string) (bool, error) {
-	tag, err := m.db.Exec(ctx,
-		`delete from issue_links where blocker_id = $1 and blocked_id = $2 or blocker_id = $2 and blocked_id = $1`, a, b)
+// unlink removes the link between the two issues, whichever way it goes, as the actor; false when there's none.
+func (m *model) unlink(ctx context.Context, a, b, actorID string) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var blocker, blocked string
+		err := tx.QueryRow(ctx,
+			`delete from issue_links where blocker_id = $1 and blocked_id = $2 or blocker_id = $2 and blocked_id = $1
+			 returning blocker_id::text, blocked_id::text`, a, b).Scan(&blocker, &blocked)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		return addLinkEvents(ctx, tx, blocker, blocked, actorID, true)
+	})
 	if err != nil {
 		return false, fmt.Errorf("unlink issues: %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+	return found, nil
 }
 
 func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labelIDs []string) error {
@@ -535,13 +619,23 @@ func (m *model) compactDoc(ctx context.Context, issueID string, upTo int64, data
 	return nil
 }
 
-// saveDescription sets the issue's description (nil clears it) and returns the previous one.
-func (m *model) saveDescription(ctx context.Context, issueID string, doc json.RawMessage) (json.RawMessage, error) {
+// saveDescription sets the issue's description (nil clears it), logging the actor's edit when it changed, and
+// returns the previous one.
+func (m *model) saveDescription(ctx context.Context, issueID, actorID string, doc json.RawMessage) (json.RawMessage, error) {
 	var old json.RawMessage
-	err := m.db.QueryRow(ctx,
-		`update issues i set description = $2, updated_at = now()
-		 from (select id, description from issues where id = $1 for update) o where i.id = o.id
-		 returning o.description`, issueID, doc).Scan(&old)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var changed bool
+		if err := tx.QueryRow(ctx,
+			`update issues i set description = $2, updated_at = now()
+			 from (select id, description from issues where id = $1 for update) o where i.id = o.id
+			 returning o.description, o.description is distinct from $2::jsonb`, issueID, doc).Scan(&old, &changed); err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return addEvents(ctx, tx, issueID, actorID, []event{{"description", struct{}{}}})
+	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("save description: %w", err)
 	}
@@ -568,6 +662,124 @@ func (m *model) mentionTargets(ctx context.Context, issueID, actorID string, use
 		return mn, fmt.Errorf("mention targets: %w", err)
 	}
 	return mn, nil
+}
+
+// --- comments and activity ---
+
+type Comment struct {
+	ID        string          `json:"id"`
+	Author    *Person         `json:"author"`
+	Body      json.RawMessage `json:"body"`
+	CreatedAt time.Time       `json:"created_at"`
+	EditedAt  *time.Time      `json:"edited_at"`
+	CanEdit   bool            `json:"can_edit"`
+	CanDelete bool            `json:"can_delete"`
+	issueID   string
+	archived  bool // its issue's project is archived
+}
+
+type Event struct {
+	ID        string          `json:"id"`
+	Actor     *Person         `json:"actor"`
+	Kind      string          `json:"kind"`
+	Data      json.RawMessage `json:"data"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+const commentCols = `c.id::text, (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = c.author_id),
+	c.body, c.created_at, c.edited_at, c.issue_id::text, p.archived_at is not null
+	from comments c join issues i on i.id = c.issue_id join projects p on p.id = i.project_id`
+
+func scanComment(row pgx.Row) (Comment, error) {
+	var c Comment
+	err := row.Scan(&c.ID, &c.Author, &c.Body, &c.CreatedAt, &c.EditedAt, &c.issueID, &c.archived)
+	c.CreatedAt = c.CreatedAt.UTC()
+	if c.EditedAt != nil {
+		*c.EditedAt = c.EditedAt.UTC()
+	}
+	return c, err
+}
+
+// timeline returns the issue's comments and events, each oldest first.
+func (m *model) timeline(ctx context.Context, issueID string) ([]Comment, []Event, error) {
+	rows, err := m.db.Query(ctx, `select `+commentCols+` where c.issue_id = $1 order by c.created_at, c.id`, issueID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list comments: %w", err)
+	}
+	cs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Comment, error) { return scanComment(row) })
+	if err != nil {
+		return nil, nil, fmt.Errorf("list comments: %w", err)
+	}
+	rows, err = m.db.Query(ctx,
+		`select e.id::text, (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = e.actor_id),
+		        e.kind, e.data, e.created_at
+		 from issue_events e where e.issue_id = $1 order by e.created_at, e.id`, issueID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list events: %w", err)
+	}
+	es, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Event, error) {
+		var e Event
+		err := row.Scan(&e.ID, &e.Actor, &e.Kind, &e.Data, &e.CreatedAt)
+		e.CreatedAt = e.CreatedAt.UTC()
+		return e, err
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("list events: %w", err)
+	}
+	return cs, es, nil
+}
+
+// comment returns the workspace's comment with the id; nil when there's none.
+func (m *model) comment(ctx context.Context, workspaceID, id string) (*Comment, error) {
+	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id::text = $2`, workspaceID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("comment: %w", err)
+	}
+	return &c, nil
+}
+
+// archived reports whether the issue's project is archived.
+func (m *model) archived(ctx context.Context, issueID string) (bool, error) {
+	var archived bool
+	err := m.db.QueryRow(ctx,
+		`select p.archived_at is not null from issues i join projects p on p.id = i.project_id where i.id = $1`, issueID).Scan(&archived)
+	if err != nil {
+		return false, fmt.Errorf("project archived: %w", err)
+	}
+	return archived, nil
+}
+
+func (m *model) createComment(ctx context.Context, issueID, authorID string, body json.RawMessage) (string, error) {
+	var id string
+	err := m.db.QueryRow(ctx, `insert into comments (issue_id, author_id, body) values ($1, $2, $3) returning id::text`,
+		issueID, authorID, body).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("create comment: %w", err)
+	}
+	return id, nil
+}
+
+// updateComment replaces the comment's body, marks it edited and returns the previous body.
+func (m *model) updateComment(ctx context.Context, id string, body json.RawMessage) (json.RawMessage, error) {
+	var old json.RawMessage
+	err := m.db.QueryRow(ctx,
+		`update comments c set body = $2, edited_at = now()
+		 from (select id, body from comments where id = $1 for update) o where c.id = o.id
+		 returning o.body`, id, body).Scan(&old)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("update comment: %w", err)
+	}
+	return old, nil
+}
+
+func (m *model) deleteComment(ctx context.Context, id string) error {
+	if _, err := m.db.Exec(ctx, `delete from comments where id = $1`, id); err != nil {
+		return fmt.Errorf("delete comment: %w", err)
+	}
+	return nil
 }
 
 func oneIssue(row pgx.Row) (*Issue, error) {
