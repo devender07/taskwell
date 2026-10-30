@@ -87,17 +87,50 @@ func (m *model) userIDByEmail(ctx context.Context, email string) (string, error)
 	return id, nil
 }
 
-// userByID returns nil when there is no such user.
-func (m *model) userByID(ctx context.Context, id string) (*User, error) {
-	var u User
-	err := m.db.QueryRow(ctx, `select id::text, name, email from users where id = $1`, id).Scan(&u.ID, &u.Name, &u.Email)
+// Profile is the signed-in user as GET /api/me returns it.
+type Profile struct {
+	User
+	HasPassword bool `json:"has_password"`
+}
+
+// profile returns nil when there is no such user.
+func (m *model) profile(ctx context.Context, id string) (*Profile, error) {
+	var p Profile
+	err := m.db.QueryRow(ctx, `select id::text, name, email, password_hash is not null from users where id = $1`, id).
+		Scan(&p.ID, &p.Name, &p.Email, &p.HasPassword)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find user: %w", err)
 	}
-	return &u, nil
+	return &p, nil
+}
+
+// passwordHash returns the user's password hash; nil when they have none (or don't exist).
+func (m *model) passwordHash(ctx context.Context, id string) (*string, error) {
+	var hash *string
+	err := m.db.QueryRow(ctx, `select password_hash from users where id = $1`, id).Scan(&hash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("read password: %w", err)
+	}
+	return hash, nil
+}
+
+// setPassword stores a new password hash and signs out every other session: all refresh tokens except the family
+// that keepTokenHash (the caller's refresh token, may be nil) belongs to.
+func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTokenHash []byte) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update users set password_hash = $2 where id = $1`, id, passwordHash); err != nil {
+			return fmt.Errorf("update password: %w", err)
+		}
+		if _, err := tx.Exec(ctx,
+			`delete from refresh_tokens where user_id = $1 and family_id is distinct from
+			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, id, keepTokenHash); err != nil {
+			return fmt.Errorf("sign out other sessions: %w", err)
+		}
+		return nil
+	})
 }
 
 // userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,

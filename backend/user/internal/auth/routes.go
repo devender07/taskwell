@@ -19,6 +19,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/otp/verify", h.wrap(h.otpVerify))
 	mux.HandleFunc("POST /api/auth/password/forgot", h.wrap(h.forgot))
 	mux.HandleFunc("POST /api/auth/password/reset", h.wrap(h.reset))
+	mux.HandleFunc("POST /api/auth/password/change", h.wrap(h.changePassword))
 	mux.HandleFunc("POST /api/auth/refresh", h.wrap(h.refresh))
 	mux.HandleFunc("POST /api/auth/signout", h.wrap(h.signout))
 	mux.HandleFunc("GET /api/auth/google", h.wrap(h.googleStart))

@@ -12,7 +12,8 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`tether.app/acme`), switcher, settings (rename, change URL), admin/member role on membership
 - [x] Team invites: invite by email from Settings → Members, accept link (`/invite`, email must match), resend or cancel; member list
 - [x] Roles: built-in Admin and Member plus custom roles with permissions (Settings → Roles), change role, remove member, leave
-- [ ] Profile: ~~name~~ (done: Settings → Profile), avatar, change password
+- [x] Profile: name, change or set password (Settings → Profile; signs out other devices)
+- [ ] Avatar upload (waits for file storage, with attachments in Phase 4; initials until then)
 
 ## Phase 2: Projects and issues
 

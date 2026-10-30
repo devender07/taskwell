@@ -23,6 +23,9 @@ const (
 	errBadReset  = "This reset link is invalid or expired."
 	errBadLogin  = "Wrong email or password."
 	errSignedOut = "Not signed in."
+
+	errCurrentRequired = "Current password is required."
+	errCurrentWrong    = "Current password is incorrect."
 )
 
 // dummyHash keeps sign-in timing the same whether or not the email exists.
@@ -218,6 +221,51 @@ func (h *Handler) reset(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// changePassword sets a new password, checking the current one when the account has one (Google and email-code
+// accounts may not). Other sessions are signed out; this one stays.
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	userID, err := h.Authenticate(r)
+	if err != nil {
+		return err
+	}
+	if userID == "" {
+		writeErr(w, http.StatusUnauthorized, errSignedOut)
+		return nil
+	}
+	current, pw := r.FormValue("current_password"), r.FormValue("password")
+	old, err := h.model.passwordHash(ctx, userID)
+	if err != nil {
+		return err
+	}
+	errs := map[string]string{}
+	if msg := checkPassword(pw); msg != "" {
+		errs["password"] = msg
+	}
+	if old != nil && current == "" {
+		errs["current_password"] = errCurrentRequired
+	} else if old != nil && bcrypt.CompareHashAndPassword([]byte(*old), []byte(current)) != nil {
+		errs["current_password"] = errCurrentWrong
+	}
+	if len(errs) > 0 {
+		writeFields(w, http.StatusBadRequest, errs)
+		return nil
+	}
+	ph, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	var keep []byte
+	if c, err := r.Cookie(refreshCookie); err == nil {
+		keep = hash(c.Value)
+	}
+	if err := h.model.setPassword(ctx, userID, string(ph), keep); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 // refresh trades a valid refresh token for a new access + refresh pair.
 func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) error {
 	c, err := r.Cookie(refreshCookie)
@@ -256,9 +304,9 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var u *User
+	var u *Profile
 	if userID != "" {
-		if u, err = h.model.userByID(r.Context(), userID); err != nil {
+		if u, err = h.model.profile(r.Context(), userID); err != nil {
 			return err
 		}
 	}

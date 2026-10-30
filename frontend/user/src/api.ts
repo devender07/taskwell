@@ -1,6 +1,6 @@
 import { redirect } from '@tanstack/react-router'
 
-export type User = { id: string; name: string; email: string }
+export type User = { id: string; name: string; email: string; has_password: boolean }
 export type RoleRef = { id: string; name: string }
 export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
 export type Member = { id: string; name: string; email: string; role: RoleRef }
@@ -30,10 +30,10 @@ export class ApiError extends Error {
 }
 
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
-// A 401 outside /auth/* refreshes the access token once and retries.
+// A 401 outside /auth/* (except password change, which needs a session) refreshes the access token once and retries.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET'): Promise<T> {
   let res = await send(path, body, method)
-  if (res.status === 401 && !path.startsWith('/auth/')) {
+  if (res.status === 401 && (!path.startsWith('/auth/') || path === '/auth/password/change')) {
     await refreshAccess()
     res = await send(path, body, method)
   }
