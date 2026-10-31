@@ -27,7 +27,7 @@
   border-radius: 6px;
 }
 .chat-row-name { font: inherit; font-size: 14px; line-height: 21px; }
-.chat-row[aria-current='page'] { background: rgba(255, 255, 255, 0.05); box-shadow: inset 2px 0 0 var(--link); }
+.chat-row[aria-current='page'] { background: rgba(255, 255, 255, 0.05); }
 .chat-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 @media (hover: hover) {
   .chat-row:hover { background: rgba(255, 255, 255, 0.03); }
