@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { useActionState, useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
+import { Pagination } from '@tether/shared/pagination'
 import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
@@ -193,6 +194,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
 }
 
 const at = (x: { created_at: string }) => Date.parse(x.created_at)
+const ACTIVITY_PER_PAGE = 5
 
 function activityText(item: ActivityItem) {
   const subject = <IssueName issue={item.issue} />
@@ -218,18 +220,32 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
   }
   const items = [...page.items, ...older]
 
-  const [error, loadMore, loading] = useActionState(async () => {
+  const more = olderMore ?? page.has_more
+  const [shown, setShown] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const current = Math.min(shown, Math.max(1, Math.ceil(items.length / ACTIVITY_PER_PAGE)))
+  const hasNext = items.length > current * ACTIVITY_PER_PAGE || more
+  const visible = items.slice((current - 1) * ACTIVITY_PER_PAGE, current * ACTIVITY_PER_PAGE)
+
+  async function goTo(p: number) {
+    setError(null)
     const before = items.at(-1)?.created_at
-    if (!before) return null
-    try {
-      const next = await api<ActivityPage>(`/workspaces/${encodeURIComponent(workspace)}/activity?before=${encodeURIComponent(before)}`)
-      setOlder((o) => [...o, ...next.items])
-      setOlderMore(next.has_more)
-    } catch (e) {
-      return toFormErrors(e).error
+    if (p > current && items.length <= current * ACTIVITY_PER_PAGE && more && before) {
+      setLoading(true)
+      try {
+        const next = await api<ActivityPage>(`/workspaces/${encodeURIComponent(workspace)}/activity?before=${encodeURIComponent(before)}`)
+        setOlder((o) => [...o, ...next.items])
+        setOlderMore(next.has_more)
+      } catch (e) {
+        setError(toFormErrors(e).error ?? null)
+        return
+      } finally {
+        setLoading(false)
+      }
     }
-    return null
-  }, null)
+    setShown(p)
+  }
 
   return (
     <Card title="Recent activity" className="home-activity">
@@ -237,7 +253,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
         <Empty text="No activity yet." />
       ) : (
         <ul className="home-list">
-          {items.map((item) => {
+          {visible.map((item) => {
             const text = activityText(item)
             return text ? (
               <li key={`${item.type}:${item.id}`}>
@@ -254,13 +270,11 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
           })}
         </ul>
       )}
-      {(olderMore ?? page.has_more) ? (
-        <form action={loadMore} className="grid gap-2 px-6 py-3" style={{ justifyItems: 'start', borderTop: '1px solid var(--border)' }}>
-          <Button type="submit" variant="ghost" disabled={loading}>
-            {loading ? 'Loading…' : 'Show more'}
-          </Button>
+      {current > 1 || hasNext ? (
+        <div className="grid gap-2 px-6 py-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <Pagination page={current} hasNext={hasNext} onPage={goTo} busy={loading} />
           <FormError>{error}</FormError>
-        </form>
+        </div>
       ) : null}
     </Card>
   )

@@ -88,7 +88,7 @@ The client throttles both new paths to at most one refetch every 3 s. That throt
 5. **Recent activity:** the items from `/activity`.
    - Each row has the actor avatar, one line in the timeline's wording plus the issue link ("**Maya** moved **ENG-12** Fix login from Todo to Done"), and the relative time.
    - Comments show their excerpt on a second muted line.
-   - "Show more" loads the next page with `before`. Realtime refetches replace only the first page, the same way the timeline does.
+   - 5 rows per page with the shared `Pagination` (Previous / Next). Rows come from the API 30 at a time; Next fetches the next batch with `before` only when the loaded rows run out. Realtime refetches replace only the first batch, the same way the timeline does.
    - Empty: "No activity yet."
 6. **Recently viewed:** the last 6 issues opened in this browser.
    - The issue page records `{identifier, title}` on load, de-duplicated, newest first, at most 20 stored.

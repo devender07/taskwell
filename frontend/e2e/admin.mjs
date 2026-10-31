@@ -43,6 +43,14 @@ try {
   }
   t.ok('admin: TOTP code signs in and returns to the redirect', signedIn, page.url())
   await page.locator('h1').waitFor()
+
+  const pager = page.getByRole('navigation', { name: 'Pagination' })
+  if (await waitFor(() => pager.getByRole('button', { name: 'Next' }).isEnabled(), 3000)) {
+    await pager.getByRole('button', { name: 'Next' }).click()
+    t.ok('admin: pagination moves to page 2', await waitFor(() => new URL(page.url()).searchParams.get('page') === '2' && pager.getByText(/^51–/).isVisible()), page.url())
+  } else {
+    t.skip('admin: pagination', 'fewer than 51 users')
+  }
   t.ok('admin: realtime socket connects', await waitFor(() => sockets.some((u) => u.endsWith('/api/realtime'))))
 
   await page.getByRole('button', { name: 'Sign out' }).click()

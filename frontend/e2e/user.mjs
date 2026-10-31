@@ -192,6 +192,13 @@ try {
   t.ok('home: opened issue in recently viewed', await region('Recently viewed').getByText(identifier).isVisible())
   await demo.req.post(`${API}/issues/${identifier}`, multipart({ status_id: from }))
   t.ok('home: activity updates live', await waitFor(async () => (await region('Recent activity').locator('li').first().innerText()).includes(`moved ${identifier}`), 8000))
+  const activity = region('Recent activity')
+  t.ok('home: activity shows 5 per page', (await activity.locator('li').count()) <= 5)
+  const next = activity.getByRole('navigation', { name: 'Pagination' }).getByRole('button', { name: 'Next' })
+  if (await next.isEnabled()) {
+    await next.click()
+    t.ok('home: next page of activity', await waitFor(() => activity.getByText('Page 2').isVisible()))
+  }
 
   // Single-key shortcuts can be turned off in Settings → Profile; Ctrl+K keeps working.
   await demo.page.goto(`${B}/${WORKSPACE}/settings/profile`)
