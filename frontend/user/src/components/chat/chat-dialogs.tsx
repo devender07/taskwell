@@ -103,11 +103,12 @@ function NewGroupForm({ slug, me, members, onDone }: { slug: string; me: string;
   )
 }
 
-export function NewMessageDialog({ open, onClose, slug, me, members }: { open: boolean; onClose: () => void; slug: string; me: string; members: Member[] }) {
+// Opens (creating if needed) the direct chat with a member and navigates to it.
+function useStartDirect(slug: string) {
   const router = useRouter()
   const navigate = useNavigate()
   const [state, setState] = useState<{ error?: string | null; pending?: boolean }>({})
-  async function pick(userId: string) {
+  async function start(userId: string) {
     setState({ pending: true })
     const form = new FormData()
     form.set('user_id', userId)
@@ -115,13 +116,20 @@ export function NewMessageDialog({ open, onClose, slug, me, members }: { open: b
       const chat = await api<Chat>(`${chatsPath(slug)}/direct`, form)
       await reloadRoutes(router, INBOX_ROUTES)
       setState({})
-      onClose()
       navigate({ to: '/$workspace/inbox/c/$chatId', params: { workspace: slug, chatId: chat.id } })
+      return true
     } catch (e) {
       const { errors, error } = toFormErrors(e)
       setState({ error: errors.user_id ?? error })
+      return false
     }
   }
+  return [state, start] as const
+}
+
+// The palette's "New message".
+export function NewMessageDialog({ open, onClose, slug, me, members }: { open: boolean; onClose: () => void; slug: string; me: string; members: Member[] }) {
+  const [state, start] = useStartDirect(slug)
   return (
     <Dialog open={open} onClose={onClose} title="New message" description="Pick someone to message directly.">
       <SmartAutocomplete
@@ -131,9 +139,40 @@ export function NewMessageDialog({ open, onClose, slug, me, members }: { open: b
         options={options(members, [me])}
         disabled={state.pending}
         error={state.error}
-        onChange={(o) => o && pick(o.value)}
+        onChange={(o) => o && start(o.value).then((ok) => ok && onClose())}
       />
     </Dialog>
+  )
+}
+
+// The "+" next to Direct messages: the workspace's members, filtered as you type; picking one opens your chat with them.
+export function NewMessagePeople({ slug, me, members, onDone }: { slug: string; me: string; members: Member[]; onDone: () => void }) {
+  const [state, start] = useStartDirect(slug)
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const people = members.filter((m) => m.id !== me && (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)))
+  return (
+    <div className="chat-people">
+      <Input aria-label="Search people" placeholder="Search people" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
+      {state.error ? <FormError>{state.error}</FormError> : null}
+      {people.length ? (
+        <ul className="chat-people-list">
+          {people.map((m) => (
+            <li key={m.id}>
+              <button type="button" className="chat-person" disabled={state.pending} onClick={() => start(m.id).then((ok) => ok && onDone())}>
+                <Avatar name={m.name} size={24} src={avatarSrc(m.id)} />
+                <span className="grid" style={{ minWidth: 0 }}>
+                  <span className="text-body-sm ellipsis">{m.name}</span>
+                  <span className="text-caption text-secondary ellipsis">{m.email}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-caption text-secondary m-0 px-2 py-2">{members.length > 1 ? 'No one found.' : 'No one else is in this workspace yet.'}</p>
+      )}
+    </div>
   )
 }
 

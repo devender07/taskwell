@@ -195,3 +195,11 @@
   .chat-msg[data-highlight] { animation: none; background: rgba(94, 106, 210, 0.12); }
 }
 .chat-list > section { grid-template-columns: minmax(0, 1fr); }
+
+/* "+" next to Direct messages: pick a workspace member. */
+.chat-people-popover { width: 300px; }
+.chat-people { display: grid; gap: 4px; }
+.chat-people-list { display: grid; max-height: 320px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.chat-person { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 6px 8px; color: var(--text); text-align: left; background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.chat-person:hover, .chat-person:focus-visible { background: rgba(255, 255, 255, 0.05); outline: none; }
+.chat-person:disabled { cursor: progress; opacity: 0.6; }

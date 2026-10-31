@@ -58,7 +58,7 @@ export function Popover({ trigger, children, placement = 'bottom-start', arrow =
       panel.style.setProperty('--arrow', `${arrow}px`)
     }
     place()
-    panel.focus({ preventScroll: true })
+    if (!panel.contains(document.activeElement)) panel.focus({ preventScroll: true }) // keep an autoFocus field's focus
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
     return () => {

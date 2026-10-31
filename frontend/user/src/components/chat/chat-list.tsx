@@ -1,14 +1,16 @@
 import { Link, useNavigate } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { IconButton } from '@tether/shared/icon-button'
+import { Popover } from '@tether/shared/popover'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { avatarSrc, type Chat, type Member, type User } from '@/api'
-import { NewGroupDialog, NewMessageDialog } from './chat-dialogs'
+import { NewGroupDialog, NewMessageDialog, NewMessagePeople } from './chat-dialogs'
 import './chat.css'
 
 type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; members: Member[]; dialog?: 'group' | 'message' }
 
-// The inbox's left column: Activity, the workspace chat, Notes, then groups and direct messages.
+// The inbox's left column: the workspace chat, Notes, then groups and direct messages.
 export function ChatList({ slug, workspaceName, user, chats, members, dialog }: Props) {
   const navigate = useNavigate()
   const top = chats.filter((c) => c.kind === 'workspace' || c.kind === 'self')
@@ -23,24 +25,55 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
           <ChatRow key={c.id} slug={slug} chat={c} me={user} workspaceName={workspaceName} />
         ))}
       </ul>
-      <Section title="Groups" add="New group" onAdd={() => setDialog('group')} empty="No groups yet." chats={groups} slug={slug} me={user} workspaceName={workspaceName} />
-      <Section title="Direct messages" add="New message" onAdd={() => setDialog('message')} empty="No messages yet." chats={direct} slug={slug} me={user} workspaceName={workspaceName} />
+      <Section
+        title="Groups"
+        add={
+          <IconButton aria-label="New group" title="New group" className="chat-icon-button" onClick={() => setDialog('group')}>
+            <PlusIcon />
+          </IconButton>
+        }
+        empty="No groups yet."
+        chats={groups}
+        slug={slug}
+        me={user}
+        workspaceName={workspaceName}
+      />
+      <Section
+        title="Direct messages"
+        add={
+          <Popover
+            aria-label="New message"
+            placement="bottom-end"
+            className="chat-people-popover"
+            trigger={(props) => (
+              <IconButton aria-label="New message" title="New message" className="chat-icon-button" {...props}>
+                <PlusIcon />
+              </IconButton>
+            )}
+          >
+            {(close) => <NewMessagePeople slug={slug} me={user.id} members={members} onDone={close} />}
+          </Popover>
+        }
+        empty="No messages yet."
+        chats={direct}
+        slug={slug}
+        me={user}
+        workspaceName={workspaceName}
+      />
       <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog()} slug={slug} me={user.id} members={members} />
       <NewMessageDialog open={dialog === 'message'} onClose={() => setDialog()} slug={slug} me={user.id} members={members} />
     </nav>
   )
 }
 
-type SectionProps = { title: string; add: string; onAdd: () => void; empty: string; chats: Chat[]; slug: string; me: User; workspaceName: string }
+type SectionProps = { title: string; add: ReactNode; empty: string; chats: Chat[]; slug: string; me: User; workspaceName: string }
 
-function Section({ title, add, onAdd, empty, chats, slug, me, workspaceName }: SectionProps) {
+function Section({ title, add, empty, chats, slug, me, workspaceName }: SectionProps) {
   return (
     <section className="grid gap-1" aria-label={title}>
       <div className="chat-list-heading">
         <h2 className="text-label text-secondary m-0">{title}</h2>
-        <IconButton aria-label={add} title={add} className="chat-icon-button" onClick={onAdd}>
-          <PlusIcon />
-        </IconButton>
+        {add}
       </div>
       {chats.length ? (
         <ul className="chat-rows">
