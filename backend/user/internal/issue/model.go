@@ -38,6 +38,9 @@ type Status struct {
 	Name     string `json:"name"`
 	Category string `json:"category"`
 	Position int    `json:"position"`
+	// Type is the status's own label for its category ("Reopen"); nil means the category's name. Only the statuses
+	// endpoints fill it.
+	Type *string `json:"type,omitempty"`
 }
 
 type Label struct {
@@ -1210,11 +1213,11 @@ func oneIssue(row pgx.Row) (*Issue, error) {
 
 // --- statuses ---
 
-const statusCols = `id::text, name, category, position`
+const statusCols = `id::text, name, category, position, type`
 
 func scanStatus(row pgx.Row) (Status, error) {
 	var s Status
-	err := row.Scan(&s.ID, &s.Name, &s.Category, &s.Position)
+	err := row.Scan(&s.ID, &s.Name, &s.Category, &s.Position, &s.Type)
 	return s, err
 }
 
@@ -1241,14 +1244,14 @@ func (m *model) publishing(ctx context.Context, e realtime.Event, fn func(pgx.Tx
 }
 
 // createStatus appends a status after the last one, publishing e. Returns errNameTaken when the name is in use.
-func (m *model) createStatus(ctx context.Context, workspaceID, name, category string, e realtime.Event) (Status, error) {
+func (m *model) createStatus(ctx context.Context, workspaceID, name, category string, typ *string, e realtime.Event) (Status, error) {
 	var s Status
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		var err error
 		s, err = scanStatus(tx.QueryRow(ctx,
-			`insert into statuses (workspace_id, name, category, position)
-			 values ($1, $2, $3, (select coalesce(max(position) + 1, 0) from statuses where workspace_id = $1))
-			 returning `+statusCols, workspaceID, name, category))
+			`insert into statuses (workspace_id, name, category, type, position)
+			 values ($1, $2, $3, $4, (select coalesce(max(position) + 1, 0) from statuses where workspace_id = $1))
+			 returning `+statusCols, workspaceID, name, category, typ))
 		return err
 	})
 	if isUniqueViolation(err) {
@@ -1262,7 +1265,7 @@ func (m *model) createStatus(ctx context.Context, workspaceID, name, category st
 
 // updateStatus renames and recategorizes a status, publishing e; nil when there's none. Returns errNameTaken when the
 // name is in use.
-func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, e realtime.Event) (*Status, error) {
+func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, typ *string, e realtime.Event) (*Status, error) {
 	if !isUUID(id) {
 		return nil, nil
 	}
@@ -1270,8 +1273,8 @@ func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, categor
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		var err error
 		s, err = scanStatus(tx.QueryRow(ctx,
-			`update statuses set name = $3, category = $4 where workspace_id = $1 and id = $2 returning `+statusCols,
-			workspaceID, id, name, category))
+			`update statuses set name = $3, category = $4, type = $5 where workspace_id = $1 and id = $2 returning `+statusCols,
+			workspaceID, id, name, category, typ))
 		return err
 	})
 	switch {

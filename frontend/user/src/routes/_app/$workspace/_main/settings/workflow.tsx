@@ -18,7 +18,7 @@ function WorkflowSettings() {
         <h1 className="text-h2">Workflow</h1>
         <p className="text-body-sm text-secondary">The statuses issues move through, in order.</p>
       </header>
-      {manage ? <AddStatus workspace={workspace} /> : null}
+      {manage ? <AddStatus workspace={workspace} statuses={statuses} /> : null}
       <StatusList workspace={workspace} statuses={statuses} manage={manage} />
       {manage ? null : <p className="text-caption text-secondary">You don't have permission to change statuses.</p>}
     </main>

@@ -585,11 +585,11 @@ func (h *Handler) createStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	name, category, ok := readStatus(w, r)
+	name, category, typ, ok := readStatus(w, r)
 	if !ok {
 		return nil
 	}
-	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, workflowChanged(ws, userID, "statuses"))
+	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, typ, workflowChanged(ws, userID, "statuses"))
 	if errors.Is(err, errNameTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
 		return nil
@@ -606,12 +606,12 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	name, category, ok := readStatus(w, r)
+	name, category, typ, ok := readStatus(w, r)
 	if !ok {
 		return nil
 	}
 	// Issues show their status's name and category.
-	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
+	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, typ, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
@@ -669,9 +669,14 @@ func (h *Handler) deleteStatus(w http.ResponseWriter, r *http.Request, userID st
 }
 
 // readStatus returns the trimmed name and category, or writes a 400 with field errors and returns ok=false.
-func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, ok bool) {
+// readStatus reads name, category and the optional type (empty = none).
+func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, typ *string, ok bool) {
 	name, category = strings.TrimSpace(r.FormValue("name")), r.FormValue("category")
-	return name, category, checkFields(w, map[string]string{"name": checkStatusName(name), "category": checkCategory(category)})
+	if t := strings.TrimSpace(r.FormValue("type")); t != "" {
+		typ = &t
+	}
+	errs := map[string]string{"name": checkStatusName(name), "category": checkCategory(category), "type": checkStatusType(typ)}
+	return name, category, typ, checkFields(w, errs)
 }
 
 // --- labels ---

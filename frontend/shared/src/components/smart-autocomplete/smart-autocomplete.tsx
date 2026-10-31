@@ -21,13 +21,15 @@ type SmartAutocompleteProps = {
   onChange?: (option: Option | null) => void
   emptyText?: string
   disabled?: boolean
+  // Lets the user add what they typed when nothing matches it exactly: an extra option with value `new:<text>`,
+  // the text as its label and this as its hint (e.g. "New type").
+  create?: string
 }
 
 const DEBOUNCE_MS = 200
 
 // Input with a filtered dropdown (ARIA combobox). Pass `options` to filter in the browser, or `loadOptions` to
 // fetch as you type (debounced, stale requests aborted). `name` submits the selected value with a form.
-// ponytail: the list is absolutely positioned, so an `overflow: hidden` ancestor clips it; portal it like Popover if that bites.
 export function SmartAutocomplete({
   label,
   'aria-label': ariaLabel,
@@ -42,6 +44,7 @@ export function SmartAutocomplete({
   onChange,
   emptyText = 'No results',
   disabled,
+  create,
 }: SmartAutocompleteProps) {
   const id = useId()
   const listId = `${id}-list`
@@ -71,7 +74,12 @@ export function SmartAutocomplete({
 
   // Showing the selected label means "not searching yet": list everything.
   const term = query === (selected?.label ?? '') ? '' : query
-  const results = loadOptions ? loaded : filterOptions(options, term)
+  const found = loadOptions ? loaded : filterOptions(options, term)
+  const typed = term.trim()
+  const results =
+    create && typed && !found.some((o) => o.label.toLowerCase() === typed.toLowerCase())
+      ? [...found, { value: `new:${typed}`, label: typed, hint: create }]
+      : found
   const clamped = Math.min(active, results.length - 1)
   const current = results[clamped]?.disabled ? step(results, clamped, 1) : clamped
 

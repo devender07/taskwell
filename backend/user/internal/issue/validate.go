@@ -89,6 +89,13 @@ func checkStatusName(s string) string {
 	return ""
 }
 
+func checkStatusType(t *string) string {
+	if t != nil && jsLen(*t) > 30 {
+		return "Type must be 30 characters or fewer."
+	}
+	return ""
+}
+
 func checkCategory(s string) string {
 	if !slices.Contains(categories, s) {
 		return "Choose a category."

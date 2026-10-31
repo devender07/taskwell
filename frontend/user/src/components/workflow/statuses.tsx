@@ -9,17 +9,34 @@ import { statusCategory, statusName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { StatusIcon, categoryLabel, categoryOptions, statusOptions } from '@/components/issues/fields'
+import { CATEGORIES, StatusIcon, categoryLabel, categoryOptions, statusOptions } from '@/components/issues/fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
 const statusesPath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}/statuses`
 
-// Create (no status) or rename/recategorize a status.
-function StatusForm({ workspace, status, onDone }: { workspace: Workspace; status?: Status; onDone?: () => void }) {
+// The type picker: the five categories, then the workspace's own types (hinted with how they behave). Typing a new
+// one offers it as a new type.
+// How a custom type behaves: its icon, and whether it counts as open, done or canceled.
+const worksLike = categoryOptions.map((o) => ({ ...o, label: `Works like ${o.label}` }))
+
+function typeOptions(statuses: Status[]) {
+  const own = new Map<string, Status['category']>()
+  for (const s of statuses) if (s.type && !own.has(s.type)) own.set(s.type, s.category)
+  return [
+    ...CATEGORIES.map((c) => ({ value: `category:${c.value}`, label: c.label })),
+    ...[...own].map(([type, category]) => ({ value: `type:${category}:${type}`, label: type, hint: `Works like ${categoryLabel(category)}` })),
+  ]
+}
+
+// Create (no status) or rename/recategorize a status. Its type is a category, or the workspace's own label for one
+// ("Reopen"), which then needs "Works like" to say how it behaves.
+function StatusForm({ workspace, status, statuses, onDone }: { workspace: Workspace; status?: Status; statuses: Status[]; onDone?: () => void }) {
   const router = useRouter()
   const [name, setName] = useState(status?.name ?? '')
   const [category, setCategory] = useState<string>(status?.category ?? 'unstarted')
+  const [type, setType] = useState(status?.type ?? '')
+  const types = typeOptions(statuses)
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const errors = { name: statusName(name), category: statusCategory(category) }
@@ -27,13 +44,17 @@ function StatusForm({ workspace, status, onDone }: { workspace: Workspace; statu
     const form = new FormData()
     form.set('name', name.trim())
     form.set('category', category)
+    form.set('type', type)
     try {
       await api<Status>(status ? `${statusesPath(workspace)}/${encodeURIComponent(status.id)}` : statusesPath(workspace), form)
     } catch (e) {
       return toFormErrors(e)
     }
     await reloadPage(router)
-    if (!status) setName('')
+    if (!status) {
+      setName('')
+      setType('')
+    }
     onDone?.()
     return {}
   }, {})
@@ -44,15 +65,37 @@ function StatusForm({ workspace, status, onDone }: { workspace: Workspace; statu
         <div className="flex-grow" style={{ minWidth: 160 }}>
           <Input aria-label="Status name" placeholder="In review" autoComplete="off" autoFocus={Boolean(status)} value={name} onChange={(e) => setName(e.target.value)} error={errors?.name} />
         </div>
-        <div className="flex-noshrink" style={{ width: 160 }}>
+        <div className="flex-noshrink" style={{ width: 180 }}>
           <SmartAutocomplete
-            aria-label="Category"
-            options={categoryOptions}
-            value={categoryOptions.find((o) => o.value === category) ?? null}
-            onChange={(o) => setCategory(o?.value ?? '')}
-            error={errors?.category}
+            aria-label="Type"
+            placeholder="Type or pick"
+            options={types}
+            create="New type"
+            value={type ? { value: `type:${category}:${type}`, label: type } : (types.find((o) => o.value === `category:${category}`) ?? null)}
+            onChange={(o) => {
+              if (!o) return
+              const [kind, behaviour] = o.value.split(':') // category:<c>, type:<c>:<label>, new:<label>
+              if (kind === 'category') {
+                setCategory(behaviour!)
+                setType('')
+              } else {
+                if (kind === 'type') setCategory(behaviour!)
+                setType(o.label)
+              }
+            }}
+            error={errors?.category ?? errors?.type}
           />
         </div>
+        {type ? (
+          <div className="flex-noshrink" style={{ width: 200 }}>
+            <SmartAutocomplete
+              aria-label="Works like"
+              options={worksLike}
+              value={worksLike.find((o) => o.value === category) ?? null}
+              onChange={(o) => o && setCategory(o.value)}
+            />
+          </div>
+        ) : null}
         <Button type="submit" disabled={pending}>
           {status ? (pending ? 'Saving…' : 'Save') : pending ? 'Adding…' : 'Add status'}
         </Button>
@@ -67,11 +110,11 @@ function StatusForm({ workspace, status, onDone }: { workspace: Workspace; statu
   )
 }
 
-export function AddStatus({ workspace }: { workspace: Workspace }) {
+export function AddStatus({ workspace, statuses }: { workspace: Workspace; statuses: Status[] }) {
   return (
     <section className="grid gap-4 p-6 bg-surface border rounded-lg">
       <h2 className="text-label">Add a status</h2>
-      <StatusForm workspace={workspace} />
+      <StatusForm workspace={workspace} statuses={statuses} />
     </section>
   )
 }
@@ -128,7 +171,7 @@ function StatusRow({ workspace, status, statuses, manage, onUp, onDown }: RowPro
   if (editing) {
     return (
       <li className="px-6 py-3">
-        <StatusForm workspace={workspace} status={status} onDone={() => setEditing(false)} />
+        <StatusForm workspace={workspace} status={status} statuses={statuses} onDone={() => setEditing(false)} />
       </li>
     )
   }
@@ -138,7 +181,9 @@ function StatusRow({ workspace, status, statuses, manage, onUp, onDown }: RowPro
       <StatusIcon category={status.category} />
       <div className="grid flex-grow" style={{ minWidth: 0 }}>
         <span className="text-label text-primary ellipsis">{status.name}</span>
-        <span className="text-caption text-secondary">{categoryLabel(status.category)}</span>
+        <span className="text-caption text-secondary">
+          {status.type ? `${status.type} · works like ${categoryLabel(status.category)}` : categoryLabel(status.category)}
+        </span>
       </div>
       {manage ? (
         <>
