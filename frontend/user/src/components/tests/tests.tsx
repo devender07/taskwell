@@ -169,7 +169,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
   const manage = can(workspace, 'tests.manage')
   const runAi = can(workspace, 'ai_tests.run')
   const cases = useLive<TestCase[]>(testCasesPath(workspace, issue.identifier))
-  const runs = useLive<TestRunSummary[]>(testRunsPath(workspace, issue.identifier))
+  const runs = useLive<RunPage>(testRunsPath(workspace, issue.identifier))
   const sites = useLive<TestSite[]>(runAi ? testSitesPath(workspace) : null)
   const [adding, setAdding] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -263,7 +263,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
           </Button>
         )
       ) : null}
-      <History workspace={workspace} issue={issue} runs={runs.data} error={runs.error} />
+      <History workspace={workspace} issue={issue} page={runs.data} error={runs.error} />
       {runAi ? (
         <Dialog open={regenerating} onClose={() => setRegenerating(false)} title="Regenerate cases and run?" description="This replaces the current test cases.">
           <form action={() => start({ kind: 'ai', regenerate: true })} className="grid gap-4">
@@ -531,8 +531,29 @@ function counts(r: TestRunSummary) {
     .join(', ')
 }
 
-function History({ workspace, issue, runs, error }: { workspace: Workspace; issue: Issue; runs: TestRunSummary[] | null; error: string | null }) {
-  if (!runs?.length && !error) return null
+type RunPage = { runs: TestRunSummary[]; has_more: boolean }
+
+// `page` is the newest page (refetched live); older pages load on demand below it.
+function History({ workspace, issue, page, error }: { workspace: Workspace; issue: Issue; page: RunPage | null; error: string | null }) {
+  const [older, setOlder] = useState<RunPage | null>(null)
+  const newest = page?.runs ?? []
+  const ids = new Set(newest.map((r) => r.id))
+  const runs = [...newest, ...(older?.runs.filter((r) => !ids.has(r.id)) ?? [])]
+  const more = older ? older.has_more : page?.has_more
+
+  const [loadError, loadOlder, loading] = useActionState(async () => {
+    const last = runs.at(-1)
+    if (!last) return null
+    try {
+      const next = await api<RunPage>(`${testRunsPath(workspace, issue.identifier)}?before=${encodeURIComponent(last.created_at)}`)
+      setOlder((o) => ({ runs: [...(o?.runs ?? []), ...next.runs], has_more: next.has_more }))
+    } catch (e) {
+      return toFormErrors(e).error
+    }
+    return null
+  }, null)
+
+  if (!runs.length && !error) return null
   return (
     <div className="grid gap-2">
       <h3 className="text-caption text-secondary m-0">Test history</h3>
@@ -558,6 +579,14 @@ function History({ workspace, issue, runs, error }: { workspace: Workspace; issu
           </li>
         ))}
       </ul>
+      {more ? (
+        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          <Button type="submit" variant="ghost" disabled={loading}>
+            {loading ? 'Loading…' : 'Show older runs'}
+          </Button>
+          <FormError>{loadError}</FormError>
+        </form>
+      ) : null}
     </div>
   )
 }

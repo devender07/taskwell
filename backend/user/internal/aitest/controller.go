@@ -190,11 +190,20 @@ func (h *Handler) listRuns(w http.ResponseWriter, r *http.Request, userID string
 	if !ok || err != nil {
 		return err
 	}
-	rs, err := h.model.runs(r.Context(), i.id)
+	var before *time.Time
+	if v := r.URL.Query().Get("before"); v != "" {
+		t, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+			return nil
+		}
+		before = &t
+	}
+	rs, more, err := h.model.runs(r.Context(), i.id, before)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, rs)
+	writeJSON(w, http.StatusOK, map[string]any{"runs": rs, "has_more": more})
 	return nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -123,11 +124,20 @@ func TestManualRun(t *testing.T) {
 	if len(run.Results) != 2 {
 		t.Fatalf("old run %+v", run)
 	}
-	var runs []Run
-	do(bob, "GET", "/issues/ENG-1/test-runs", nil, 200, &runs)
-	if len(runs) != 2 || runs[0].ID != second.ID || runs[1].Counts.Failed != 1 || runs[1].Counts.Skipped != 1 {
-		t.Fatalf("history %+v", runs)
+	var page struct {
+		Runs    []Run `json:"runs"`
+		HasMore bool  `json:"has_more"`
 	}
+	do(bob, "GET", "/issues/ENG-1/test-runs", nil, 200, &page)
+	runs := page.Runs
+	if len(runs) != 2 || page.HasMore || runs[0].ID != second.ID || runs[1].Counts.Failed != 1 || runs[1].Counts.Skipped != 1 {
+		t.Fatalf("history %+v", page)
+	}
+	do(bob, "GET", "/issues/ENG-1/test-runs?before="+url.QueryEscape(runs[0].CreatedAt.Format(time.RFC3339Nano)), nil, 200, &page)
+	if len(page.Runs) != 1 || page.Runs[0].ID != runs[1].ID {
+		t.Fatalf("older history %+v", page)
+	}
+	do(bob, "GET", "/issues/ENG-1/test-runs?before=yesterday", nil, 400, nil)
 	do(ann, "DELETE", "/test-cases/"+a.ID, nil, 204, nil)
 	do(ann, "POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"manual"}}, 409, nil)
 	do(ann, "POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"x"}}, 400, nil)

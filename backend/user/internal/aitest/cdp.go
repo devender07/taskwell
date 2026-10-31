@@ -170,7 +170,7 @@ type page struct {
 	c                            *cdp
 	contextID, targetID, session string
 
-	frame     func([]byte)
+	frame func([]byte)
 
 	mu        sync.Mutex
 	requested map[string]bool // hosts the page asked for, so the browser's own traffic stays out of the step log

@@ -362,18 +362,24 @@ func scanRun(row pgx.Row) (Run, error) {
 	return r, err
 }
 
-// runs returns the issue's newest 20 runs.
-func (m *model) runs(ctx context.Context, issueID string) ([]Run, error) {
-	rows, err := m.db.Query(ctx, `select `+runCols+` where r.issue_id = $1
-		group by r.id, i.id, p.id order by r.created_at desc, r.id desc limit 20`, issueID)
+// runsPage caps a page of an issue's test history.
+const runsPage = 10
+
+// runs returns the issue's newest runsPage runs created before before (all when nil), and whether older ones exist.
+func (m *model) runs(ctx context.Context, issueID string, before *time.Time) ([]Run, bool, error) {
+	rows, err := m.db.Query(ctx, `select `+runCols+` where r.issue_id = $1 and ($2::timestamptz is null or r.created_at < $2)
+		group by r.id, i.id, p.id order by r.created_at desc, r.id desc limit $3`, issueID, before, runsPage+1)
 	if err != nil {
-		return nil, fmt.Errorf("list test runs: %w", err)
+		return nil, false, fmt.Errorf("list test runs: %w", err)
 	}
 	rs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Run, error) { return scanRun(row) })
 	if err != nil {
-		return nil, fmt.Errorf("list test runs: %w", err)
+		return nil, false, fmt.Errorf("list test runs: %w", err)
 	}
-	return rs, nil
+	if len(rs) > runsPage {
+		return rs[:runsPage], true, nil
+	}
+	return rs, false, nil
 }
 
 // run returns the workspace's run with the id and its results; nil when there's none.
@@ -945,10 +951,10 @@ type accountRef struct{ id, label, username string }
 // job is what the tester needs to run a claimed run.
 type job struct {
 	runID, wsID, issueID, status, token, startedBy, caseID string
-	regenerate                                     bool
-	issueTitle, description, project               string
-	sites                                          []Site
-	accounts                                       []accountRef
+	regenerate                                             bool
+	issueTitle, description, project                       string
+	sites                                                  []Site
+	accounts                                               []accountRef
 }
 
 func (m *model) job(ctx context.Context, runID string) (*job, error) {

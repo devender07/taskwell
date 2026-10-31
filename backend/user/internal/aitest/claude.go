@@ -198,7 +198,7 @@ var stepTools = func() []anthropic.BetaToolUnionParam {
 			"result":       map[string]any{"type": "string", "enum": []string{"pass", "fail", "blocked"}},
 			"summary":      map[string]any{"type": "string", "description": "One or two sentences: what you saw."},
 			"reproduction": map[string]any{"type": "array", "items": str, "description": "Steps to reproduce a failure; empty on pass."},
-			"check": map[string]any{"type": "string", "description": "On pass: a short exact text, visible on the page now, that only appears when the expected result is met; later runs check for it without you. Empty on fail or blocked."},
+			"check":        map[string]any{"type": "string", "description": "On pass: a short exact text, visible on the page now, that only appears when the expected result is met; later runs check for it without you. Empty on fail or blocked."},
 		}),
 	}
 }()
