@@ -193,7 +193,7 @@ try {
   await demo.req.post(`${API}/issues/${identifier}`, multipart({ status_id: from }))
   t.ok('home: activity updates live', await waitFor(async () => (await region('Recent activity').locator('li').first().innerText()).includes(`moved ${identifier}`), 8000))
   const activity = region('Recent activity')
-  t.ok('home: activity shows 5 per page', (await activity.locator('li').count()) <= 5)
+  t.ok('home: fits the window without scrolling', await maya.page.evaluate(() => document.documentElement.scrollHeight <= innerHeight))
   const next = activity.getByRole('navigation', { name: 'Pagination' }).getByRole('button', { name: 'Next' })
   if (await next.isEnabled()) {
     await next.click()

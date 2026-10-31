@@ -70,6 +70,7 @@ The client throttles both new paths to at most one refetch every 3 s. That throt
 - Left column, in order: Needs attention, Assigned to me, Recent activity.
 - Right column, in order: Inbox, Recently viewed, Projects.
 - Full width, with the same page padding as the project page.
+- At ≥ 1024px wide and ≥ 600px tall, Home fits the window with no page scroll: cards keep their natural height up to 40% of the column, the last card in each column takes what's left, and long lists scroll inside their card.
 - Each block is a card: nested surface, 8px radius, a header row with the title (sentence case) and an optional right-aligned link.
 
 **Blocks:**
@@ -88,7 +89,7 @@ The client throttles both new paths to at most one refetch every 3 s. That throt
 5. **Recent activity:** the items from `/activity`.
    - Each row has the actor avatar, one line in the timeline's wording plus the issue link ("**Maya** moved **ENG-12** Fix login from Todo to Done"), and the relative time.
    - Comments show their excerpt on a second muted line.
-   - 5 rows per page with the shared `Pagination` (Previous / Next). Rows come from the API 30 at a time; Next fetches the next batch with `before` only when the loaded rows run out. Realtime refetches replace only the first batch, the same way the timeline does.
+   - Paged with the shared `Pagination` (Previous / Next): as many rows as fit the card on laptop screens, 5 below that. Rows come from the API 30 at a time; Next fetches the next batch with `before` only when the loaded rows run out. Realtime refetches replace only the first batch, the same way the timeline does.
    - Empty: "No activity yet."
 6. **Recently viewed:** the last 6 issues opened in this browser.
    - The issue page records `{identifier, title}` on load, de-duplicated, newest first, at most 20 stored.

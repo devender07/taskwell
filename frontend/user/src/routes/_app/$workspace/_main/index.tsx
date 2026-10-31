@@ -31,7 +31,7 @@ function WorkspaceHome() {
   const { attention, rest } = splitMine(issues, now)
 
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
+    <main className="home grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-1">
         {notice ? <p role="status" className="text-caption text-secondary m-0">{notice}</p> : null}
         <h1 className="text-h2">

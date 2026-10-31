@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@tether/shared/button'
 import { Pagination } from '@tether/shared/pagination'
 import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace } from '@/api'
@@ -14,15 +14,16 @@ import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
 
-function Card({ title, action, className = '', children }: { title: string; action?: ReactNode; className?: string; children: ReactNode }) {
+function Card({ title, action, footer, bodyRef, className = '', children }: { title: string; action?: ReactNode; footer?: ReactNode; bodyRef?: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
   const id = useId()
   return (
-    <section aria-labelledby={id} className={`bg-surface border rounded-lg overflow-hidden ${className}`} style={{ minWidth: 0 }}>
+    <section aria-labelledby={id} className={`home-card bg-surface border rounded-lg overflow-hidden ${className}`} style={{ minWidth: 0 }}>
       <header className="home-card-header">
         <h2 id={id} className="text-label m-0">{title}</h2>
         {action ? <div className="flex items-center gap-3">{action}</div> : null}
       </header>
-      {children}
+      <div ref={bodyRef} className="home-card-body">{children}</div>
+      {footer}
     </section>
   )
 }
@@ -194,7 +195,31 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
 }
 
 const at = (x: { created_at: string }) => Date.parse(x.created_at)
-const ACTIVITY_PER_PAGE = 5
+// Matches the fit-to-viewport layout in home.css.
+const FIT = '(min-width: 1024px) and (min-height: 600px)'
+
+// Rows per page: as many as fit the card body on laptop screens, `fallback` when Home scrolls (tablet and phone).
+function useFitRows(ref: RefObject<HTMLElement | null>, fallback: number) {
+  const [rows, setRows] = useState(fallback)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const mq = matchMedia(FIT)
+    const measure = () => {
+      const row = (el.querySelector('li')?.offsetHeight || 56) + 1 // + the divider between rows
+      setRows(mq.matches ? Math.max(1, Math.floor(el.clientHeight / row)) : fallback)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    mq.addEventListener('change', measure)
+    return () => {
+      ro.disconnect()
+      mq.removeEventListener('change', measure)
+    }
+  }, [ref, fallback])
+  return rows
+}
 
 function activityText(item: ActivityItem) {
   const subject = <IssueName issue={item.issue} />
@@ -221,17 +246,19 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
   const items = [...page.items, ...older]
 
   const more = olderMore ?? page.has_more
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const perPage = useFitRows(bodyRef, 5)
   const [shown, setShown] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const current = Math.min(shown, Math.max(1, Math.ceil(items.length / ACTIVITY_PER_PAGE)))
-  const hasNext = items.length > current * ACTIVITY_PER_PAGE || more
-  const visible = items.slice((current - 1) * ACTIVITY_PER_PAGE, current * ACTIVITY_PER_PAGE)
+  const current = Math.min(shown, Math.max(1, Math.ceil(items.length / perPage)))
+  const hasNext = items.length > current * perPage || more
+  const visible = items.slice((current - 1) * perPage, current * perPage)
 
   async function goTo(p: number) {
     setError(null)
     const before = items.at(-1)?.created_at
-    if (p > current && items.length <= current * ACTIVITY_PER_PAGE && more && before) {
+    if (p > current && items.length < p * perPage && more && before) {
       setLoading(true)
       try {
         const next = await api<ActivityPage>(`/workspaces/${encodeURIComponent(workspace)}/activity?before=${encodeURIComponent(before)}`)
@@ -247,8 +274,16 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
     setShown(p)
   }
 
+  const footer =
+    current > 1 || hasNext ? (
+      <div className="grid gap-2 px-6 py-3" style={{ borderTop: '1px solid var(--border)' }}>
+        <Pagination page={current} hasNext={hasNext} onPage={goTo} busy={loading} />
+        <FormError>{error}</FormError>
+      </div>
+    ) : null
+
   return (
-    <Card title="Recent activity" className="home-activity">
+    <Card title="Recent activity" className="home-activity" footer={footer} bodyRef={bodyRef}>
       {items.length === 0 ? (
         <Empty text="No activity yet." />
       ) : (
@@ -270,12 +305,6 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
           })}
         </ul>
       )}
-      {current > 1 || hasNext ? (
-        <div className="grid gap-2 px-6 py-3" style={{ borderTop: '1px solid var(--border)' }}>
-          <Pagination page={current} hasNext={hasNext} onPage={goTo} busy={loading} />
-          <FormError>{error}</FormError>
-        </div>
-      ) : null}
     </Card>
   )
 }
