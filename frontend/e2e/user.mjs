@@ -242,9 +242,13 @@ try {
     t.ok('timeline: "Show older activity" when there is more', await waitFor(() => older.isVisible(), 5000))
     const count = () => demo.page.getByRole('article', { name: /^Comment by/ }).count()
     const before = await count()
-    await older.click()
-    t.ok('timeline: older items prepended', await waitFor(async () => (await count()) > before && !(await older.count()), 5000), `${before} → ${await count()} comments`)
-    t.ok('timeline: oldest item first', (await demo.page.locator('ol > li').first().innerText()).includes('created the issue'))
+    for (let i = 0; i < 10 && (await older.count()); i++) {
+      const n = await count()
+      await older.click()
+      await waitFor(async () => (await count()) > n || !(await older.count()), 5000)
+    }
+    t.ok('timeline: older items appended until none are left', (await count()) > before && !(await older.count()), `${before} → ${await count()} comments`)
+    t.ok('timeline: newest first, oldest last', (await demo.page.locator('ol > li').last().innerText()).includes('created the issue'))
   }
 
   // Chat: a direct message arrives live with an unread pill that clears on opening; a thread reply and a reaction
