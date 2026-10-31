@@ -9,4 +9,3 @@ bin/
 .env.*
 .DS_Store
 .claude
-docker-compose.override.yml
