@@ -330,6 +330,27 @@ func TestChat(t *testing.T) {
 		}
 	}
 
+	// Deleting a whole chat: the workspace chat never, a group only by its creator, a direct chat by either person,
+	// Notes by their owner (they come back empty).
+	errOf(ann, "DELETE", "/chats/"+general, nil, 403)
+	var dg, dd Chat
+	do(ann, "POST", "/chats", url.Values{"name": {"Temp"}, "member_ids": {cat}}, 201, &dg)
+	post(ann, dg.ID, text("bye"), "")
+	if got := errOf(cat, "DELETE", "/chats/"+dg.ID, nil, 403); !strings.Contains(got, "Only the group's creator can delete it.") {
+		t.Errorf("non-creator delete: %s", got)
+	}
+	do(ann, "DELETE", "/chats/"+dg.ID, nil, 204, nil)
+	errOf(cat, "GET", "/chats/"+dg.ID, nil, 404)
+	do(cat, "POST", "/chats/direct", url.Values{"user_id": {ann}}, 200, &dd)
+	post(ann, dd.ID, text("hi"), "")
+	do(cat, "DELETE", "/chats/"+dd.ID, nil, 204, nil)
+	errOf(ann, "GET", "/chats/"+dd.ID, nil, 404)
+	errOf(out, "DELETE", "/chats/"+annNotes, nil, 404)
+	do(ann, "DELETE", "/chats/"+annNotes, nil, 204, nil)
+	if cs := chats(ann); len(cs) < 2 || cs[1].Kind != "self" || cs[1].ID == annNotes {
+		t.Errorf("notes after delete: %+v", cs)
+	}
+
 	// Leaving the workspace ends access everywhere.
 	if _, err := pool.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id = $2`, wsID, bob); err != nil {
 		t.Fatal(err)

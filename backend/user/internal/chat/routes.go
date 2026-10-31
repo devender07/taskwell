@@ -23,6 +23,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+ws+"/chats/direct", h.wrap(h.direct))
 	mux.HandleFunc("GET "+ws+"/chats/{id}", h.wrap(h.get))
 	mux.HandleFunc("POST "+ws+"/chats/{id}", h.wrap(h.rename))
+	mux.HandleFunc("DELETE "+ws+"/chats/{id}", h.wrap(h.deleteChat))
 	mux.HandleFunc("POST "+ws+"/chats/{id}/members", h.wrap(h.addMembers))
 	mux.HandleFunc("DELETE "+ws+"/chats/{id}/members/{userId}", h.wrap(h.removeMember))
 	mux.HandleFunc("GET "+ws+"/chats/{id}/messages", h.wrap(h.messages))

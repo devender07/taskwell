@@ -209,6 +209,28 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
+// deleteChat deletes the chat and all its messages for everyone in it: a direct chat by either person, Notes by its
+// owner, a group by its creator. The workspace chat can't be deleted.
+func (h *Handler) deleteChat(w http.ResponseWriter, r *http.Request, userID string) error {
+	sc, c, err := h.chat(w, r, userID)
+	if c == nil || err != nil {
+		return err
+	}
+	switch {
+	case c.kind == "workspace":
+		writeErr(w, http.StatusForbidden, "The workspace chat can't be deleted.")
+		return nil
+	case c.kind == "group" && c.createdBy != userID:
+		writeErr(w, http.StatusForbidden, "Only the group's creator can delete it.")
+		return nil
+	}
+	if err := h.model.deleteChat(r.Context(), sc, c.id); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 func (h *Handler) messages(w http.ResponseWriter, r *http.Request, userID string) error {
 	_, c, err := h.chat(w, r, userID)
 	if c == nil || err != nil {

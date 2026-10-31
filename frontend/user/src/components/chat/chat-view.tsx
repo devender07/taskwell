@@ -14,7 +14,7 @@ import { useUnread } from '@/components/app/unread'
 import { RichEditor } from '@/components/issues/rich-editor'
 import { onTyping, reloadRoutes, sendTyping, subscribePaths } from '@/realtime'
 import { firstName, firstUnread, groupMessages, typingText } from './chat'
-import { AddPeopleDialog, CloseIcon, INBOX_ROUTES, LeaveDialog, PeopleDialog, RenameDialog, chatsPath } from './chat-dialogs'
+import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog, PeopleDialog, RenameDialog, chatsPath } from './chat-dialogs'
 import { ChatAvatar } from './chat-list'
 import './chat.css'
 
@@ -298,9 +298,17 @@ function Divider({ label, accent }: { label: string; accent?: boolean }) {
 
 function ChatHeader({ workspaceName, members }: { workspaceName: string; members: Member[] }) {
   const { slug, chat, me } = use(ChatContext)
-  const [dialog, setDialog] = useState<'rename' | 'add' | 'people' | 'leave' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'add' | 'people' | 'leave' | 'delete' | null>(null)
   const close = () => setDialog(null)
   const group = chat.kind === 'group'
+  // The workspace chat can't be deleted; a group only by its creator.
+  const actions: (readonly ['rename' | 'add' | 'people' | 'leave' | 'delete', string])[] = group
+    ? [['rename', 'Rename group'], ['add', 'Add people'], ['people', 'People'], ['leave', 'Leave group'], ...(chat.created_by === me.id ? [['delete', 'Delete group'] as const] : [])]
+    : chat.kind === 'direct'
+      ? [['delete', 'Delete chat']]
+      : chat.kind === 'self'
+        ? [['delete', 'Delete notes']]
+        : []
   const subtitle =
     chat.kind === 'self' ? 'Only you can see this' : chat.kind === 'workspace' ? `Everyone in ${workspaceName}` : group ? `${chat.members.length} people` : null
   const faces = chat.members.slice(0, 5)
@@ -316,53 +324,51 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
         {subtitle ? <p className="text-caption text-secondary m-0 ellipsis">{subtitle}</p> : null}
       </div>
       {group ? (
+        <button type="button" className="chat-faces" aria-label={`People in ${chat.name}: ${chat.members.length}`} onClick={() => setDialog('people')}>
+          {faces.map((p) => (
+            <Avatar key={p.id} name={p.name} size={24} src={avatarSrc(p.id)} />
+          ))}
+          {extra > 0 ? <span className="text-caption text-secondary">+{extra}</span> : null}
+        </button>
+      ) : null}
+      {actions.length ? (
+        <Popover
+          aria-label="Chat actions"
+          placement="bottom-end"
+          trigger={(props) => (
+            <IconButton aria-label="Chat actions" className="chat-icon-button" {...props}>
+              <DotsIcon />
+            </IconButton>
+          )}
+        >
+          {(closeMenu) => (
+            <div style={{ width: 200 }}>
+              {actions.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="popover-item"
+                  onClick={() => {
+                    closeMenu()
+                    setDialog(key)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
+      ) : null}
+      {group ? (
         <>
-          <button type="button" className="chat-faces" aria-label={`People in ${chat.name}: ${chat.members.length}`} onClick={() => setDialog('people')}>
-            {faces.map((p) => (
-              <Avatar key={p.id} name={p.name} size={24} src={avatarSrc(p.id)} />
-            ))}
-            {extra > 0 ? <span className="text-caption text-secondary">+{extra}</span> : null}
-          </button>
-          <Popover
-            aria-label="Group actions"
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton aria-label="Group actions" className="chat-icon-button" {...props}>
-                <DotsIcon />
-              </IconButton>
-            )}
-          >
-            {(closeMenu) => (
-              <div style={{ width: 200 }}>
-                {(
-                  [
-                    ['rename', 'Rename group'],
-                    ['add', 'Add people'],
-                    ['people', 'People'],
-                    ['leave', 'Leave group'],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="popover-item"
-                    onClick={() => {
-                      closeMenu()
-                      setDialog(key)
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </Popover>
           <RenameDialog open={dialog === 'rename'} onClose={close} slug={slug} chat={chat} />
           <AddPeopleDialog open={dialog === 'add'} onClose={close} slug={slug} chat={chat} members={members} />
           <PeopleDialog open={dialog === 'people'} onClose={close} slug={slug} chat={chat} me={me.id} />
           <LeaveDialog open={dialog === 'leave'} onClose={close} slug={slug} chat={chat} me={me.id} />
         </>
       ) : null}
+      {chat.kind !== 'workspace' ? <DeleteChatDialog open={dialog === 'delete'} onClose={close} slug={slug} chat={chat} /> : null}
     </header>
   )
 }

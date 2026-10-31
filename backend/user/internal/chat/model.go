@@ -410,6 +410,31 @@ func (m *model) removeMember(ctx context.Context, sc scope, chatID, userID strin
 	return nil
 }
 
+// deleteChat deletes the chat with its messages, reactions and notifications, telling everyone who was in it.
+func (m *model) deleteChat(ctx context.Context, sc scope, chatID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		ids, err := members(ctx, tx, sc.wsID, chatID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `delete from chats where id = $1`, chatID); err != nil {
+			return err
+		}
+		ws := realtime.Workspace(sc.slug)
+		e := chatChanged(sc, chatID)
+		e.Paths = append(e.Paths, ws+"/chats/unread-count", ws+"/notifications", ws+"/notifications/unread-count")
+		aud := make([]string, len(ids))
+		for i, id := range ids {
+			aud[i] = realtime.ToUser(id)
+		}
+		return publish(ctx, tx, e, aud)
+	})
+	if err != nil {
+		return fmt.Errorf("delete chat: %w", err)
+	}
+	return nil
+}
+
 // --- messages ---
 
 type Message struct {

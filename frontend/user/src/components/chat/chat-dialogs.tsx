@@ -330,6 +330,44 @@ export function LeaveDialog({ open, onClose, slug, chat, me }: { open: boolean; 
   )
 }
 
+// Deletes the whole chat for everyone in it (a group: its creator only; the API checks).
+export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean; onClose: () => void; slug: string; chat: Chat }) {
+  const router = useRouter()
+  const navigate = useNavigate()
+  const [state, setState] = useState<{ pending?: boolean; error?: string | null }>({})
+  async function remove() {
+    setState({ pending: true })
+    try {
+      await api(`${chatsPath(slug)}/${encodeURIComponent(chat.id)}`, undefined, 'DELETE')
+    } catch (e) {
+      setState({ error: toFormErrors(e).error })
+      return
+    }
+    onClose()
+    await navigate({ to: '/$workspace/inbox', params: { workspace: slug } })
+    await reloadRoutes(router, INBOX_ROUTES)
+  }
+  const [title, description, action] =
+    chat.kind === 'self'
+      ? ['Delete all notes?', "Every note here is deleted. This can't be undone.", 'Delete notes']
+      : chat.kind === 'group'
+        ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
+        : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
+  return (
+    <Dialog open={open} onClose={onClose} title={title} description={description}>
+      <FormError>{state.error}</FormError>
+      <div className="flex justify-end gap-3">
+        <Button variant="ghost" onClick={onClose} disabled={state.pending}>
+          Cancel
+        </Button>
+        <Button variant="danger" onClick={remove} disabled={state.pending}>
+          {state.pending ? 'Deleting…' : action}
+        </Button>
+      </div>
+    </Dialog>
+  )
+}
+
 export function CloseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
