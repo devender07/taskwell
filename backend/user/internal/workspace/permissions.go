@@ -37,12 +37,15 @@ const (
 	PermTestsManage = "tests.manage"
 	// PermAITestsManage gates the workspace's test sites and test accounts.
 	PermAITestsManage = "ai_tests.manage"
+	// PermIntegrationsManage gates connecting GitHub and GitLab webhooks.
+	PermIntegrationsManage = "integrations.manage"
 )
 
 // catalog is every permission in display order.
 var catalog = []Permission{
 	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
+	{PermIntegrationsManage, "Workspace", "Connect GitHub and GitLab", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},

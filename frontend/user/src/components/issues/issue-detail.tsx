@@ -6,6 +6,7 @@ import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
+import { PullRequests } from '@/components/issues/pull-requests'
 import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
 import { TestsSection } from '@/components/tests/tests'
@@ -87,6 +88,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
           )}
           <Relations key={issue.id} workspace={workspace} issue={issue} />
+          <PullRequests issue={issue} />
           <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} members={members} />
         </article>
         <aside className="grid gap-4">

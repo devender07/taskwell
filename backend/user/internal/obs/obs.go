@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -99,7 +100,11 @@ func Middleware(next http.Handler) http.Handler {
 		if u := in.userID.Load(); u != nil {
 			user = *u
 		}
-		slog.InfoContext(ctx, "request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/api/hooks/") { // the last segment is a webhook's token
+			path = path[:strings.LastIndexByte(path, '/')+1] + "…"
+		}
+		slog.InfoContext(ctx, "request", "method", r.Method, "path", path, "status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(), "bytes", rec.bytes, "user_id", user)
 	})
 }

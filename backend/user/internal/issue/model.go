@@ -109,6 +109,8 @@ type IssueDetail struct {
 	Blocks    []IssueRef `json:"blocks"`
 	BlockedBy []IssueRef `json:"blocked_by"`
 	Watching  bool       `json:"watching"`
+	// PullRequests are the linked pull requests (gitlink's JSON), newest first.
+	PullRequests json.RawMessage `json:"pull_requests"`
 }
 
 // fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
@@ -281,8 +283,8 @@ func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
 	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id = $1`, id))
 }
 
-// relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first) and
-// whether the user watches it.
+// relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first),
+// whether the user watches it and its pull requests.
 func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDetail, error) {
 	d := IssueDetail{Issue: i}
 	err := m.db.QueryRow(ctx,
@@ -291,8 +293,12 @@ func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDe
 		                  join issue_links l on l.blocked_id = r.id where l.blocker_id = $1), '[]'),
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
 		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1), '[]'),
-		        exists(select 1 from issue_watchers where issue_id = $1 and user_id = $2)`,
-		i.ID, userID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy, &d.Watching)
+		        exists(select 1 from issue_watchers where issue_id = $1 and user_id = $2),
+		        coalesce((select json_agg(json_build_object('provider', pr.provider, 'repo', pr.repo, 'number', pr.number,
+		                    'url', pr.url, 'title', pr.title, 'branch', pr.branch, 'author', pr.author, 'state', pr.state,
+		                    'closes', ipr.closes, 'updated_at', pr.updated_at) order by pr.id desc)
+		                  from issue_pull_requests ipr join pull_requests pr on pr.id = ipr.pr_id where ipr.issue_id = $1), '[]')`,
+		i.ID, userID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy, &d.Watching, &d.PullRequests)
 	if err != nil {
 		return d, fmt.Errorf("issue relations: %w", err)
 	}
@@ -501,85 +507,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 // update changes the issue's non-nil fields, sets updated_at, and logs each real change as the actor's event, with
 // its notifications. When it sets the description it also drops the issue's live-editing updates.
 func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		before, err := snap(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		namedBefore, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if f.setDescription {
-			// The live document is replaced: every instance resets the issue's editors so they reload it, and the next
-			// one seeds it from the new description (a recent seed's claim would hold that off for 10s).
-			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `update issues set seed_claimed_at = null where id = $1`, id); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteReset)); err != nil {
-				return err
-			}
-		}
-		if f.parent != nil {
-			if err := setParent(ctx, tx, id, *f.parent); err != nil {
-				return err
-			}
-		}
-		if err := checkCycle(ctx, tx, before.projectID, f.cycleID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx,
-			`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
-			   description_text = case when $8 then $9 else description_text end,
-			   description_generation = description_generation + case when $8 then 1 else 0 end,
-			   status_id = coalesce($4::uuid, status_id),
-			   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
-			   priority = coalesce($6::smallint, priority),
-			   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
-			   cycle_id = case when $10::text is null then cycle_id else nullif($10, '')::uuid end,
-			   updated_at = now()
-			 where id = $1`,
-			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
-			doc.PlainText(f.description), f.cycleID); err != nil {
-			return err
-		}
-		if f.setLabels {
-			if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id = $1`, id); err != nil {
-				return err
-			}
-			if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
-				return err
-			}
-		}
-		after, err := snap(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		es := diff(before, after)
-		if err := addEvents(ctx, tx, id, actorID, es); err != nil {
-			return err
-		}
-		c := notify.Change{IssueID: id, ActorID: actorID, Mentioned: doc.NewMentions(before.description, after.description)}
-		for _, e := range es {
-			switch e.kind {
-			case "status":
-				c.Status = e.data
-			case "assignee":
-				c.Assignee = personID(after.assignee)
-			}
-		}
-		if err := notify.Record(ctx, tx, c); err != nil {
-			return err
-		}
-		namedAfter, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
-	})
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return apply(ctx, tx, workspaceID, id, actorID, f, nil) })
 	if errors.Is(err, errNoCycle) || errors.As(err, new(parentError)) {
 		return err
 	}
@@ -587,6 +515,104 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		return fmt.Errorf("update issue: %w", err)
 	}
 	return nil
+}
+
+// SetStatus moves the issue to the status (one of its workspace's) in tx like a manual change, with no actor; the
+// status event's data gains via (what moved it, e.g. a merged pull request).
+func SetStatus(ctx context.Context, tx pgx.Tx, issueID, statusID string, via any) error {
+	if err := apply(ctx, tx, "", issueID, "", fields{statusID: &statusID}, via); err != nil {
+		return fmt.Errorf("set issue status: %w", err)
+	}
+	return nil
+}
+
+// apply is update in tx; actorID "" is no actor. A non-nil via is added to the status event's data.
+func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fields, via any) error {
+	before, err := snap(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	namedBefore, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if f.setDescription {
+		// The live document is replaced: every instance resets the issue's editors so they reload it, and the next
+		// one seeds it from the new description (a recent seed's claim would hold that off for 10s).
+		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update issues set seed_claimed_at = null where id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteReset)); err != nil {
+			return err
+		}
+	}
+	if f.parent != nil {
+		if err := setParent(ctx, tx, id, *f.parent); err != nil {
+			return err
+		}
+	}
+	if err := checkCycle(ctx, tx, before.projectID, f.cycleID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
+		   description_text = case when $8 then $9 else description_text end,
+		   description_generation = description_generation + case when $8 then 1 else 0 end,
+		   status_id = coalesce($4::uuid, status_id),
+		   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
+		   priority = coalesce($6::smallint, priority),
+		   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
+		   cycle_id = case when $10::text is null then cycle_id else nullif($10, '')::uuid end,
+		   updated_at = now()
+		 where id = $1`,
+		id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
+		doc.PlainText(f.description), f.cycleID); err != nil {
+		return err
+	}
+	if f.setLabels {
+		if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id = $1`, id); err != nil {
+			return err
+		}
+		if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
+			return err
+		}
+	}
+	after, err := snap(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	es := diff(before, after)
+	for i, e := range es {
+		if e.kind == "status" && via != nil {
+			es[i].data = struct {
+				change[statusSnap]
+				Via any `json:"via"`
+			}{e.data.(change[statusSnap]), via}
+		}
+	}
+	if err := addEvents(ctx, tx, id, actorID, es); err != nil {
+		return err
+	}
+	c := notify.Change{IssueID: id, ActorID: actorID, Mentioned: doc.NewMentions(before.description, after.description)}
+	for _, e := range es {
+		switch e.kind {
+		case "status":
+			c.Status = e.data
+		case "assignee":
+			c.Assignee = personID(after.assignee)
+		}
+	}
+	if err := notify.Record(ctx, tx, c); err != nil {
+		return err
+	}
+	namedAfter, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
 }
 
 // snap reads the issue's logged fields, locking it.
@@ -629,6 +655,7 @@ func checkCycle(ctx context.Context, tx pgx.Tx, projectID string, cycleID *strin
 // addEvents logs the events as the actor's. A description edit within 10 minutes of the actor's latest event on the
 // issue, itself a description edit, bumps that event's time instead.
 func addEvents(ctx context.Context, tx pgx.Tx, issueID, actorID string, es []event) error {
+	actor := nullable(actorID)
 	for _, e := range es {
 		var err error
 		if e.kind == "description" {
@@ -637,20 +664,28 @@ func addEvents(ctx context.Context, tx pgx.Tx, issueID, actorID string, es []eve
 				 bumped as (update issue_events e set created_at = now() from last
 				            where e.id = last.id and e.kind = 'description' and e.created_at > now() - interval '10 minutes' returning e.id)
 				 insert into issue_events (issue_id, actor_id, kind) select $1, $2, 'description' where not exists (select 1 from bumped)`,
-				issueID, actorID)
+				issueID, actor)
 		} else {
 			var data []byte
 			if data, err = json.Marshal(e.data); err != nil {
 				return err
 			}
 			_, err = tx.Exec(ctx, `insert into issue_events (issue_id, actor_id, kind, data) values ($1, $2, $3, $4)`,
-				issueID, actorID, e.kind, data)
+				issueID, actor, e.kind, data)
 		}
 		if err != nil {
 			return fmt.Errorf("add %s event: %w", e.kind, err)
 		}
 	}
 	return nil
+}
+
+// nullable is s, or nil (SQL null) when it's "".
+func nullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // addLinkEvents logs a new or removed link on both issues, each from its own side.

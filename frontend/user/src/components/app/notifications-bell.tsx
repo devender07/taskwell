@@ -2,6 +2,7 @@ import { useParams } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Popover } from '@tether/shared/popover'
 import { api, toFormErrors, type NotificationPage } from '@/api'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, notificationText, notificationTarget } from '@/components/inbox/feed-row'
 import { subscribePaths } from '@/realtime'
 import { useUnread } from './unread'
@@ -79,6 +80,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
                 workspace={slug}
                 {...notificationTarget(n)}
                 actor={n.actor}
+                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}

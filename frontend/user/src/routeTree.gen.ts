@@ -28,6 +28,7 @@ import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
+import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
 import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
 import { Route as AppWorkspaceMainSettingsNotificationsRouteImport } from './routes/_app/$workspace/_main/settings/notifications'
@@ -141,6 +142,12 @@ const AppWorkspaceMainSettingsAiTestingRoute =
     path: '/settings/ai-testing',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainSettingsIntegrationsRoute =
+  AppWorkspaceMainSettingsIntegrationsRouteImport.update({
+    id: '/settings/integrations',
+    path: '/settings/integrations',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainSettingsLabelsRoute =
   AppWorkspaceMainSettingsLabelsRouteImport.update({
     id: '/settings/labels',
@@ -229,6 +236,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
@@ -258,6 +266,7 @@ export interface FileRoutesByTo {
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
@@ -292,6 +301,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/_app/$workspace/_main/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
@@ -325,6 +335,7 @@ export interface FileRouteTypes {
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
+    | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
     | '/$workspace/settings/notifications'
@@ -354,6 +365,7 @@ export interface FileRouteTypes {
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
+    | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
     | '/$workspace/settings/notifications'
@@ -387,6 +399,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
+    | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
     | '/_app/$workspace/_main/settings/members'
     | '/_app/$workspace/_main/settings/notifications'
@@ -549,6 +562,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsAiTestingRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/settings/integrations': {
+      id: '/_app/$workspace/_main/settings/integrations'
+      path: '/settings/integrations'
+      fullPath: '/$workspace/settings/integrations'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsIntegrationsRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/settings/labels': {
       id: '/_app/$workspace/_main/settings/labels'
       path: '/settings/labels'
@@ -658,6 +678,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
+  AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
   AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
   AppWorkspaceMainSettingsNotificationsRoute: typeof AppWorkspaceMainSettingsNotificationsRoute
@@ -681,6 +702,8 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,
   AppWorkspaceMainSettingsAiTestingRoute:
     AppWorkspaceMainSettingsAiTestingRoute,
+  AppWorkspaceMainSettingsIntegrationsRoute:
+    AppWorkspaceMainSettingsIntegrationsRoute,
   AppWorkspaceMainSettingsLabelsRoute: AppWorkspaceMainSettingsLabelsRoute,
   AppWorkspaceMainSettingsMembersRoute: AppWorkspaceMainSettingsMembersRoute,
   AppWorkspaceMainSettingsNotificationsRoute:

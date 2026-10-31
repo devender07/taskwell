@@ -16,6 +16,15 @@
   .issue-row-wide { display: none; }
 }
 
+.pr-state {
+  padding: 0 8px;
+  color: var(--text-2);
+  font: 400 12px/20px var(--font);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+}
+.pr-state[data-state='merged'] { color: var(--success); border-color: var(--success); }
+
 .label-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 9999px; }
 .label-chip {
   display: inline-flex;

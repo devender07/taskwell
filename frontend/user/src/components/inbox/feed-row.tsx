@@ -11,6 +11,8 @@ type FeedRowProps = {
   // A chat notification links to its chat (scrolled to the message) instead of an issue.
   chat?: { id: string; message?: string }
   actor: PersonRef | null
+  // Shown instead of "Someone" when there's no actor (e.g. "GitHub").
+  actorName?: string
   text: ReactNode
   excerpt?: string
   at: string
@@ -19,8 +21,8 @@ type FeedRowProps = {
 }
 
 // One line of who did what to which issue or chat, linking to it: the notifications popover and Home's blocks.
-export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt, at, unread, onClick }: FeedRowProps) {
-  const name = actor?.name ?? 'Someone'
+export function FeedRow({ workspace, identifier = '', chat, actor, actorName, text, excerpt, at, unread, onClick }: FeedRowProps) {
+  const name = actor?.name ?? actorName ?? 'Someone'
   const body = (
     <>
       <Avatar name={name} size={24} src={actor && avatarSrc(actor.id)} />

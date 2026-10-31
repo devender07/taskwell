@@ -2,6 +2,7 @@ import { useLoaderData, useLocation, useMatch, useParams } from '@tanstack/react
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { Dialog } from '@tether/shared/dialog'
 import { can } from '@/api'
+import { branchName } from '@/components/issues/branch'
 import type { Prefill } from '@/components/issues/issue-form'
 import { CommandPalette, type Mode } from './command-palette'
 import './shortcuts.css'
@@ -10,6 +11,7 @@ const QuickCreate = lazy(() => import('./quick-create'))
 
 export const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
 export const paletteKey = isApple ? '⌘K' : 'Ctrl+K'
+const branchKey = isApple ? '⌘⇧.' : 'Ctrl+Shift+.'
 
 const ISSUE_KEYS: Record<string, Mode> = { a: 'assignee', s: 'status', p: 'priority', l: 'labels' }
 const HELP = [
@@ -20,6 +22,7 @@ const HELP = [
   ['A', 'Assign (on an issue)'],
   ['P', 'Set priority (on an issue)'],
   ['L', 'Change labels (on an issue)'],
+  [branchKey, 'Copy branch name (on an issue)'],
   ['P / F / S', 'Mark passed, failed or skipped (in a manual test run)'],
   ['Enter', 'Send a message (Shift+Enter for a new line)'],
   ['↑', 'Edit your last message (in an empty composer)'],
@@ -57,6 +60,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
   const [palette, setPalette] = useState<Mode | null>(null)
   const [creating, setCreating] = useState<{ prefill?: Prefill } | null>(null)
   const [help, setHelp] = useState(false)
+  const [toast, setToast] = useState<{ text: string; at: number } | null>(null)
   const [path, setPath] = useState(pathname)
   const canCreate = can(workspace, 'issues.create')
 
@@ -65,6 +69,17 @@ export function Shortcuts({ children }: { children: ReactNode }) {
     setPalette(null)
     setCreating(null)
   }
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const say = (text: string) => setToast({ text, at: Date.now() })
+  const copyBranch = issue
+    ? () => navigator.clipboard.writeText(branchName(issue.issue.identifier, issue.issue.title)).then(() => say('Branch name copied'), () => say("Couldn't copy. Try again."))
+    : undefined
 
   const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating({}), createPrefilled: (prefill) => setCreating({ prefill }) }), [])
 
@@ -75,6 +90,12 @@ export function Shortcuts({ children }: { children: ReactNode }) {
       if (open && !open.classList.contains('palette')) return
       e.preventDefault()
       setPalette((p) => (p ? null : 'root'))
+      return
+    }
+    if (e.code === 'Period' && e.shiftKey && (isApple ? e.metaKey : e.ctrlKey) && !e.altKey) {
+      if (open || !copyBranch) return
+      e.preventDefault()
+      copyBranch()
       return
     }
     if (open || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || !singleKeyShortcuts()) return
@@ -100,6 +121,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
         mode={palette}
         issue={issue}
         projectKey={pageProject ?? issue?.issue.project.key}
+        copyBranch={copyBranch && { run: copyBranch, key: branchKey }}
         onCreate={
           canCreate
             ? () => {
@@ -117,6 +139,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
           </Suspense>
         </Dialog>
       ) : null}
+      <p role="status" className="toast z-modal">{toast?.text}</p>
       <Dialog open={help} onClose={() => setHelp(false)} title="Keyboard shortcuts">
         <dl className="grid gap-3 m-0">
           {HELP.map(([key, label]) => (

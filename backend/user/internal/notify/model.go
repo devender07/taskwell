@@ -41,12 +41,17 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 		users[i], kinds[i], datas[i] = n.userID, n.kind, string(data)
 	}
 	var notified []string
+	var actor *string // null when nobody did it (a pull request moved the issue)
+	if c.ActorID != "" {
+		actor = &c.ActorID
+	}
 	if len(ns) > 0 {
 		// Watchers are unique, so each user has at most one status note to bump.
 		rows, err := tx.Query(ctx,
 			`with n as (select * from unnest($3::uuid[], $4::text[], $5::jsonb[]) as n(user_id, kind, data)),
 			 bumped as (
-			   update notifications t set data = jsonb_set(t.data, '{to}', n.data -> 'to'), actor_id = $2, created_at = now(),
+			   update notifications t set data = jsonb_set(t.data, '{to}', n.data -> 'to') - 'via' || (n.data - 'from' - 'to'),
+			     actor_id = $2::uuid, created_at = now(),
 			     emailed_at = null
 			   from n
 			   where n.kind = 'status' and t.id = (select id from notifications where user_id = n.user_id and issue_id = $1
@@ -59,7 +64,7 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 			   where not (n.kind = 'status' and n.user_id in (select user_id from bumped))
 			   returning user_id)
 			 select distinct user_id::text from (select user_id from bumped union all select user_id from added) x`,
-			c.IssueID, c.ActorID, users, kinds, datas)
+			c.IssueID, actor, users, kinds, datas)
 		if err != nil {
 			return fmt.Errorf("add notifications: %w", err)
 		}
@@ -358,7 +363,8 @@ const (
 		else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null))`
 	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.
 	settled = `n.created_at < now() - make_interval(secs => case n.kind when 'message' then $2::float8 else $1::float8 end)`
-	msgCols = `n.id::text, n.kind, coalesce(a.name, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
+	msgCols = `n.id::text, n.kind,
+		coalesce(a.name, case n.data #>> '{via,provider}' when 'github' then 'GitHub' when 'gitlab' then 'GitLab' end, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
 		w.name, w.slug, coalesce(n.data #>> '{from,name}', ''), coalesce(n.data #>> '{to,name}', ''),
 		coalesce(n.data ->> 'excerpt', ''), n.data ? 'comment_id', coalesce(c.id::text, ''), coalesce(c.kind, ''),
 		coalesce(chat_name(c, n.user_id), '')`

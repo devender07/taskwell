@@ -24,6 +24,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/cycle"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/file"
+	"github.com/devender07/tether/backend/user/internal/gitlink"
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/notify"
@@ -113,6 +114,18 @@ func main() {
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
 	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
+	jwtSecret := string(secret)
+	if jwtSecret == "" {
+		if jwtSecret, err = cfg.Get(context.Background(), "jwt_secret"); err != nil {
+			fatal("startup", "err", err)
+		}
+	}
+	gitKey, err := gitlink.Key(os.Getenv("INTEGRATION_SECRET_KEY"), jwtSecret, prod)
+	if err != nil {
+		fatal(err.Error())
+	}
+	gitlink.New(pool, gitKey, func(ctx context.Context) (string, error) { return cfg.Get(ctx, "app_base_url") },
+		authenticate, wsH.Member).Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		fatal(err.Error())

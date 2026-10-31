@@ -1,5 +1,6 @@
-import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
+import { Link, useLoaderData, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { can } from '@/api'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
 import './sidebar.css'
@@ -10,6 +11,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const navigate = useNavigate()
   const { openPalette } = useShortcuts()
   const unread = useUnread()
+  const integrations = can(useLoaderData({ from: '/_app/$workspace' }), 'integrations.manage')
   const count = unread.chats
   const [expanded, setExpanded] = useState(onSettings)
   const [wasOnSettings, setWasOnSettings] = useState(onSettings)
@@ -84,6 +86,11 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <Link to="/$workspace/settings/ai-testing" params={{ workspace }}>
             AI testing
           </Link>
+          {integrations ? (
+            <Link to="/$workspace/settings/integrations" params={{ workspace }}>
+              Integrations
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </nav>

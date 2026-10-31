@@ -6,8 +6,9 @@ import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issu
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
-import { eventText } from '@/components/issues/event-text'
+import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
 import { groupIssues } from '@/components/issues/view-search'
 import { localDate, readRecent } from './home'
@@ -177,6 +178,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
                 workspace={workspace}
                 {...notificationTarget(n)}
                 actor={n.actor}
+                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}
@@ -293,6 +295,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
                   workspace={workspace}
                   identifier={item.issue.identifier}
                   actor={item.actor}
+                  actorName={item.type === 'event' ? eventActor(item) : undefined}
                   text={text}
                   excerpt={item.type === 'comment' ? item.excerpt : undefined}
                   at={item.created_at}

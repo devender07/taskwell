@@ -83,7 +83,7 @@ Plan: `docs/cycles-plan.md`.
 
 Plan: `docs/pr-linking-plan.md`.
 
-- [ ] GitHub / GitLab webhooks link PRs to issues by ID; open and merge move the issue
+- [x] GitHub / GitLab webhooks (Settings → Integrations, `integrations.manage`): PRs mentioning an issue ID link to it; opening and merging move the issue to the chosen statuses; PR list on the issue page; "Copy branch name" (`⌘⇧.`)
 
 ## Admin app (alongside, as each phase needs it)
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { IssueEvent } from '@/api'
 import { formatDate, priorityLabel } from './fields'
+import { PROVIDER_NAME, prRef } from './pull-requests'
 
 type Ref = { identifier: string; title: string }
 
@@ -18,8 +19,16 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
       return <>edited the description{of}</>
     case 'title':
       return <>changed the title{of} to “{e.data.to}”</>
-    case 'status':
+    case 'status': {
+      const { via } = e.data
+      if (via) return <>moved{s} to {e.data.to.name} when {prRef(via)} {e.data.to.category === 'completed' ? 'merged' : 'opened'}</>
       return <>moved{s} from {e.data.from.name} to {e.data.to.name}</>
+    }
+    case 'pr_linked':
+    case 'pr_unlinked': {
+      const kind = e.data.provider === 'gitlab' ? 'merge request' : 'pull request'
+      return e.kind === 'pr_linked' ? <>linked {kind} {prRef(e.data)}{subject ? <> to{s}</> : null}</> : <>unlinked {kind} {prRef(e.data)}{from}</>
+    }
     case 'assignee': {
       const { from: was, to } = e.data
       if (!to) return was ? <>unassigned {was.name}{from}</> : <>unassigned{s ?? ' the issue'}</>
@@ -59,4 +68,11 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
     default:
       return null
   }
+}
+
+// Who did it: the person, or GitHub / GitLab for changes a pull request made.
+export function eventActor(e: IssueEvent) {
+  if (e.actor) return e.actor.name
+  const provider = e.kind === 'pr_linked' || e.kind === 'pr_unlinked' ? e.data.provider : e.kind === 'status' ? e.data.via?.provider : undefined
+  return provider ? PROVIDER_NAME[provider] : 'Someone'
 }

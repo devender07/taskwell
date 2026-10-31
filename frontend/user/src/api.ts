@@ -43,6 +43,28 @@ export type Issue = {
   sub_issues?: IssueRef[]
   blocks?: IssueRef[]
   blocked_by?: IssueRef[]
+  pull_requests?: PullRequest[]
+}
+export type Provider = 'github' | 'gitlab'
+export type PullRequest = {
+  provider: Provider
+  repo: string
+  number: number
+  url: string
+  title: string
+  branch: string
+  author: string
+  state: 'draft' | 'open' | 'merged' | 'closed'
+  closes: boolean
+  updated_at: string
+}
+export type Integration = {
+  provider: Provider
+  connected: boolean
+  webhook_url: string | null
+  open_status: Status | null
+  merge_status: Status | null
+  last_delivery_at: string | null
 }
 export type Comment = {
   id: string
@@ -59,7 +81,7 @@ type Change<T> = { from: T; to: T }
 export type IssueEvent = { id: string; actor: PersonRef | null; created_at: string } & (
   | { kind: 'created' | 'description'; data: Record<string, never> }
   | { kind: 'title'; data: Change<string> }
-  | { kind: 'status'; data: Change<StatusSnap> }
+  | { kind: 'status'; data: Change<StatusSnap> & { via?: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'url'> } }
   | { kind: 'assignee'; data: Change<PersonRef | null> }
   | { kind: 'priority'; data: Change<number> }
   | { kind: 'due_date'; data: Change<string | null> }
@@ -69,6 +91,7 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
   | { kind: 'test_run'; data: { run_id: string; kind: 'ai' | 'manual'; status: string; passed: number; failed: number; skipped: number; error: number } }
   | { kind: 'test_cases_regenerated'; data: { run_id: string } }
+  | { kind: 'pr_linked' | 'pr_unlinked'; data: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'title' | 'url'> }
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
@@ -107,7 +130,7 @@ export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string
   actor: PersonRef | null
-  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider } }
   read: boolean
   created_at: string
 } & (
@@ -150,6 +173,14 @@ export function rolloverCycle(workspace: string, project: string, number: number
   form.set('to', String(to))
   return api<{ moved: number; cycle: Cycle }>(`${cyclePath(workspace, project, number)}/rollover`, form)
 }
+
+export const integrationsPath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}/integrations`
+const integrationPath = (workspace: string, provider: Provider) => `${integrationsPath(workspace)}/${provider}`
+
+export const connectIntegration = (workspace: string, provider: Provider) =>
+  api<{ integration: Integration; secret: string }>(integrationPath(workspace, provider), new FormData())
+export const updateIntegration = (workspace: string, provider: Provider, form: FormData) => api<Integration>(`${integrationPath(workspace, provider)}/settings`, form)
+export const disconnectIntegration = (workspace: string, provider: Provider) => api(integrationPath(workspace, provider), undefined, 'DELETE')
 
 const FALLBACK = 'Something went wrong. Try again.'
 const OFFLINE = "You're offline. Reconnect and try again."

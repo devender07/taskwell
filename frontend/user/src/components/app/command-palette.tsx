@@ -1,7 +1,7 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { filterOptions, type Option } from '@tether/shared/match'
-import { api, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
@@ -9,7 +9,15 @@ import './shortcuts.css'
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
 export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
 
-type Props = { workspace: Workspace; mode: Mode | null; issue?: IssueContext; projectKey?: string; onCreate?: () => void; onClose: () => void }
+type Props = {
+  workspace: Workspace
+  mode: Mode | null
+  issue?: IssueContext
+  projectKey?: string
+  copyBranch?: { run: () => void; key: string }
+  onCreate?: () => void
+  onClose: () => void
+}
 type Item = { id: string; label: string; lead?: ReactNode; hint?: ReactNode; checked?: boolean; run: () => void }
 type Group = { label: string; items: Item[] }
 
@@ -50,7 +58,7 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
   )
 }
 
-function PaletteBody({ workspace, initial, issue: ctx, projectKey, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
+function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
   const id = useId()
   const navigate = useNavigate()
   const router = useRouter()
@@ -181,7 +189,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, onCreate, onC
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
     actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
-    for (const name of SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
+    for (const name of can(workspace, 'integrations.manage') ? [...SETTINGS, 'Integrations'] : SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
     if (ctx) {
       if (ctx.issue.can_edit) {
         for (const m of ['status', 'assignee', 'priority', 'labels'] as const) {
@@ -205,6 +213,17 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, onCreate, onC
         navigator.clipboard.writeText(text).then(onClose, () => setError("Couldn't copy. Try again."))
       actions.push({ value: 'copy-link', label: 'Copy issue link', run: copy(`${location.origin}/${slug}/issue/${ctx.issue.identifier}`) })
       actions.push({ value: 'copy-id', label: 'Copy issue ID', run: copy(ctx.issue.identifier) })
+      if (copyBranch) {
+        actions.push({
+          value: 'copy-branch',
+          label: 'Copy branch name',
+          hint: copyBranch.key,
+          run: () => {
+            onClose()
+            copyBranch.run()
+          },
+        })
+      }
     }
     const matched = filterOptions(actions, q) as typeof actions
     if (matched.length) {

@@ -12,7 +12,8 @@ import { commentBody } from '@tether/shared/validate'
 import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { eventText } from './event-text'
+import { eventActor, eventText } from './event-text'
+import { ProviderIcon } from './pull-requests'
 import { StatusIcon } from './fields'
 
 type Mentions = { id: string; name: string }[]
@@ -132,11 +133,17 @@ function IssueLink({ workspace, issue }: { workspace: string; issue: { identifie
 function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }) {
   const text = eventText(event, (issue) => <IssueLink workspace={workspace} issue={issue} />)
   if (!text) return null
-  const actor = event.actor?.name ?? 'Someone'
+  const actor = eventActor(event)
   return (
     <li className="flex items-start gap-2 text-caption text-secondary" style={{ paddingInline: 16 }}>
       <span className="inline-grid place-center flex-noshrink" style={{ width: 20, height: 20 }}>
-        {event.kind === 'status' ? <StatusIcon category={event.data.to.category} /> : <Avatar name={actor} size={20} src={event.actor && avatarSrc(event.actor.id)} />}
+        {event.kind === 'status' ? (
+          <StatusIcon category={event.data.to.category} />
+        ) : event.kind === 'pr_linked' || event.kind === 'pr_unlinked' ? (
+          <ProviderIcon provider={event.data.provider} />
+        ) : (
+          <Avatar name={actor} size={20} src={event.actor && avatarSrc(event.actor.id)} />
+        )}
       </span>
       <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
         <span className="text-primary">{actor}</span> {text} · <Time at={event.created_at} />
