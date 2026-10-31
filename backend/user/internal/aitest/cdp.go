@@ -170,6 +170,8 @@ type page struct {
 	c                            *cdp
 	contextID, targetID, session string
 
+	frame     func([]byte)
+
 	mu        sync.Mutex
 	requested map[string]bool // hosts the page asked for, so the browser's own traffic stays out of the step log
 }
@@ -177,9 +179,9 @@ type page struct {
 const viewportW, viewportH = 1280, 800
 
 // newPage opens a tab in a fresh browser context whose requests go through proxyURL, answering the proxy's
-// challenge with the run's id and token.
-func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string) (*page, error) {
-	p := &page{c: c, requested: map[string]bool{}}
+// challenge with the run's id and token, and passes each screencast frame (JPEG) to frame.
+func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, frame func([]byte)) (*page, error) {
+	p := &page{c: c, requested: map[string]bool{}, frame: frame}
 	if err := c.call(ctx, "", "Target.createBrowserContext", map[string]any{
 		"disposeOnDetach": true, "proxyServer": proxyURL, "proxyBypassList": "<-loopback>",
 	}, &struct {
@@ -212,6 +214,7 @@ func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string) (*page
 		{"Page.enable", nil},
 		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": viewportW, "height": viewportH, "deviceScaleFactor": 1, "mobile": false}},
 		{"Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": p.contextID}},
+		{"Page.startScreencast", map[string]any{"format": "jpeg", "quality": 50, "maxWidth": viewportW, "maxHeight": viewportH}},
 	} {
 		session := p.session
 		if s.method == "Browser.setDownloadBehavior" {
@@ -235,6 +238,8 @@ func (p *page) event(runID, token, method string, params json.RawMessage) {
 		AuthChallenge struct {
 			Source string `json:"source"`
 		} `json:"authChallenge"`
+		Data      []byte `json:"data"` // screencast frame, base64 in the JSON
+		SessionID int    `json:"sessionId"`
 	}
 	_ = json.Unmarshal(params, &e)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -253,6 +258,9 @@ func (p *page) event(runID, token, method string, params json.RawMessage) {
 			resp = map[string]any{"response": "ProvideCredentials", "username": runID, "password": token}
 		}
 		_ = p.c.call(ctx, p.session, "Fetch.continueWithAuth", map[string]any{"requestId": e.RequestID, "authChallengeResponse": resp}, nil)
+	case "Page.screencastFrame":
+		p.frame(e.Data)
+		_ = p.c.call(ctx, p.session, "Page.screencastFrameAck", map[string]any{"sessionId": e.SessionID}, nil)
 	case "Page.javascriptDialogOpening":
 		_ = p.c.call(ctx, p.session, "Page.handleJavaScriptDialog", map[string]any{"accept": true}, nil)
 	}

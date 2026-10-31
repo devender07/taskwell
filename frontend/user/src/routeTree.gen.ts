@@ -18,6 +18,7 @@ import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
+import { Route as LiveWorkspaceRunRouteImport } from './routes/live.$workspace.$run'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
 import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$workspace/_main/inbox'
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
@@ -80,6 +81,11 @@ const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
 const AppWorkspaceMainRoute = AppWorkspaceMainRouteImport.update({
   id: '/_main',
   getParentRoute: () => AppWorkspaceRoute,
+} as any)
+const LiveWorkspaceRunRoute = LiveWorkspaceRunRouteImport.update({
+  id: '/live/$workspace/$run',
+  path: '/live/$workspace/$run',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppWorkspaceMainIndexRoute = AppWorkspaceMainIndexRouteImport.update({
   id: '/',
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
+  '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
+  '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/_app/$workspace/_main/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
@@ -289,6 +298,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/live/$workspace/$run'
     | '/$workspace/inbox'
     | '/$workspace/my-issues'
     | '/$workspace/'
@@ -317,6 +327,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/$workspace'
     | '/'
+    | '/live/$workspace/$run'
     | '/$workspace/my-issues'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace'
     | '/_app/'
     | '/_app/$workspace/_main'
+    | '/live/$workspace/$run'
     | '/_app/$workspace/_main/inbox'
     | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/'
@@ -373,6 +385,7 @@ export interface RootRouteChildren {
   authResetPasswordRoute: typeof authResetPasswordRoute
   authSigninRoute: typeof authSigninRoute
   authSignupRoute: typeof authSignupRoute
+  LiveWorkspaceRunRoute: typeof LiveWorkspaceRunRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -439,6 +452,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$workspace'
       preLoaderRoute: typeof AppWorkspaceMainRouteImport
       parentRoute: typeof AppWorkspaceRoute
+    }
+    '/live/$workspace/$run': {
+      id: '/live/$workspace/$run'
+      path: '/live/$workspace/$run'
+      fullPath: '/live/$workspace/$run'
+      preLoaderRoute: typeof LiveWorkspaceRunRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/$workspace/_main/': {
       id: '/_app/$workspace/_main/'
@@ -670,6 +690,7 @@ const rootRouteChildren: RootRouteChildren = {
   authResetPasswordRoute: authResetPasswordRoute,
   authSigninRoute: authSigninRoute,
   authSignupRoute: authSignupRoute,
+  LiveWorkspaceRunRoute: LiveWorkspaceRunRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

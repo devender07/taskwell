@@ -39,6 +39,8 @@ type RunnerOptions struct {
 	ProxyURL  string // how Chrome reaches Proxy, http://tester:3128
 	Browsers  int    // runs at once
 	Proxy     *Proxy
+	Live      *Live  // fans the page's screencast out to viewers
+	LiveURL   string // how the user API reaches Live, stored on each claimed run
 }
 
 // Runner claims queued AI runs and runs them: Claude writes the cases when the issue needs them, then drives a
@@ -88,7 +90,7 @@ func (r *Runner) Run(stop context.Context) {
 			if err != nil || limit < 1 {
 				limit = 2
 			}
-			id, err := r.model.claim(stop, limit)
+			id, err := r.model.claim(stop, limit, r.o.LiveURL)
 			if err != nil && stop.Err() == nil {
 				slog.Error("claim failed", "err", err)
 			}
@@ -119,6 +121,7 @@ func (r *Runner) execute(stop context.Context, runID string) {
 	defer cancel()
 	slog.Info("ai run started", "run", runID)
 	status, msg := r.runJob(ctx, stop, runID)
+	r.o.Live.end(runID)
 	if err := r.model.finishAI(context.Background(), runID, status, msg); err != nil {
 		slog.Error("finish ai run", "run", runID, "err", err)
 		return
@@ -280,7 +283,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result) (status, s
 	if err != nil {
 		return "", "", nil, err
 	}
-	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token)
+	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, func(f []byte) { r.o.Live.publish(j.runID, f) })
 	if err != nil {
 		return "", "", nil, err
 	}

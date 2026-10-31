@@ -6,6 +6,8 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -202,6 +204,40 @@ func (h *Handler) getRun(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	return h.respondRun(w, r, http.StatusOK, ws.ID, r.PathValue("id"))
+}
+
+// live proxies the tester's MJPEG stream of a running AI run's browser to a workspace member.
+func (h *Handler) live(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	id := r.PathValue("id")
+	tester := ""
+	if isUUID(id) {
+		if tester, err = h.model.liveTester(r.Context(), ws.ID, id); err != nil {
+			return err
+		}
+	}
+	target, err := url.Parse(tester)
+	if tester == "" || err != nil {
+		writeErr(w, http.StatusNotFound, "This test run isn't running.")
+		return nil
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{}) // the stream lasts as long as the run
+	(&httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL = &url.URL{Scheme: target.Scheme, Host: target.Host, Path: "/live/" + id}
+			pr.Out.Host = target.Host
+			pr.Out.Header = http.Header{} // the member's cookies and tokens stay here
+			pr.Out.Body, pr.Out.ContentLength = nil, 0
+		},
+		FlushInterval: -1,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			writeErr(w, http.StatusBadGateway, "The live view isn't available. Try again.")
+		},
+	}).ServeHTTP(w, r)
+	return nil
 }
 
 func (h *Handler) createRun(w http.ResponseWriter, r *http.Request, userID string) error {

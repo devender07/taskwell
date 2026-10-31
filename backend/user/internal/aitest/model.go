@@ -886,7 +886,7 @@ const claimLock = 0x7465737472756e // "testrun"
 
 // claim takes the oldest queued AI run whose workspace has fewer than workspaceCap running, marks it generating
 // (when it needs cases) or running, and returns its id; "" when there's none.
-func (m *model) claim(ctx context.Context, workspaceCap int) (string, error) {
+func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock($1)`, claimLock); err != nil {
@@ -903,10 +903,10 @@ func (m *model) claim(ctx context.Context, workspaceCap int) (string, error) {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `update test_runs r set claimed_at = now(),
+		if _, err := tx.Exec(ctx, `update test_runs r set claimed_at = now(), tester_url = $2,
 			status = case when r.regenerate or not exists (select 1 from test_cases c where c.issue_id = r.issue_id and c.deleted_at is null)
 			         then 'generating' else 'running' end
-			where id = $1`, id); err != nil {
+			where id = $1`, id, testerURL); err != nil {
 			return err
 		}
 		return publishRun(ctx, tx, issueID, id, "", false)
@@ -915,6 +915,17 @@ func (m *model) claim(ctx context.Context, workspaceCap int) (string, error) {
 		return "", fmt.Errorf("claim ai run: %w", err)
 	}
 	return id, nil
+}
+
+// liveTester returns the tester URL of the workspace's AI run while it's generating or running, else "".
+func (m *model) liveTester(ctx context.Context, workspaceID, id string) (string, error) {
+	var u string
+	err := m.db.QueryRow(ctx, `select coalesce(tester_url, '') from test_runs
+		where id = $1 and workspace_id = $2 and kind = 'ai' and status in ('generating', 'running')`, id, workspaceID).Scan(&u)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return u, err
 }
 
 type accountRef struct{ id, label, username string }

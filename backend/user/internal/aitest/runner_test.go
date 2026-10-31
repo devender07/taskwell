@@ -68,7 +68,7 @@ func TestClaim(t *testing.T) {
 	claimAll := func() int {
 		n := 0
 		for {
-			id, err := m.claim(ctx, 2)
+			id, err := m.claim(ctx, 2, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,7 +242,7 @@ func TestRunner(t *testing.T) {
 	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, UploadDir: t.TempDir(), ChromeURL: chromeURL,
 		ProxyURL: proxyURL, Browsers: 1, Proxy: proxy})
 	for {
-		id, err := m.claim(ctx, 2)
+		id, err := m.claim(ctx, 2, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -311,7 +311,7 @@ func TestRunner(t *testing.T) {
 func message(t *testing.T, block, stop string) *anthropic.BetaMessage {
 	t.Helper()
 	var m anthropic.BetaMessage
-	if err := json.Unmarshal([]byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[`+block+
+	if err := json.Unmarshal([]byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-5-5","content":[`+block+
 		`],"stop_reason":"`+stop+`","usage":{"input_tokens":1000,"output_tokens":100,"cache_read_input_tokens":500,"cache_creation_input_tokens":200}}`), &m); err != nil {
 		t.Fatal(err)
 	}

@@ -12,8 +12,11 @@
 	}
 
 	# The API sets its own Cache-Control (e.g. no-store on auth, private on files); Caddy only proxies.
+	# flush_interval -1 passes streams (the AI test live view) through as they're written.
 	handle /api/* {
-		reverse_proxy {args[0]}
+		reverse_proxy {args[0]} {
+			flush_interval -1
+		}
 	}
 
 	# Hashed build output: cache forever, and a missing file is a 404, not index.html.

@@ -26,6 +26,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/test-runs", h.wrap(h.createRun))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-runs/{id}", h.wrap(h.getRun))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/results/{result_id}", h.wrap(h.markResult))
+	mux.HandleFunc("GET /api/workspaces/{slug}/test-runs/{id}/live", h.wrap(h.live))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/cancel", h.wrap(h.cancelRun))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-sites", h.wrap(h.listSites))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-sites", h.wrap(h.createSite))

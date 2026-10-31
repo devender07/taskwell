@@ -44,7 +44,7 @@ func NewSender(apiKey string) func(ctx context.Context, p anthropic.BetaMessageN
 // cached together with the tools in front of it.
 func params(effort anthropic.BetaOutputConfigEffort, maxTokens int64, system string) anthropic.BetaMessageNewParams {
 	return anthropic.BetaMessageNewParams{
-		Model:        model55,
+		Model:        testModel,
 		MaxTokens:    maxTokens,
 		Betas:        []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01},
 		Fallbacks:    anthropic.BetaFallbacksParamOfDefault(),

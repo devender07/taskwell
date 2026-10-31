@@ -99,6 +99,7 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
         <h2 className="text-label flex-grow">{run ? (run.kind === 'ai' ? 'AI test run' : 'Manual test run') : 'Test run'}</h2>
         {run ? <RunStatusPill status={run.status} /> : null}
         {run?.kind === 'ai' && run.cost_usd != null ? <span className="text-caption text-secondary">{formatCost(run.cost_usd)}</span> : null}
+        {run?.kind === 'ai' && !finished ? <WatchLive workspace={workspace.slug} runId={runId} /> : null}
         {cancellable ? (
           <Button variant="ghost" disabled={cancelling} onClick={() => startTransition(cancel)}>
             {cancelling ? 'Cancelling…' : 'Cancel run'}
@@ -254,5 +255,23 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
         </div>
       ) : null}
     </section>
+  )
+}
+
+// Opens the live browser view in a popup window; with popups blocked, the link opens it in a new tab instead.
+function WatchLive({ workspace, runId }: { workspace: string; runId: string }) {
+  const href = `/live/${encodeURIComponent(workspace)}/${encodeURIComponent(runId)}`
+  const name = `tether-live-${runId}`
+  return (
+    <a
+      href={href}
+      target={name}
+      className="button button-secondary"
+      onClick={(e) => {
+        if (window.open(href, name, 'popup,width=1320,height=900')) e.preventDefault()
+      }}
+    >
+      Watch live
+    </a>
   )
 }
