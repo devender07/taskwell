@@ -19,11 +19,11 @@
 .sidebar a, .sidebar-group {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
+  gap: 10px;
+  height: 36px;
   padding: 0 12px;
   color: var(--text-2);
-  font: 400 13px/19.5px var(--font);
+  font: 400 14px/21px var(--font);
   text-decoration: none;
   border-radius: 6px;
 }
@@ -37,7 +37,7 @@
 .sidebar-chevron { margin-left: auto; transition: transform 120ms ease; }
 .sidebar-group[aria-expanded='true'] .sidebar-chevron { transform: rotate(90deg); }
 .sidebar-children { display: grid; gap: 2px; }
-.sidebar-children a { padding-left: 36px; } /* lines up with the parent's label, past its icon */
+.sidebar-children a { padding-left: 40px; } /* lines up with the parent's label, past its icon */
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar-chevron { transition: none; }
