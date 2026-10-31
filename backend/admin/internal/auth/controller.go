@@ -12,22 +12,28 @@ import (
 	"github.com/devender07/tether/backend/admin/internal/web"
 )
 
-const errBadLogin = "Email or password is incorrect."
+const (
+	errBadLogin = "Email or password is incorrect."
+	errNoMFA    = "Ask an operator to run tether-admin -reset-mfa for your account."
+)
 
 // dummyHash keeps sign-in timing the same whether or not the email belongs to an admin.
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
 
 type Handler struct {
 	model  *model
-	secret []byte // ADMIN_JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
+	secret []byte  // ADMIN_JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
+	mfaKey []byte  // seals TOTP secrets (MFAKey)
+	ip     limiter // sign-in attempts per client IP, shared with every admin instance
 }
 
-func New(db *pgxpool.Pool, secret []byte) *Handler {
-	return &Handler{model: &model{db: db}, secret: secret}
+func New(db *pgxpool.Pool, secret, mfaKey []byte) *Handler {
+	return &Handler{model: &model{db: db}, secret: secret, mfaKey: mfaKey, ip: limiter{db, "admin-ip", 10, 6 * time.Second}}
 }
 
-// signin checks the password and starts a sign-in that can only finish the second factor (POST /api/auth/mfa).
-// It answers {"mfa": "verify"}, or {"mfa": "enrol", "secret", "otpauth_url"} when the admin has no factor yet.
+// signin checks the password and starts a sign-in that can only finish the second factor (POST /api/auth/mfa),
+// answering {"mfa": "verify"}. An admin without a factor gets 403: only the CLI enrols one, so knowing the password
+// is never enough to set it up.
 func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	email, pw := strings.ToLower(strings.TrimSpace(r.FormValue("email"))), r.FormValue("password")
@@ -42,8 +48,8 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		web.WriteFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
-	if tooMany(w, ipLimit.take(web.ClientIP(r), time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.ip, web.ClientIP(r)); err != nil || stop {
+		return err
 	}
 	if locked, err := h.locked(w, r, "admin:"+email); err != nil || locked {
 		return err
@@ -66,6 +72,12 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		web.WriteErr(w, http.StatusUnauthorized, errBadLogin)
 		return nil
 	}
+	if ok, err := h.model.hasMFA(ctx, u.ID); err != nil {
+		return err
+	} else if !ok {
+		web.WriteErr(w, http.StatusForbidden, errNoMFA)
+		return nil
+	}
 	sid, err := h.model.startSession(ctx, u.ID, false, mfaTTL)
 	if err != nil {
 		return err
@@ -73,20 +85,11 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 	if err := h.setCookie(ctx, w, u.ID, sid, mfaTTL); err != nil {
 		return err
 	}
-	secret, err := h.model.enrolment(ctx, u.ID, newTOTPSecret())
-	if err != nil {
-		return err
-	}
-	if secret == "" {
-		web.WriteJSON(w, http.StatusOK, map[string]string{"mfa": "verify"})
-		return nil
-	}
-	web.WriteJSON(w, http.StatusOK, map[string]string{"mfa": "enrol", "secret": secret, "otpauth_url": otpauthURL(u.Email, secret)})
+	web.WriteJSON(w, http.StatusOK, map[string]string{"mfa": "verify"})
 	return nil
 }
 
-// mfa finishes a sign-in with a code from the authenticator app (which also confirms enrolment) or a recovery code.
-// It answers the admin, plus recovery_codes, shown once, when this confirmed enrolment.
+// mfa finishes a sign-in with a code from the authenticator app or a recovery code, and answers the admin.
 func (h *Handler) mfa(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	userID, sid, err := h.token(r)
@@ -109,14 +112,14 @@ func (h *Handler) mfa(w http.ResponseWriter, r *http.Request) error {
 		web.WriteFields(w, http.StatusBadRequest, map[string]string{"code": "Enter the 6-digit code."})
 		return nil
 	}
-	if tooMany(w, ipLimit.take(web.ClientIP(r), time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.ip, web.ClientIP(r)); err != nil || stop {
+		return err
 	}
 	key := "admin-mfa:" + userID
 	if locked, err := h.locked(w, r, key); err != nil || locked {
 		return err
 	}
-	res, err := h.model.checkMFA(ctx, userID, code, recovery, time.Now())
+	res, err := h.model.checkMFA(ctx, h.mfaKey, userID, code, recovery, time.Now())
 	if err != nil {
 		return err
 	}
@@ -149,7 +152,7 @@ func (h *Handler) mfa(w http.ResponseWriter, r *http.Request) error {
 	for _, a := range []struct {
 		on     bool
 		action string
-	}{{res.enrolled, audit.MFAEnrolled}, {res.usedRecovery, audit.RecoveryUsed}, {true, audit.SignIn}} {
+	}{{res.usedRecovery, audit.RecoveryUsed}, {true, audit.SignIn}} {
 		if a.on {
 			if err := audit.Record(ctx, h.model.db, userID, a.action, "", ip); err != nil {
 				return err
@@ -164,10 +167,7 @@ func (h *Handler) mfa(w http.ResponseWriter, r *http.Request) error {
 		web.WriteErr(w, http.StatusUnauthorized, "Not signed in.")
 		return nil
 	}
-	web.WriteJSON(w, http.StatusOK, struct {
-		*User
-		RecoveryCodes []string `json:"recovery_codes,omitempty"`
-	}{u, res.recovery})
+	web.WriteJSON(w, http.StatusOK, u)
 	return nil
 }
 

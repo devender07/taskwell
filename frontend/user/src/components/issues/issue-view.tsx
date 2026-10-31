@@ -6,7 +6,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useOptimistic,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -51,7 +50,11 @@ type Props = {
   mine?: boolean
 }
 type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
-type Move = { issue: Issue; form: FormData; next: Partial<Issue> }
+// A board move shown before the loader data has it; `settled` once the save and its reload finished.
+type Override = { id: string; next: Partial<Issue>; key: string; by: GroupBy; settled: boolean }
+type Move = { issue: Issue; form: FormData; override: Override }
+
+const groupKey = (i: Issue, by: GroupBy) => (by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? '') : String(i.priority))
 
 const views = [
   { value: 'list', label: 'List' },
@@ -68,18 +71,30 @@ const sortOptions: Option[] = [
 export function IssueView({ workspace, issues: saved, statuses, labels, members, userId, search, mine }: Props) {
   const navigate = useNavigate()
   const router = useRouter()
-  const [issues, apply] = useOptimistic(saved, (cur, { id, next }: { id: string; next: Partial<Issue> }) =>
-    cur.map((i) => (i.id === id ? { ...i, ...next } : i)),
+  const [overrides, setOverrides] = useState<Override[]>([])
+  const [seen, setSeen] = useState(saved)
+  if (saved !== seen) {
+    setSeen(saved)
+    // Kept until fresh data has the move, so the card never shows in its old column in between. A settled move the
+    // data still disagrees with (someone else moved it meanwhile) gives way to the data.
+    const left = overrides.filter((o) => !o.settled && saved.some((i) => i.id === o.id && groupKey(i, o.by) !== o.key))
+    if (left.length !== overrides.length) setOverrides(left)
+  }
+  const issues = useMemo(
+    () => (overrides.length ? saved.map((i) => overrides.reduce((cur, o) => (o.id === i.id ? { ...cur, ...o.next } : cur), i)) : saved),
+    [saved, overrides],
   )
-  const [error, move] = useActionState(async (_prev: string | null, { issue, form, next }: Move) => {
-    apply({ id: issue.id, next })
+  const [error, move] = useActionState(async (_prev: string | null, { issue, form, override }: Move) => {
+    const mine = (o: Override) => o === override
     try {
       await api<Issue>(issuePath(workspace, issue.identifier), form)
     } catch (e) {
+      setOverrides((list) => list.filter((o) => !mine(o)))
       const { errors, error } = toFormErrors(e)
       return Object.values(errors).find(Boolean) ?? error
     }
     await reloadPage(router)
+    override.settled = true
     return null
   }, null)
 
@@ -142,7 +157,9 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
       form.set('priority', key)
       next = { priority: Number(key) }
     }
-    startTransition(() => move({ issue, form, next }))
+    const override: Override = { id: issue.id, next, key, by: group, settled: false }
+    setOverrides((list) => [...list.filter((o) => o.id !== issue.id), override])
+    startTransition(() => move({ issue, form, override }))
   }
 
   return (

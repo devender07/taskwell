@@ -89,6 +89,8 @@ services:
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
       DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
       ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?set ADMIN_JWT_SECRET}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY}
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-}
 
   caddy:
     build: { context: .., dockerfile: deploy/web.Dockerfile }

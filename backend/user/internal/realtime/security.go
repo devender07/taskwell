@@ -11,13 +11,6 @@ func (h *Handler) revoked(userID string) {
 	}
 }
 
-// MaxConnsPerUser caps one user's sockets on this instance; main sets it from WS_MAX_CONNS_PER_USER.
-// ponytail: per instance, so N instances allow N times as many; count in Postgres presence if that matters.
+// MaxConnsPerUser caps one user's sockets across every instance (counted in realtime_conns); main sets it from
+// WS_MAX_CONNS_PER_USER.
 var MaxConnsPerUser = 20
-
-// userCount returns how many sockets the user has here.
-func (hb *hub) userCount(userID string) int {
-	hb.mu.Lock()
-	defer hb.mu.Unlock()
-	return len(hb.users[userID])
-}

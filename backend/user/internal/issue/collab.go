@@ -364,7 +364,8 @@ func (s *Session) Leave(ctx context.Context) {
 	s.send(ctx, items)
 }
 
-// sendStored sends the issue's stored updates, then ready.
+// sendStored sends the issue's stored updates, then ready: flags, the last update's id and the description
+// generation, both 8-byte big-endian.
 func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -397,7 +398,9 @@ func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
 			flags |= 2
 		}
 	}
-	return c.peer.Write(ctx, tag(msgReady, i.ID, binary.BigEndian.AppendUint64([]byte{flags}, uint64(last))))
+	ready := binary.BigEndian.AppendUint64([]byte{flags}, uint64(last))
+	ready = binary.BigEndian.AppendUint64(ready, uint64(i.DescriptionGeneration))
+	return c.peer.Write(ctx, tag(msgReady, i.ID, ready))
 }
 
 // seedRenew is how often a held seed claim is extended; claimSeed treats one older than 10s as abandoned.

@@ -80,7 +80,7 @@ export type NotificationSettings = {
   assignments: boolean
   status: boolean
   comments: boolean
-  timezone: string
+  timezone: string | null // null until chosen
 }
 export type FieldErrors = Record<string, string | null | undefined>
 

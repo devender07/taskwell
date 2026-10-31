@@ -65,7 +65,7 @@ Live-editing frames are **binary**: the first byte is the message type, bytes 1-
 
 | Type | Direction | Payload | Server does |
 |---|---|---|---|
-| `0` ready | server → client | 1 flags byte (bit 0 = can edit, bit 1 = seed), then 8-byte big-endian id of the last stored update (0 when none) | Sent once, after every stored update has been sent as type `1` frames, oldest first |
+| `0` ready | server → client | 1 flags byte (bit 0 = can edit, bit 1 = seed), then 8-byte big-endian id of the last stored update (0 when none), then 8-byte big-endian description generation (the issue's `description_generation`) | Sent once, after every stored update has been sent as type `1` frames, oldest first. A client holding a document from an older generation (it was offline across a REST description write) drops it instead of merging it back |
 | `1` update | both | a Yjs update (`Y.encodeStateAsUpdate` / `doc.on('update')`) | From a client that can edit: insert into `issue_doc_updates`, then forward to every other connection on the issue. From a read-only client: ignored |
 | `2` awareness | both | a y-protocols awareness update | Forward to every other connection on the issue (any member); not stored |
 | `3` compact | client → server | 8-byte big-endian id (the `ready` id the client loaded up to), then a Yjs update with the client's whole state | Can edit only. In one transaction: delete the updates this connection loaded with `id <= that id`, insert the payload. Not forwarded |

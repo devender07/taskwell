@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,7 +47,7 @@ type Handler struct {
 // first verifies an account's email (it creates the default workspace).
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
 	onUserCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error) *Handler {
-	return &Handler{model: &model{db: db, onCreated: onUserCreated}, cfg: cfg, mail: m, secret: secret, lim: newLimits(),
+	return &Handler{model: &model{db: db, onCreated: onUserCreated}, cfg: cfg, mail: m, secret: secret, lim: newLimits(db),
 		alive: newAliveCache()}
 }
 
@@ -63,8 +62,8 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	email = normEmail(email)
-	if tooMany(w, h.lim.send.take(email, time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.lim.send, email); err != nil || stop {
+		return err
 	}
 	if ok, err := h.mail.Configured(ctx); err != nil {
 		return err
@@ -216,8 +215,8 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
-	if tooMany(w, h.lim.send.take(normEmail(email), time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.lim.send, normEmail(email)); err != nil || stop {
+		return err
 	}
 	code, err := newCode()
 	if err != nil {
@@ -235,8 +234,8 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
-	if tooMany(w, h.lim.send.take(normEmail(email), time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.lim.send, normEmail(email)); err != nil || stop {
+		return err
 	}
 	token := newToken()
 	return h.sendSecret(w, r, normEmail(email), purposeReset, "reset_ttl_minutes", token, func(minutes int) (string, string, error) {
@@ -361,8 +360,8 @@ func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
 		writeErr(w, http.StatusUnauthorized, errSignedOut)
 		return nil
 	}
-	if tooMany(w, h.lim.send.take(p.Email, time.Now())) {
-		return nil
+	if stop, err := limited(w, r, h.lim.send, p.Email); err != nil || stop {
+		return err
 	}
 	code, err := newCode()
 	if err != nil {

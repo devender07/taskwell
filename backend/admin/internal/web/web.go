@@ -3,11 +3,13 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -81,6 +83,42 @@ func WriteErr(w http.ResponseWriter, status int, msg string) {
 
 func WriteFields(w http.ResponseWriter, status int, errs map[string]string) {
 	WriteJSON(w, status, map[string]map[string]string{"errors": errs})
+}
+
+// ParseAllowlist reads ADMIN_ALLOWED_IPS: comma-separated addresses and CIDR ranges. Empty allows every address (nil).
+func ParseAllowlist(v string) ([]netip.Prefix, error) {
+	var ps []netip.Prefix
+	for _, f := range strings.Split(v, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		if a, err := netip.ParseAddr(f); err == nil {
+			a = a.Unmap()
+			ps = append(ps, netip.PrefixFrom(a, a.BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(f)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an IP address or CIDR range", f)
+		}
+		ps = append(ps, p.Masked())
+	}
+	return ps, nil
+}
+
+// AllowIPs answers 403 to every request whose client address (ClientIP) is in none of allowed; nil allows all.
+func AllowIPs(allowed []netip.Prefix, next http.Handler) http.Handler {
+	if allowed == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, err := netip.ParseAddr(ClientIP(r))
+		if err == nil && slices.ContainsFunc(allowed, func(p netip.Prefix) bool { return p.Contains(ip.Unmap()) }) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		WriteErr(w, http.StatusForbidden, "Your network isn't allowed to use the admin app.")
+	})
 }
 
 // ClientIP is the request's peer address, or, when the peer is a proxy on this host or a private network, the

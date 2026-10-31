@@ -30,7 +30,7 @@ import (
 
 func main() {
 	promote := flag.String("promote", "", "make the user with this email a platform admin, then exit")
-	resetMFA := flag.String("reset-mfa", "", "remove this platform admin's MFA and admin sign-ins (they enrol again), then exit")
+	resetMFA := flag.String("reset-mfa", "", "give this platform admin a new MFA factor (printed here) and end their admin sign-ins, then exit")
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
 	flag.Parse()
 
@@ -52,6 +52,19 @@ func main() {
 	if len(secret) == 0 {
 		secret = nil // dev: system_config's jwt_secret
 	}
+	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY")
+	if prod && len(mfaSecret) < 32 {
+		fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
+	}
+	allowed, err := web.ParseAllowlist(os.Getenv("ADMIN_ALLOWED_IPS"))
+	if err != nil {
+		fatal("ADMIN_ALLOWED_IPS", "err", err)
+	}
+	if allowed != nil {
+		slog.Info("admin allowlist", "ranges", len(allowed))
+	} else if prod {
+		slog.Warn("ADMIN_ALLOWED_IPS is empty: the admin API accepts requests from any address")
+	}
 
 	// The user service owns the schema and runs migrations; this service only connects.
 	pool, err := openPool(context.Background(), dbURL)
@@ -63,33 +76,53 @@ func main() {
 		pool.Close()
 		fatal("schema", "err", err)
 	}
+	mfaKey, err := loadMFAKey(context.Background(), pool, mfaSecret)
+	if err != nil {
+		pool.Close()
+		fatal("mfa key", "err", err)
+	}
+	if n, err := auth.EncryptSecrets(context.Background(), pool, mfaKey); err != nil {
+		pool.Close()
+		fatal("mfa secrets", "err", err)
+	} else if n > 0 {
+		slog.Info("encrypted plaintext mfa secrets", "count", n)
+	}
 
 	if *promote != "" {
-		u, err := auth.Promote(context.Background(), pool, *promote)
+		u, e, err := auth.Promote(context.Background(), pool, mfaKey, *promote)
 		if err != nil {
-			slog.Error("promote", "err", err)
-			os.Exit(1)
+			pool.Close()
+			fatal("promote", "err", err)
 		}
 		if u == nil {
 			fmt.Fprintf(os.Stderr, "no user with the verified email %s\n", *promote)
+			pool.Close()
 			os.Exit(1)
 		}
 		fmt.Printf("%s <%s> is now a platform admin\n", u.Name, u.Email)
+		if e == nil {
+			fmt.Println("They already have MFA set up; run -reset-mfa to give them a new factor.")
+			return
+		}
+		printEnrolment(e)
 		return
 	}
 
 	if *resetMFA != "" {
-		if u, err := auth.ResetMFA(context.Background(), pool, *resetMFA); err != nil || u == nil {
+		u, e, err := auth.ResetMFA(context.Background(), pool, mfaKey, *resetMFA)
+		if err != nil || u == nil {
+			pool.Close()
 			fatal("reset-mfa: no platform admin with that email, or the reset failed", "email", *resetMFA, "err", err)
 		}
-		fmt.Printf("MFA reset for %s; they set it up again at their next sign-in\n", *resetMFA)
+		fmt.Printf("New MFA factor for %s <%s>; their admin sign-ins have ended.\n", u.Name, u.Email)
+		printEnrolment(e)
 		return
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	logConfig(prod, addr, dbURL, secret != nil)
-	authH := auth.New(pool, secret)
+	authH := auth.New(pool, secret, mfaKey)
 	authH.Register(mux)
 	// Every handler but auth's own signs requests in through this, so the access log knows the admin.
 	authenticate := func(r *http.Request) (string, error) {
@@ -125,14 +158,14 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(withTimeouts(web.SameOrigin(realtime.WithOrigin(mux)))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(web.AllowIPs(allowed, withTimeouts(web.SameOrigin(realtime.WithOrigin(mux))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }
 
 // schemaVersion is the newest migration this service's queries need. The user service applies migrations; bump
 // this when admin starts depending on a newer one.
-const schemaVersion = "023_indexes.notx.sql"
+const schemaVersion = "025_shared_limits.sql"
 
 // checkSchema fails unless the user service has applied schemaVersion.
 func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
@@ -146,6 +179,29 @@ func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("migration %s isn't applied: run the user service's -migrate first", schemaVersion)
 	}
 	return nil
+}
+
+// loadMFAKey returns the key TOTP secrets are sealed with: from MFA_ENCRYPTION_KEY, or in dev (when it's unset)
+// derived from system_config's jwt_secret.
+func loadMFAKey(ctx context.Context, pool *pgxpool.Pool, envKey string) ([]byte, error) {
+	if envKey != "" {
+		return auth.MFAKey(envKey), nil
+	}
+	var s string
+	if err := pool.QueryRow(ctx, `select value from system_config where key = 'jwt_secret'`).Scan(&s); err != nil || s == "" {
+		return nil, fmt.Errorf("MFA_ENCRYPTION_KEY is unset and jwt_secret can't be read; start the user service once: %v", err)
+	}
+	slog.Warn("MFA_ENCRYPTION_KEY is unset: TOTP secrets are encrypted with a key derived from jwt_secret (dev only)")
+	return auth.MFAKey("jwt_secret:" + s), nil
+}
+
+// printEnrolment shows a new factor to the operator, who passes it to the admin over a safe channel.
+func printEnrolment(e *auth.Enrolment) {
+	fmt.Printf("\nAdd it to an authenticator app (time-based, 6 digits, 30 seconds):\n  setup key:   %s\n  otpauth URL: %s\n", e.Secret, e.URL)
+	fmt.Println("\nRecovery codes (each signs in once; shown only now):")
+	for _, c := range e.RecoveryCodes {
+		fmt.Println("  " + c)
+	}
 }
 
 // openPool connects with DB_MAX_CONNS connections (default 5; budget it with the user service's against

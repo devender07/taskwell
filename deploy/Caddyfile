@@ -39,5 +39,13 @@
 }
 
 {$ADMIN_HOST:admin.localhost} {
+	# Optional allowlist at the edge, on top of the admin service's own ADMIN_ALLOWED_IPS. To opt in, uncomment these
+	# four lines, set ADMIN_CADDY_ALLOWED_IPS in .env to space-separated addresses or CIDR ranges and pass it to the
+	# caddy service in docker-compose.prod.yml. remote_ip is the TCP peer, right for Caddy at the edge; use client_ip
+	# with trusted_proxies if a load balancer sits in front. This handle sorts before the snippet's.
+	# @blocked not remote_ip {$ADMIN_CADDY_ALLOWED_IPS}
+	# handle @blocked {
+	# 	respond "Forbidden" 403
+	# }
 	import spa admin:8080 /srv/admin
 }

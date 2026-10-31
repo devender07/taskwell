@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
-import { Avatar } from '@tether/shared/avatar'
 import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
 import { issueDescription } from '@tether/shared/validate'
-import { avatarSrc, uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
-import { reloadPage, type Viewer } from '@/realtime'
+import { api, issuePath, uploadFile, type Issue } from '@/api'
+import { reloadPage } from '@/realtime'
 import { REMOTE, connectCollab, type CollabState } from './collab'
+import { StaticDescription, type DescriptionProps } from './description'
 import { useUnsavedPrompt } from './timeline'
 
 type Session = { doc: Y.Doc; awareness: Awareness }
@@ -20,17 +20,21 @@ function caretColor(id: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(CARET_COLORS[Math.abs(h) % CARET_COLORS.length]!).trim()
 }
 
-type Props = { workspace: Workspace; issue: Issue; user: User; members: Member[]; onViewers: (viewers: Viewer[]) => void }
+const NOTICES = {
+  tooLarge: 'That change was too large to save (over 256 KB), so it was undone.',
+  replaced: 'This description was replaced while you were offline, so your offline edits were discarded.',
+}
 
-// The live description editor; `onViewers` (a stable setter) gets the other people who have this issue open.
-export function Description({ workspace, issue, user, members, onViewers }: Props) {
+// The live description editor (loaded lazily by ./description); `onViewers` (a stable setter) gets the other people
+// who have this issue open.
+export default function LiveDescription({ workspace, issue, user, members, onViewers }: DescriptionProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
   const [empty, setEmpty] = useState(!issue.description)
   const [unsent, setUnsent] = useState(false)
   const [tooLong, setTooLong] = useState<string | null>(null)
-  const [discarded, setDiscarded] = useState(false)
+  const [notice, setNotice] = useState<keyof typeof NOTICES | null>(null)
   const [round, setRound] = useState(0) // a new doc after a change too large to sync, or a reset
   const seed = useRef(issue.description)
   const long = useRef(false)
@@ -71,16 +75,19 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       if (dirty) flush()
     }, (viewers) => onViewers(viewers.filter((v) => v.id !== userId)), () => {
       discard = true
-      setDiscarded(true)
+      setNotice('tooLarge')
       setRound((r) => r + 1)
-    }, () => {
+    }, (lost) => {
       discard = true
-      void reloadPage(router).finally(() => setRound((r) => r + 1))
+      if (lost) setNotice('replaced')
+      // Seeded from a fetch of its own: the reloaded page data can reach this component after the new round starts.
+      const fresh = api<Issue>(issuePath(workspace, identifier)).then((i) => void (seed.current = i.description))
+      void Promise.allSettled([fresh, reloadPage(router)]).then(() => setRound((r) => r + 1))
     })
     doc.on('update', (_: Uint8Array, origin: unknown) => {
       if (origin === REMOTE || seeding || discard) return
       if (!conn.ready()) setUnsent(true)
-      setDiscarded(false)
+      setNotice(null)
       dirty = true
       clearTimeout(timer)
       timer = setTimeout(flush, 1000)
@@ -102,7 +109,6 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
     [session, user.name, user.id],
   )
   const editable = issue.can_edit && !!live?.canEdit
-  const none = <p className="text-body-sm text-secondary m-0">No description.</p>
 
   return (
     <section className="grid gap-2">
@@ -125,45 +131,17 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
               }}
             />
           </div>
-          {!editable && empty ? none : null}
+          {!editable && empty ? <StaticDescription doc={null} canEdit={false} /> : null}
         </>
-      ) : issue.description ? (
-        <RichEditor aria-label="Description" content={issue.description} editable={false} />
-      ) : issue.can_edit ? null : (
-        none
+      ) : (
+        <StaticDescription doc={issue.description} canEdit={issue.can_edit} />
       )}
-      {tooLong || discarded ? (
+      {tooLong || notice ? (
         <p role="alert" className="text-caption text-accent m-0">
-          {tooLong ?? 'That change was too large to save (over 256 KB), so it was undone.'}
+          {tooLong ?? NOTICES[notice!]}
         </p>
       ) : null}
       {offline ? <p className="text-caption text-secondary m-0">Offline, reconnecting…</p> : null}
     </section>
-  )
-}
-
-const SHOWN_VIEWERS = 5
-
-export function Viewers({ viewers }: { viewers: Viewer[] }) {
-  if (viewers.length === 0) return null
-  const extra = viewers.length - SHOWN_VIEWERS
-  return (
-    <div
-      role="img"
-      aria-label={`Also viewing: ${viewers.map((v) => v.name).join(', ')}`}
-      className="flex items-center flex-noshrink"
-      style={{ height: 40, paddingLeft: 4 }}
-    >
-      {viewers.slice(0, SHOWN_VIEWERS).map((v) => (
-        <span key={v.id} title={v.name} className="inline-grid rounded-full" style={{ marginLeft: -4, boxShadow: '0 0 0 2px var(--bg)' }}>
-          <Avatar name={v.name} size={24} src={avatarSrc(v.id)} />
-        </span>
-      ))}
-      {extra > 0 ? (
-        <span className="text-caption text-secondary" style={{ marginLeft: 4 }} title={viewers.slice(SHOWN_VIEWERS).map((v) => v.name).join(', ')}>
-          +{extra}
-        </span>
-      ) : null}
-    </div>
   )
 }

@@ -79,8 +79,11 @@ type Issue struct {
 	CreatedBy   *Person         `json:"created_by"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
-	CanEdit     bool            `json:"can_edit"`
-	CanDelete   bool            `json:"can_delete"`
+	// DescriptionGeneration counts REST writes of the description; the collab ready frame carries it too, so an
+	// editor that was offline across one drops its stale document instead of merging it back.
+	DescriptionGeneration int  `json:"description_generation"`
+	CanEdit               bool `json:"can_edit"`
+	CanDelete             bool `json:"can_delete"`
 }
 
 // IssueDetail is a single issue with its relations.
@@ -122,7 +125,7 @@ const (
 	s.id::text, s.name, s.category, s.position, a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
-	c.id::text, c.name, i.created_at, i.updated_at
+	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
 )
@@ -132,7 +135,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status.ID, &i.Status.Name, &i.Status.Category, &i.Status.Position, &aID, &aName, &i.Priority, &i.DueDate,
-		&i.Labels, &cID, &cName, &i.CreatedAt, &i.UpdatedAt)
+		&i.Labels, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
 	}
@@ -493,6 +496,7 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		if _, err := tx.Exec(ctx,
 			`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
 			   description_text = case when $8 then $9 else description_text end,
+			   description_generation = description_generation + case when $8 then 1 else 0 end,
 			   status_id = coalesce($4::uuid, status_id),
 			   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
 			   priority = coalesce($6::smallint, priority),

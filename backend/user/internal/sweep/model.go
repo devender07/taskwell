@@ -29,6 +29,9 @@ var retention = []struct{ table, where string }{
 	{"auth_failures", `at < now() - interval '1 day'`},
 	// Presence prunes rows past 90s every 30s while any instance runs; this catches the rest.
 	{"issue_viewers", `seen_at < now() - interval '1 hour'`},
+	{"realtime_conns", `seen_at < now() - interval '1 hour'`},
+	// Every bucket refills within an hour (the slowest, emails per address, in 15 minutes); a missing row is a full one.
+	{"rate_limits", `at < now() - interval '1 hour'`},
 }
 
 const deleteBatch = 5000

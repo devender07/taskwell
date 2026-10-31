@@ -1,8 +1,6 @@
 import { redirect } from '@tanstack/react-router'
 
 export type Admin = { id: string; name: string; email: string }
-export type MfaChallenge = { mfa: 'verify' } | { mfa: 'enrol'; secret: string; otpauth_url: string }
-export type MfaResult = Admin & { recovery_codes?: string[] }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
 export type Setting = { key: string; value: string; secret: boolean; has_value?: boolean; description: string; updated_at: string }
 export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string }

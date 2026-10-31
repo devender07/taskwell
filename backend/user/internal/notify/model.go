@@ -178,12 +178,12 @@ func (m *model) setRead(ctx context.Context, userID, workspaceID, slug string, i
 // --- settings ---
 
 type Settings struct {
-	Email       string `json:"email"`
-	Mentions    bool   `json:"mentions"`
-	Assignments bool   `json:"assignments"`
-	Status      bool   `json:"status"`
-	Comments    bool   `json:"comments"`
-	Timezone    string `json:"timezone"` // IANA name; the digest goes out at digest_hour_utc in it
+	Email       string  `json:"email"`
+	Mentions    bool    `json:"mentions"`
+	Assignments bool    `json:"assignments"`
+	Status      bool    `json:"status"`
+	Comments    bool    `json:"comments"`
+	Timezone    *string `json:"timezone"` // IANA name the digest goes out at digest_hour_utc in; nil (UTC) until chosen
 }
 
 const settingsCols = `email, mentions, assignments, status, comments, timezone`
@@ -201,7 +201,7 @@ var errBadTimezone = errors.New("unknown timezone")
 func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	s, err := scanSettings(m.db.QueryRow(ctx, `select `+settingsCols+` from notification_settings where user_id = $1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Settings{"instant", true, true, true, true, "UTC"}, nil
+		return Settings{"instant", true, true, true, true, nil}, nil
 	}
 	if err != nil {
 		return s, fmt.Errorf("notification settings: %w", err)
@@ -209,12 +209,13 @@ func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	return s, nil
 }
 
-// update changes the user's non-nil settings and returns them all, telling their other tabs.
+// update changes the user's non-nil settings and returns them all, telling their other tabs. A timezone of ""
+// clears it (back to never chosen).
 func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments *bool,
 	timezone *string) (Settings, error) {
 	var s Settings
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if timezone != nil {
+		if timezone != nil && *timezone != "" {
 			// The digest query converts with it, so one Postgres doesn't know would fail every digest.
 			var ok bool
 			if err := tx.QueryRow(ctx, `select exists(select 1 from pg_timezone_names where name = $1)`, *timezone).Scan(&ok); err != nil {
@@ -228,10 +229,10 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 		if s, err = scanSettings(tx.QueryRow(ctx,
 			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, timezone)
 			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true),
-			   coalesce($7, 'UTC'))
+			   nullif($7, ''))
 			 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
 			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments),
-			   timezone = coalesce($7, s.timezone)
+			   timezone = case when $7::text is null then s.timezone else nullif($7, '') end
 			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone)); err != nil {
 			return err
 		}
@@ -324,8 +325,9 @@ func (m *model) digestNext(ctx context.Context, hour int, queue func(tx pgx.Tx, 
 		var to string
 		err := tx.QueryRow(ctx,
 			`select s.user_id::text, u.email from notification_settings s join users u on u.id = s.user_id
-			 cross join lateral (select (date_trunc('day', now() at time zone s.timezone) + make_interval(hours => $1))
-			   at time zone s.timezone) d(at)
+			 cross join lateral (select coalesce(s.timezone, 'UTC') tz) z
+			 cross join lateral (select (date_trunc('day', now() at time zone z.tz) + make_interval(hours => $1))
+			   at time zone z.tz) d(at)
 			 where s.email = 'digest' and now() >= d.at and (s.last_digest_at is null or s.last_digest_at < d.at)
 			 limit 1 for update of s skip locked`, hour).Scan(&userID, &to)
 		if errors.Is(err, pgx.ErrNoRows) {

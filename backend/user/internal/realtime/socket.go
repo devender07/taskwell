@@ -120,10 +120,16 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "Not signed in.")
 		return
 	}
-	if h.hub.userCount(userID) >= MaxConnsPerUser {
+	connID := rand.Text()
+	if ok, err := h.model.claim(r.Context(), connID, userID, instance, MaxConnsPerUser); err != nil {
+		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		return
+	} else if !ok {
 		writeErr(w, http.StatusTooManyRequests, "Too many open tabs. Close some and try again.")
 		return
 	}
+	defer h.release(r.Context(), connID)
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return // Accept has written the error response
@@ -131,7 +137,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	defer ws.CloseNow()
 	ws.SetReadLimit(readLimit)
 
-	c := &Conn{id: rand.Text(), userID: userID, session: s, ws: ws, events: make(chan []byte, eventBuffer), frames: make(chan frame, frameBuffer),
+	c := &Conn{id: connID, userID: userID, session: s, ws: ws, events: make(chan []byte, eventBuffer), frames: make(chan frame, frameBuffer),
 		joined: map[string]Collab{}}
 	// The tab's own live-editing saves carry its id as origin, like its REST calls.
 	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), originKey{}, c.id))
@@ -297,6 +303,15 @@ func (h *Handler) disconnect(ctx context.Context, c *Conn) {
 	defer c.mu.Unlock()
 	if err := h.leaveAll(ctx, c, func(Collab) bool { return true }); err != nil {
 		slog.Error("realtime disconnect failed", "err", err)
+	}
+}
+
+// release frees the connection's place in the user's cap.
+func (h *Handler) release(ctx context.Context, connID string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := h.model.release(ctx, connID); err != nil {
+		slog.Error("realtime release failed", "err", err)
 	}
 }
 

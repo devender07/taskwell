@@ -2,6 +2,8 @@ import { Fragment, type ReactNode } from 'react'
 import { imageSrc, linkHref, type Doc } from './doc'
 import './rich-editor.css'
 
+export type { Doc }
+
 type Mark = NonNullable<Doc['marks']>[number]
 
 // A saved document as the read-only editor would show it (same elements and classes), without a ProseMirror view.

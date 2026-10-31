@@ -23,6 +23,7 @@
     "./match": "./src/components/smart-autocomplete/match.ts",
     "./date-picker": "./src/components/date-picker/date-picker.tsx",
     "./rich-editor": "./src/components/rich-editor/rich-editor.tsx",
+    "./rich-text": "./src/components/rich-editor/rich-text.tsx",
     "./realtime": "./src/realtime/paths.ts"
   },
   "peerDependencies": {

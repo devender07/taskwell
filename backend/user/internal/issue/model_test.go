@@ -95,6 +95,22 @@ func TestIssueFlows(t *testing.T) {
 	expect("a member can't edit others' issues", 403, cat, "POST", "/issues/ENG-1", url.Values{"title": {"Mine"}})
 	expect("the assignee can", 200, bob, "POST", "/issues/ENG-1", url.Values{"title": {"Bob's"}})
 	expect("bad status", 400, ann, "POST", "/issues/ENG-1", url.Values{"status_id": {"nope"}})
+	// Only REST writes of the description bump its generation.
+	generation := func() int {
+		t.Helper()
+		var got Issue
+		if err := json.Unmarshal([]byte(expect("get", 200, ann, "GET", "/issues/ENG-1", nil)), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.DescriptionGeneration
+	}
+	if g := generation(); g != 0 {
+		t.Errorf("generation after create and title edits: %d, want 0", g)
+	}
+	expect("description", 200, ann, "POST", "/issues/ENG-1", url.Values{"description": {`{"type":"doc","content":[]}`}})
+	if g := generation(); g != 1 {
+		t.Errorf("generation after a REST description write: %d, want 1", g)
+	}
 	var assigned int
 	if err := pool.QueryRow(ctx, `select count(*) from notifications where user_id = $1 and kind = 'assigned'`, bob).Scan(&assigned); err != nil || assigned != 1 {
 		t.Errorf("bob's assigned notifications: %d %v, want 1", assigned, err)

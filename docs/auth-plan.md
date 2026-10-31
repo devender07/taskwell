@@ -139,8 +139,9 @@ Sign-up no longer signs in:
 - `tether-admin -promote` only promotes a verified email.
 
 Rate limits (429 `{"error": "Too many attempts. Try again later."}` with `Retry-After`):
-- Per client IP, in-process: 20 burst, one more every 3 s, across signup, signup/verify, signin, otp send/verify, password forgot/reset/change. Admin sign-in: 10 burst, one every 6 s. The IP is the peer, or the last `X-Forwarded-For` entry when the peer is loopback or private (the proxy).
-- Per email, in-process: 3 emails (sign-in codes, reset links, verification codes) burst, one more every 5 minutes.
+- Per client IP, in Postgres (`rate_limits`, shared by every instance): 20 burst, one more every 3 s, across signup, signup/verify, signin, otp send/verify, password forgot/reset/change. Admin sign-in: 10 burst, one every 6 s. The IP is the peer, or the last `X-Forwarded-For` entry when the peer is loopback or private (the proxy).
+- Per email, in Postgres (`rate_limits`): 3 emails (sign-in codes, reset links, verification codes) burst, one more every 5 minutes.
+- The buckets are token buckets, one row per key (`ip:<addr>`, `send:<email>`, `admin-ip:<addr>`) in an unlogged table, spent by one atomic upsert on the database clock. The sweep drops rows untouched for an hour (all full by then).
 - Per email, in Postgres (all instances): 10 wrong passwords (`pw:`) or 10 wrong codes (`code:`, sign-in and sign-up codes together) per sliding hour, then 429 until the window slides. Admin sign-in uses `admin:`. Success doesn't reset the count.
 
 Realtime sockets (S4): access tokens carry `sid`, the refresh token family. The socket upgrade and every `collab.join` require that family to exist and the user not to be suspended. A socket closes with code 4001 when its access token expires, and on `session.revoked` (sign-out, password change, reset, admin suspension) or `workspace.permissions`, which close all the user's sockets. On 4001 the client refreshes and reconnects, and a revoked sign-in can't.

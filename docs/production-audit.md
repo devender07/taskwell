@@ -203,12 +203,5 @@ Severity guide:
 
 ## Open items after the fixes
 
-- **Rate limits and caps are per instance.** The IP and email buckets on auth routes and the per-user WebSocket cap are counted in memory on each API instance. Failed-attempt counts and invite caps are in Postgres, so those hold across instances.
-- **Admin MFA enrolment:** whoever first passes an admin's password can enrol MFA. Promote people and have them sign in straight away, or use `tether-admin -reset-mfa`. TOTP secrets are stored in the database unencrypted.
-- **Admin IP allowlist** is not built; add it at the proxy.
-- **Offline editors and REST writes:** an editor that is offline during a REST description write merges its old text back when it reconnects. This is rare: the app itself doesn't write descriptions over REST once an issue exists.
-- **Digest timezone:** UTC can't be told apart from "never chosen", so the browser's zone is suggested again.
-- **Board moves flicker:** after a move, the card shows in its old column for about 25 ms before the reloaded data arrives.
-- **Fonts:** Berkeley Mono is commercial and isn't bundled; the system monospace fallback is used.
-- **Editor bundle:** the editor chunk is still 590 kB (190 kB gzipped), loaded only on issue pages and in the create dialog.
-- **No invite e2e test:** invite acceptance isn't covered by the end-to-end suite.
+- **Fonts:** Berkeley Mono is commercial and isn't bundled; code text uses the system monospace fallback until a licensed copy is added to `frontend/shared/src/fonts/`.
+- **Invite e2e leftovers:** there's no API to delete a user, so each invite e2e run leaves one `invite-<timestamp>@tether.test` account with no workspace.

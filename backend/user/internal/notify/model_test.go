@@ -157,3 +157,54 @@ func TestDigestTimezone(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestTimezoneUnset checks that a timezone is null until chosen, survives updates that leave it out, clears with ""
+// and that the digest reads null as UTC.
+func TestTimezoneUnset(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	m := &model{db: pool}
+	user := dbtest.User(t, pool, "Zone")
+	tz := func(s Settings, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Timezone == nil {
+			return "null"
+		}
+		return *s.Timezone
+	}
+	if got := tz(m.settings(ctx, user)); got != "null" {
+		t.Fatalf("no settings: timezone %s, want null", got)
+	}
+	if got := tz(m.update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil)); got != "null" {
+		t.Fatalf("first update without a zone: %s, want null", got)
+	}
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, ptr("Europe/Berlin"))); got != "Europe/Berlin" {
+		t.Fatalf("set: %s", got)
+	}
+	if got := tz(m.update(ctx, user, nil, ptr(false), nil, nil, nil, nil)); got != "Europe/Berlin" {
+		t.Fatalf("update without a zone changed it to %s", got)
+	}
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, ptr(""))); got != "null" {
+		t.Fatalf(`"" left %s, want null`, got)
+	}
+	// Hour 0 UTC has always passed today, so a null-zone digest user is due.
+	for {
+		more, err := m.digestNext(ctx, 0, func(pgx.Tx, string, []message) error { return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !more {
+			break
+		}
+	}
+	var sent bool
+	if err := pool.QueryRow(ctx, `select last_digest_at is not null from notification_settings where user_id = $1`, user).Scan(&sent); err != nil {
+		t.Fatal(err)
+	}
+	if !sent {
+		t.Error("null timezone got no digest at hour 0 UTC")
+	}
+}

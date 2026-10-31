@@ -102,7 +102,7 @@ Shapes:
 - Status: `{"id","name","category","position"}`
 - Label: `{"id","name","color"}`
 - Person ref: `{"id","name"}`
-- Issue: `{"id","identifier":"ENG-142","number":142,"project":{"key":"ENG","name":"Engineering"},"title","description","status":status,"assignee":person|null,"priority":0-4,"due_date":"2026-11-02"|null,"labels":[label…] (by name),"created_by":person|null,"created_at","updated_at","can_edit":bool,"can_delete":bool}` (timestamps UTC)
+- Issue: `{"id","identifier":"ENG-142","number":142,"project":{"key":"ENG","name":"Engineering"},"title","description","status":status,"assignee":person|null,"priority":0-4,"due_date":"2026-11-02"|null,"labels":[label…] (by name),"created_by":person|null,"created_at","updated_at","description_generation":int,"can_edit":bool,"can_delete":bool}` (timestamps UTC; `description_generation` starts at 0 and goes up by one on every REST write of the description, migration 025; live-editing saves don't change it)
 
 | Method & path | Needs | Fields | Success | Failures |
 |---|---|---|---|---|

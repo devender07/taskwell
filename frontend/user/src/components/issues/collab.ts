@@ -18,7 +18,8 @@ const MAX_COMPACT = 1 << 20
 // onTooLarge fires instead of sending a change over the server's cap; after it nothing more is sent, since later
 // changes build on the unsent one, so the caller starts over with a fresh doc. onReset fires when the server replaced
 // the document (a description saved outside live editing); nothing more is sent, and the caller reloads the issue and
-// starts over with a fresh doc seeded from it.
+// starts over with a fresh doc seeded from it. The same happens when a reconnect finds a document generation other than
+// the one this doc was built on (it was replaced while offline): `lost` says whether offline edits were dropped.
 export function connectCollab(
   workspace: string,
   issue: string,
@@ -27,13 +28,15 @@ export function connectCollab(
   onState: (s: CollabState | null) => void,
   onPresence: (viewers: Viewer[]) => void,
   onTooLarge: () => void,
-  onReset: () => void,
+  onReset: (lost: boolean) => void,
 ) {
   let ready = false
   let blocked = false
   let state: CollabState | null = null
   let stored: Y.Doc | null = null // what the server replayed, to find local edits it hasn't seen
   let loaded = 0
+  let generation: bigint | null = null // of the server document this doc was built on, from the first ready
+  let offlineEdits = false
 
   const send = (type: number, payload: Uint8Array) => ready && !blocked && channel.send(type, payload)
   const sendUpdate = (update: Uint8Array) => {
@@ -45,7 +48,9 @@ export function connectCollab(
   const sendAwareness = (clients: number[]) => send(AWARENESS, encodeAwarenessUpdate(awareness, clients))
 
   const onUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin !== REMOTE) sendUpdate(update)
+    if (origin === REMOTE) return
+    if (!ready) offlineEdits = true
+    sendUpdate(update)
   }
   const onAwareness = ({ added, updated, removed }: Record<string, number[]>, origin: unknown) => {
     if (origin !== REMOTE) sendAwareness([...added!, ...updated!, ...removed!])
@@ -81,10 +86,18 @@ export function connectCollab(
         applyAwarenessUpdate(awareness, payload, REMOTE)
       } else if (type === READY && payload.length >= 9 && stored) {
         const flags = payload[0]!
-        const lastId = new DataView(payload.buffer, payload.byteOffset + 1, 8).getBigUint64(0)
+        const view = new DataView(payload.buffer, payload.byteOffset, payload.length)
+        const lastId = view.getBigUint64(1)
+        const gen = payload.length >= 17 ? view.getBigUint64(9) : 0n // a server without generations sends 9 bytes
         const canEdit = (flags & 1) !== 0
         const unseen = Y.encodeStateAsUpdate(doc, Y.encodeStateVector(stored))
         reset()
+        generation ??= gen
+        if (gen !== generation) {
+          blocked = true
+          return onReset(offlineEdits)
+        }
+        offlineEdits = false
         ready = true
         if (canEdit && unseen.length > 2) sendUpdate(unseen) // edits made while offline; [0, 0] is an empty update
         const full = canEdit && loaded > COMPACT_AFTER ? Y.encodeStateAsUpdate(doc) : null
@@ -99,7 +112,7 @@ export function connectCollab(
         onState(state)
       } else if (type === RESET) {
         blocked = true
-        onReset()
+        onReset(false)
       } else if (type === SEED && state) {
         state = { ...state, seed: true }
         onState(state)

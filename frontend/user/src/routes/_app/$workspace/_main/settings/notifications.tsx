@@ -27,14 +27,13 @@ const kinds: { value: Kind; label: string }[] = [
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const zones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])].map((z) => ({ value: z, label: z.replaceAll('_', ' ') }))
 
-// ponytail: the stored default 'UTC' reads as never chosen, so the browser's zone is suggested and sent with the next
-// save; someone who picks UTC sees that suggestion again. Return whether it was chosen if that matters.
-const withZone = (s: NotificationSettings) => (s.timezone === 'UTC' ? { ...s, timezone: browserZone } : s)
+// Never chosen (null): the browser's zone is suggested, and sent with the next save.
+const withZone = (s: NotificationSettings) => (s.timezone === null ? { ...s, timezone: browserZone } : s)
 
 function NotificationSettingsPage() {
   const data = Route.useLoaderData()
   const [loaded, setLoaded] = useState(data)
-  const [settings, setSettings] = useState<NotificationSettings>(() => withZone(data))
+  const [settings, setSettings] = useState(() => withZone(data))
   const [saved, setSaved] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,9 +54,9 @@ function NotificationSettingsPage() {
     setSaved(0)
     setError(null)
     const form = new FormData()
-    for (const [k, v] of Object.entries(next)) form.set(k, String(v))
+    for (const [k, v] of Object.entries(next)) form.set(k, String(v ?? ''))
     try {
-      setSettings(await api<NotificationSettings>('/me/notification-settings', form))
+      setSettings(withZone(await api<NotificationSettings>('/me/notification-settings', form)))
       setSaved(Date.now())
     } catch (e) {
       setSettings(prev)

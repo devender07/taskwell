@@ -83,27 +83,35 @@ func (m *model) fail(ctx context.Context, key string) error {
 	return nil
 }
 
-// Promote makes the user with this email a platform admin and records it in the audit log. It returns nil when there
-// is no such user or their email isn't verified (anyone can sign up with any address).
-func Promote(ctx context.Context, db *pgxpool.Pool, email string) (*User, error) {
-	return byEmailCLI(ctx, db, email, audit.Promote, `
+// Enrolment is a new TOTP factor, printed once by the CLI: the setup key, the otpauth:// URL and the recovery codes.
+type Enrolment struct {
+	Secret, URL   string
+	RecoveryCodes []string
+}
+
+// Promote makes the user with this email a platform admin and, when they have no second factor yet, enrols one; it
+// records both in the audit log. The enrolment is nil when they had a factor already, and the user is nil when
+// there is no such user or their email isn't verified (anyone can sign up with any address).
+func Promote(ctx context.Context, db *pgxpool.Pool, key []byte, email string) (*User, *Enrolment, error) {
+	return byEmailCLI(ctx, db, key, email, audit.Promote, false, `
 		update users set platform_admin = true where email = lower(trim($1)) and email_verified_at is not null
 		returning id::text, name, email`)
 }
 
-// ResetMFA removes the platform admin's second factor and ends their admin sign-ins, so their next sign-in enrols
-// again, and records it in the audit log. It returns nil when there is no platform admin with this email.
-func ResetMFA(ctx context.Context, db *pgxpool.Pool, email string) (*User, error) {
-	return byEmailCLI(ctx, db, email, audit.MFAReset, `
+// ResetMFA replaces the platform admin's second factor with a new one and ends their admin sign-ins, and records it
+// in the audit log. The user is nil when there is no platform admin with this email.
+func ResetMFA(ctx context.Context, db *pgxpool.Pool, key []byte, email string) (*User, *Enrolment, error) {
+	return byEmailCLI(ctx, db, key, email, audit.MFAReset, true, `
 		with u as (select id, name, email from users where email = lower(trim($1)) and platform_admin),
-		     m as (delete from admin_mfa where user_id in (select id from u)),
 		     s as (delete from admin_sessions where user_id in (select id from u))
 		select id::text, name, email from u`)
 }
 
-// byEmailCLI runs a CLI command's query (taking the email, returning the user) and audits it, in one transaction.
-func byEmailCLI(ctx context.Context, db *pgxpool.Pool, email, action, query string) (*User, error) {
+// byEmailCLI runs a CLI command's query (taking the email, returning the user), enrols a new factor (replacing one
+// only when replace is set) and audits it, in one transaction.
+func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action string, replace bool, query string) (*User, *Enrolment, error) {
 	var u *User
+	var e *Enrolment
 	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
 		var got User
 		err := tx.QueryRow(ctx, query, email).Scan(&got.ID, &got.Name, &got.Email)
@@ -114,12 +122,32 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, email, action, query stri
 			return err
 		}
 		u = &got
-		return audit.Record(ctx, tx, "", action, got.Email, "cli")
+		if err := audit.Record(ctx, tx, "", action, got.Email, "cli"); err != nil {
+			return err
+		}
+		secret := newTOTPSecret()
+		sealed, err := seal(key, got.ID, secret)
+		if err != nil {
+			return err
+		}
+		codes, hashes := newRecoveryCodes()
+		onConflict := `do nothing`
+		if replace {
+			onConflict = `do update set secret = excluded.secret, enabled_at = now(), last_step = 0,
+			  recovery_codes = excluded.recovery_codes`
+		}
+		tag, err := tx.Exec(ctx, `insert into admin_mfa (user_id, secret, enabled_at, recovery_codes) values ($1, $2, now(), $3)
+			on conflict (user_id) `+onConflict, got.ID, sealed, hashes)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		e = &Enrolment{Secret: secret, URL: otpauthURL(got.Email, secret), RecoveryCodes: codes}
+		return audit.Record(ctx, tx, "", audit.MFAEnrolled, got.Email, "cli")
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", action, err)
+		return nil, nil, fmt.Errorf("%s: %w", action, err)
 	}
-	return u, nil
+	return u, e, nil
 }
 
 // --- sessions ---
@@ -177,42 +205,32 @@ func (m *model) endSession(ctx context.Context, sid string) error {
 
 // --- MFA ---
 
-// enrolment returns the user's TOTP secret while enrolment is unconfirmed, replacing it with secret (each sign-in
-// shows a fresh one until a code confirms it); "" once MFA is on.
-func (m *model) enrolment(ctx context.Context, userID, secret string) (string, error) {
-	var got string
-	err := m.db.QueryRow(ctx, `
-		insert into admin_mfa (user_id, secret) values ($1, $2)
-		on conflict (user_id) do update set secret = excluded.secret where admin_mfa.enabled_at is null
-		returning secret`, userID, secret).Scan(&got)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
+// hasMFA reports whether the user has a second factor (enrolled from the CLI).
+func (m *model) hasMFA(ctx context.Context, userID string) (bool, error) {
+	var ok bool
+	if err := m.db.QueryRow(ctx, `select exists(select 1 from admin_mfa where user_id = $1 and enabled_at is not null)`,
+		userID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check mfa: %w", err)
 	}
-	if err != nil {
-		return "", fmt.Errorf("enrol mfa: %w", err)
-	}
-	return got, nil
+	return ok, nil
 }
 
 // mfaResult is what checking a second factor found.
 type mfaResult struct {
 	ok           bool
-	enrolled     bool     // the code confirmed enrolment just now
-	recovery     []string // the new recovery codes, when enrolled
-	usedRecovery bool     // a recovery code (now spent) was used
+	usedRecovery bool // a recovery code (now spent) was used
 }
 
-// checkMFA checks a TOTP code, or else a recovery code (only once MFA is on), against the user's factor. A TOTP match
-// is remembered so it can't be replayed, and confirms a pending enrolment, which issues recovery codes.
-func (m *model) checkMFA(ctx context.Context, userID, code, recovery string, now time.Time) (mfaResult, error) {
+// checkMFA checks a TOTP code, or else a recovery code, against the user's factor. A TOTP match is remembered so it
+// can't be replayed.
+func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery string, now time.Time) (mfaResult, error) {
 	var res mfaResult
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var secret string
-		var enabled bool
+		var sealed string
 		var lastStep int64
 		var hashes []string
-		err := tx.QueryRow(ctx, `select secret, enabled_at is not null, last_step, recovery_codes from admin_mfa
-			where user_id = $1 for update`, userID).Scan(&secret, &enabled, &lastStep, &hashes)
+		err := tx.QueryRow(ctx, `select secret, last_step, recovery_codes from admin_mfa
+			where user_id = $1 and enabled_at is not null for update`, userID).Scan(&sealed, &lastStep, &hashes)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -221,11 +239,15 @@ func (m *model) checkMFA(ctx context.Context, userID, code, recovery string, now
 		}
 		if code == "" {
 			h := hashRecovery(recovery)
-			if !enabled || !slices.Contains(hashes, h) {
+			if !slices.Contains(hashes, h) {
 				return nil
 			}
 			res.ok, res.usedRecovery = true, true
 			_, err := tx.Exec(ctx, `update admin_mfa set recovery_codes = array_remove(recovery_codes, $2) where user_id = $1`, userID, h)
+			return err
+		}
+		secret, err := unseal(key, userID, sealed)
+		if err != nil {
 			return err
 		}
 		step, ok, err := checkTOTP(secret, code, now, lastStep)
@@ -233,12 +255,7 @@ func (m *model) checkMFA(ctx context.Context, userID, code, recovery string, now
 			return err
 		}
 		res.ok = true
-		if !enabled {
-			res.enrolled = true
-			res.recovery, hashes = newRecoveryCodes()
-		}
-		_, err = tx.Exec(ctx, `update admin_mfa set last_step = $2, enabled_at = coalesce(enabled_at, now()), recovery_codes = $3
-			where user_id = $1`, userID, step, hashes)
+		_, err = tx.Exec(ctx, `update admin_mfa set last_step = $2 where user_id = $1`, userID, step)
 		return err
 	})
 	if err != nil {

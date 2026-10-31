@@ -10,6 +10,20 @@ export default defineConfig({
     react(),
   ],
   resolve: { alias: { '@': '/src' } },
-  build: { target: ['safari15.4', 'chrome111', 'firefox114', 'edge111'] }, // the oldest browsers supported
+  build: {
+    target: ['safari15.4', 'chrome111', 'firefox114', 'edge111'], // the oldest browsers supported
+    // The editor's vendors, each under Vite's 500 kB warning; only issue pages and the create dialog load them. React
+    // gets its own chunk, or Rollup would pull it into tiptap's (a dependency of both) and every page would load that.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (/\/node_modules\/(react|react-dom|scheduler|use-sync-external-store)\//.test(id)) return 'react'
+          if (id.includes('/node_modules/prosemirror-')) return 'prosemirror'
+          if (id.includes('/node_modules/@tiptap/')) return 'tiptap'
+          if (/\/node_modules\/(yjs|y-protocols|lib0)\//.test(id)) return 'yjs'
+        },
+      },
+    },
+  },
   server: { host: true, port: 5173, proxy: { '/api': { target: 'http://localhost:8090', ws: true } } },
 })

@@ -13,10 +13,12 @@ One host runs everything with Docker Compose: Postgres 18, the user and admin Go
 ## Run
 
 ```sh
-cp deploy/env.example deploy/.env    # fill in hosts, POSTGRES_PASSWORD, JWT_SECRET, ADMIN_JWT_SECRET
+cp deploy/env.example deploy/.env    # fill in hosts, POSTGRES_PASSWORD, JWT_SECRET, ADMIN_JWT_SECRET, MFA_ENCRYPTION_KEY
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec admin /app -promote you@example.com
 ```
+
+`-promote` prints the new admin's second factor: a setup key and `otpauth://` URL for their authenticator app, and 10 one-time recovery codes. Hand them over privately; they aren't shown again. The admin app never sets up a factor itself, so an admin without one can't sign in. For a lost device, or to give an admin a fresh factor, run `/app -reset-mfa their@email` the same way: it prints a new one and ends their admin sign-ins.
 
 Point both hostnames' DNS at the server before the first start so Caddy can get certificates. The `migrate` service applies migrations and exits before either service starts (see Migrations). SMTP and other runtime settings live in `system_config` and are set from the admin app; the services cache them for up to 10s, and an admin edit applies at once.
 
@@ -32,6 +34,8 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `APP_ENV` | user, admin | `production` | Anything else relaxes production checks |
 | `JWT_SECRET` | user | | Required. 32+ random bytes |
 | `ADMIN_JWT_SECRET` | admin | | Required. Different from `JWT_SECRET` |
+| `MFA_ENCRYPTION_KEY` | admin | | Required in production, 32+ bytes. Encrypts admins' TOTP secrets (AES-GCM). Changing it makes every stored factor unreadable; then `-reset-mfa` each admin. In dev it falls back to a key derived from `jwt_secret`, with a warning |
+| `ADMIN_ALLOWED_IPS` | admin | empty (any) | Comma-separated IPs and CIDR ranges allowed to use the admin API (403 for others). The client IP is the last `X-Forwarded-For` entry when the peer is a private or loopback address (Caddy), else the peer. Warns at start in production when empty. `Caddyfile` has an equivalent edge rule, commented out |
 | `DB_MAX_CONNS` | user | `20` | Pool size. Admin uses `ADMIN_DB_MAX_CONNS` (default 5) |
 | `DB_STATEMENT_TIMEOUT`, `DB_IDLE_TX_TIMEOUT` | user, admin | `30s`, `2min` | Postgres `statement_timeout` and `idle_in_transaction_session_timeout` for every pooled session |
 | `UPLOAD_DIR` | user | `/data/uploads` | The `uploads` volume. Back it up with the database |
@@ -61,7 +65,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 
 ## Retention
 
-The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures and stale presence rows. Uploads that no description, comment, unsaved live edit or avatar references are deleted 24 hours after upload, with their files; so are files on disk without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
+The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures, stale presence and socket rows, and rate-limit buckets untouched for an hour. Uploads that no description, comment, unsaved live edit or avatar references are deleted 24 hours after upload, with their files; so are files on disk without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
 
 ## Email
 

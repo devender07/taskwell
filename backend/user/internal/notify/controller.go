@@ -131,7 +131,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID 
 	var timezone *string
 	if v, ok := form["timezone"]; ok {
 		timezone = &v[0]
-		if !validTimezone(*timezone) {
+		if *timezone != "" && !validTimezone(*timezone) {
 			errs["timezone"] = errTimezone
 		}
 	}
