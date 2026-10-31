@@ -38,6 +38,8 @@ import { Route as AppWorkspaceMainInboxCChatIdRouteImport } from './routes/_app/
 import { Route as AppWorkspaceMainSettingsRolesIndexRouteImport } from './routes/_app/$workspace/_main/settings/roles/index'
 import { Route as AppWorkspaceMainSettingsRolesRoleIdRouteImport } from './routes/_app/$workspace/_main/settings/roles/$roleId'
 import { Route as AppWorkspaceMainSettingsRolesNewRouteImport } from './routes/_app/$workspace/_main/settings/roles/new'
+import { Route as AppWorkspaceMainProjectsKeyCyclesIndexRouteImport } from './routes/_app/$workspace/_main/projects/$key_/cycles/index'
+import { Route as AppWorkspaceMainProjectsKeyCyclesNumberRouteImport } from './routes/_app/$workspace/_main/projects/$key_/cycles/$number'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -199,6 +201,18 @@ const AppWorkspaceMainSettingsRolesNewRoute =
     path: '/settings/roles/new',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainProjectsKeyCyclesIndexRoute =
+  AppWorkspaceMainProjectsKeyCyclesIndexRouteImport.update({
+    id: '/projects/$key_/cycles/',
+    path: '/projects/$key/cycles/',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainProjectsKeyCyclesNumberRoute =
+  AppWorkspaceMainProjectsKeyCyclesNumberRouteImport.update({
+    id: '/projects/$key_/cycles/$number',
+    path: '/projects/$key/cycles/$number',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -228,6 +242,8 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/$workspace/projects/$key/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
+  '/$workspace/projects/$key/cycles/': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 export interface FileRoutesByTo {
   '/invite': typeof InviteRoute
@@ -255,6 +271,8 @@ export interface FileRoutesByTo {
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/roles': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/$workspace/projects/$key/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
+  '/$workspace/projects/$key/cycles': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -287,6 +305,8 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/_app/$workspace/_main/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/_app/$workspace/_main/projects/$key_/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
+  '/_app/$workspace/_main/projects/$key_/cycles/': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -318,6 +338,8 @@ export interface FileRouteTypes {
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/roles/'
+    | '/$workspace/projects/$key/cycles/$number'
+    | '/$workspace/projects/$key/cycles/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/invite'
@@ -345,6 +367,8 @@ export interface FileRouteTypes {
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/roles'
+    | '/$workspace/projects/$key/cycles/$number'
+    | '/$workspace/projects/$key/cycles'
   id:
     | '__root__'
     | '/_app'
@@ -376,6 +400,8 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings/roles/$roleId'
     | '/_app/$workspace/_main/settings/roles/new'
     | '/_app/$workspace/_main/settings/roles/'
+    | '/_app/$workspace/_main/projects/$key_/cycles/$number'
+    | '/_app/$workspace/_main/projects/$key_/cycles/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -593,6 +619,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsRolesNewRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/projects/$key_/cycles/': {
+      id: '/_app/$workspace/_main/projects/$key_/cycles/'
+      path: '/projects/$key/cycles'
+      fullPath: '/$workspace/projects/$key/cycles/'
+      preLoaderRoute: typeof AppWorkspaceMainProjectsKeyCyclesIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/projects/$key_/cycles/$number': {
+      id: '/_app/$workspace/_main/projects/$key_/cycles/$number'
+      path: '/projects/$key/cycles/$number'
+      fullPath: '/$workspace/projects/$key/cycles/$number'
+      preLoaderRoute: typeof AppWorkspaceMainProjectsKeyCyclesNumberRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
   }
 }
 
@@ -629,6 +669,8 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainSettingsRolesRoleIdRoute: typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   AppWorkspaceMainSettingsRolesNewRoute: typeof AppWorkspaceMainSettingsRolesNewRoute
   AppWorkspaceMainSettingsRolesIndexRoute: typeof AppWorkspaceMainSettingsRolesIndexRoute
+  AppWorkspaceMainProjectsKeyCyclesNumberRoute: typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
+  AppWorkspaceMainProjectsKeyCyclesIndexRoute: typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
@@ -654,6 +696,10 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainSettingsRolesNewRoute: AppWorkspaceMainSettingsRolesNewRoute,
   AppWorkspaceMainSettingsRolesIndexRoute:
     AppWorkspaceMainSettingsRolesIndexRoute,
+  AppWorkspaceMainProjectsKeyCyclesNumberRoute:
+    AppWorkspaceMainProjectsKeyCyclesNumberRoute,
+  AppWorkspaceMainProjectsKeyCyclesIndexRoute:
+    AppWorkspaceMainProjectsKeyCyclesIndexRoute,
 }
 
 const AppWorkspaceMainRouteWithChildren =

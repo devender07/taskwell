@@ -29,6 +29,8 @@ const (
 	PermCommentsCreate = "comments.create"
 	// PermCommentsManage lets a member edit and delete anyone's comments.
 	PermCommentsManage = "comments.manage"
+	// PermCyclesManage gates creating, editing, deleting and rolling over cycles.
+	PermCyclesManage = "cycles.manage"
 	// PermAITestsRun gates starting and cancelling AI test runs.
 	PermAITestsRun = "ai_tests.run"
 	// PermTestsManage gates editing an issue's test cases and running them by hand.
@@ -48,6 +50,7 @@ var catalog = []Permission{
 	{PermIssuesCreate, "Issues", "Create issues", true},
 	{PermIssuesEditAny, "Issues", "Edit and delete anyone's issues", true},
 	{PermWorkflowManage, "Issues", "Manage statuses and labels", true},
+	{PermCyclesManage, "Cycles", "Create, edit and delete cycles", true},
 	{PermCommentsCreate, "Comments", "Comment on issues", true},
 	{PermCommentsManage, "Comments", "Edit and delete anyone's comments", true},
 	{PermAITestsRun, "Testing", "Run AI tests on issues", true},

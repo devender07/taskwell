@@ -482,7 +482,7 @@ func (m *model) createManual(ctx context.Context, workspaceID, issueID, userID s
 func snapshotCases(ctx context.Context, tx pgx.Tx, runID, issueID, caseID string, limit int) (int64, error) {
 	tag, err := tx.Exec(ctx, `insert into test_results (run_id, case_id, position, title, steps, expected)
 		select $1, id, row_number() over (order by position, id) - 1, title, steps, expected
-		from test_cases where issue_id = $2 and deleted_at is null and ($4 = '' or id::text = $4)
+		from test_cases where issue_id = $2 and deleted_at is null and ($4 = '' or id = nullif($4, '')::uuid)
 		order by position, id limit $3`, runID, issueID, limit, caseID)
 	if err != nil {
 		return 0, fmt.Errorf("snapshot test cases: %w", err)

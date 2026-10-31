@@ -2,7 +2,7 @@ import type { Issue, Member, Status } from '@/api'
 
 export type GroupBy = 'status' | 'assignee' | 'priority' | 'none'
 export type SortBy = 'priority' | 'updated' | 'created' | 'due'
-export type FilterKey = 'status' | 'assignee' | 'label' | 'priority'
+export type FilterKey = 'status' | 'assignee' | 'label' | 'priority' | 'cycle'
 
 // Defaults (list, status, priority, no filters) are left out of the URL.
 // A lone priority stays a number: the router JSON-quotes digit-only strings (`"1"`), numbers stay bare.
@@ -14,6 +14,7 @@ export type ViewSearch = {
   assignee?: string
   label?: string
   priority?: string | number
+  cycle?: string
 }
 
 export type IssueGroup = { key: string; label: string; issues: Issue[]; status?: Status }
@@ -26,6 +27,7 @@ const VALID: Record<FilterKey, (v: string) => boolean> = {
   assignee: (v) => v === 'me' || v === 'none' || UUID.test(v),
   label: (v) => UUID.test(v),
   priority: (v) => /^[0-4]$/.test(v),
+  cycle: (v) => v === 'none' || UUID.test(v),
 }
 export const FILTER_KEYS = Object.keys(VALID) as FilterKey[]
 
@@ -63,13 +65,15 @@ export function filterIssues(issues: Issue[], search: ViewSearch, userId: string
   const assignee = filterValues(search, 'assignee')
   const label = filterValues(search, 'label')
   const priority = filterValues(search, 'priority')
+  const cycle = filterValues(search, 'cycle')
   return issues.filter(
     (i) =>
       (!status.length || status.includes(i.status.id)) &&
       (!assignee.length ||
         assignee.some((a) => (a === 'none' ? !i.assignee : a === 'me' ? i.assignee?.id === userId : i.assignee?.id === a))) &&
       (!label.length || i.labels.some((l) => label.includes(l.id))) &&
-      (!priority.length || priority.includes(String(i.priority))),
+      (!priority.length || priority.includes(String(i.priority))) &&
+      (!cycle.length || cycle.includes(i.cycle?.id ?? 'none')),
   )
 }
 

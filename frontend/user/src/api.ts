@@ -14,6 +14,9 @@ export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' |
 // type: the workspace's own label for the category ("Reopen"); missing = the category's name. Only on /statuses.
 export type Status = { id: string; name: string; category: StatusCategory; position: number; type?: string }
 export type Label = { id: string; name: string; color: string }
+export type CycleState = 'upcoming' | 'current' | 'past'
+export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
+export type Cycle = CycleRef & { custom_name: string | null; progress: { total: number; started: number; completed: number; canceled: number } }
 export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
 export type SearchIssue = IssueRef & { project: { key: string; name: string }; match: 'title' | 'description' | 'identifier' | null }
 export type SearchResult = { issues: SearchIssue[]; projects: Pick<Project, 'key' | 'name' | 'archived'>[] }
@@ -36,6 +39,7 @@ export type Issue = {
   can_delete: boolean
   watching: boolean
   parent: IssueRef | null
+  cycle: CycleRef | null
   sub_issues?: IssueRef[]
   blocks?: IssueRef[]
   blocked_by?: IssueRef[]
@@ -61,6 +65,7 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'due_date'; data: Change<string | null> }
   | { kind: 'labels'; data: { added: Label[]; removed: Label[] } }
   | { kind: 'parent'; data: Change<EventRef | null> }
+  | { kind: 'cycle'; data: Change<Pick<CycleRef, 'number' | 'name'> | null> }
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
   | { kind: 'test_run'; data: { run_id: string; kind: 'ai' | 'manual'; status: string; passed: number; failed: number; skipped: number; error: number } }
   | { kind: 'test_cases_regenerated'; data: { run_id: string } }
@@ -131,6 +136,20 @@ export const issuePath = (workspace: Workspace, identifier: string) =>
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
+
+export const cyclesPath = (workspace: string, project: string) =>
+  `/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/cycles`
+const cyclePath = (workspace: string, project: string, number: number) => `${cyclesPath(workspace, project)}/${number}`
+
+export const listCycles = (workspace: string, project: string, signal?: AbortSignal) => api<Cycle[]>(cyclesPath(workspace, project), undefined, 'GET', signal)
+export const createCycle = (workspace: string, project: string, form: FormData) => api<Cycle>(cyclesPath(workspace, project), form)
+export const updateCycle = (workspace: string, project: string, number: number, form: FormData) => api<Cycle>(cyclePath(workspace, project, number), form)
+export const deleteCycle = (workspace: string, project: string, number: number) => api(cyclePath(workspace, project, number), undefined, 'DELETE')
+export function rolloverCycle(workspace: string, project: string, number: number, to: number) {
+  const form = new FormData()
+  form.set('to', String(to))
+  return api<{ moved: number; cycle: Cycle }>(`${cyclePath(workspace, project, number)}/rollover`, form)
+}
 
 const FALLBACK = 'Something went wrong. Try again.'
 const OFFLINE = "You're offline. Reconnect and try again."

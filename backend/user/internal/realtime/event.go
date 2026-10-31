@@ -3,6 +3,7 @@ package realtime
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -79,6 +80,13 @@ func Timeline(slug, identifier string) string { return Issue(slug, identifier) +
 func Project(slug, key string) string { return Workspace(slug) + "/projects/" + key }
 
 func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issues" }
+
+// Cycles is the project's cycle list.
+func Cycles(slug, key string) string { return Project(slug, key) + "/cycles" }
+
+func Cycle(slug, key string, number int) string {
+	return Cycles(slug, key) + "/" + strconv.Itoa(number)
+}
 
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 

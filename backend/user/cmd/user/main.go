@@ -21,6 +21,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/aitest"
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/chat"
+	"github.com/devender07/tether/backend/user/internal/cycle"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/issue"
@@ -111,6 +112,7 @@ func main() {
 	project.New(pool, authenticate, wsH.Member).Register(mux)
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
+	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		fatal(err.Error())

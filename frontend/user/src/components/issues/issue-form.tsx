@@ -8,7 +8,7 @@ import type { Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, issuePath, toFormErrors, uploadFile, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, issuePath, toFormErrors, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
@@ -18,10 +18,10 @@ type State = { errors?: FieldErrors; error?: string | null }
 // Quick-create filled in from elsewhere (a failed test's "Create bug"); `blocks` links the new issue as blocking that one.
 export type Prefill = { title: string; description: Doc; blocks?: string }
 
-type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
+type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
 
 // Labels are checkboxes here, not the labels popover: a popover can't render above a modal dialog.
-export function CreateIssueForm({ workspace, project, parent, prefill, statuses, labels, members }: CreateProps) {
+export function CreateIssueForm({ workspace, project, parent, cycle, prefill, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(prefill?.title ?? '')
   const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
@@ -46,6 +46,7 @@ export function CreateIssueForm({ workspace, project, parent, prefill, statuses,
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
     if (parent) form.set('parent', parent.identifier)
+    if (cycle) form.set('cycle', cycle.id)
     let issue: Issue
     try {
       issue = await api<Issue>(`/workspaces/${encodeURIComponent(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
@@ -68,6 +69,12 @@ export function CreateIssueForm({ workspace, project, parent, prefill, statuses,
         <div className="grid gap-1">
           <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
           <FormError>{errors?.parent}</FormError>
+        </div>
+      ) : null}
+      {cycle ? (
+        <div className="grid gap-1">
+          <p className="text-body-sm text-secondary m-0">In {cycle.name}</p>
+          <FormError>{errors?.cycle}</FormError>
         </div>
       ) : null}
       <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />

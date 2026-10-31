@@ -42,6 +42,8 @@ export function formatDate(value: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: thisYear ? undefined : 'numeric' })
 }
 
+export const formatRange = (c: { starts_on: string; ends_on: string }) => `${formatDate(c.starts_on)} – ${formatDate(c.ends_on)}`
+
 export function StatusIcon({ category, label }: { category: StatusCategory; label?: string }) {
   const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true }
   const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'

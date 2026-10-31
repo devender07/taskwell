@@ -29,6 +29,14 @@ type snapshot struct {
 	dueDate     *string
 	labels      []Label
 	parent      *eventRef
+	projectID   string
+	cycleID     string     // "" when none
+	cycle       *cycleSnap // nil when none
+}
+
+type cycleSnap struct {
+	Number int    `json:"number"`
+	Name   string `json:"name"`
 }
 
 // event is one activity entry about to be written; data marshals to the kind's JSON.
@@ -69,6 +77,9 @@ func diff(a, b snapshot) []event {
 	}
 	if refID(a.parent) != refID(b.parent) {
 		es = append(es, event{"parent", change[*eventRef]{a.parent, b.parent}})
+	}
+	if a.cycleID != b.cycleID {
+		es = append(es, event{"cycle", change[*cycleSnap]{a.cycle, b.cycle}})
 	}
 	return es
 }

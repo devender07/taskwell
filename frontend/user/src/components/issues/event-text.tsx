@@ -41,6 +41,8 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
       ) : e.data.from ? (
         <>removed the parent {ref(e.data.from)}{from}</>
       ) : null
+    case 'cycle':
+      return e.data.to ? <>moved{s} to {e.data.to.name}</> : e.data.from ? <>removed{s} from {e.data.from.name}</> : null
     case 'link':
       return e.data.removed ? (
         <>removed the link{from} to {ref(e.data.issue)}</>

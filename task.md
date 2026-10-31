@@ -72,6 +72,19 @@ Plan: `docs/ai-testing-plan.md`.
 - [x] Phase A: test cases saved on issues (add, edit, reorder, delete), manual test runs (pass / fail / skip with a note), test history, "Create bug" from a failed result
 - [x] Phase B: AI test runs: Claude writes cases and drives a sandboxed Chrome against registered test sites, live screenshots, monthly spend limit, sealed test-account passwords
 
+## Cycles
+
+Plan: `docs/cycles-plan.md`.
+
+- [x] Cycles per project: numbered, start/end dates, no overlaps; current/upcoming/past from today's date; `cycles.manage` permission
+- [x] Cycles page and cycle page (list/board, live progress), cycle on issues (picker, New issue preset, activity), `cycle` filter, move a past cycle's open issues to another cycle, "Go to current cycle" in the palette
+
+## PR linking
+
+Plan: `docs/pr-linking-plan.md`.
+
+- [ ] GitHub / GitLab webhooks link PRs to issues by ID; open and merge move the issue
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
@@ -81,8 +94,6 @@ Plan: `docs/ai-testing-plan.md`.
 
 ## Later
 
-- Cycles / sprints
-- GitHub / GitLab PR linking (an issue moves when its PR merges)
 - Slack
 - Roadmap view
 - Customer feedback intake

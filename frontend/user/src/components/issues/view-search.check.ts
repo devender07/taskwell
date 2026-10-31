@@ -31,7 +31,7 @@ const issues = [
   issue(1, { priority: 0, assignee: { id: me, name: 'Zed' }, due_date: '2026-03-01', labels: [{ id: id(50), name: 'Bug', color: '#000000' }] }),
   issue(2, { priority: 3, status: done, updated_at: '2026-01-02T00:00:00.5Z', due_date: '2026-02-01' }),
   issue(3, { priority: 1, assignee: { id: other, name: 'Alice' }, created_at: '2026-01-03T00:00:00Z' }),
-  issue(4, { priority: 3, updated_at: '2026-01-02T00:00:00.123Z' }),
+  issue(4, { priority: 3, updated_at: '2026-01-02T00:00:00.123Z', cycle: { id: id(60), number: 1, name: 'Cycle 1', starts_on: '2026-01-01', ends_on: '2026-01-14', state: 'past' } }),
 ]
 const nums = (list: Issue[]) => list.map((i) => i.number)
 
@@ -43,12 +43,16 @@ assert.deepEqual(validateViewSearch({ priority: '1,9,2,1', assignee: `me,x,none,
   label: id(50),
   priority: '1,2',
 })
+assert.deepEqual(validateViewSearch({ cycle: `none,bogus,${id(60)}` }), { cycle: `none,${id(60)}` })
 
 // Filtering: OR within a filter, AND across.
 assert.deepEqual(nums(filterIssues(issues, { assignee: 'me,none' }, me)), [1, 2, 4])
 assert.deepEqual(nums(filterIssues(issues, { assignee: other }, me)), [3])
 assert.deepEqual(nums(filterIssues(issues, { priority: 3, status: done.id }, me)), [2])
 assert.deepEqual(nums(filterIssues(issues, { label: id(50) }, me)), [1])
+assert.deepEqual(nums(filterIssues(issues, { cycle: id(60) }, me)), [4])
+assert.deepEqual(nums(filterIssues(issues, { cycle: 'none' }, me)), [1, 2, 3])
+assert.deepEqual(nums(filterIssues(issues, { cycle: `none,${id(60)}` }, me)), [1, 2, 3, 4])
 
 // Sorts, ties by newest number.
 assert.deepEqual(nums(sortIssues(issues, 'priority')), [3, 4, 2, 1])

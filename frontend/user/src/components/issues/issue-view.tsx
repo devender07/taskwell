@@ -20,7 +20,7 @@ import { Checkbox } from '@tether/shared/checkbox'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { Tabs } from '@tether/shared/tabs'
-import { api, issuePath, avatarSrc, toFormErrors, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
@@ -49,6 +49,7 @@ type Props = {
   userId: string
   search: ViewSearch
   mine?: boolean
+  cycles?: CycleRef[]
 }
 type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
 // A board move shown before the loader data has it; `settled` once the save and its reload finished.
@@ -69,7 +70,7 @@ const sortOptions: Option[] = [
 ]
 
 // Toolbar plus list or board for an issue array; display options and filters live in the URL.
-export function IssueView({ workspace, issues: saved, statuses, labels, members, userId, search, mine }: Props) {
+export function IssueView({ workspace, issues: saved, statuses, labels, members, userId, search, mine, cycles }: Props) {
   const navigate = useNavigate()
   const router = useRouter()
   const [overrides, setOverrides] = useState<Override[]>([])
@@ -123,6 +124,9 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
         ]),
     { key: 'priority', title: 'Priority', options: PRIORITY_ORDER.map((p) => ({ value: String(p), label: priorityLabel(p) })) },
     { key: 'label', title: 'Label', options: labels.map((l) => ({ value: l.id, label: l.name, icon: <LabelDot color={l.color} /> })) },
+    ...(cycles
+      ? [{ key: 'cycle' as const, title: 'Cycle', options: [{ value: 'none', label: 'No cycle' }, ...cycles.map((c) => ({ value: c.id, label: c.name }))] }]
+      : []),
   ]
   const active = choices
     .map((c) => ({ ...c, values: filterValues(search, c.key).filter((v) => c.options.some((o) => o.value === v)) }))

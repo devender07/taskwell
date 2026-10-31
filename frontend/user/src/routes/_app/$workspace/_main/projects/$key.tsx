@@ -2,9 +2,10 @@ import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanst
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { ApiError, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { ApiError, can, cyclesPath, type Cycle, type Issue, type Label, type Member, type Project, type Status } from '@/api'
 import { loaderApi } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
+import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
 import { ArchiveProject, ProjectForm } from '@/components/projects/project-form'
@@ -17,9 +18,10 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     const { params } = ctx
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
-    const [project, issues, statuses, labels, { members }] = await Promise.all([
+    const [project, issues, cycles, statuses, labels, { members }] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<Issue[]>(ctx, `${projectPath}/issues`),
+      loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
       loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
@@ -30,20 +32,21 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     if (project.key !== params.key) {
       throw redirect({ to: '/$workspace/projects/$key', params: { workspace: params.workspace, key: project.key }, replace: true })
     }
-    return { project, issues, statuses, labels, members }
+    return { project, issues, cycles, statuses, labels, members }
   },
   component: ProjectPage,
 })
 
 function ProjectPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, issues, statuses, labels, members } = Route.useLoaderData()
+  const { project, issues, cycles, statuses, labels, members } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [editing, setEditing] = useState(false)
   const { openCreate } = useShortcuts()
   const manage = can(workspace, 'projects.manage')
   const create = can(workspace, 'issues.create') && !project.archived
+  const current = cycles.find((c) => c.state === 'current')
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
@@ -62,14 +65,29 @@ function ProjectPage() {
             <h1 className="text-h2 ellipsis">{project.name}</h1>
             {project.archived ? <span className="project-tag flex-noshrink">Archived</span> : null}
           </div>
-          {manage ? (
-            <div className="flex items-start gap-3">
-              <Button variant="secondary" onClick={() => setEditing(true)}>
-                Edit
-              </Button>
-              <ArchiveProject workspace={workspace} project={project} />
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {current ? (
+              <Link
+                to="/$workspace/projects/$key/cycles/$number"
+                params={{ workspace: workspace.slug, key: project.key, number: String(current.number) }}
+                className="project-tag"
+                style={{ textDecoration: 'none' }}
+              >
+                {current.name} · ends {formatDate(current.ends_on)}
+              </Link>
+            ) : null}
+            <Link to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
+              Cycles
+            </Link>
+            {manage ? (
+              <>
+                <Button variant="secondary" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+                <ArchiveProject workspace={workspace} project={project} />
+              </>
+            ) : null}
+          </div>
         </div>
       </header>
       {project.description ? (
@@ -88,7 +106,7 @@ function ProjectPage() {
             {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
           </div>
         ) : (
-          <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
+          <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} cycles={cycles} />
         )}
       </section>
       {manage ? (

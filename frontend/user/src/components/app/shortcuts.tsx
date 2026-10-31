@@ -1,4 +1,4 @@
-import { useLoaderData, useLocation, useMatch } from '@tanstack/react-router'
+import { useLoaderData, useLocation, useMatch, useParams } from '@tanstack/react-router'
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { Dialog } from '@tether/shared/dialog'
 import { can } from '@/api'
@@ -52,7 +52,7 @@ export const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.
 export function Shortcuts({ children }: { children: ReactNode }) {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const issue = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
-  const pageProject = useMatch({ from: '/_app/$workspace/_main/projects/$key', shouldThrow: false })?.loaderData?.project.key
+  const pageProject = useParams({ strict: false, select: (p) => p.key })
   const pathname = useLocation({ select: (l) => l.pathname })
   const [palette, setPalette] = useState<Mode | null>(null)
   const [creating, setCreating] = useState<{ prefill?: Prefill } | null>(null)
@@ -99,6 +99,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
         workspace={workspace}
         mode={palette}
         issue={issue}
+        projectKey={pageProject ?? issue?.issue.project.key}
         onCreate={
           canCreate
             ? () => {

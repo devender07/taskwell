@@ -1,7 +1,7 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { filterOptions, type Option } from '@tether/shared/match'
-import { api, toFormErrors, type Chat, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { api, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
@@ -9,7 +9,7 @@ import './shortcuts.css'
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
 export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
 
-type Props = { workspace: Workspace; mode: Mode | null; issue?: IssueContext; onCreate?: () => void; onClose: () => void }
+type Props = { workspace: Workspace; mode: Mode | null; issue?: IssueContext; projectKey?: string; onCreate?: () => void; onClose: () => void }
 type Item = { id: string; label: string; lead?: ReactNode; hint?: ReactNode; checked?: boolean; run: () => void }
 type Group = { label: string; items: Item[] }
 
@@ -50,7 +50,7 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
   )
 }
 
-function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
+function PaletteBody({ workspace, initial, issue: ctx, projectKey, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
   const id = useId()
   const navigate = useNavigate()
   const router = useRouter()
@@ -63,6 +63,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   const [version, setVersion] = useState(0)
   const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
   const [chats, setChats] = useState<Chat[]>([])
+  const [cycles, setCycles] = useState<{ key: string; list: Cycle[] } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const q = query.trim()
   const slug = workspace.slug
@@ -94,6 +95,13 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     api<Chat[]>(`/workspaces/${encodeURIComponent(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
     return () => ctrl.abort()
   }, [mode, slug])
+
+  useEffect(() => {
+    if (mode !== 'root' || !projectKey) return
+    const ctrl = new AbortController()
+    listCycles(slug, projectKey, ctrl.signal).then((list) => setCycles({ key: projectKey, list }), () => {})
+    return () => ctrl.abort()
+  }, [mode, slug, projectKey])
 
   async function save(field: string, values: string[], stay = false) {
     if (!ctx) return
@@ -161,6 +169,14 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     if (onCreate) actions.push({ value: 'create', label: 'Create issue', hint: 'C', run: onCreate })
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
+    const current = cycles?.key === projectKey ? cycles?.list.find((c) => c.state === 'current') : undefined
+    if (current) {
+      actions.push({
+        value: 'current-cycle',
+        label: 'Go to current cycle',
+        run: () => go(`projects/${encodeURIComponent(cycles!.key)}/cycles/${current.number}`),
+      })
+    }
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })

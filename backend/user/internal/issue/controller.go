@@ -26,6 +26,7 @@ const (
 	errForbidden       = "You don't have permission to do that."
 	errCommentNotFound = "Comment not found."
 	errArchivedProject = "This project is archived."
+	errCycleNotFound   = "Cycle not found."
 )
 
 type Handler struct {
@@ -102,6 +103,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if !checkParent(w, err) {
 		return nil
 	}
+	if errors.Is(err, errNoCycle) {
+		writeFields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -110,6 +115,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
+}
+
+// CycleIssues returns the cycle's issues as the user sees them, like a project's list.
+func (h *Handler) CycleIssues(ctx context.Context, cycleID, userID string, perms []string) ([]Issue, error) {
+	is, err := h.model.inCycle(ctx, cycleID)
+	for i := range is {
+		allow(&is[i], userID, perms)
+	}
+	return is, err
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -131,6 +145,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	err = h.model.update(r.Context(), ws.ID, i.ID, userID, f)
 	if !checkParent(w, err) {
+		return nil
+	}
+	if errors.Is(err, errNoCycle) {
+		writeFields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
 		return nil
 	}
 	if err != nil {
@@ -348,7 +366,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	form := r.PostForm
 	value := func(k string) *string {
 		v, ok := form[k]
-		if !ok || create && v[0] == "" && (k == "status_id" || k == "priority" || k == "parent") {
+		if !ok || create && v[0] == "" && (k == "status_id" || k == "priority" || k == "parent" || k == "cycle") {
 			return nil
 		}
 		return &v[0]
@@ -377,6 +395,9 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	}
 	f.assigneeID = value("assignee_id")
 	f.parent = value("parent")
+	if f.cycleID = value("cycle"); f.cycleID != nil && *f.cycleID != "" && !isUUID(*f.cycleID) {
+		errs["cycle"] = errCycleNotFound
+	}
 	if ids, ok := form["label_ids"]; ok {
 		f.setLabels = true
 		f.labelIDs = slices.Compact(slices.Sorted(slices.Values(slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" }))))

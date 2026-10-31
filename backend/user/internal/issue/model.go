@@ -26,6 +26,7 @@ var (
 	errInUse      = errors.New("status in use")
 	errLastStatus = errors.New("last status")
 	errLinked     = errors.New("issues already linked")
+	errNoCycle    = errors.New("cycle not in the issue's project")
 )
 
 // parentError is the message for a parent that breaks the sub-issue rules.
@@ -59,6 +60,16 @@ type ProjectRef struct {
 	Name string `json:"name"`
 }
 
+// CycleRef is the cycle an issue is in; State is "upcoming", "current" or "past" by today's date (UTC).
+type CycleRef struct {
+	ID       string `json:"id"`
+	Number   int    `json:"number"`
+	Name     string `json:"name"`
+	StartsOn string `json:"starts_on"`
+	EndsOn   string `json:"ends_on"`
+	State    string `json:"state"`
+}
+
 type IssueRef struct {
 	ID         string  `json:"id"`
 	Identifier string  `json:"identifier"`
@@ -80,6 +91,7 @@ type Issue struct {
 	Priority    int             `json:"priority"`
 	DueDate     *string         `json:"due_date"`
 	Labels      []Label         `json:"labels"`
+	Cycle       *CycleRef       `json:"cycle"`
 	CreatedBy   *Person         `json:"created_by"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
@@ -100,15 +112,15 @@ type IssueDetail struct {
 }
 
 // fields are an issue's form values. A nil field is left unchanged on update (defaulted on create);
-// an empty assigneeID, dueDate or parent clears it. labelIDs replace the issue's labels only when setLabels is true,
+// an empty assigneeID, dueDate, parent or cycleID clears it. labelIDs replace the issue's labels only when setLabels is true,
 // and description (nil clears it) replaces it only when setDescription is true.
 type fields struct {
-	title, statusID, assigneeID, dueDate, parent *string
-	priority                                     *int
-	labelIDs                                     []string
-	setLabels                                    bool
-	description                                  json.RawMessage
-	setDescription                               bool
+	title, statusID, assigneeID, dueDate, parent, cycleID *string
+	priority                                              *int
+	labelIDs                                              []string
+	setLabels                                             bool
+	description                                           json.RawMessage
+	setDescription                                        bool
 }
 
 // refJSON is an issue ref as JSON, selected with refFrom.
@@ -117,6 +129,12 @@ const (
 		'status', json_build_object('id', rs.id, 'name', rs.name, 'category', rs.category, 'position', rs.position),
 		'assignee', (select json_build_object('id', ru.id, 'name', ru.name) from users ru where ru.id = r.assignee_id))`
 	refFrom = ` from issues r join projects rp on rp.id = r.project_id join statuses rs on rs.id = r.status_id`
+	// cycleJSON is the issue's cycle ref; its state matches cycle's stateSQL.
+	cycleJSON = `(select json_build_object('id', cy.id, 'number', cy.number, 'name', coalesce(cy.name, 'Cycle ' || cy.number),
+		'starts_on', to_char(cy.starts_on, 'YYYY-MM-DD'), 'ends_on', to_char(cy.ends_on, 'YYYY-MM-DD'),
+		'state', case when cy.starts_on > (now() at time zone 'utc')::date then 'upcoming'
+		              when cy.ends_on < (now() at time zone 'utc')::date then 'past' else 'current' end)
+		from cycles cy where cy.id = i.cycle_id)`
 )
 
 const (
@@ -128,7 +146,7 @@ const (
 	issueTail = `
 	s.id::text, s.name, s.category, s.position, a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
-	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
+	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
 	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
@@ -139,7 +157,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status.ID, &i.Status.Name, &i.Status.Category, &i.Status.Position, &aID, &aName, &i.Priority, &i.DueDate,
-		&i.Labels, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
+		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
 	}
@@ -156,19 +174,20 @@ type model struct{ db *pgxpool.Pool }
 // names are what an issue's realtime events need, read in the change's transaction.
 type names struct {
 	wsID, slug, identifier, key string
+	cycle                       *int     // its cycle's number
 	related                     []string // identifiers of its parent, sub-issues and linked issues: their pages show it
 }
 
 func issueNames(ctx context.Context, tx pgx.Tx, id string) (names, error) {
 	var n names
 	err := tx.QueryRow(ctx,
-		`select w.id::text, w.slug, p.key || '-' || i.number, p.key,
+		`select w.id::text, w.slug, p.key || '-' || i.number, p.key, (select number from cycles where id = i.cycle_id),
 		        array(select rp.key || '-' || r.number from issues r join projects rp on rp.id = r.project_id
 		              where r.id = i.parent_id or r.parent_id = i.id
 		                 or r.id in (select blocked_id from issue_links where blocker_id = i.id
 		                             union select blocker_id from issue_links where blocked_id = i.id))
 		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
-		 where i.id = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.related)
+		 where i.id = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.cycle, &n.related)
 	if err != nil {
 		return n, fmt.Errorf("issue names: %w", err)
 	}
@@ -180,11 +199,14 @@ func (n names) event(kind, actorID string, paths ...string) realtime.Event {
 	return realtime.Event{Kind: kind, Workspace: n.slug, Actor: actorID, Audience: realtime.ToWorkspace(n.wsID), Paths: paths}
 }
 
-// relatedPaths are the pages of the issue's parent, sub-issues and linked issues.
+// relatedPaths are the pages of the issue's parent, sub-issues and linked issues, and its cycle's (which count it).
 func (n names) relatedPaths() []string {
 	ps := make([]string, len(n.related))
 	for i, r := range n.related {
 		ps[i] = realtime.Issue(n.slug, r)
+	}
+	if n.cycle != nil {
+		ps = append(ps, realtime.Cycles(n.slug, n.key), realtime.Cycle(n.slug, n.key, *n.cycle))
 	}
 	return ps
 }
@@ -218,6 +240,11 @@ func (m *model) projectID(ctx context.Context, workspaceID, key string) (string,
 // ponytail: newest maxList only, older ones are unreachable; add keyset pagination (number / created_at, id) when
 // a project or assignee gets near it.
 const maxList = 2000
+
+// inCycle returns the cycle's issues, newest first.
+func (m *model) inCycle(ctx context.Context, cycleID string) ([]Issue, error) {
+	return m.issues(ctx, `i.cycle_id = $1 order by i.number desc`, cycleID)
+}
 
 // list returns the project's issues, newest first.
 func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
@@ -419,15 +446,18 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		if archived {
 			return errArchived
 		}
+		if err := checkCycle(ctx, tx, projectID, f.cycleID); err != nil {
+			return err
+		}
 		if err := tx.QueryRow(ctx,
 			`insert into issues (workspace_id, project_id, number, title, description, description_text, status_id, assignee_id, priority,
-			   due_date, created_by)
+			   due_date, created_by, cycle_id)
 			 values ($1, $2, $3, $4, $5, $11,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
-			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10)
+			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid)
 			 returning id::text`,
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
-			doc.PlainText(f.description)).Scan(&id); err != nil {
+			doc.PlainText(f.description), f.cycleID).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -459,7 +489,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
-	if errors.Is(err, errArchived) || errors.As(err, new(parentError)) {
+	if errors.Is(err, errArchived) || errors.Is(err, errNoCycle) || errors.As(err, new(parentError)) {
 		return "", err
 	}
 	if err != nil {
@@ -498,6 +528,9 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 				return err
 			}
 		}
+		if err := checkCycle(ctx, tx, before.projectID, f.cycleID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx,
 			`update issues set title = coalesce($2, title), description = case when $8 then $3::jsonb else description end,
 			   description_text = case when $8 then $9 else description_text end,
@@ -506,10 +539,11 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			   assignee_id = case when $5::text is null then assignee_id else nullif($5, '')::uuid end,
 			   priority = coalesce($6::smallint, priority),
 			   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
+			   cycle_id = case when $10::text is null then cycle_id else nullif($10, '')::uuid end,
 			   updated_at = now()
 			 where id = $1`,
 			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
-			doc.PlainText(f.description)); err != nil {
+			doc.PlainText(f.description), f.cycleID); err != nil {
 			return err
 		}
 		if f.setLabels {
@@ -546,7 +580,7 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		}
 		return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
 	})
-	if errors.As(err, new(parentError)) {
+	if errors.Is(err, errNoCycle) || errors.As(err, new(parentError)) {
 		return err
 	}
 	if err != nil {
@@ -565,11 +599,31 @@ func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 		        coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 		                  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
 		        (select json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title)
-		         from issues r join projects rp on rp.id = r.project_id where r.id = i.parent_id)
+		         from issues r join projects rp on rp.id = r.project_id where r.id = i.parent_id),
+		        i.project_id::text, coalesce(i.cycle_id::text, ''),
+		        (select json_build_object('number', cy.number, 'name', coalesce(cy.name, 'Cycle ' || cy.number))
+		         from cycles cy where cy.id = i.cycle_id)
 		 from issues i join statuses s on s.id = i.status_id where i.id = $1 for update of i`, id).
 		Scan(&s.title, &s.description, &s.status.ID, &s.status.Name, &s.status.Category, &s.assignee, &s.priority, &s.dueDate,
-			&s.labels, &s.parent)
+			&s.labels, &s.parent, &s.projectID, &s.cycleID, &s.cycle)
 	return s, err
+}
+
+// checkCycle returns errNoCycle unless the cycle id is "" (none), nil (unchanged) or one of the project's cycles,
+// which it then holds against deletion until the transaction ends.
+func checkCycle(ctx context.Context, tx pgx.Tx, projectID string, cycleID *string) error {
+	if cycleID == nil || *cycleID == "" {
+		return nil
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `select count(*) from (select 1 from cycles where id = $1 and project_id = $2 for key share) c`,
+		*cycleID, projectID).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return errNoCycle
+	}
+	return nil
 }
 
 // addEvents logs the events as the actor's. A description edit within 10 minutes of the actor's latest event on the
