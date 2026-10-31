@@ -9,7 +9,7 @@ Project management tool for SaaS companies. Early stage: no code yet, only this 
 Quick reference:
 - Background `#08090A`, nested surface `#0F1011`, text `#F7F8F8`, secondary text `#8A8F98`
 - Accents only: pink `#F91880` (CTA/attention), green `#00BA7C` (success). Links `#5E6AD2`
-- Inter Variable for UI, Berkeley Mono for code. Weights 400 / 510 / 590 only
+- Plus Jakarta Sans for UI, Berkeley Mono for code. Weights 400 / 510 / 590 only
 - 8px grid. Spacing steps: 4, 8, 12, 16, 20, 24, 32, 40, 48, 56, 96
 - Radius: pill `9999px` for buttons, `6px` inputs, `8px` cards, `0` full-width sections
 - Breakpoints 640 / 1024 / 1440. Z-index 1, 2-3, 50, 100+, 995-997
