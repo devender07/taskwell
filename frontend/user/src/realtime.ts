@@ -76,6 +76,7 @@ const loadedBy = (m: AnyRouteMatch) =>
 
 const push = coalescer((paths) => {
   const filter = (m: AnyRouteMatch) => touches(loadedBy(m), paths)
+  router?.clearCache({ filter }) // hover-preloaded data for these paths is now stale
   if (router?.state.matches.some(filter)) void router.invalidate({ filter })
   for (const s of subscribers) if (touches(s.paths, paths)) s.refetch()
 })

@@ -4,8 +4,7 @@ import { routeTree } from './routeTree.gen'
 
 export const router = createRouter({
   routeTree,
-  defaultPreload: 'intent', // start loaders on hover/focus of any <Link>
-  defaultPreloadStaleTime: 0,
+  defaultPreload: 'intent', // start loaders on hover/focus of any <Link>; a hovered route's data is reused for 30s (realtime events still invalidate it)
   defaultPendingComponent: Pending,
   defaultPendingMs: 200,
   defaultPendingMinMs: 300,
