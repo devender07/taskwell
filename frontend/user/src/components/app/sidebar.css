@@ -1,7 +1,7 @@
 /* Page shell under the navbar: the app sidebar on the left, the page on the right. */
 .shell {
   display: grid;
-  grid-template-columns: 256px minmax(0, 1fr);
+  grid-template-columns: 350px minmax(0, 1fr);
   min-height: calc(100dvh - 56px);
 }
 .sidebar {
@@ -11,7 +11,7 @@
   display: grid;
   align-content: start;
   gap: 2px;
-  min-width: 256px; /* never narrower than its column */
+  min-width: 350px; /* never narrower than its column */
   min-height: calc(100dvh - 56px);
   padding: 16px 12px;
   border-right: 1px solid var(--border);
