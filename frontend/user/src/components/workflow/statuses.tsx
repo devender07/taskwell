@@ -20,9 +20,13 @@ const statusesPath = (workspace: Workspace) => `/workspaces/${encodeURIComponent
 // How a custom type behaves: its icon, and whether it counts as open, done or canceled.
 const worksLike = categoryOptions.map((o) => ({ ...o, label: `Works like ${o.label}` }))
 
+// Types offered even before a workspace uses them.
+const SUGGESTED: [string, Status['category']][] = [['Reopen', 'unstarted']]
+
 function typeOptions(statuses: Status[]) {
   const own = new Map<string, Status['category']>()
   for (const s of statuses) if (s.type && !own.has(s.type)) own.set(s.type, s.category)
+  for (const [type, category] of SUGGESTED) if (!own.has(type)) own.set(type, category)
   return [
     ...CATEGORIES.map((c) => ({ value: `category:${c.value}`, label: c.label })),
     ...[...own].map(([type, category]) => ({ value: `type:${category}:${type}`, label: type, hint: `Works like ${categoryLabel(category)}` })),
