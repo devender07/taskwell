@@ -153,7 +153,7 @@ export function NewMessagePeople({ slug, me, members, onDone }: { slug: string; 
   const people = members.filter((m) => m.id !== me && (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)))
   return (
     <div className="chat-people">
-      <Input aria-label="Search people" placeholder="Search people" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
+      <Input aria-label="Search people" placeholder="Search people" value={query} onChange={(e) => setQuery(e.target.value)} />
       {state.error ? <FormError>{state.error}</FormError> : null}
       {people.length ? (
         <ul className="chat-people-list">
