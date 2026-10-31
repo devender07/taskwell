@@ -473,11 +473,15 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			return err
 		}
 		if f.setDescription {
-			// The live document is replaced: every instance closes the issue's editors so they reload it.
+			// The live document is replaced: every instance resets the issue's editors so they reload it, and the next
+			// one seeds it from the new description (a recent seed's claim would hold that off for 10s).
 			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteClose)); err != nil {
+			if _, err := tx.Exec(ctx, `update issues set seed_claimed_at = null where id = $1`, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteReset)); err != nil {
 				return err
 			}
 		}
@@ -927,22 +931,29 @@ func scanComment(row pgx.Row) (Comment, error) {
 	return c, err
 }
 
-// timeline returns the issue's comments and events, each oldest first.
-func (m *model) timeline(ctx context.Context, issueID string) ([]Comment, []Event, error) {
-	rows, err := m.db.Query(ctx, `select `+commentCols+` where c.issue_id = $1 order by c.created_at, c.id`, issueID)
+// timelinePage caps a timeline page's comments and events together.
+const timelinePage = 100
+
+// timeline returns a page of the issue's comments and events: the newest timelinePage created before before (all
+// when nil), each oldest first, and whether there are older ones. A page never splits a created_at that's shared
+// (one change logs several events at the same time), so the next page, before its oldest item, misses none.
+func (m *model) timeline(ctx context.Context, issueID string, before *time.Time) ([]Comment, []Event, bool, error) {
+	rows, err := m.db.Query(ctx, `select `+commentCols+` where c.issue_id = $1 and ($2::timestamptz is null or c.created_at < $2)
+		order by c.created_at desc, c.id desc limit $3`, issueID, before, timelinePage+1)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list comments: %w", err)
+		return nil, nil, false, fmt.Errorf("list comments: %w", err)
 	}
 	cs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Comment, error) { return scanComment(row) })
 	if err != nil {
-		return nil, nil, fmt.Errorf("list comments: %w", err)
+		return nil, nil, false, fmt.Errorf("list comments: %w", err)
 	}
 	rows, err = m.db.Query(ctx,
 		`select e.id::text, (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = e.actor_id),
 		        e.kind, e.data, e.created_at
-		 from issue_events e where e.issue_id = $1 order by e.created_at, e.id`, issueID)
+		 from issue_events e where e.issue_id = $1 and ($2::timestamptz is null or e.created_at < $2)
+		 order by e.created_at desc, e.id desc limit $3`, issueID, before, timelinePage+1)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list events: %w", err)
+		return nil, nil, false, fmt.Errorf("list events: %w", err)
 	}
 	es, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Event, error) {
 		var e Event
@@ -951,9 +962,38 @@ func (m *model) timeline(ctx context.Context, issueID string) ([]Comment, []Even
 		return e, err
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("list events: %w", err)
+		return nil, nil, false, fmt.Errorf("list events: %w", err)
 	}
-	return cs, es, nil
+	cs, es, more := timelineCut(cs, es)
+	slices.Reverse(cs)
+	slices.Reverse(es)
+	return cs, es, more, nil
+}
+
+// timelineCut keeps the newest timelinePage of cs and es (each newest first), dropping the whole created_at group the
+// next one is in, and reports whether any were dropped.
+// ponytail: when more than a page shares the newest created_at, that group is returned whole (up to a page of each
+// kind) and older ones in it are skipped; only a bulk import could do that.
+func timelineCut(cs []Comment, es []Event) ([]Comment, []Event, bool) {
+	times := make([]time.Time, 0, len(cs)+len(es))
+	for _, c := range cs {
+		times = append(times, c.CreatedAt)
+	}
+	for _, e := range es {
+		times = append(times, e.CreatedAt)
+	}
+	if len(times) <= timelinePage {
+		return cs, es, false
+	}
+	slices.SortFunc(times, func(a, b time.Time) int { return b.Compare(a) })
+	cut := times[timelinePage]
+	keep := func(t time.Time) bool { return t.After(cut) }
+	if times[0].Equal(cut) {
+		keep = func(t time.Time) bool { return t.Equal(cut) }
+	}
+	cs = slices.DeleteFunc(cs, func(c Comment) bool { return !keep(c.CreatedAt) })
+	es = slices.DeleteFunc(es, func(e Event) bool { return !keep(e.CreatedAt) })
+	return cs, es, true
 }
 
 // comment returns the workspace's comment with the id; nil when there's none.

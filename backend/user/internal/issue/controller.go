@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -407,14 +408,23 @@ func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string
 	if !ok || err != nil {
 		return err
 	}
-	cs, es, err := h.model.timeline(r.Context(), i.ID)
+	var before *time.Time
+	if v := r.URL.Query().Get("before"); v != "" {
+		t, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+			return nil
+		}
+		before = &t
+	}
+	cs, es, more, err := h.model.timeline(r.Context(), i.ID, before)
 	if err != nil {
 		return err
 	}
 	for i := range cs {
 		allowComment(&cs[i], userID, ws.Permissions)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es})
+	writeJSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es, "has_more": more})
 	return nil
 }
 

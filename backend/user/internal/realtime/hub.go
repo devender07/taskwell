@@ -111,16 +111,6 @@ func (hb *hub) closeUser(id string) {
 	}
 }
 
-func (hb *hub) toAll(msg []byte) {
-	hb.mu.Lock()
-	defer hb.mu.Unlock()
-	for _, cs := range hb.users {
-		for c := range cs {
-			c.event(msg)
-		}
-	}
-}
-
 func (hb *hub) send(index map[string]map[*Conn]struct{}, key string, msg []byte) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()

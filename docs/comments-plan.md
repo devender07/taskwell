@@ -60,7 +60,7 @@ Event JSON: `{"id","actor": person|null,"kind","data": {...},"created_at"}`
 
 | Method & path | Needs | Fields | Success | Failures |
 |---|---|---|---|---|
-| `GET /api/workspaces/{slug}/issues/{identifier}/timeline` | member | — | `200 {"comments":[comment…],"events":[event…]}` each oldest first (the client merges by `created_at`) | 404 |
+| `GET /api/workspaces/{slug}/issues/{identifier}/timeline` | member | query `before` (RFC 3339, optional) | `200 {"comments":[comment…],"events":[event…],"has_more":bool}`: at most 100 items in total, the newest created before `before` (exclusive; none = newest overall), each list oldest first (the client merges by `created_at`). The next page is `before=` the oldest `created_at` shown; a page never splits a shared `created_at` | 404; 400 `{"error":"before must be an RFC 3339 time."}` |
 | `POST /api/workspaces/{slug}/issues/{identifier}/comments` | `comments.create` | `body` (doc JSON string) | `201 comment` | 400 `{"errors":{"body": msg}}` (`"Write a comment."` when empty, or the description doc messages with "Comment" instead of "Description", max 20,000 chars); 403 |
 | `POST /api/workspaces/{slug}/comments/{id}` | edit rule | `body` | `200 comment` (sets `edited_at`) | 400; 403; 404 `{"error":"Comment not found."}` |
 | `DELETE /api/workspaces/{slug}/comments/{id}` | delete rule | — | `204` | 403; 404 |

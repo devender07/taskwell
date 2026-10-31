@@ -1,0 +1,159 @@
+package notify
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/tether/backend/user/internal/workspace"
+)
+
+// TestRecord runs Record against the scratch database (see dbtest): who gets what, and status collapsing.
+func TestRecord(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, bob, cat, dan := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob"), dbtest.User(t, pool, "Cat"), dbtest.User(t, pool, "Dan")
+	var wsID, issueID string
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx,
+			`with w as (select id from workspaces where created_by = $1),
+			      p as (insert into projects (workspace_id, name, key) select id, 'P', 'REC' from w returning id, workspace_id)
+			 insert into issues (workspace_id, project_id, number, title, status_id)
+			 select p.workspace_id, p.id, 1, 'T', (select id from statuses where workspace_id = p.workspace_id limit 1) from p
+			 returning workspace_id::text, id::text`, ann).Scan(&wsID, &issueID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dbtest.Join(t, pool, wsID, bob, "member")
+	dbtest.Join(t, pool, wsID, cat, "member")
+	// Dan watches but isn't a member, so he gets nothing.
+	if _, err := pool.Exec(ctx, `insert into issue_watchers (issue_id, user_id) values ($1, $2), ($1, $3), ($1, $4), ($1, $5)`,
+		issueID, ann, bob, cat, dan); err != nil {
+		t.Fatal(err)
+	}
+	record := func(c Change) {
+		t.Helper()
+		c.IssueID = issueID
+		if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return Record(ctx, tx, c) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// count returns the user's notifications of the kind, and the newest one's "to".
+	count := func(user, kind string) (n int, to string) {
+		t.Helper()
+		if err := pool.QueryRow(ctx,
+			`select count(*), coalesce((array_agg(data ->> 'to' order by created_at desc, id desc))[1], '')
+			 from notifications where user_id = $1 and issue_id = $2 and kind = $3`, user, issueID, kind).Scan(&n, &to); err != nil {
+			t.Fatal(err)
+		}
+		return n, to
+	}
+	want := func(step, user, kind string, n int, to string) {
+		t.Helper()
+		if gotN, gotTo := count(user, kind); gotN != n || to != "" && gotTo != to {
+			t.Errorf("%s: %s has %d %s (to %q), want %d (to %q)", step, user, gotN, kind, gotTo, n, to)
+		}
+	}
+	move := func(from, to string) map[string]string { return map[string]string{"from": from, "to": to} }
+
+	record(Change{ActorID: ann, Status: move("Todo", "Doing")})
+	want("first move", bob, "status", 1, "Doing")
+	want("first move", cat, "status", 1, "Doing")
+	want("first move", ann, "status", 0, "")
+	want("first move", dan, "status", 0, "")
+
+	record(Change{ActorID: ann, Status: move("Doing", "Done")})
+	want("second move collapses", bob, "status", 1, "Done")
+
+	if _, err := pool.Exec(ctx, `update notifications set read_at = now() where user_id = $1`, bob); err != nil {
+		t.Fatal(err)
+	}
+	record(Change{ActorID: ann, Status: move("Done", "Todo")})
+	want("after reading, a new one", bob, "status", 2, "Todo")
+	want("unread collapses", cat, "status", 1, "Todo")
+
+	record(Change{ActorID: ann, CommentID: "00000000-0000-0000-0000-000000000001", NewComment: true,
+		Mentioned: []string{bob, dan, "not-a-uuid"}})
+	want("comment", bob, "mention", 1, "")
+	want("comment", bob, "comment", 0, "")
+	want("comment", cat, "comment", 1, "")
+	want("comment", dan, "mention", 0, "")
+
+	record(Change{ActorID: bob, Assignee: cat, Status: move("Todo", "Doing")})
+	want("assign and move", cat, "assigned", 1, "")
+	want("assign and move", cat, "status", 1, "Doing")
+	want("assign and move", ann, "status", 1, "Doing")
+	want("assign and move", bob, "status", 2, "")
+}
+
+// TestDigestTimezone checks that the digest hour is read in each user's timezone: at hour 12, a user whose clock
+// has passed noon today is due, and one whose clock hasn't isn't.
+func TestDigestTimezone(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	const hour = 12
+	// Etc/GMT+N is UTC-N. Between UTC-12 and UTC+14 some zone is past noon and some isn't, whatever the time.
+	var past, before string
+	for off := -12; off <= 14; off++ {
+		tz := "UTC"
+		if off != 0 {
+			tz = fmt.Sprintf("Etc/GMT%+d", -off)
+		}
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Keep clear of the hour itself, so the run can't straddle it.
+		switch h := time.Now().In(loc).Hour(); {
+		case h > hour && h < 23 && past == "":
+			past = tz
+		case h < hour-1 && before == "":
+			before = tz
+		}
+	}
+	if past == "" || before == "" {
+		t.Fatalf("no zones found: past %q before %q", past, before)
+	}
+	due, notDue := dbtest.User(t, pool, "Due"), dbtest.User(t, pool, "Later")
+	for user, tz := range map[string]string{due: past, notDue: before} {
+		if _, err := (&model{db: pool}).update(ctx, user, ptr("digest"), nil, nil, nil, nil, &tz); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &model{db: pool}
+	for {
+		more, err := m.digestNext(ctx, hour, func(pgx.Tx, string, []message) error { return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !more {
+			break
+		}
+	}
+	sent := func(user string) bool {
+		var ok bool
+		if err := pool.QueryRow(ctx, `select last_digest_at is not null from notification_settings where user_id = $1`, user).
+			Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if !sent(due) {
+		t.Errorf("user in %s (past %d:00) got no digest", past, hour)
+	}
+	if sent(notDue) {
+		t.Errorf("user in %s (before %d:00) got a digest", before, hour)
+	}
+	if _, err := m.update(ctx, due, nil, nil, nil, nil, nil, ptr("Not/AZone")); err != errBadTimezone {
+		t.Errorf("unknown timezone: %v, want errBadTimezone", err)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

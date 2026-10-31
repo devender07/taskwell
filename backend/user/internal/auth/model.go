@@ -45,7 +45,12 @@ type family struct {
 }
 
 // model owns every query for users, sign-in codes, reset links and refresh tokens.
-type model struct{ db *pgxpool.Pool }
+type model struct {
+	db *pgxpool.Pool
+	// onCreated runs in the transaction that creates or first verifies an account (it creates the default
+	// workspace), so a failure leaves no half-made account.
+	onCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error
+}
 
 // --- users ---
 
@@ -114,6 +119,9 @@ func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte
 			return err
 		}
 		u = &got
+		if err := m.onCreated(ctx, tx, got.ID, got.Name); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
 	})
 	return u, err
@@ -266,8 +274,8 @@ func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTo
 }
 
 // userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,
-// else creates one without a password. created reports the last case, or linking an account that wasn't verified.
-func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u User, created bool, err error) {
+// else creates one without a password. Creating one, or linking an account that wasn't verified, runs onCreated.
+func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u User, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `select id::text, name, email from users where google_sub = $1`, sub).Scan(&u.ID, &u.Name, &u.Email)
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -276,25 +284,30 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 		err = tx.QueryRow(ctx, `update users set google_sub = $2 where email = $1 and google_sub is null returning id::text, name, email`,
 			email, sub).Scan(&u.ID, &u.Name, &u.Email)
 		if err == nil {
-			created, err = markVerified(ctx, tx, &u, name)
+			if first, err := markVerified(ctx, tx, &u, name); err != nil || !first {
+				return err
+			}
+			return m.onCreated(ctx, tx, u.ID, u.Name)
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		created = true
 		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub, email_verified_at) values ($1, $2, $3, now()) returning id::text, name, email`,
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return err
+		}
+		if err := m.onCreated(ctx, tx, u.ID, u.Name); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
 	})
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return User{}, false, errEmailTaken // the email belongs to an account linked to a different Google account
+		return User{}, errEmailTaken // the email belongs to an account linked to a different Google account
 	}
 	if err != nil {
-		return User{}, false, fmt.Errorf("google user: %w", err)
+		return User{}, fmt.Errorf("google user: %w", err)
 	}
-	return u, created, nil
+	return u, nil
 }
 
 // updateName returns the updated user, or nil when there is no such user.
@@ -334,8 +347,8 @@ func (m *model) replaceToken(ctx context.Context, userID, purpose string, tokenH
 }
 
 // useCode checks codeHash against the newest live sign-in code for email. A match uses it up, verifies the email and
-// returns the user (first reports it wasn't verified before); a miss counts an attempt and returns nil.
-func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *User, first bool, err error) {
+// returns the user (running onCreated when it wasn't verified before); a miss counts an attempt and returns nil.
+func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *User, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var tokenID string
 		var stored []byte
@@ -362,13 +375,19 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *
 		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = $1`, tokenID); err != nil {
 			return fmt.Errorf("use code: %w", err)
 		}
-		if first, err = markVerified(ctx, tx, &cand, ""); err != nil {
+		first, err := markVerified(ctx, tx, &cand, "")
+		if err != nil {
 			return err
+		}
+		if first {
+			if err := m.onCreated(ctx, tx, cand.ID, cand.Name); err != nil {
+				return err
+			}
 		}
 		u = &cand
 		return nil
 	})
-	return u, first, err
+	return u, err
 }
 
 // useUserCode checks codeHash against the user's newest live code of purpose. A match uses it up and returns true;

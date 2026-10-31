@@ -9,15 +9,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 // Live-editing frames cross API instances as notifications on the Postgres channel collab:
 // "<instance> <issue id> b <items>" carries a session's batched frames (see outbox), comma-separated, each
 // "a<base64 tagged frame>" for awareness and updates small enough to fit, "u<update id>" for a stored update that
-// doesn't; "<instance> <issue id> c " tells every instance, the sender too, to close the issue's editors.
+// doesn't; "<instance> <issue id> c " tells every instance, the sender too, to reset the issue's editors (a REST
+// description write replaced the live document).
 const (
 	noteBatch = "b"
-	noteClose = "c"
+	noteReset = "c"
 	maxNote   = 7500 // Postgres rejects payloads of 8000 bytes or more
 )
 
@@ -116,7 +119,7 @@ func (h *Handler) listen(ctx context.Context, loads chan<- note) (bool, error) {
 	h.listening.Store(true)
 	defer h.listening.Store(false)
 	// Notifications sent while nothing listened are lost: end every connection so its editor reloads.
-	h.hub.closeAll()
+	h.hub.closeAll(realtime.ResyncSpread)
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
@@ -134,11 +137,8 @@ func (h *Handler) relay(payload string, loads chan<- note) {
 	if !ok || !h.hub.has(n.issueID) {
 		return
 	}
-	if n.kind == noteClose {
-		// ponytail: editors reconnect with their old Y.Doc and push it back as unseen edits, undoing the REST
-		// description write. The app never writes descriptions over REST once an issue exists; for API clients, add a
-		// reset frame that makes editors drop their doc.
-		h.hub.closeRoom(n.issueID)
+	if n.kind == noteReset {
+		h.hub.resetRoom(n.issueID)
 		return
 	}
 	if n.kind != noteBatch || n.instance == instance {

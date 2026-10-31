@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Checkbox } from '@tether/shared/checkbox'
+import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { api, toFormErrors, type NotificationSettings } from '@/api'
 import { loaderApi } from '@/realtime'
 
@@ -23,16 +24,23 @@ const kinds: { value: Kind; label: string }[] = [
   { value: 'comments', label: 'Comments on issues I watch' },
 ]
 
+const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const zones = [...new Set(['UTC', ...Intl.supportedValuesOf('timeZone')])].map((z) => ({ value: z, label: z.replaceAll('_', ' ') }))
+
+// ponytail: the stored default 'UTC' reads as never chosen, so the browser's zone is suggested and sent with the next
+// save; someone who picks UTC sees that suggestion again. Return whether it was chosen if that matters.
+const withZone = (s: NotificationSettings) => (s.timezone === 'UTC' ? { ...s, timezone: browserZone } : s)
+
 function NotificationSettingsPage() {
   const data = Route.useLoaderData()
   const [loaded, setLoaded] = useState(data)
-  const [settings, setSettings] = useState<NotificationSettings>(data)
+  const [settings, setSettings] = useState<NotificationSettings>(() => withZone(data))
   const [saved, setSaved] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   if (data !== loaded) {
     setLoaded(data)
-    setSettings(data)
+    setSettings(withZone(data))
   }
 
   useEffect(() => {
@@ -54,7 +62,7 @@ function NotificationSettingsPage() {
     } catch (e) {
       setSettings(prev)
       const { errors, error } = toFormErrors(e)
-      setError(errors.email ?? error)
+      setError(errors.email ?? errors.timezone ?? error)
     }
   }
 
@@ -74,6 +82,15 @@ function NotificationSettingsPage() {
             </label>
           ))}
         </fieldset>
+        <div className="grid gap-2" style={{ maxWidth: 360 }}>
+          <SmartAutocomplete
+            label="Digest timezone"
+            options={zones}
+            value={zones.find((z) => z.value === settings.timezone) ?? null}
+            onChange={(o) => o && o.value !== settings.timezone && save({ ...settings, timezone: o.value })}
+          />
+          <p className="text-caption text-secondary m-0">The daily digest is sent by this timezone's clock.</p>
+        </div>
         <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }} disabled={settings.email === 'off'}>
           <legend className="text-label text-primary mb-2 p-0">Email me about</legend>
           {kinds.map((k) => (

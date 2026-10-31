@@ -147,3 +147,53 @@ func TestAllowRate(t *testing.T) {
 		t.Fatal("one token should refill per 1/frameRate")
 	}
 }
+
+func TestFrameDropsAwarenessTooBigToRelay(t *testing.T) {
+	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
+	id := "00000000-0000-0000-0000-000000000001"
+	s := &Session{h: h, c: &client{}, issue: &Issue{ID: id}}
+	if err := s.Frame(context.Background(), tag(msgAwareness, id, make([]byte, maxItem))); err != nil {
+		t.Fatal(err)
+	}
+	if s.out.aware != nil {
+		t.Fatal("oversized awareness kept")
+	}
+	if err := s.Frame(context.Background(), tag(msgAwareness, id, []byte{1})); err != nil {
+		t.Fatal(err)
+	}
+	s.out.mu.Lock()
+	defer s.out.mu.Unlock()
+	if s.out.aware == nil {
+		t.Fatal("small awareness dropped")
+	}
+	s.out.timer.Stop()
+}
+
+type recPeer struct{ frames [][]byte }
+
+func (p *recPeer) Send(f []byte) bool                      { p.frames = append(p.frames, f); return true }
+func (p *recPeer) Write(_ context.Context, f []byte) error { p.Send(f); return nil }
+func (p *recPeer) Close()                                  {}
+
+func TestResetRoomIgnoresTheOldDocument(t *testing.T) {
+	id := "00000000-0000-0000-0000-000000000001"
+	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
+	p := &recPeer{}
+	s := &Session{h: h, c: &client{peer: p, canEdit: true}, issue: &Issue{ID: id}}
+	h.hub.join(id, s.c)
+	h.hub.seeding(id, s.c)
+	h.hub.resetRoom(id)
+	if len(p.frames) != 1 || p.frames[0][0] != msgReset || len(p.frames[0]) != tagLen {
+		t.Fatalf("frames %v, want one reset", p.frames)
+	}
+	if h.hub.seedPending(id) {
+		t.Fatal("a reset room still waits for its seed")
+	}
+	// The model has no pool: storing the update would panic.
+	if err := s.Frame(context.Background(), tag(msgUpdate, id, []byte{1})); err != nil {
+		t.Fatal(err)
+	}
+	if seeding, _ := h.hub.leave(id, s.c); seeding {
+		t.Fatal("a reset client left as the seeder")
+	}
+}

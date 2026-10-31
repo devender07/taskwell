@@ -57,31 +57,31 @@ Whenever a description is saved (create, update, or a live `save` message below)
 - Subject: `{Actor name} mentioned you in {ENG-12}`
 - Body: `{Actor name} mentioned you in {ENG-12}: {title}\n\n{app_base_url}/{workspace slug}/issue/{ENG-12}\n`
 
-### Live editing: `GET /api/workspaces/{slug}/issues/{identifier}/collab` (WebSocket)
+### Live editing (over the realtime socket)
 
-Auth is the normal `tether_access` cookie on the upgrade request. Before upgrading: 401 `{"error":"Not signed in."}`, 404 workspace / issue (same messages as `GET` issue). Origin is checked by `websocket.Accept` defaults (same host). Editing allowed = the same `can_edit` rule as the issue JSON, computed at connect.
+Live editing runs over the tab's one realtime socket, `/api/realtime` (see `realtime-plan.md`): the client sends `{"type":"collab.join","workspace":"acme","issue":"ENG-12"}`, the server answers `collab.joined` with the issue's uuid, and `collab.leave` ends it. Editing allowed = the same `can_edit` rule as the issue JSON, recomputed on `workspace.permissions`.
 
-All frames are **binary**; the first byte is the message type, the rest the payload. Max frame 1 MiB.
+Live-editing frames are **binary**: the first byte is the message type, bytes 1-16 the issue's uuid, the rest the payload. Max frame 1 MiB.
 
 | Type | Direction | Payload | Server does |
 |---|---|---|---|
 | `0` ready | server → client | 1 flags byte (bit 0 = can edit, bit 1 = seed), then 8-byte big-endian id of the last stored update (0 when none) | Sent once, after every stored update has been sent as type `1` frames, oldest first |
 | `1` update | both | a Yjs update (`Y.encodeStateAsUpdate` / `doc.on('update')`) | From a client that can edit: insert into `issue_doc_updates`, then forward to every other connection on the issue. From a read-only client: ignored |
 | `2` awareness | both | a y-protocols awareness update | Forward to every other connection on the issue (any member); not stored |
-| `3` compact | client → server | 8-byte big-endian id (the `ready` id the client loaded up to), then a Yjs update with the client's whole state | Can edit only. In one transaction: delete this issue's updates with `id <= that id`, insert the payload. Not forwarded |
+| `3` compact | client → server | 8-byte big-endian id (the `ready` id the client loaded up to), then a Yjs update with the client's whole state | Can edit only. In one transaction: delete the updates this connection loaded with `id <= that id`, insert the payload. Not forwarded |
 | `4` save | client → server | the document as UTF-8 JSON (`editor.getJSON()`) | Can edit only. Validate like the description field (invalid: log + ignore); store as `issues.description` (`updated_at = now()`; null when empty) without clearing updates; send mention emails |
 | `5` seed | server → client | none | Sent to another editor when the seeder disconnects before its seed update was stored; the client seeds as if `ready` had the seed bit |
+| `6` reset | server → client | none | Sent to every connection on the issue, on every instance, when a REST write (`POST …/issues/{identifier}` with `description`) replaced the description: the stored updates and the seed claim are cleared, and the server ignores that connection's frames from then on. The client stops sending, reloads the issue, drops its `Y.Doc` and joins again, so the next editor seeds from the new description instead of pushing the old document back |
 
 **Seed:** when an issue has no stored updates but has a saved description, the first connection to that issue gets the seed bit; it builds the Yjs document from the saved JSON and sends it as a normal update. The room remembers it handed out the seed, so later connections don't (they receive the seed update when it arrives). If the seeder disconnects before its seed update is stored, the seed passes to another editor in the room (type `5`), or to the next editor to join.
 
-Rooms: in memory, one per issue id, in a small hub in the issue package (mutex + map; each connection has a buffered send channel and a writer goroutine; a client whose buffer is full is disconnected). `ponytail:` single API instance only; with several instances, forward updates through Postgres `LISTEN/NOTIFY`.
+Rooms: in memory, one per issue id, in a small hub in the issue package (mutex + map; a connection whose send buffer is full is disconnected). Other instances get each session's frames through Postgres `LISTEN/NOTIFY` on the `collab` channel (`issue/listen.go`): small updates and awareness inline, bigger updates by stored id. Awareness too big for a notification is dropped on every instance.
 
 ## Backend (`backend/user/internal/issue/`)
 
 - `doc.go`: the document type + `checkDoc(raw) (normalized []byte|nil, errMsg)` (allowed types, href schemes, depth, length, empty → nil) and `mentions(doc) []string`. **Runnable check**: `doc_test.go` table test (valid doc, empty doc, unknown node, `javascript:` link, too long, mentions listed once).
-- `collab.go`: WebSocket handler + hub. Store queries stay in `model.go`.
+- `collab.go`: live-editing sessions (joined over the realtime socket) + hub; `listen.go` relays other instances' frames. Store queries stay in `model.go`.
 - `notify.go`: mention emails. `issue.New` gains the mailer and `sysconfig.Store` (`app_base_url`), wired in `cmd/user/main.go`.
-- Route: `GET /api/workspaces/{slug}/issues/{identifier}/collab` — not wrapped in `MaxBytesReader` (hijacked connection).
 - Verify: `go vet`, `go test`, curl the form endpoints (valid doc, bad JSON, bad node, `javascript:` link, `""` clears), migration converts the seeded demo descriptions, and a tiny Go or Node WebSocket check: two clients, one sends an update, the other receives it; reconnect receives it from storage; read-only client's update is ignored; mention email arrives in Mailpit (`localhost:8025`).
 
 ## Frontend
@@ -117,7 +117,7 @@ type RichEditorProps = {
 
 - `vite.config.ts`: `'/api': { target: 'http://localhost:8090', ws: true }`.
 - `api.ts`: `Issue.description: JSONContent | null`; export `refreshAccess` for the collab client.
-- `components/issues/collab.ts`: `connectCollab(path, doc, awareness, onState)` — opens `ws(s)://<host>/api/…/collab` (binary), applies `1` frames, on `ready` reports `{ canEdit, seed, lastId, loaded: count }`; sends local doc updates (origin ≠ remote) as `1`, awareness changes as `2`; after `ready`, if it loaded more than 100 updates, sends `3` compact with its state. Reconnects with backoff (1s → 10s); if a connect fails before `ready`, calls `refreshAccess()` first. Returns `destroy()`. Read-only clients still connect (to watch live edits and presence).
+- `components/issues/collab.ts`: `connectCollab(workspace, issue, doc, awareness, onState, onPresence, onTooLarge, onReset)` — joins the issue over the shared realtime socket (`joinCollab` in `realtime.ts`), applies `1` frames, on `ready` reports `{ canEdit, seed, lastId, loaded: count }`; sends local doc updates (origin ≠ remote) as `1`, awareness changes as `2`; after `ready`, if it loaded more than 100 updates, sends `3` compact with its state. Re-joins when the socket reconnects. On `6` reset it stops sending and calls `onReset`; `description.tsx` reloads the issue and starts over with a fresh `Y.Doc` seeded from it. Returns `destroy()`. Read-only clients still connect (to watch live edits and presence).
 - `components/issues/description.tsx`: the issue page description. Creates a `Y.Doc` + `Awareness`, connects, shows the saved JSON read-only until `ready`; then the collaborative `RichEditor` (editable when `can_edit` and the server agrees). On `seed`, fill the Yjs doc from the saved JSON (`prosemirrorJSONToYXmlFragment` via `@tiptap/y-tiptap`, or `editor.commands.setContent` once). After local edits, debounce 1s and send `4` save with `editor.getJSON()`; flush on unmount / `pagehide`. Caret user = current user's name + a color from `--accent`, `--success`, `--link` picked by user id hash. No save indicator; a muted caption "Offline, reconnecting…" shows while disconnected.
 - Issue page: description section uses the component above (no "No description." text when editable — the placeholder "Add a description… Type @ to mention someone" shows instead; read-only and empty → "No description."). The **Edit** form becomes title only.
 - Create issue dialog: `RichEditor` (not collaborative) with mentions = workspace members; submits `JSON.stringify(doc)` or `""`.

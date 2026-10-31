@@ -7,7 +7,7 @@ export type CollabState = { canEdit: boolean; seed: boolean; lastId: bigint; loa
 // Origin of changes applied from the server, so they aren't sent back.
 export const REMOTE = 'remote'
 
-const [READY, UPDATE, AWARENESS, COMPACT, SAVE, SEED] = [0, 1, 2, 3, 4, 5]
+const [READY, UPDATE, AWARENESS, COMPACT, SAVE, SEED, RESET] = [0, 1, 2, 3, 4, 5, 6]
 const COMPACT_AFTER = 100
 // The server's caps (backend/user/internal/issue/collab.go); it drops the connection for a bigger frame.
 const MAX_UPDATE = 256 << 10
@@ -16,7 +16,9 @@ const MAX_COMPACT = 1 << 20
 // Live editing of one issue's description over the shared realtime socket (protocol in docs/rich-text-plan.md).
 // onState gets the server's `ready` info, or null when the connection drops; it re-joins until destroy().
 // onTooLarge fires instead of sending a change over the server's cap; after it nothing more is sent, since later
-// changes build on the unsent one, so the caller starts over with a fresh doc.
+// changes build on the unsent one, so the caller starts over with a fresh doc. onReset fires when the server replaced
+// the document (a description saved outside live editing); nothing more is sent, and the caller reloads the issue and
+// starts over with a fresh doc seeded from it.
 export function connectCollab(
   workspace: string,
   issue: string,
@@ -25,6 +27,7 @@ export function connectCollab(
   onState: (s: CollabState | null) => void,
   onPresence: (viewers: Viewer[]) => void,
   onTooLarge: () => void,
+  onReset: () => void,
 ) {
   let ready = false
   let blocked = false
@@ -94,6 +97,9 @@ export function connectCollab(
         if (awareness.getLocalState()) sendAwareness([awareness.clientID])
         state = { canEdit, seed: (flags & 2) !== 0, lastId, loaded }
         onState(state)
+      } else if (type === RESET) {
+        blocked = true
+        onReset()
       } else if (type === SEED && state) {
         state = { ...state, seed: true }
         onState(state)

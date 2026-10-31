@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
@@ -35,29 +36,20 @@ const (
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcrypt.DefaultCost)
 
 type Handler struct {
-	model         *model
-	cfg           *sysconfig.Store
-	mail          *mail.Mailer
-	secret        []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
-	lim           limits
-	alive         *aliveCache
-	onUserCreated func(ctx context.Context, userID, name string) error
+	model  *model
+	cfg    *sysconfig.Store
+	mail   *mail.Mailer
+	secret []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
+	lim    limits
+	alive  *aliveCache
 }
 
-// New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run when an account's email is first
-// verified (it creates the default workspace).
+// New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run inside the transaction that
+// first verifies an account's email (it creates the default workspace).
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
-	onUserCreated func(ctx context.Context, userID, name string) error) *Handler {
-	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, secret: secret, lim: newLimits(), alive: newAliveCache(),
-		onUserCreated: onUserCreated}
-}
-
-// userCreated runs the onUserCreated hook. A failure is logged, not returned: the account exists and the
-// app offers to create a workspace when the user has none.
-func (h *Handler) userCreated(ctx context.Context, u User) {
-	if err := h.onUserCreated(ctx, u.ID, u.Name); err != nil {
-		slog.ErrorContext(ctx, "after user created", "user_id", u.ID, "err", err)
-	}
+	onUserCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error) *Handler {
+	return &Handler{model: &model{db: db, onCreated: onUserCreated}, cfg: cfg, mail: m, secret: secret, lim: newLimits(),
+		alive: newAliveCache()}
 }
 
 // signup starts an account: it emails a code that signupVerify takes, from this browser only (the code's hash
@@ -160,7 +152,6 @@ func (h *Handler) signupVerify(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Path: "/api/auth/signup", MaxAge: -1, HttpOnly: true})
-	h.userCreated(ctx, *u)
 	if err := h.startSession(ctx, w, u.ID, true); errors.Is(err, errSuspended) {
 		writeErr(w, http.StatusForbidden, errSuspendedMsg)
 		return nil
@@ -306,7 +297,7 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 	if locked, err := h.locked(w, r, "code:"+email); err != nil || locked {
 		return err
 	}
-	u, first, err := h.model.useCode(r.Context(), email, hash(code))
+	u, err := h.model.useCode(r.Context(), email, hash(code))
 	if err != nil {
 		return err
 	}
@@ -316,9 +307,6 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 		}
 		writeErr(w, http.StatusUnauthorized, errBadCode)
 		return nil
-	}
-	if first {
-		h.userCreated(r.Context(), *u)
 	}
 	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
 		writeErr(w, http.StatusForbidden, errSuspendedMsg)
@@ -595,15 +583,12 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	if name == "" {
 		name, _, _ = strings.Cut(id.Email, "@")
 	}
-	u, created, err := h.model.userForGoogle(ctx, id.Sub, normEmail(id.Email), name)
+	u, err := h.model.userForGoogle(ctx, id.Sub, normEmail(id.Email), name)
 	if errors.Is(err, errEmailTaken) {
 		return fail("email linked to another Google account", err)
 	}
 	if err != nil {
 		return err
-	}
-	if created {
-		h.userCreated(ctx, u)
 	}
 	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); errors.Is(err, errSuspended) {
 		http.Redirect(w, r, base+"/signin?error=suspended", http.StatusFound)

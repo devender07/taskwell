@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"time"
 )
 
 var resync = text(map[string]string{"type": "resync"})
+
+// ResyncSpread is how long after a listener reconnects its connections are told to reload, each at a random moment.
+const ResyncSpread = 5 * time.Second
 
 // Listen fans out every instance's notifications on the realtime channel to the connections here until ctx ends,
 // reconnecting with backoff when its Postgres connection drops.
@@ -66,8 +70,11 @@ func (h *Handler) listen(ctx context.Context, presence chan<- string) (bool, err
 	}
 	h.listening.Store(true)
 	defer h.listening.Store(false)
-	// Events sent while nothing listened are lost: every tab reloads what it shows, and config is read again.
-	h.hub.toAll(resync)
+	// Events sent while nothing listened are lost: every tab reloads what it shows, and config is read again. The
+	// resyncs are spread out so a restart's tabs don't all refetch at once.
+	for _, c := range h.hub.all() {
+		time.AfterFunc(rand.N(ResyncSpread), func() { c.event(resync) })
+	}
 	h.configChanged()
 	for {
 		n, err := conn.WaitForNotification(ctx)

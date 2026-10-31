@@ -31,32 +31,40 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 			return fmt.Errorf("list watchers: %w", err)
 		}
 	}
-	var notified []string
-	for _, n := range notes(c, watchers) {
+	ns := notes(c, watchers)
+	users, kinds, datas := make([]string, len(ns)), make([]string, len(ns)), make([]string, len(ns))
+	for i, n := range ns {
 		data, err := json.Marshal(n.data)
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx,
-			`with bumped as (
-			   update notifications set data = jsonb_set(data, '{to}', $5::jsonb -> 'to'), actor_id = $3, created_at = now(),
+		users[i], kinds[i], datas[i] = n.userID, n.kind, string(data)
+	}
+	var notified []string
+	if len(ns) > 0 {
+		// Watchers are unique, so each user has at most one status note to bump.
+		rows, err := tx.Query(ctx,
+			`with n as (select * from unnest($3::uuid[], $4::text[], $5::jsonb[]) as n(user_id, kind, data)),
+			 bumped as (
+			   update notifications t set data = jsonb_set(t.data, '{to}', n.data -> 'to'), actor_id = $2, created_at = now(),
 			     emailed_at = null
-			   where $4 = 'status' and id = (select id from notifications where user_id = $1 and issue_id = $2
+			   from n
+			   where n.kind = 'status' and t.id = (select id from notifications where user_id = n.user_id and issue_id = $1
 			     and kind = 'status' and read_at is null and created_at > now() - interval '10 minutes' order by id desc limit 1)
-			   returning id),
+			   returning t.user_id),
 			 added as (
 			   insert into notifications (user_id, workspace_id, issue_id, actor_id, kind, data)
-			   select m.user_id, i.workspace_id, i.id, $3, $4, $5
-			   from issues i join workspace_members m on m.workspace_id = i.workspace_id and m.user_id = $1
-			   where i.id = $2 and not exists (select 1 from bumped)
-			   returning id)
-			 select id from bumped union all select id from added`,
-			n.userID, c.IssueID, c.ActorID, n.kind, data)
+			   select n.user_id, i.workspace_id, i.id, $2, n.kind, n.data
+			   from n join issues i on i.id = $1 join workspace_members m on m.workspace_id = i.workspace_id and m.user_id = n.user_id
+			   where not (n.kind = 'status' and n.user_id in (select user_id from bumped))
+			   returning user_id)
+			 select distinct user_id::text from (select user_id from bumped union all select user_id from added) x`,
+			c.IssueID, c.ActorID, users, kinds, datas)
 		if err != nil {
-			return fmt.Errorf("add %s notification: %w", n.kind, err)
+			return fmt.Errorf("add notifications: %w", err)
 		}
-		if tag.RowsAffected() > 0 && !slices.Contains(notified, n.userID) {
-			notified = append(notified, n.userID)
+		if notified, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return fmt.Errorf("add notifications: %w", err)
 		}
 	}
 	if len(notified) > 0 {
@@ -175,21 +183,25 @@ type Settings struct {
 	Assignments bool   `json:"assignments"`
 	Status      bool   `json:"status"`
 	Comments    bool   `json:"comments"`
+	Timezone    string `json:"timezone"` // IANA name; the digest goes out at digest_hour_utc in it
 }
 
-const settingsCols = `email, mentions, assignments, status, comments`
+const settingsCols = `email, mentions, assignments, status, comments, timezone`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var s Settings
-	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments)
+	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments, &s.Timezone)
 	return s, err
 }
+
+// errBadTimezone is a timezone Go knows but Postgres doesn't.
+var errBadTimezone = errors.New("unknown timezone")
 
 // settings returns the user's settings; the defaults when they have none.
 func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	s, err := scanSettings(m.db.QueryRow(ctx, `select `+settingsCols+` from notification_settings where user_id = $1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Settings{"instant", true, true, true, true}, nil
+		return Settings{"instant", true, true, true, true, "UTC"}, nil
 	}
 	if err != nil {
 		return s, fmt.Errorf("notification settings: %w", err)
@@ -198,21 +210,37 @@ func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 }
 
 // update changes the user's non-nil settings and returns them all, telling their other tabs.
-func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments *bool) (Settings, error) {
+func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments *bool,
+	timezone *string) (Settings, error) {
 	var s Settings
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if timezone != nil {
+			// The digest query converts with it, so one Postgres doesn't know would fail every digest.
+			var ok bool
+			if err := tx.QueryRow(ctx, `select exists(select 1 from pg_timezone_names where name = $1)`, *timezone).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return errBadTimezone
+			}
+		}
 		var err error
 		if s, err = scanSettings(tx.QueryRow(ctx,
-			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments)
-			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true))
+			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, timezone)
+			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true),
+			   coalesce($7, 'UTC'))
 			 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
-			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments)
-			 returning `+settingsCols, userID, email, mentions, assignments, status, comments)); err != nil {
+			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments),
+			   timezone = coalesce($7, s.timezone)
+			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.Event{Kind: "profile.changed", Actor: userID, Audience: realtime.ToUser(userID),
 			Paths: []string{"/me/notification-settings"}})
 	})
+	if errors.Is(err, errBadTimezone) {
+		return s, err
+	}
 	if err != nil {
 		return s, fmt.Errorf("update notification settings: %w", err)
 	}
@@ -287,7 +315,7 @@ func (m *model) queueNext(ctx context.Context, settle time.Duration, queue func(
 	return id != "", nil
 }
 
-// digestNext locks a digest user whose digest for today (at hour UTC) is due, queues their unemailed wanted
+// digestNext locks a digest user whose digest for today (at hour in their timezone) is due, queues their unemailed wanted
 // notifications with queue in the same transaction (nothing when there are none), marks them emailed and records the
 // digest. It returns false when nobody is due.
 func (m *model) digestNext(ctx context.Context, hour int, queue func(tx pgx.Tx, to string, msgs []message) error) (bool, error) {
@@ -296,7 +324,8 @@ func (m *model) digestNext(ctx context.Context, hour int, queue func(tx pgx.Tx, 
 		var to string
 		err := tx.QueryRow(ctx,
 			`select s.user_id::text, u.email from notification_settings s join users u on u.id = s.user_id
-			 cross join lateral (select (date_trunc('day', now() at time zone 'utc') + make_interval(hours => $1)) at time zone 'utc') d(at)
+			 cross join lateral (select (date_trunc('day', now() at time zone s.timezone) + make_interval(hours => $1))
+			   at time zone s.timezone) d(at)
 			 where s.email = 'digest' and now() >= d.at and (s.last_digest_at is null or s.last_digest_at < d.at)
 			 limit 1 for update of s skip locked`, hour).Scan(&userID, &to)
 		if errors.Is(err, pgx.ErrNoRows) {

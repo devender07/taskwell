@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand/v2"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +24,7 @@ const (
 	msgCompact
 	msgSave
 	msgSeed
+	msgReset // the live document was replaced (a REST description write): drop yours and join again
 )
 
 // hub holds a room per issue being edited live on this API instance; listen.go relays other instances' frames.
@@ -39,9 +42,10 @@ type room struct {
 type client struct {
 	peer    Peer
 	canEdit bool
-	loaded  []int64   // ids of the stored updates sent on start: the only ones its compaction may delete
-	tokens  float64   // frame budget, see allow
-	last    time.Time // when tokens was last topped up
+	reset   atomic.Bool // sent msgReset: its frames build on the replaced document, so they're ignored
+	loaded  []int64     // ids of the stored updates sent on start: the only ones its compaction may delete
+	tokens  float64     // frame budget, see allow
+	last    time.Time   // when tokens was last topped up
 }
 
 // Live-editing limits. A connection past them is closed; its tab reconnects and reloads.
@@ -107,7 +111,7 @@ func (hb *hub) leave(issueID string, c *client) (seeding, passed bool) {
 func (r *room) passSeed(issueID string) bool {
 	r.seeder = nil
 	for c := range r.clients {
-		if c.canEdit && c.peer.Send(tag(msgSeed, issueID, nil)) {
+		if c.canEdit && !c.reset.Load() && c.peer.Send(tag(msgSeed, issueID, nil)) {
 			r.seeder = c
 			return true
 		}
@@ -148,13 +152,14 @@ func (hb *hub) has(issueID string) bool {
 	return hb.rooms[issueID] != nil
 }
 
-// closeAll ends every connection; their editors reconnect and reload from the database.
-func (hb *hub) closeAll() {
+// closeAll ends every connection, each at a random moment within spread so they don't all reconnect at once; their
+// editors reconnect and reload from the database.
+func (hb *hub) closeAll(spread time.Duration) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	for _, r := range hb.rooms {
 		for c := range r.clients {
-			c.peer.Close()
+			time.AfterFunc(rand.N(spread), c.peer.Close)
 		}
 	}
 }
@@ -166,6 +171,22 @@ func (hb *hub) closeRoom(issueID string) {
 	if r := hb.rooms[issueID]; r != nil {
 		for c := range r.clients {
 			c.peer.Close()
+		}
+	}
+}
+
+// resetRoom tells every session on the issue here to drop its document and join again, and ignores what they send
+// until then. A connection that can't take the frame is closed, which reloads it too.
+func (hb *hub) resetRoom(issueID string) {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	if r := hb.rooms[issueID]; r != nil {
+		r.seeder = nil // the claim was cleared with the document; whoever joins next seeds
+		for c := range r.clients {
+			c.reset.Store(true)
+			if !c.peer.Send(tag(msgReset, issueID, nil)) {
+				c.peer.Close()
+			}
 		}
 	}
 }
@@ -280,9 +301,7 @@ func (s *Session) flush() {
 	o.mu.Unlock()
 	if aware != nil && !closed {
 		s.h.hub.broadcast(s.issue.ID, s.c, aware)
-		if it := frameItem(aware); it != "" {
-			items = append(items, it)
-		}
+		items = append(items, frameItem(aware)) // fits: Frame drops awareness that doesn't
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -422,12 +441,21 @@ func (s *Session) Frame(ctx context.Context, data []byte) error {
 	}
 	h, c, issueID := s.h, s.c, s.issue.ID
 	body := data[tagLen:]
+	if c.reset.Load() {
+		return nil
+	}
 	if !c.allow(time.Now()) {
 		s.reject("rate")
 		return nil
 	}
 	switch {
 	case data[0] == msgAwareness:
+		// A client's awareness is its own name, color and cursor, a few hundred bytes. One too big for a notification
+		// is dropped here too, so every instance's editors see the same thing.
+		if frameItem(data) == "" {
+			slog.Debug("collab awareness dropped", "issue", issueID, "user_id", s.userID, "bytes", len(data))
+			return nil
+		}
 		s.awareness(data)
 	case !c.canEdit:
 	case data[0] == msgUpdate:

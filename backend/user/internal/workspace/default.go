@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 )
 
 // CreateDefault gives a new user their first workspace, "Ada's workspace" at /ada, adding a random
-// suffix to the URL when it's taken. Called by auth when an account is created.
-func CreateDefault(ctx context.Context, db *pgxpool.Pool, userID, userName string) error {
+// suffix to the URL when it's taken. Called by auth inside the transaction that creates or verifies the account.
+func CreateDefault(ctx context.Context, tx pgx.Tx, userID, userName string) error {
 	first, _, _ := strings.Cut(strings.TrimSpace(userName), " ")
 	name := first + "'s workspace"
 	if first == "" || jsLen(name) > 50 {
@@ -22,10 +22,9 @@ func CreateDefault(ctx context.Context, db *pgxpool.Pool, userID, userName strin
 	if checkSlug(base) != "" {
 		base = "workspace"
 	}
-	m := &model{db: db}
 	slug := base
 	for range 5 {
-		_, err := m.create(ctx, userID, name, slug)
+		_, err := create(ctx, tx, userID, name, slug)
 		if !errors.Is(err, errTaken) {
 			return err
 		}

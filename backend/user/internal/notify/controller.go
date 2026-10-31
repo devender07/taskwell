@@ -3,9 +3,11 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -126,16 +128,39 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID 
 		return &on
 	}
 	mentions, assignments, status, comments := flag("mentions"), flag("assignments"), flag("status"), flag("comments")
+	var timezone *string
+	if v, ok := form["timezone"]; ok {
+		timezone = &v[0]
+		if !validTimezone(*timezone) {
+			errs["timezone"] = errTimezone
+		}
+	}
 	if len(errs) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": errs})
 		return nil
 	}
-	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments)
+	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments, timezone)
+	if errors.Is(err, errBadTimezone) {
+		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": {"timezone": errTimezone}})
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, s)
 	return nil
+}
+
+const errTimezone = "Choose a timezone from the list."
+
+// validTimezone reports whether tz is an IANA zone name ("UTC", "Europe/Berlin"). "" and "Local" load in Go but
+// aren't zones a user picks.
+func validTimezone(tz string) bool {
+	if tz == "" || tz == "Local" || len(tz) > 64 {
+		return false
+	}
+	_, err := time.LoadLocation(tz)
+	return err == nil
 }
 
 // workspace returns the path's workspace, or writes a 404 and returns nil when the caller isn't a member.

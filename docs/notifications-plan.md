@@ -64,7 +64,7 @@ The in-app inbox always gets every notification; the per-kind toggles and email 
 
 A worker goroutine in the user API (started in `main.go`), every 60s:
 1. **Instant**: `select … from notifications n join users … where emailed_at is null and created_at < now() - interval '30 seconds'` for recipients whose mode is `instant` and whose toggle for that kind is on, `for update of n skip locked` (safe with several API instances), send one email each, set `emailed_at`. Notifications that won't be emailed (mode off, kind toggled off) get `emailed_at = now()` without sending. The 30s delay lets the status collapse settle.
-2. **Digest**: once per day after `digest_hour_utc`, for users with mode `digest` whose `last_digest_at` is before today's digest time: one email listing their not-yet-emailed notifications for enabled kinds (grouped by workspace and issue, max 50 lines + "and N more"), mark them `emailed_at`, set `last_digest_at`. Skip if nothing to send (still set `last_digest_at`). Locking: `select … from notification_settings … for update skip locked`.
+2. **Digest**: once per day after `digest_hour_utc` read in each user's `timezone` (migration 024; the key keeps its old name), for users with mode `digest` whose `last_digest_at` is before today's digest time: one email listing their not-yet-emailed notifications for enabled kinds (grouped by workspace and issue, max 50 lines + "and N more"), mark them `emailed_at`, set `last_digest_at`. Skip if nothing to send (still set `last_digest_at`). Locking: `select … from notification_settings … for update skip locked`.
 3. Mail not configured → leave rows unsent and log once per run at debug level.
 
 Email formats (plain text, sentence case subjects):
@@ -86,8 +86,8 @@ Email formats (plain text, sentence case subjects):
 | `POST /api/workspaces/{slug}/notifications/unread` | member | `ids` | `204` | 400 |
 | `POST /api/workspaces/{slug}/issues/{identifier}/watch` | member | — | `200 {"watching": true}` | 404 |
 | `DELETE /api/workspaces/{slug}/issues/{identifier}/watch` | member | — | `200 {"watching": false}` | 404 |
-| `GET /api/me/notification-settings` | signed in | — | `200 {"email","mentions","assignments","status","comments"}` | |
-| `POST /api/me/notification-settings` | signed in | same fields (`email` one of the three; booleans `true`/`false`) | `200` settings | 400 `{"errors":{"email":"Choose how to get emails."}}` |
+| `GET /api/me/notification-settings` | signed in | — | `200 {"email","mentions","assignments","status","comments","timezone"}` | |
+| `POST /api/me/notification-settings` | signed in | same fields (`email` one of the three; booleans `true`/`false`; `timezone` an IANA name, default `UTC`) | `200` settings | 400 `{"errors":{"email":"Choose how to get emails."}}`, `{"errors":{"timezone":"Choose a timezone from the list."}}` |
 
 Notification JSON: `{"id","kind","actor": person|null,"issue":{"identifier","title","status": status},"data":{…},"read": bool,"created_at"}`.
 Issue JSON (single issue) gains `"watching": bool`.

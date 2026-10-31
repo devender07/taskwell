@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from '@tanstack/react-router'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { Avatar } from '@tether/shared/avatar'
 import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
 import { issueDescription } from '@tether/shared/validate'
 import { avatarSrc, uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
-import type { Viewer } from '@/realtime'
+import { reloadPage, type Viewer } from '@/realtime'
 import { REMOTE, connectCollab, type CollabState } from './collab'
 import { useUnsavedPrompt } from './timeline'
 
@@ -30,14 +31,20 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
   const [unsent, setUnsent] = useState(false)
   const [tooLong, setTooLong] = useState<string | null>(null)
   const [discarded, setDiscarded] = useState(false)
-  const [round, setRound] = useState(0) // a new doc after a change too large to sync
+  const [round, setRound] = useState(0) // a new doc after a change too large to sync, or a reset
   const seed = useRef(issue.description)
   const long = useRef(false)
+  const router = useRouter()
   useUnsavedPrompt(unsent)
   const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
   const slug = workspace.slug
   const identifier = issue.identifier
   const userId = user.id
+
+  // Declared before the doc's effect, so a new round seeds from the description just loaded.
+  useEffect(() => {
+    seed.current = issue.description
+  }, [issue.description])
 
   useEffect(() => {
     const doc = new Y.Doc()
@@ -66,6 +73,9 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       discard = true
       setDiscarded(true)
       setRound((r) => r + 1)
+    }, () => {
+      discard = true
+      void reloadPage(router).finally(() => setRound((r) => r + 1))
     })
     doc.on('update', (_: Uint8Array, origin: unknown) => {
       if (origin === REMOTE || seeding || discard) return
@@ -85,7 +95,7 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       doc.destroy()
       onViewers([])
     }
-  }, [slug, identifier, userId, onViewers, round])
+  }, [slug, identifier, userId, onViewers, round, router])
 
   const collab = useMemo(
     () => session && { ...session, user: { name: user.name, color: caretColor(user.id) } },

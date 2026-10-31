@@ -75,8 +75,15 @@ func (m *model) list(ctx context.Context, userID string) ([]Workspace, error) {
 // create inserts the workspace with its built-in roles and makes the user its admin.
 // Returns errTaken on a duplicate slug.
 func (m *model) create(ctx context.Context, userID, name, slug string) (Workspace, error) {
+	return create(ctx, m.db, userID, name, slug)
+}
+
+// create runs in its own transaction on db, or a savepoint when db is a pgx.Tx (so errTaken leaves the caller's tx usable).
+func create(ctx context.Context, db interface {
+	Begin(context.Context) (pgx.Tx, error)
+}, userID, name, slug string) (Workspace, error) {
 	ws := Workspace{Name: name, Slug: slug, Role: RoleRef{Name: "Admin"}, Permissions: allPermissions()}
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx,
 			`insert into workspaces (name, slug, created_by) values ($1, $2, $3) returning id::text`,
 			name, slug, userID).Scan(&ws.ID); err != nil {
@@ -223,7 +230,9 @@ func scanMember(row pgx.Row) (Member, error) {
 	return mb, err
 }
 
-// members returns the workspace's members, admins first, then by name.
+// members returns the workspace's members, admins first, then by name. Not paginated: every member is needed at
+// once by the assignee and mention pickers and the people filters, and a workspace's members are bounded by its
+// team size (hundreds), unlike an issue's timeline.
 func (m *model) members(ctx context.Context, workspaceID string) ([]Member, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+memberCols+`
