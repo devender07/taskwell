@@ -3,7 +3,7 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { IconButton } from '@tether/shared/icon-button'
 import { Tabs } from '@tether/shared/tabs'
-import { api, toFormErrors, type NotificationPage } from '@/api'
+import { api, toFormErrors, type Notification, type NotificationPage } from '@/api'
 import { loaderApi } from '@/realtime'
 import { singleKeyShortcuts, typing } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
@@ -46,15 +46,13 @@ function Inbox() {
     setHasMore(older.length ? hasMore : page.has_more)
   }
 
-  const shown = filter === 'unread' ? items.filter((n) => !n.read) : items
-  // The previewed issue comes from the URL; the row is the one last opened, else the newest for that issue.
+  const groups = groupByIssue(items)
+  const shown = filter === 'unread' ? groups.filter((g) => g.unread.length) : groups
   const selected = useParams({ strict: false }).identifier
-  const [openedId, setOpenedId] = useState<string | null>(null)
-  const current = shown.find((n) => n.id === openedId && n.issue.identifier === selected) ?? shown.find((n) => n.issue.identifier === selected)
+  const current = shown.find((g) => g.latest.issue.identifier === selected)
 
-  function open(n: (typeof items)[number]) {
-    setOpenedId(n.id)
-    if (!n.read) mark(true, [n.id])
+  function open(g: IssueGroup) {
+    if (g.unread.length) mark(true, g.unread)
   }
 
   // J / K (or ↓ / ↑) step through the list, Esc closes the preview.
@@ -71,7 +69,7 @@ function Inbox() {
     if (!next) return
     e.preventDefault()
     open(next)
-    navigate({ to: '/$workspace/inbox/$identifier', params: { workspace: workspace.slug, identifier: next.issue.identifier }, search: filter === 'unread' ? { filter: 'unread' } : {} })
+    navigate({ to: '/$workspace/inbox/$identifier', params: { workspace: workspace.slug, identifier: next.latest.issue.identifier }, search: filter === 'unread' ? { filter: 'unread' } : {} })
     requestAnimationFrame(() => document.querySelector<HTMLElement>('.inbox-link[data-selected]')?.focus())
   })
   useEffect(() => {
@@ -130,24 +128,29 @@ function Inbox() {
       ) : (
         <section className="bg-surface border rounded-lg overflow-hidden" aria-label="Notifications">
           <ul className="inbox-list grid m-0 p-0" style={{ listStyle: 'none' }}>
-            {shown.map((n) => (
-              <li key={n.id} className="inbox-row">
-                <FeedRow
-                  workspace={workspace.slug}
-                  identifier={n.issue.identifier}
-                  actor={n.actor}
-                  text={notificationText(n)}
-                  excerpt={n.data.excerpt}
-                  at={n.created_at}
-                  unread={!n.read}
-                  inbox={{ filter: filter === 'unread' ? 'unread' : undefined, selected: n === current }}
-                  onClick={() => open(n)}
-                />
-                <IconButton aria-label={n.read ? 'Mark as unread' : 'Mark as read'} style={{ width: 44, height: 44 }} className="flex-noshrink" onClick={() => mark(!n.read, [n.id])}>
-                  {n.read ? <UnreadIcon /> : <ReadIcon />}
-                </IconButton>
-              </li>
-            ))}
+            {shown.map((g) => {
+              const n = g.latest
+              const read = g.unread.length === 0
+              return (
+                <li key={n.issue.identifier} className="inbox-row">
+                  <FeedRow
+                    workspace={workspace.slug}
+                    identifier={n.issue.identifier}
+                    actor={n.actor}
+                    text={notificationText(n)}
+                    excerpt={n.data.excerpt}
+                    more={g.ids.length - 1}
+                    at={n.created_at}
+                    unread={!read}
+                    inbox={{ filter: filter === 'unread' ? 'unread' : undefined, selected: g === current }}
+                    onClick={() => open(g)}
+                  />
+                  <IconButton aria-label={read ? 'Mark as unread' : 'Mark as read'} style={{ width: 44, height: 44 }} className="flex-noshrink" onClick={() => mark(!read, read ? [n.id] : g.unread)}>
+                    {read ? <UnreadIcon /> : <ReadIcon />}
+                  </IconButton>
+                </li>
+              )
+            })}
           </ul>
           {hasMore ? (
             <div className="flex justify-center p-4">
@@ -171,6 +174,20 @@ function Inbox() {
       </section>
     </main>
   )
+}
+
+type IssueGroup = { latest: Notification; ids: string[]; unread: string[] }
+
+// One row per issue: its newest notification, with the rest folded in. Items arrive newest first.
+function groupByIssue(items: Notification[]) {
+  const groups = new Map<string, IssueGroup>()
+  for (const n of items) {
+    const g = groups.get(n.issue.identifier) ?? { latest: n, ids: [], unread: [] }
+    g.ids.push(n.id)
+    if (!n.read) g.unread.push(n.id)
+    groups.set(n.issue.identifier, g)
+  }
+  return [...groups.values()]
 }
 
 function ReadIcon() {

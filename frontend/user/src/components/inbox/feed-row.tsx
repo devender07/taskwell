@@ -11,6 +11,8 @@ type FeedRowProps = {
   actor: PersonRef | null
   text: ReactNode
   excerpt?: string
+  // Earlier updates folded into this row (the inbox shows one row per issue).
+  more?: number
   at: string
   unread?: boolean
   onClick?: () => void
@@ -19,7 +21,7 @@ type FeedRowProps = {
 }
 
 // One line of who did what to which issue, linking to the issue: the inbox and Home's activity and inbox blocks.
-export function FeedRow({ workspace, identifier, actor, text, excerpt, at, unread, onClick, inbox }: FeedRowProps) {
+export function FeedRow({ workspace, identifier, actor, text, excerpt, more, at, unread, onClick, inbox }: FeedRowProps) {
   const name = actor?.name ?? 'Someone'
   const body = (
     <>
@@ -29,6 +31,7 @@ export function FeedRow({ workspace, identifier, actor, text, excerpt, at, unrea
           <span className="text-primary">{name}</span> {text}
         </span>
         {excerpt ? <span className="text-caption text-secondary ellipsis">{excerpt}</span> : null}
+        {more ? <span className="text-caption text-secondary">+{more} earlier {more === 1 ? 'update' : 'updates'}</span> : null}
       </span>
       <time dateTime={at} title={fullTime(at)} className="text-caption text-secondary flex-noshrink">
         {relativeTime(at)}
