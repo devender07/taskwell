@@ -13,13 +13,14 @@ const maxBody = 64 << 10
 
 // Register mounts the API routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/auth/signup", h.wrap(h.signup))
-	mux.HandleFunc("POST /api/auth/signin", h.wrap(h.signin))
-	mux.HandleFunc("POST /api/auth/otp/send", h.wrap(h.otpSend))
-	mux.HandleFunc("POST /api/auth/otp/verify", h.wrap(h.otpVerify))
-	mux.HandleFunc("POST /api/auth/password/forgot", h.wrap(h.forgot))
-	mux.HandleFunc("POST /api/auth/password/reset", h.wrap(h.reset))
-	mux.HandleFunc("POST /api/auth/password/change", h.wrap(h.changePassword))
+	mux.HandleFunc("POST /api/auth/signup", h.wrap(h.limitIP(h.signup)))
+	mux.HandleFunc("POST /api/auth/signup/verify", h.wrap(h.limitIP(h.signupVerify)))
+	mux.HandleFunc("POST /api/auth/signin", h.wrap(h.limitIP(h.signin)))
+	mux.HandleFunc("POST /api/auth/otp/send", h.wrap(h.limitIP(h.otpSend)))
+	mux.HandleFunc("POST /api/auth/otp/verify", h.wrap(h.limitIP(h.otpVerify)))
+	mux.HandleFunc("POST /api/auth/password/forgot", h.wrap(h.limitIP(h.forgot)))
+	mux.HandleFunc("POST /api/auth/password/reset", h.wrap(h.limitIP(h.reset)))
+	mux.HandleFunc("POST /api/auth/password/change", h.wrap(h.limitIP(h.changePassword)))
 	mux.HandleFunc("POST /api/auth/refresh", h.wrap(h.refresh))
 	mux.HandleFunc("POST /api/auth/signout", h.wrap(h.signout))
 	mux.HandleFunc("GET /api/auth/google", h.wrap(h.googleStart))

@@ -11,7 +11,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import { IconButton } from '../icon-button/icon-button'
 import { useFieldError } from '../input/field-error'
 import { filterOptions, type Option } from '../smart-autocomplete/match'
-import { measure } from './doc'
+import { FILE_URL, imageSrc, measure } from './doc'
 import '../input/input.css'
 import '../smart-autocomplete/smart-autocomplete.css'
 import './rich-editor.css'
@@ -37,7 +37,6 @@ type Suggest = { items: Option[]; index: number; rect: DOMRect | null; pick: (o:
 type Upload = { id: number; name: string; error?: string }
 
 const SAFE_HREF = /^(https?:\/\/|mailto:)/i
-const FILE_URL = /^\/api\/files\/[0-9a-f-]{36}\/[^/?#]+$/i
 
 const Image = Node.create({
   name: 'image',
@@ -46,7 +45,7 @@ const Image = Node.create({
   draggable: true,
   addAttributes: () => ({ src: { default: null }, alt: { default: '' } }),
   parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(el.getAttribute('src') ?? '') && null }],
-  renderHTML: ({ HTMLAttributes }) => ['img', HTMLAttributes],
+  renderHTML: ({ HTMLAttributes }) => ['img', { ...HTMLAttributes, src: imageSrc(HTMLAttributes.src) }],
 })
 
 const starterKit = (editable: boolean, collab: boolean) =>

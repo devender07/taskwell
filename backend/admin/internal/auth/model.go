@@ -59,10 +59,33 @@ func (m *model) setting(ctx context.Context, key string) (string, error) {
 	return v, nil
 }
 
-// Promote makes the user with this email a platform admin. It returns nil when there is no such user.
+// failures counts key's failed sign-ins in the last failWindow (the user service's auth_failures table).
+func (m *model) failures(ctx context.Context, key string) (int, error) {
+	var n int
+	if err := m.db.QueryRow(ctx, `select count(*) from auth_failures where key = $1 and at > now() - make_interval(secs => $2)`,
+		key, failWindow.Seconds()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count failures: %w", err)
+	}
+	return n, nil
+}
+
+// fail records a failed sign-in for key and drops every record older than failWindow.
+func (m *model) fail(ctx context.Context, key string) error {
+	if _, err := m.db.Exec(ctx, `
+		with gone as (delete from auth_failures where at < now() - make_interval(secs => $2))
+		insert into auth_failures (key) values ($1)`, key, failWindow.Seconds()); err != nil {
+		return fmt.Errorf("record failure: %w", err)
+	}
+	return nil
+}
+
+// Promote makes the user with this email a platform admin. It returns nil when there is no such user or their email
+// isn't verified (anyone can sign up with any address).
 func Promote(ctx context.Context, db *pgxpool.Pool, email string) (*User, error) {
 	var u User
-	err := db.QueryRow(ctx, `update users set platform_admin = true where email = lower(trim($1)) returning id::text, name, email`,
+	err := db.QueryRow(ctx, `
+		update users set platform_admin = true where email = lower(trim($1)) and email_verified_at is not null
+		returning id::text, name, email`,
 		email).Scan(&u.ID, &u.Name, &u.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

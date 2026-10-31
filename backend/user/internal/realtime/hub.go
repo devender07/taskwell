@@ -42,15 +42,15 @@ func (hb *hub) remove(c *Conn) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	removeFrom(hb.users, c.userID, c)
-	removeFrom(hb.spaces, c.ws, c)
+	removeFrom(hb.spaces, c.space, c)
 }
 
 // subscribe replaces c's workspace subscription.
 func (hb *hub) subscribe(c *Conn, workspaceID string) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
-	removeFrom(hb.spaces, c.ws, c)
-	c.ws = workspaceID
+	removeFrom(hb.spaces, c.space, c)
+	c.space = workspaceID
 	addTo(hb.spaces, workspaceID, c, struct{}{})
 }
 
@@ -66,9 +66,9 @@ func (hb *hub) unsubscribe(workspaceID, userID string) []*Conn {
 	var cs []*Conn
 	for c := range from {
 		cs = append(cs, c)
-		if c.ws == workspaceID {
+		if c.space == workspaceID {
 			removeFrom(hb.spaces, workspaceID, c)
-			c.ws = ""
+			c.space = ""
 		}
 	}
 	return cs
@@ -77,6 +77,15 @@ func (hb *hub) unsubscribe(workspaceID, userID string) []*Conn {
 func (hb *hub) toWorkspace(id string, msg []byte) { hb.send(hb.spaces, id, msg) }
 
 func (hb *hub) toUser(id string, msg []byte) { hb.send(hb.users, id, msg) }
+
+// closeUser asks every connection of the user to re-authenticate.
+func (hb *hub) closeUser(id string) {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	for c := range hb.users[id] {
+		c.reauth()
+	}
+}
 
 func (hb *hub) toAll(msg []byte) {
 	hb.mu.Lock()

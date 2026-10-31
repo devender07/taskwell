@@ -508,10 +508,12 @@ func rolesChanged(ctx context.Context, tx pgx.Tx, ws *Workspace, actorID, roleID
 	return nil
 }
 
-// permissionsChanged tells the member's tabs their permissions in the workspace changed.
+// permissionsChanged tells the member's tabs their permissions in the workspace changed. Their sockets reconnect, so
+// live editing re-joins with the new permissions.
 func permissionsChanged(ws *Workspace, actorID, userID string) realtime.Event {
 	e := event(ws, actorID, "workspace.permissions", realtime.Workspace(ws.Slug), realtime.All(ws.Slug))
 	e.Audience = realtime.ToUser(userID)
+	e.Close = true
 	return e
 }
 

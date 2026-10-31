@@ -21,6 +21,8 @@ type Event struct {
 	Audience string `json:"-"`
 	// WorkspaceID, on a workspace.removed event, is the workspace whose subscriptions and live editing end.
 	WorkspaceID string `json:"-"`
+	// Close ends the audience's connections after the event: they re-authenticate, reconnect and re-join.
+	Close bool `json:"-"`
 }
 
 const ToAdmin = "admin"
@@ -40,6 +42,7 @@ const maxPayload = 7900
 type envelope struct {
 	Aud   string          `json:"aud"`
 	WS    string          `json:"ws,omitempty"` // Event.WorkspaceID
+	Close bool            `json:"close,omitempty"`
 	Event json.RawMessage `json:"event,omitempty"`
 }
 
@@ -52,7 +55,7 @@ func payload(e Event) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		p, err := json.Marshal(envelope{Aud: e.Audience, WS: e.WorkspaceID, Event: ev})
+		p, err := json.Marshal(envelope{Aud: e.Audience, WS: e.WorkspaceID, Close: e.Close, Event: ev})
 		if err != nil || len(p) <= maxPayload || e.Workspace == "" || len(e.Paths) == 1 {
 			return p, err
 		}
@@ -81,6 +84,12 @@ func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 // IssuePaths are what an issue change touches: its page and timeline, its project's list and board, and my issues.
 func IssuePaths(slug, identifier, key string) []string {
 	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug)}
+}
+
+// SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it
+// on suspension too). The tabs whose sign-in is still live reconnect; the others can't.
+func SessionRevoked(userID string) Event {
+	return Event{Kind: "session.revoked", Actor: userID, Audience: ToUser(userID), Paths: []string{"/me"}, Close: true}
 }
 
 // --- admin events (paths are the admin API's) ---

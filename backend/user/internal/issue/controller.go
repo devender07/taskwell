@@ -378,6 +378,16 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 		f.setLabels = true
 		f.labelIDs = slices.Compact(slices.Sorted(slices.Values(slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" }))))
 	}
+	// Ids that aren't uuids can't be the workspace's; checking here keeps them out of uuid comparisons.
+	if f.statusID != nil && !isUUID(*f.statusID) {
+		errs["status_id"] = "Choose a status."
+	}
+	if f.assigneeID != nil && *f.assigneeID != "" && !isUUID(*f.assigneeID) {
+		errs["assignee_id"] = "Choose someone in this workspace."
+	}
+	if slices.ContainsFunc(f.labelIDs, func(s string) bool { return !isUUID(s) }) {
+		errs["label_ids"] = "Choose labels from this workspace."
+	}
 	if !checkFields(w, errs) {
 		return f, false, nil
 	}

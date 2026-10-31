@@ -84,7 +84,7 @@ func signToken(secret []byte, userID string, now time.Time) (string, error) {
 }
 
 // parseToken returns the user ID of a valid admin token: HS256 only, and the "admin" audience is required,
-// so the user service's access tokens (same secret, no audience) don't work here.
+// so the user service's access tokens (signed with the same secret in dev) don't work here.
 func parseToken(secret []byte, token string) (string, error) {
 	var claims jwt.RegisteredClaims
 	_, err := jwt.ParseWithClaims(token, &claims, func(*jwt.Token) (any, error) { return secret, nil },
@@ -102,7 +102,11 @@ func parseToken(secret []byte, token string) (string, error) {
 	return claims.Subject, nil
 }
 
+// jwtSecret is ADMIN_JWT_SECRET, or in dev (when it's unset) the user service's jwt_secret from system_config.
 func (h *Handler) jwtSecret(ctx context.Context) ([]byte, error) {
+	if h.secret != nil {
+		return h.secret, nil
+	}
 	s, err := h.model.setting(ctx, "jwt_secret")
 	if err != nil {
 		return nil, err

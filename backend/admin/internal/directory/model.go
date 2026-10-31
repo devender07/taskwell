@@ -98,7 +98,8 @@ func (m *model) users(ctx context.Context, q string, offset int) ([]User, int, e
 }
 
 // setSuspended suspends or unsuspends the user, by the admin, and returns them, or nil when there is no such user.
-// Suspending deletes their refresh tokens, so they are signed out once their access token expires.
+// Suspending deletes their refresh tokens and closes their sockets, so they are signed out once their access token
+// expires.
 func (m *model) setSuspended(ctx context.Context, adminID, id string, suspended bool) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -109,6 +110,9 @@ func (m *model) setSuspended(ctx context.Context, adminID, id string, suspended 
 		}
 		if suspended {
 			if _, err := tx.Exec(ctx, `delete from refresh_tokens where user_id = $1`, id); err != nil {
+				return err
+			}
+			if err := realtime.PublishRevoked(ctx, tx, adminID, id); err != nil {
 				return err
 			}
 		}

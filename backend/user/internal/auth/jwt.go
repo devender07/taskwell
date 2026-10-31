@@ -13,15 +13,21 @@ import (
 
 const issuer = "tether"
 
-// signAccess returns an HS256 JWT for userID that expires after ttl.
-func signAccess(secret []byte, userID string, ttl time.Duration) (string, error) {
+// claims are an access token's: the user is the subject and SID is the sign-in (refresh token family) it came from.
+type claims struct {
+	jwt.RegisteredClaims
+	SID string `json:"sid,omitempty"`
+}
+
+// signAccess returns an HS256 JWT for userID's sign-in sid that expires after ttl.
+func signAccess(secret []byte, userID, sid string, ttl time.Duration) (string, error) {
 	now := time.Now()
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims{RegisteredClaims: jwt.RegisteredClaims{
 		Issuer:    issuer,
 		Subject:   userID,
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-	})
+	}, SID: sid})
 	s, err := t.SignedString(secret)
 	if err != nil {
 		return "", fmt.Errorf("sign access token: %w", err)
@@ -29,28 +35,28 @@ func signAccess(secret []byte, userID string, ttl time.Duration) (string, error)
 	return s, nil
 }
 
-// parseAccess returns the user ID of a valid, unexpired access token. The algorithm is pinned to HS256, and
-// tokens with an audience (the admin app's, signed with the same secret) are rejected.
-func parseAccess(secret []byte, token string) (string, error) {
-	var claims jwt.RegisteredClaims
+// parseAccess returns the claims of a valid, unexpired access token. The algorithm is pinned to HS256, and
+// tokens with an audience (the admin app's, when it shares the dev secret) are rejected.
+func parseAccess(secret []byte, token string) (*claims, error) {
+	var claims claims
 	_, err := jwt.ParseWithClaims(token, &claims, func(*jwt.Token) (any, error) { return secret, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(issuer),
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if claims.Subject == "" {
-		return "", fmt.Errorf("access token has no subject")
+		return nil, fmt.Errorf("access token has no subject")
 	}
 	if len(claims.Audience) > 0 {
-		return "", fmt.Errorf("access token has an audience (admin token?)")
+		return nil, fmt.Errorf("access token has an audience (admin token?)")
 	}
-	return claims.Subject, nil
+	return &claims, nil
 }
 
-// EnsureJWTSecret fills an empty jwt_secret with 256 random bits. Safe to run from several instances at once.
+// EnsureJWTSecret fills an empty jwt_secret (the dev fallback when JWT_SECRET is unset) with 256 random bits. Safe to run from several instances at once.
 func EnsureJWTSecret(ctx context.Context, db *pgxpool.Pool) error {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b) // crypto/rand.Read never returns an error (Go 1.24+)

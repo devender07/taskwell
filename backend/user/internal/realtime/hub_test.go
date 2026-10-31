@@ -32,7 +32,7 @@ func TestHub(t *testing.T) {
 		t.Fatal("old subscription still delivers")
 	}
 
-	if cs := hb.unsubscribe("acme", "maya"); len(cs) != 1 || cs[0] != maya || maya.ws != "" {
+	if cs := hb.unsubscribe("acme", "maya"); len(cs) != 1 || cs[0] != maya || maya.space != "" {
 		t.Fatalf("unsubscribe the user: %v", cs)
 	}
 	hb.toWorkspace("acme", []byte("ws"))

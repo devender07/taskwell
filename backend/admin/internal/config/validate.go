@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -23,6 +24,9 @@ func checkValue(key, v string) string {
 		u, err := url.Parse(v)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return "Enter a URL starting with http:// or https://."
+		}
+		if u.Scheme != "https" && os.Getenv("APP_ENV") == "production" {
+			return "Enter a URL starting with https://."
 		}
 	case "smtp_from":
 		if _, err := mail.ParseAddress(v); err != nil {

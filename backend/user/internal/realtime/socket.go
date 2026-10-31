@@ -20,6 +20,10 @@ const (
 	frameBuffer  = 256
 	writeWait    = 10 * time.Second
 	pingEvery    = 30 * time.Second
+
+	// statusReauth closes a socket whose access token expired or whose sign-in may have been revoked: the client
+	// refreshes its token before reconnecting.
+	statusReauth websocket.StatusCode = 4001
 )
 
 // Collab is one connection's live editing of one issue (the issue package's Session).
@@ -39,10 +43,12 @@ type JoinFunc func(ctx context.Context, c *Conn, userID, slug, identifier string
 // a writer goroutine drains both.
 type Conn struct {
 	id, userID string
+	session    Session
+	ws         *websocket.Conn
 	events     chan []byte
 	frames     chan frame
 	cancel     context.CancelFunc
-	ws         string // the subscribed workspace's id; guarded by hub.mu
+	space      string // the subscribed workspace's id; guarded by hub.mu
 
 	mu     sync.Mutex // held while handling a live-editing message
 	joined map[string]Collab
@@ -63,6 +69,9 @@ func (c *Conn) Write(ctx context.Context, data []byte) error {
 
 // Close ends the connection; the tab reconnects.
 func (c *Conn) Close() { c.cancel() }
+
+// reauth ends the connection telling the tab to refresh its access token before reconnecting.
+func (c *Conn) reauth() { go c.ws.Close(statusReauth, "Sign-in ended.") }
 
 func (c *Conn) offer(f frame) bool {
 	select {
@@ -98,12 +107,13 @@ func text(v any) []byte {
 
 // serve runs one tab's socket until it disconnects.
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.authenticate(r)
+	s, err := h.authenticate(r)
 	if err != nil {
 		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	}
+	userID := s.UserID
 	if userID == "" {
 		writeErr(w, http.StatusUnauthorized, "Not signed in.")
 		return
@@ -115,12 +125,14 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	defer ws.CloseNow()
 	ws.SetReadLimit(readLimit)
 
-	c := &Conn{id: rand.Text(), userID: userID, events: make(chan []byte, eventBuffer), frames: make(chan frame, frameBuffer),
+	c := &Conn{id: rand.Text(), userID: userID, session: s, ws: ws, events: make(chan []byte, eventBuffer), frames: make(chan frame, frameBuffer),
 		joined: map[string]Collab{}}
 	// The tab's own live-editing saves carry its id as origin, like its REST calls.
 	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), originKey{}, c.id))
 	defer cancel()
 	c.cancel = cancel
+	expire := time.AfterFunc(time.Until(s.Expires), c.reauth)
+	defer expire.Stop()
 	c.event(text(map[string]string{"type": "hello", "client": c.id}))
 	h.hub.add(c)
 	defer h.disconnect(r.Context(), c)
@@ -185,6 +197,13 @@ func (h *Handler) subscribe(ctx context.Context, c *Conn, slug string) error {
 func (h *Handler) join(ctx context.Context, c *Conn, slug, identifier string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Suspension or a revoked sign-in also closes the socket through SessionRevoked; this covers a missed event.
+	if ok, err := h.alive(ctx, c.session); err != nil {
+		return err
+	} else if !ok {
+		c.reauth()
+		return nil
+	}
 	s, msg, err := h.joinFn(ctx, c, c.userID, slug, identifier)
 	if err != nil {
 		return err

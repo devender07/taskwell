@@ -22,8 +22,9 @@ const (
 	// rotated cookies arrived) instead of looking like theft.
 	reuseGrace = 10 * time.Second
 
-	purposeCode  = "signin_code"
-	purposeReset = "password_reset"
+	purposeCode   = "signin_code"
+	purposeReset  = "password_reset"
+	purposeVerify = "email_verify"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -46,24 +47,133 @@ type model struct{ db *pgxpool.Pool }
 
 // --- users ---
 
-// createUser inserts a user; email must already be normalized. Returns errEmailTaken on a duplicate.
-func (m *model) createUser(ctx context.Context, name, email, passwordHash string) (User, error) {
-	var u User
+// startSignup records a sign-up awaiting its emailed code: it creates the unverified user without a password (or
+// keeps the existing unverified one) and stores the code's hash with the name and password hash to apply once it is
+// verified. Older pending codes stay usable: each is bound to the browser that asked for it. Returns errEmailTaken
+// when a verified account has the email.
+func (m *model) startSignup(ctx context.Context, name, email, passwordHash string, tokenHash []byte, minutes int) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx,
-			`insert into users (name, email, password_hash) values ($1, $2, $3) returning id::text, name, email`,
-			name, email, passwordHash).Scan(&u.ID, &u.Name, &u.Email); err != nil {
+		var userID string
+		var verified, inserted bool
+		if err := tx.QueryRow(ctx, `
+			insert into users (name, email) values ($1, $2)
+			on conflict (email) do update set email = excluded.email
+			returning id::text, email_verified_at is not null, xmax = 0`, name, email).Scan(&userID, &verified, &inserted); err != nil {
 			return err
 		}
-		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
+		if verified {
+			return errEmailTaken
+		}
+		if _, err := tx.Exec(ctx, `
+			insert into auth_tokens (user_id, purpose, token_hash, expires_at, name, password_hash)
+			values ($1, $2, $3, now() + make_interval(mins => $4), $5, $6)`,
+			userID, purposeVerify, tokenHash, minutes, name, passwordHash); err != nil {
+			return err
+		}
+		if inserted {
+			return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
+		}
+		return nil
 	})
-	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return User{}, errEmailTaken
+	if errors.Is(err, errEmailTaken) {
+		return err
 	}
 	if err != nil {
-		return User{}, fmt.Errorf("insert user: %w", err)
+		return fmt.Errorf("start signup: %w", err)
 	}
-	return u, nil
+	return nil
+}
+
+// verifySignup uses the live sign-up code with tokenHash for the unverified account with email: it verifies the
+// account, applies the code's name and password and voids its other codes. nil when there's no such code.
+func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte) (*User, error) {
+	var u *User
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var tokenID, userID, name, ph string
+		err := tx.QueryRow(ctx, `
+			select t.id::text, u.id::text, t.name, t.password_hash
+			from auth_tokens t join users u on u.id = t.user_id
+			where u.email = $1 and u.email_verified_at is null and t.purpose = $2 and t.token_hash = $3
+			  and t.used_at is null and t.expires_at > now()
+			for update of t, u`, email, purposeVerify, tokenHash).Scan(&tokenID, &userID, &name, &ph)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("find signup code: %w", err)
+		}
+		var got User
+		if err := tx.QueryRow(ctx, `
+			update users set name = $2, password_hash = $3, email_verified_at = now() where id = $1
+			returning id::text, name, email`, userID, name, ph).Scan(&got.ID, &got.Name, &got.Email); err != nil {
+			return fmt.Errorf("verify user: %w", err)
+		}
+		if err := voidVerify(ctx, tx, userID); err != nil {
+			return err
+		}
+		u = &got
+		return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
+	})
+	return u, err
+}
+
+// markVerified records that u proved they own their email (an email code, a reset link or Google), and voids pending
+// sign-up codes so a sign-up someone else started can't complete. first reports whether it wasn't verified: then
+// whoever signed up chose the name, so it becomes name, or the email's local part when that's "", and u gets it.
+func markVerified(ctx context.Context, tx pgx.Tx, u *User, name string) (first bool, err error) {
+	err = tx.QueryRow(ctx, `
+		update users set email_verified_at = now(), name = coalesce(nullif($2, ''), split_part(email, '@', 1))
+		where id = $1 and email_verified_at is null returning name`, u.ID, name).Scan(&u.Name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("verify email: %w", err)
+	}
+	return true, voidVerify(ctx, tx, u.ID)
+}
+
+func voidVerify(ctx context.Context, tx pgx.Tx, userID string) error {
+	if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where user_id = $1 and purpose = $2 and used_at is null`,
+		userID, purposeVerify); err != nil {
+		return fmt.Errorf("void signup codes: %w", err)
+	}
+	return nil
+}
+
+// alive reports whether the sign-in (refresh token family) sid of the user still exists and the user isn't suspended.
+func (m *model) alive(ctx context.Context, userID, sid string) (bool, error) {
+	var ok bool
+	err := m.db.QueryRow(ctx, `
+		select exists(select 1 from refresh_tokens t join users u on u.id = t.user_id
+		              where t.family_id = $1::uuid and t.user_id = $2::uuid and t.expires_at > now() and u.suspended_at is null)`,
+		sid, userID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check session: %w", err)
+	}
+	return ok, nil
+}
+
+// --- failed attempts ---
+
+// failures counts key's failed attempts in the last failWindow.
+func (m *model) failures(ctx context.Context, key string) (int, error) {
+	var n int
+	if err := m.db.QueryRow(ctx, `select count(*) from auth_failures where key = $1 and at > now() - make_interval(secs => $2)`,
+		key, failWindow.Seconds()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count failures: %w", err)
+	}
+	return n, nil
+}
+
+// fail records a failed attempt for key and drops every record older than failWindow.
+func (m *model) fail(ctx context.Context, key string) error {
+	if _, err := m.db.Exec(ctx, `
+		with gone as (delete from auth_failures where at < now() - make_interval(secs => $2))
+		insert into auth_failures (key) values ($1)`, key, failWindow.Seconds()); err != nil {
+		return fmt.Errorf("record failure: %w", err)
+	}
+	return nil
 }
 
 // userWithPassword returns the user and their password hash; hash is nil when the user is missing or has no password.
@@ -149,12 +259,12 @@ func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTo
 			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, id, keepTokenHash); err != nil {
 			return fmt.Errorf("sign out other sessions: %w", err)
 		}
-		return nil
+		return realtime.Publish(ctx, tx, realtime.SessionRevoked(id))
 	})
 }
 
 // userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,
-// else creates one without a password. created reports the last case.
+// else creates one without a password. created reports the last case, or linking an account that wasn't verified.
 func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u User, created bool, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `select id::text, name, email from users where google_sub = $1`, sub).Scan(&u.ID, &u.Name, &u.Email)
@@ -163,11 +273,14 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 		}
 		err = tx.QueryRow(ctx, `update users set google_sub = $2 where email = $1 and google_sub is null returning id::text, name, email`,
 			email, sub).Scan(&u.ID, &u.Name, &u.Email)
+		if err == nil {
+			created, err = markVerified(ctx, tx, &u, name)
+		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 		created = true
-		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub) values ($1, $2, $3) returning id::text, name, email`,
+		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub, email_verified_at) values ($1, $2, $3, now()) returning id::text, name, email`,
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
 			return err
 		}
@@ -218,11 +331,10 @@ func (m *model) replaceToken(ctx context.Context, userID, purpose string, tokenH
 	})
 }
 
-// useCode checks codeHash against the newest live sign-in code for email. A match uses it up and returns the user;
-// a miss counts an attempt and returns nil.
-func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (*User, error) {
-	var u *User
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+// useCode checks codeHash against the newest live sign-in code for email. A match uses it up, verifies the email and
+// returns the user (first reports it wasn't verified before); a miss counts an attempt and returns nil.
+func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *User, first bool, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var tokenID string
 		var stored []byte
 		var cand User
@@ -248,13 +360,17 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (*Us
 		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = $1`, tokenID); err != nil {
 			return fmt.Errorf("use code: %w", err)
 		}
+		if first, err = markVerified(ctx, tx, &cand, ""); err != nil {
+			return err
+		}
 		u = &cand
 		return nil
 	})
-	return u, err
+	return u, first, err
 }
 
-// resetPassword uses a live reset link, sets the new password hash and revokes all the user's refresh tokens.
+// resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and
+// revokes all the user's refresh tokens.
 // Returns false when the link is unknown, used or expired.
 func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHash string) (bool, error) {
 	ok := false
@@ -279,26 +395,31 @@ func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHas
 		if _, err := tx.Exec(ctx, `delete from refresh_tokens where user_id = $1`, userID); err != nil {
 			return fmt.Errorf("sign out sessions: %w", err)
 		}
+		if _, err := markVerified(ctx, tx, &User{ID: userID}, ""); err != nil {
+			return err
+		}
 		ok = true
-		return nil
+		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
 	})
 	return ok, err
 }
 
 // --- refresh tokens ---
 
-func (m *model) insertRefresh(ctx context.Context, tokenHash []byte, userID string, f family) error {
+// insertRefresh stores a refresh token of family f (a new family when f.id is "") and returns the family's id.
+func (m *model) insertRefresh(ctx context.Context, tokenHash []byte, userID string, f family) (string, error) {
 	var familyID *string
 	if f.id != "" {
 		familyID = &f.id
 	}
-	if _, err := m.db.Exec(ctx, `
+	var id string
+	if err := m.db.QueryRow(ctx, `
 		insert into refresh_tokens (token_hash, user_id, family_id, remember, expires_at)
-		values ($1, $2, coalesce($3::uuid, uuidv7()), $4, $5)`,
-		tokenHash, userID, familyID, f.remember, f.expiresAt); err != nil {
-		return fmt.Errorf("insert refresh token: %w", err)
+		values ($1, $2, coalesce($3::uuid, uuidv7()), $4, $5) returning family_id::text`,
+		tokenHash, userID, familyID, f.remember, f.expiresAt).Scan(&id); err != nil {
+		return "", fmt.Errorf("insert refresh token: %w", err)
 	}
-	return nil
+	return id, nil
 }
 
 // rotateRefresh marks a live refresh token used and returns its user and family; ok is false when the token is
@@ -338,11 +459,24 @@ func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (userID str
 	return userID, f, ok, err
 }
 
-// revokeFamily deletes every refresh token of the sign-in that tokenHash belongs to.
+// revokeFamily deletes every refresh token of the sign-in that tokenHash belongs to, and closes its user's sockets
+// (the others reconnect).
 func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
-	if _, err := m.db.Exec(ctx,
-		`delete from refresh_tokens where family_id = (select family_id from refresh_tokens where token_hash = $1)`,
-		tokenHash); err != nil {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var userID string
+		err := tx.QueryRow(ctx, `
+			with d as (delete from refresh_tokens where family_id = (select family_id from refresh_tokens where token_hash = $1)
+			           returning user_id)
+			select user_id::text from d limit 1`, tokenHash).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
+	})
+	if err != nil {
 		return fmt.Errorf("revoke refresh tokens: %w", err)
 	}
 	return nil

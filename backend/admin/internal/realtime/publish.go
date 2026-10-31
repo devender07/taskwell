@@ -26,26 +26,40 @@ type Event struct {
 	At        time.Time `json:"at"`
 }
 
-// envelope is the NOTIFY payload: the event plus its audience.
+// envelope is the NOTIFY payload: the event plus its audience, as the user service's realtime reads it.
 type envelope struct {
 	Aud   string          `json:"aud"`
+	Close bool            `json:"close,omitempty"`
 	Event json.RawMessage `json:"event,omitempty"`
+}
+
+// PublishRevoked tells the user service to close the user's sockets when tx commits (their tabs can't reconnect once
+// the user is suspended): the user service's realtime.SessionRevoked.
+func PublishRevoked(ctx context.Context, tx pgx.Tx, actorID, userID string) error {
+	return notify(ctx, tx, envelope{Aud: "user:" + userID, Close: true}, Event{Kind: "session.revoked", Actor: actorID,
+		Paths: []string{"/me"}})
 }
 
 // Publish sends an admin event of kind about paths to every admin tab when tx commits, stamped with the request's
 // origin (see WithOrigin).
 func Publish(ctx context.Context, tx pgx.Tx, kind, actorID string, paths ...string) error {
-	ev, err := json.Marshal(Event{Type: "event", Kind: kind, Actor: actorID, Origin: origin(ctx), Paths: paths,
-		At: time.Now().UTC().Truncate(time.Second)})
+	return notify(ctx, tx, envelope{Aud: audience}, Event{Kind: kind, Actor: actorID, Paths: paths})
+}
+
+// notify sends e in env on the realtime channel when tx commits.
+func notify(ctx context.Context, tx pgx.Tx, env envelope, e Event) error {
+	e.Type, e.Origin, e.At = "event", origin(ctx), time.Now().UTC().Truncate(time.Second)
+	ev, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("publish %s: %w", kind, err)
+		return fmt.Errorf("publish %s: %w", e.Kind, err)
 	}
-	p, err := json.Marshal(envelope{Aud: audience, Event: ev})
+	env.Event = ev
+	p, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("publish %s: %w", kind, err)
+		return fmt.Errorf("publish %s: %w", e.Kind, err)
 	}
 	if _, err := tx.Exec(ctx, `select pg_notify('realtime', $1)`, string(p)); err != nil {
-		return fmt.Errorf("publish %s: %w", kind, err)
+		return fmt.Errorf("publish %s: %w", e.Kind, err)
 	}
 	return nil
 }

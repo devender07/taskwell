@@ -74,12 +74,18 @@ export const clearNotice = () => void (notice = null)
 const loadedBy = (m: AnyRouteMatch) =>
   m.routeId === '/_app' ? APP_PATHS : (loaded.get(matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)) ?? [])
 
-const push = coalescer((paths) => {
-  const filter = (m: AnyRouteMatch) => touches(loadedBy(m), paths)
-  router?.clearCache({ filter }) // hover-preloaded data for these paths is now stale
-  if (router?.state.matches.some(filter)) void router.invalidate({ filter })
-  for (const s of subscribers) if (touches(s.paths, paths)) s.refetch()
-})
+// Issue lists refetch at most every 3s, so a teammate typing doesn't reload them on every save.
+const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues)$/
+
+const push = coalescer(
+  (paths) => {
+    const filter = (m: AnyRouteMatch) => touches(loadedBy(m), paths)
+    router?.clearCache({ filter }) // hover-preloaded data for these paths is now stale
+    if (router?.state.matches.some(filter)) void router.invalidate({ filter })
+    for (const s of subscribers) if (touches(s.paths, paths)) s.refetch()
+  },
+  { throttle: (p) => (LIST.test(p) ? 3000 : undefined) },
+)
 
 // Only after `hello`; everything sent before then is sent again on hello.
 const send = (msg: object) => {
@@ -181,7 +187,8 @@ function connect() {
   sock.binaryType = 'arraybuffer'
   ws = sock
   sock.onmessage = (e) => onMessage(e.data)
-  sock.onclose = () => dropped(sock, client !== '')
+  // 4001: the access token expired or the sign-in may be revoked, so refresh before reconnecting.
+  sock.onclose = (e) => dropped(sock, client !== '' && e.code !== 4001)
 }
 
 function dropped(sock: WebSocket, hello: boolean) {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
@@ -22,6 +23,7 @@ const (
 	errBadCode   = "That code is invalid or expired."
 	errBadReset  = "This reset link is invalid or expired."
 	errBadLogin  = "Wrong email or password."
+	errNoMail    = "Email is not configured. Contact your administrator."
 	errSignedOut = "Not signed in."
 
 	errCurrentRequired = "Current password is required."
@@ -35,12 +37,16 @@ type Handler struct {
 	model         *model
 	cfg           *sysconfig.Store
 	mail          *mail.Mailer
+	secret        []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
+	lim           limits
 	onUserCreated func(ctx context.Context, userID, name string) error
 }
 
-// New takes onUserCreated, run after sign-up or a first Google sign-in (it creates the default workspace).
-func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, onUserCreated func(ctx context.Context, userID, name string) error) *Handler {
-	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, onUserCreated: onUserCreated}
+// New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run when an account's email is first
+// verified (it creates the default workspace).
+func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
+	onUserCreated func(ctx context.Context, userID, name string) error) *Handler {
+	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, secret: secret, lim: newLimits(), onUserCreated: onUserCreated}
 }
 
 // userCreated runs the onUserCreated hook. A failure is logged, not returned: the account exists and the
@@ -51,17 +57,40 @@ func (h *Handler) userCreated(ctx context.Context, u User) {
 	}
 }
 
+// signup starts an account: it emails a code that signupVerify takes, from this browser only (the code's hash
+// includes a nonce kept in a cookie). Nothing is usable until then, so signing up with someone else's email gets
+// nowhere, and a later sign-up by the owner or their Google or email-code sign-in takes the account over.
 func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
 	name, email, pw := r.FormValue("name"), r.FormValue("email"), r.FormValue("password")
 	if errs := fieldErrors("name", checkName(name), "email", checkEmail(email), "password", checkPassword(pw)); errs != nil {
 		writeFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
+	email = normEmail(email)
+	if tooMany(w, h.lim.send.take(email, time.Now())) {
+		return nil
+	}
+	if ok, err := h.mail.Configured(ctx); err != nil {
+		return err
+	} else if !ok {
+		writeErr(w, http.StatusServiceUnavailable, errNoMail)
+		return nil
+	}
+	minutes, err := h.cfg.GetInt(ctx, "otp_ttl_minutes")
+	if err != nil {
+		return err
+	}
 	ph, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	u, err := h.model.createUser(r.Context(), strings.TrimSpace(name), normEmail(email), string(ph))
+	code, err := newCode()
+	if err != nil {
+		return err
+	}
+	nonce := newToken()
+	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"email": "An account with this email already exists."})
 		return nil
@@ -69,12 +98,68 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	h.userCreated(r.Context(), u)
-	if err := h.startSession(r.Context(), w, u.ID, true); err != nil {
+	secure, err := h.secure(ctx)
+	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, u)
+	http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: nonce, Path: "/api/auth/signup", MaxAge: minutes * 60,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
+	if err := h.mail.Send(ctx, email, "Your Tether verification code: "+code,
+		fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
+			"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"email": email})
 	return nil
+}
+
+// signupVerify finishes a sign-up with the emailed code and signs the new account in.
+func (h *Handler) signupVerify(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	email, code := r.FormValue("email"), strings.TrimSpace(r.FormValue("code"))
+	if errs := fieldErrors("email", checkEmail(email), "code", checkCode(code)); errs != nil {
+		writeFields(w, http.StatusBadRequest, errs)
+		return nil
+	}
+	email = normEmail(email)
+	if locked, err := h.locked(w, r, "code:"+email); err != nil || locked {
+		return err
+	}
+	c, err := r.Cookie(signupCookie)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "Enter the code in the browser you signed up in, or sign up again.")
+		return nil
+	}
+	u, err := h.model.verifySignup(ctx, email, hash(code+"."+c.Value))
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		if err := h.model.fail(ctx, "code:"+email); err != nil {
+			return err
+		}
+		writeErr(w, http.StatusUnauthorized, errBadCode)
+		return nil
+	}
+	http.SetCookie(w, &http.Cookie{Name: signupCookie, Path: "/api/auth/signup", MaxAge: -1, HttpOnly: true})
+	h.userCreated(ctx, *u)
+	if err := h.startSession(ctx, w, u.ID, true); errors.Is(err, errSuspended) {
+		writeErr(w, http.StatusForbidden, errSuspendedMsg)
+		return nil
+	} else if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, u)
+	return nil
+}
+
+// locked answers 429 when key has had maxFails failed attempts in the last failWindow.
+func (h *Handler) locked(w http.ResponseWriter, r *http.Request, key string) (bool, error) {
+	n, err := h.model.failures(r.Context(), key)
+	if err != nil || n < maxFails {
+		return false, err
+	}
+	return tooMany(w, failWindow), nil
 }
 
 func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
@@ -87,7 +172,11 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		writeFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
-	u, ph, err := h.model.userWithPassword(r.Context(), normEmail(email))
+	email = normEmail(email)
+	if locked, err := h.locked(w, r, "pw:"+email); err != nil || locked {
+		return err
+	}
+	u, ph, err := h.model.userWithPassword(r.Context(), email)
 	if err != nil {
 		return err
 	}
@@ -96,6 +185,9 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		stored = []byte(*ph)
 	}
 	if bcrypt.CompareHashAndPassword(stored, []byte(pw)) != nil || ph == nil {
+		if err := h.model.fail(r.Context(), "pw:"+email); err != nil {
+			return err
+		}
 		writeErr(w, http.StatusUnauthorized, errBadLogin)
 		return nil
 	}
@@ -115,6 +207,9 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
+	if tooMany(w, h.lim.send.take(normEmail(email), time.Now())) {
+		return nil
+	}
 	code, err := newCode()
 	if err != nil {
 		return err
@@ -129,6 +224,9 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 	email := r.FormValue("email")
 	if msg := checkEmail(email); msg != "" {
 		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
+		return nil
+	}
+	if tooMany(w, h.lim.send.take(normEmail(email), time.Now())) {
 		return nil
 	}
 	token := newToken()
@@ -151,7 +249,7 @@ func (h *Handler) sendSecret(w http.ResponseWriter, r *http.Request, email, purp
 	if ok, err := h.mail.Configured(ctx); err != nil {
 		return err
 	} else if !ok {
-		writeErr(w, http.StatusServiceUnavailable, "Email is not configured. Contact your administrator.")
+		writeErr(w, http.StatusServiceUnavailable, errNoMail)
 		return nil
 	}
 	minutes, err := h.cfg.GetInt(ctx, ttlKey)
@@ -187,13 +285,23 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 		writeFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
-	u, err := h.model.useCode(r.Context(), normEmail(email), hash(code))
+	email = normEmail(email)
+	if locked, err := h.locked(w, r, "code:"+email); err != nil || locked {
+		return err
+	}
+	u, first, err := h.model.useCode(r.Context(), email, hash(code))
 	if err != nil {
 		return err
 	}
 	if u == nil {
+		if err := h.model.fail(r.Context(), "code:"+email); err != nil {
+			return err
+		}
 		writeErr(w, http.StatusUnauthorized, errBadCode)
 		return nil
+	}
+	if first {
+		h.userCreated(r.Context(), *u)
 	}
 	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
 		writeErr(w, http.StatusForbidden, errSuspendedMsg)

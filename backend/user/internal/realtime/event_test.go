@@ -49,3 +49,14 @@ func TestPayload(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionRevokedCloses(t *testing.T) {
+	p, err := payload(SessionRevoked("u1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e envelope
+	if err := json.Unmarshal(p, &e); err != nil || e.Aud != "user:u1" || !e.Close {
+		t.Fatalf("got %s, %v", p, err)
+	}
+}

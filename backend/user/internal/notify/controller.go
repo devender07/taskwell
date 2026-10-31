@@ -80,7 +80,7 @@ func (h *Handler) mark(w http.ResponseWriter, r *http.Request, userID string, re
 		return err
 	}
 	_ = r.ParseMultipartForm(maxBody)
-	ids := slices.DeleteFunc(slices.Clone(r.PostForm["ids"]), func(s string) bool { return s == "" })
+	ids := slices.DeleteFunc(slices.Clone(r.PostForm["ids"]), func(s string) bool { return !uuidRe.MatchString(s) })
 	all := read && r.PostForm.Get("all") == "true"
 	if !all && len(ids) == 0 {
 		writeErr(w, http.StatusBadRequest, "Choose notifications.")

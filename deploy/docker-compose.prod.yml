@@ -1,0 +1,69 @@
+# Production stack: docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+name: tether-prod
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tether}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-tether}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  user:
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: user } }
+    image: tether-user
+    restart: unless-stopped
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      PORT: "8090"
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      UPLOAD_DIR: /data/uploads
+      NOTIFY_INTERVAL: ${NOTIFY_INTERVAL:-1m}
+      NOTIFY_SETTLE: ${NOTIFY_SETTLE:-30s}
+    volumes:
+      - uploads:/data/uploads
+
+  admin:
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: admin } }
+    image: tether-admin
+    restart: unless-stopped
+    depends_on: [user] # the user service runs the migrations
+    environment:
+      PORT: "8080"
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
+      DB_MAX_CONNS: ${ADMIN_DB_MAX_CONNS:-5}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?set ADMIN_JWT_SECRET}
+
+  caddy:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    image: tether-web
+    restart: unless-stopped
+    depends_on: [user, admin]
+    environment:
+      APP_HOST: ${APP_HOST:?set APP_HOST}
+      ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy-data:
+  caddy-config:

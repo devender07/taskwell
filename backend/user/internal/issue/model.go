@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,14 +112,20 @@ const (
 	refFrom = ` from issues r join projects rp on rp.id = r.project_id join statuses rs on rs.id = r.status_id`
 )
 
-const issueCols = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name,
-	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, i.description,
+const (
+	issueCols = issueHead + `i.description,` + issueTail
+	// listCols leave the description out (null): lists don't show it and it's most of an issue's size.
+	listCols  = issueHead + `null::jsonb,` + issueTail
+	issueHead = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name,
+	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, `
+	issueTail = `
 	s.id::text, s.name, s.category, s.position, a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
 	c.id::text, c.name, i.created_at, i.updated_at
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
+)
 
 func scanIssue(row pgx.Row) (Issue, error) {
 	var i Issue
@@ -154,7 +161,7 @@ func issueNames(ctx context.Context, tx pgx.Tx, id string) (names, error) {
 		                 or r.id in (select blocked_id from issue_links where blocker_id = i.id
 		                             union select blocker_id from issue_links where blocked_id = i.id))
 		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
-		 where i.id::text = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.related)
+		 where i.id = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.related)
 	if err != nil {
 		return n, fmt.Errorf("issue names: %w", err)
 	}
@@ -200,6 +207,11 @@ func (m *model) projectID(ctx context.Context, workspaceID, key string) (string,
 	return id, nil
 }
 
+// maxList caps a list's issues.
+// ponytail: newest maxList only, older ones are unreachable; add keyset pagination (number / created_at, id) when
+// a project or assignee gets near it.
+const maxList = 2000
+
 // list returns the project's issues, newest first.
 func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
 	return m.issues(ctx, `i.project_id = $1 order by i.number desc`, projectID)
@@ -211,9 +223,9 @@ func (m *model) assigned(ctx context.Context, workspaceID, userID string) ([]Iss
 		order by i.created_at desc, i.id desc`, workspaceID, userID)
 }
 
-// issues selects issues matching where (a condition plus its order by).
+// issues selects up to maxList issues, without descriptions, matching where (a condition plus its order by).
 func (m *model) issues(ctx context.Context, where string, args ...any) ([]Issue, error) {
-	rows, err := m.db.Query(ctx, `select `+issueCols+` where `+where, args...)
+	rows, err := m.db.Query(ctx, `select `+listCols+` where `+where+` limit `+strconv.Itoa(maxList), args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
@@ -232,7 +244,7 @@ func (m *model) get(ctx context.Context, workspaceID, key string, number int) (*
 }
 
 func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
-	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id::text = $1`, id))
+	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id = $1`, id))
 }
 
 // relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first) and
@@ -358,11 +370,15 @@ func escapeLike(s string) string {
 func (m *model) checkRefs(ctx context.Context, workspaceID string, f fields) (map[string]string, error) {
 	var statusOK, assigneeOK bool
 	var labels int
+	assignee := f.assigneeID
+	if assignee != nil && *assignee == "" {
+		assignee = nil
+	}
 	err := m.db.QueryRow(ctx,
-		`select $2::text is null or exists(select 1 from statuses where workspace_id = $1 and id::text = $2),
-		        coalesce($3, '') = '' or exists(select 1 from workspace_members where workspace_id = $1 and user_id::text = $3),
-		        (select count(*) from labels where workspace_id = $1 and id::text = any($4::text[]))`,
-		workspaceID, f.statusID, f.assigneeID, f.labelIDs).Scan(&statusOK, &assigneeOK, &labels)
+		`select $2::uuid is null or exists(select 1 from statuses where workspace_id = $1 and id = $2),
+		        $3::uuid is null or exists(select 1 from workspace_members where workspace_id = $1 and user_id = $3),
+		        (select count(*) from labels where workspace_id = $1 and id = any($4::uuid[]))`,
+		workspaceID, f.statusID, assignee, f.labelIDs).Scan(&statusOK, &assigneeOK, &labels)
 	if err != nil {
 		return nil, fmt.Errorf("check issue refs: %w", err)
 	}
@@ -457,7 +473,7 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			return err
 		}
 		if f.setDescription {
-			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id::text = $1`, id); err != nil {
+			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
 				return err
 			}
 		}
@@ -474,13 +490,13 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			   priority = coalesce($6::smallint, priority),
 			   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
 			   updated_at = now()
-			 where id::text = $1`,
+			 where id = $1`,
 			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
 			plainText(f.description)); err != nil {
 			return err
 		}
 		if f.setLabels {
-			if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id::text = $1`, id); err != nil {
+			if _, err := tx.Exec(ctx, `delete from issue_labels where issue_id = $1`, id); err != nil {
 				return err
 			}
 			if err := setLabels(ctx, tx, workspaceID, id, f.labelIDs); err != nil {
@@ -533,7 +549,7 @@ func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 		                  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
 		        (select json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title)
 		         from issues r join projects rp on rp.id = r.project_id where r.id = i.parent_id)
-		 from issues i join statuses s on s.id = i.status_id where i.id::text = $1 for update of i`, id).
+		 from issues i join statuses s on s.id = i.status_id where i.id = $1 for update of i`, id).
 		Scan(&s.title, &s.description, &s.status.ID, &s.status.Name, &s.status.Category, &s.assignee, &s.priority, &s.dueDate,
 			&s.labels, &s.parent)
 	return s, err
@@ -707,7 +723,7 @@ func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labe
 	}
 	_, err := tx.Exec(ctx,
 		`insert into issue_labels (issue_id, label_id)
-		 select $2::uuid, id from labels where workspace_id = $1 and id::text = any($3::text[])`,
+		 select $2::uuid, id from labels where workspace_id = $1 and id = any($3::uuid[])`,
 		workspaceID, issueID, labelIDs)
 	return err
 }
@@ -718,7 +734,7 @@ func (m *model) delete(ctx context.Context, id, actorID string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `delete from issues where id::text = $1`, id); err != nil {
+		if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
 			return err
 		}
 		if err := publishIssue(ctx, tx, "issue.deleted", actorID, n); err != nil {
@@ -756,15 +772,25 @@ func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, er
 	return us, nil
 }
 
-// addDocUpdate stores an update and tells the other API instances its id, in one statement (one transaction).
-func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) error {
-	_, err := m.db.Exec(ctx,
-		`with u as (insert into issue_doc_updates (issue_id, data) values ($1, $2) returning id)
-		 select pg_notify('collab', $3::text || u.id) from u`, issueID, data, notePrefix(issueID, noteUpdate))
+// addDocUpdate stores an update and tells the other API instances, in one statement (one transaction): with inline
+// as the notification when it's not "", else with the update's id. False when the issue's stored updates would pass
+// maxStored.
+func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte, inline string) (bool, error) {
+	rows, err := m.db.Query(ctx,
+		`with u as (insert into issue_doc_updates (issue_id, data)
+		   select $1, $2 where (select coalesce(sum(octet_length(data)), 0) from issue_doc_updates where issue_id = $1)
+		                       + octet_length($2::bytea) <= $5
+		   returning id)
+		 select u.id from u, pg_notify('collab', coalesce(nullif($4, ''), $3::text || u.id))`,
+		issueID, data, notePrefix(issueID, noteUpdate), inline, maxStored)
 	if err != nil {
-		return fmt.Errorf("add doc update: %w", err)
+		return false, fmt.Errorf("add doc update: %w", err)
 	}
-	return nil
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return false, fmt.Errorf("add doc update: %w", err)
+	}
+	return len(ids) == 1, nil
 }
 
 // docUpdate returns one stored update's data; nil when it's gone (compacted).
@@ -807,10 +833,11 @@ func (m *model) setSeedClaim(ctx context.Context, issueID string, claimed bool) 
 	return nil
 }
 
-// compactDoc replaces the issue's updates up to and including upTo with data, the merged state.
-func (m *model) compactDoc(ctx context.Context, issueID string, upTo int64, data []byte) error {
+// compactDoc replaces the issue's updates with the ids, the ones the client loaded, with data, their merged state.
+// Deleting by id rather than "up to" keeps an update that committed after the client's load.
+func (m *model) compactDoc(ctx context.Context, issueID string, ids []int64, data []byte) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1 and id <= $2`, issueID, upTo); err != nil {
+		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1 and id = any($2)`, issueID, ids); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data)
@@ -843,13 +870,12 @@ func (m *model) saveDescription(ctx context.Context, issueID, actorID string, do
 		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: newMentions(old, doc)}); err != nil {
 			return err
 		}
-		// The description itself is live over collab already.
+		// The description itself is live over collab already, and lists don't show it.
 		n, err := issueNames(ctx, tx, issueID)
 		if err != nil {
 			return err
 		}
-		return realtime.Publish(ctx, tx, n.event("issue.updated", actorID,
-			realtime.Timeline(n.slug, n.identifier), realtime.ProjectIssues(n.slug, n.key)))
+		return realtime.Publish(ctx, tx, n.event("issue.updated", actorID, realtime.Timeline(n.slug, n.identifier)))
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("save description: %w", err)
@@ -924,7 +950,10 @@ func (m *model) timeline(ctx context.Context, issueID string) ([]Comment, []Even
 
 // comment returns the workspace's comment with the id; nil when there's none.
 func (m *model) comment(ctx context.Context, workspaceID, id string) (*Comment, error) {
-	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id::text = $2`, workspaceID, id))
+	if !isUUID(id) {
+		return nil, nil
+	}
+	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id = $2`, workspaceID, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -1106,11 +1135,14 @@ func (m *model) createStatus(ctx context.Context, workspaceID, name, category st
 // updateStatus renames and recategorizes a status, publishing e; nil when there's none. Returns errNameTaken when the
 // name is in use.
 func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, e realtime.Event) (*Status, error) {
+	if !isUUID(id) {
+		return nil, nil
+	}
 	var s Status
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		var err error
 		s, err = scanStatus(tx.QueryRow(ctx,
-			`update statuses set name = $3, category = $4 where workspace_id = $1 and id::text = $2 returning `+statusCols,
+			`update statuses set name = $3, category = $4 where workspace_id = $1 and id = $2 returning `+statusCols,
 			workspaceID, id, name, category))
 		return err
 	})
@@ -1148,8 +1180,8 @@ func (m *model) reorderStatuses(ctx context.Context, workspaceID string, ids []s
 			return errBadOrder
 		}
 		_, err = tx.Exec(ctx,
-			`update statuses s set position = o.ord - 1 from unnest($2::text[]) with ordinality o(id, ord)
-			 where s.workspace_id = $1 and s.id::text = o.id`, workspaceID, ids)
+			`update statuses s set position = o.ord - 1 from unnest($2::uuid[]) with ordinality o(id, ord)
+			 where s.workspace_id = $1 and s.id = o.id`, workspaceID, ids)
 		return err
 	})
 	if errors.Is(err, errBadOrder) {
@@ -1175,21 +1207,24 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 		if len(ids) == 1 {
 			return errLastStatus
 		}
-		moved, err := tx.Exec(ctx,
-			`update issues i set status_id = s.id from statuses s
-			 where i.status_id::text = $2 and s.workspace_id = $1 and s.id::text = $3 and s.id::text <> $2`,
-			workspaceID, id, moveTo)
-		if err != nil {
-			return err
+		var moved pgconn.CommandTag
+		if isUUID(moveTo) {
+			moved, err = tx.Exec(ctx,
+				`update issues i set status_id = s.id from statuses s
+				 where i.status_id = $2 and s.workspace_id = $1 and s.id = $3 and s.id <> $2`,
+				workspaceID, id, moveTo)
+			if err != nil {
+				return err
+			}
 		}
 		var inUse bool
-		if err := tx.QueryRow(ctx, `select exists(select 1 from issues where status_id::text = $1)`, id).Scan(&inUse); err != nil {
+		if err := tx.QueryRow(ctx, `select exists(select 1 from issues where status_id = $1)`, id).Scan(&inUse); err != nil {
 			return err
 		}
 		if inUse {
 			return errInUse
 		}
-		if _, err = tx.Exec(ctx, `delete from statuses where id::text = $1`, id); err != nil {
+		if _, err = tx.Exec(ctx, `delete from statuses where id = $1`, id); err != nil {
 			return err
 		}
 		if moved.RowsAffected() > 0 {
@@ -1248,11 +1283,14 @@ func (m *model) createLabel(ctx context.Context, workspaceID, name, color string
 
 // updateLabel publishes e. It returns nil when there's no such label, and errNameTaken when the name is in use.
 func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color string, e realtime.Event) (*Label, error) {
+	if !isUUID(id) {
+		return nil, nil
+	}
 	var l Label
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		var err error
 		l, err = scanLabel(tx.QueryRow(ctx,
-			`update labels set name = $3, color = $4 where workspace_id = $1 and id::text = $2 returning `+labelCols,
+			`update labels set name = $3, color = $4 where workspace_id = $1 and id = $2 returning `+labelCols,
 			workspaceID, id, name, color))
 		return err
 	})
@@ -1269,9 +1307,12 @@ func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color st
 
 // deleteLabel deletes a label, which removes it from its issues, and publishes e; false when there's none.
 func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realtime.Event) (bool, error) {
+	if !isUUID(id) {
+		return false, nil
+	}
 	found := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `delete from labels where workspace_id = $1 and id::text = $2`, workspaceID, id)
+		tag, err := tx.Exec(ctx, `delete from labels where workspace_id = $1 and id = $2`, workspaceID, id)
 		if found = tag.RowsAffected() == 1; err != nil || !found {
 			return err
 		}

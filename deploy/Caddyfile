@@ -1,0 +1,43 @@
+# APP_HOST serves the user SPA and proxies /api to the user service; ADMIN_HOST does the same for admin.
+# Hosts that are real domain names get automatic HTTPS.
+
+(spa) {
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		-Server
+	}
+
+	# The API sets its own Cache-Control (e.g. no-store on auth, private on files); Caddy only proxies.
+	handle /api/* {
+		reverse_proxy {args[0]}
+	}
+
+	# Hashed build output: cache forever, and a missing file is a 404, not index.html.
+	handle /assets/* {
+		root * {args[1]}
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else falls back to index.html for client-side routes, revalidated on every load.
+	handle {
+		root * {args[1]}
+		header Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode zstd gzip
+}
+
+{$APP_HOST:localhost} {
+	import spa user:8090 /srv/user
+}
+
+{$ADMIN_HOST:admin.localhost} {
+	import spa admin:8080 /srv/admin
+}

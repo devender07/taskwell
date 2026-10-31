@@ -56,14 +56,14 @@ func TestTokens(t *testing.T) {
 
 func TestAccessToken(t *testing.T) {
 	secret := []byte("test-secret")
-	tok, err := signAccess(secret, "user-1", time.Minute)
+	tok, err := signAccess(secret, "user-1", "sid-1", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, err := parseAccess(secret, tok); err != nil || id != "user-1" {
-		t.Fatalf("valid token: got %q, %v", id, err)
+	if c, err := parseAccess(secret, tok); err != nil || c.Subject != "user-1" || c.SID != "sid-1" {
+		t.Fatalf("valid token: got %+v, %v", c, err)
 	}
-	expired, _ := signAccess(secret, "user-1", -time.Minute)
+	expired, _ := signAccess(secret, "user-1", "sid-1", -time.Minute)
 	none := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.RegisteredClaims{Issuer: issuer, Subject: "user-1",
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute))})
 	noneTok, _ := none.SignedString(jwt.UnsafeAllowNoneSignatureType)
@@ -74,7 +74,7 @@ func TestAccessToken(t *testing.T) {
 		Audience: jwt.ClaimStrings{"admin"}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute))})
 	adminTok, _ := admin.SignedString(secret)
 	for name, bad := range map[string]string{
-		"wrong secret": func() string { s, _ := signAccess([]byte("other"), "user-1", time.Minute); return s }(),
+		"wrong secret": func() string { s, _ := signAccess([]byte("other"), "user-1", "sid-1", time.Minute); return s }(),
 		"expired":      expired,
 		"alg none":     noneTok,
 		"alg HS512":    hs512Tok,

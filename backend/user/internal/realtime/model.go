@@ -67,7 +67,7 @@ func (m *model) view(ctx context.Context, connID, issueID, userID, instance stri
 // unview removes the connection's viewer rows, for the issue ids or all of them when ids is nil, and tells every instance.
 func (m *model) unview(ctx context.Context, connID string, ids []string) error {
 	_, err := m.db.Exec(ctx,
-		`with d as (delete from issue_viewers where conn_id = $1 and ($2::text[] is null or issue_id::text = any($2))
+		`with d as (delete from issue_viewers where conn_id = $1 and ($2::uuid[] is null or issue_id = any($2))
 		   returning issue_id) `+changed, connID, ids)
 	if err != nil {
 		return fmt.Errorf("remove viewers: %w", err)

@@ -122,3 +122,29 @@ Dependencies: `github.com/jackc/pgx/v5` (Postgres), `golang.org/x/crypto/bcrypt`
 
 - Backend: `docker compose up -d`, run the service, exercise every endpoint with `curl -F`, read codes/links from mailpit's API (`GET http://localhost:8025/api/v1/messages`), and confirm the tables in Docker Desktop / `psql`.
 - Frontend: `npm run build`, then click through every flow against the running backend.
+
+## Email verification, rate limits and CSRF (production audit S1, S2, S4, S5)
+
+Migration `020_email_verification.sql`: `users.email_verified_at` (existing users backfilled as verified), `auth_tokens` purpose `email_verify` with `name` and `password_hash` columns, and `auth_failures (key, at)`.
+
+Sign-up no longer signs in:
+
+| Method | Path | FormData | Success | Errors |
+|---|---|---|---|---|
+| POST | `/api/auth/signup` | `name`, `email`, `password` | 202 `{"email"}`, sets `tether_signup` cookie (path `/api/auth/signup`, otp TTL), emails a 6-digit code | 400 fields, 409 `errors.email` (verified account exists), 429, 503 |
+| POST | `/api/auth/signup/verify` | `email`, `code` | 200 user, session cookies (remember on), default workspace created | 400 fields, 401 `error` (wrong/expired code, or no `tether_signup` cookie), 429 |
+
+- The user row is created unverified with no password; the code's hash covers a nonce held in the `tether_signup` cookie, so a code only works in the browser that signed up, and it carries the name and password to apply. Signing up again (also "Resend code") issues a new code; a verified email answers 409.
+- An email code sign-in, a reset link or Google proves ownership: the account becomes verified, pending sign-up codes are voided, and if it was never verified its name is replaced (Google name, or the email's local part). Signing up with someone else's address therefore gets the attacker nothing.
+- `tether-admin -promote` only promotes a verified email.
+
+Rate limits (429 `{"error": "Too many attempts. Try again later."}` with `Retry-After`):
+- Per client IP, in-process: 20 burst, one more every 3 s, across signup, signup/verify, signin, otp send/verify, password forgot/reset/change. Admin sign-in: 10 burst, one every 6 s. The IP is the peer, or the last `X-Forwarded-For` entry when the peer is loopback or private (the proxy).
+- Per email, in-process: 3 emails (sign-in codes, reset links, verification codes) burst, one more every 5 minutes.
+- Per email, in Postgres (all instances): 10 wrong passwords (`pw:`) or 10 wrong codes (`code:`, sign-in and sign-up codes together) per sliding hour, then 429 until the window slides. Admin sign-in uses `admin:`. Success doesn't reset the count.
+
+Realtime sockets (S4): access tokens carry `sid`, the refresh token family. The socket upgrade and every `collab.join` require that family to exist and the user not to be suspended. A socket closes with code 4001 when its access token expires, and on `session.revoked` (sign-out, password change, reset, admin suspension) or `workspace.permissions`, which close all the user's sockets. On 4001 the client refreshes and reconnects, and a revoked sign-in can't.
+
+CSRF (S5): a non-GET `/api/*` request passes only with `Sec-Fetch-Site: same-origin|none`, or an `Origin` equal to `app_base_url`'s origin (admin: the request's host). A request with neither header comes from a non-browser client (curl, scripts), so it carries no victim's cookies and passes. Anything else gets 403 `{"error": "Cross-site request blocked."}`.
+
+Config (O3, O5): `APP_ENV=production` requires `DATABASE_URL`, `JWT_SECRET` (≥ 32 bytes) and an https `app_base_url` for the user service, and `DATABASE_URL` and an `ADMIN_JWT_SECRET` (≥ 32 bytes, different from `JWT_SECRET`) for the admin service. Without these variables, dev uses `system_config.jwt_secret` for both. Both services log their effective config at startup.

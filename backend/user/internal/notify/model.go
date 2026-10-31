@@ -19,6 +19,8 @@ import (
 // notification the recipient hasn't read from the last 10 minutes on the same issue is updated (new "to", time and
 // actor, emailed again) instead of adding another.
 func Record(ctx context.Context, tx pgx.Tx, c Change) error {
+	// Mention ids come from documents users write; one that isn't a uuid can't be a member.
+	c.Mentioned = slices.DeleteFunc(slices.Clone(c.Mentioned), func(id string) bool { return !uuidRe.MatchString(id) })
 	var watchers []string
 	if c.Status != nil || c.NewComment {
 		rows, err := tx.Query(ctx, `select user_id::text from issue_watchers where issue_id = $1`, c.IssueID)
@@ -39,13 +41,13 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 			`with bumped as (
 			   update notifications set data = jsonb_set(data, '{to}', $5::jsonb -> 'to'), actor_id = $3, created_at = now(),
 			     emailed_at = null
-			   where $4 = 'status' and id = (select id from notifications where user_id::text = $1 and issue_id = $2
+			   where $4 = 'status' and id = (select id from notifications where user_id = $1 and issue_id = $2
 			     and kind = 'status' and read_at is null and created_at > now() - interval '10 minutes' order by id desc limit 1)
 			   returning id),
 			 added as (
 			   insert into notifications (user_id, workspace_id, issue_id, actor_id, kind, data)
 			   select m.user_id, i.workspace_id, i.id, $3, $4, $5
-			   from issues i join workspace_members m on m.workspace_id = i.workspace_id and m.user_id::text = $1
+			   from issues i join workspace_members m on m.workspace_id = i.workspace_id and m.user_id = $1
 			   where i.id = $2 and not exists (select 1 from bumped)
 			   returning id)
 			 select id from bumped union all select id from added`,
@@ -79,7 +81,7 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	if _, err := tx.Exec(ctx,
 		`insert into issue_watchers (issue_id, user_id)
 		 select i.id, m.user_id from issues i join workspace_members m on m.workspace_id = i.workspace_id
-		 where i.id = $1 and m.user_id::text = any($2::text[])
+		 where i.id = $1 and m.user_id = any($2::uuid[])
 		 on conflict do nothing`, c.IssueID, watch); err != nil {
 		return fmt.Errorf("add watchers: %w", err)
 	}
@@ -154,7 +156,7 @@ func (m *model) setRead(ctx context.Context, userID, workspaceID, slug string, i
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx,
 			`update notifications set read_at = case when $5 then coalesce(read_at, now()) end
-			 where user_id = $1 and workspace_id = $2 and ($4 or id::text = any($3::text[]))`, userID, workspaceID, ids, all, read); err != nil {
+			 where user_id = $1 and workspace_id = $2 and ($4 or id = any($3::uuid[]))`, userID, workspaceID, ids, all, read); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, changed(slug, userID, userID))
@@ -263,7 +265,7 @@ func (m *model) sendNext(ctx context.Context, settle time.Duration, skip []strin
 		id, msg, err = scanMessage(tx.QueryRow(ctx,
 			`select `+msgCols+`, u.email`+msgFrom+` join users u on u.id = n.user_id
 			 where n.emailed_at is null and n.created_at < now() - make_interval(secs => $1)
-			   and coalesce(s.email, 'instant') = 'instant' and `+wanted+` and n.id::text <> all($2::text[])
+			   and coalesce(s.email, 'instant') = 'instant' and `+wanted+` and n.id <> all($2::uuid[])
 			 order by n.created_at limit 1
 			 for update of n skip locked`, settle.Seconds(), skip), &to)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -296,7 +298,7 @@ func (m *model) digestNext(ctx context.Context, hour int, skip []string, send fu
 			`select s.user_id::text, u.email from notification_settings s join users u on u.id = s.user_id
 			 cross join lateral (select (date_trunc('day', now() at time zone 'utc') + make_interval(hours => $1)) at time zone 'utc') d(at)
 			 where s.email = 'digest' and now() >= d.at and (s.last_digest_at is null or s.last_digest_at < d.at)
-			   and s.user_id::text <> all($2::text[])
+			   and s.user_id <> all($2::uuid[])
 			 limit 1 for update of s skip locked`, hour, skip).Scan(&userID, &to)
 		if errors.Is(err, pgx.ErrNoRows) {
 			userID = ""
@@ -330,7 +332,7 @@ func (m *model) digestNext(ctx context.Context, hour int, skip []string, send fu
 			if err := send(to, msgs); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `update notifications set emailed_at = now() where id::text = any($1::text[])`, ids); err != nil {
+			if _, err := tx.Exec(ctx, `update notifications set emailed_at = now() where id = any($1::uuid[])`, ids); err != nil {
 				return err
 			}
 		}

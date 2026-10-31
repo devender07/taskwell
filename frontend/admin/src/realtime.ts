@@ -36,7 +36,7 @@ const push = coalescer(
     const filter = (m: AnyRouteMatch) => touches(loaded.get(matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)) ?? [], paths)
     if (router?.state.matches.some(filter)) void router.invalidate({ filter })
   },
-  { throttle: { '/stats': 5000 } },
+  { throttle: (p) => (p === '/stats' ? 5000 : undefined) },
 )
 
 // Only after `hello`.

@@ -33,7 +33,7 @@ const advance = (ms: number) => {
   for (const t of due) t.fn()
 }
 const flushed: string[][] = []
-const push = coalescer((p) => flushed.push(p), { clock, throttle: { '/stats': 5000 } })
+const push = coalescer((p) => flushed.push(p), { clock, throttle: (p) => (p === '/stats' ? 5000 : undefined) })
 
 push(['/a', '/b'])
 push(['/b', '/c'])

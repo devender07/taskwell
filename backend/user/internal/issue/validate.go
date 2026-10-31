@@ -16,6 +16,7 @@ var (
 	colorRe      = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 	dateRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
+	uuidRe       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
 )
 
@@ -104,3 +105,6 @@ func parseIdentifier(s string) (key string, number int, ok bool) {
 	}
 	return strings.ToUpper(m[1]), int(n), true
 }
+
+// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
+func isUUID(s string) bool { return uuidRe.MatchString(s) }

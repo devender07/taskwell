@@ -21,9 +21,12 @@ export function matchKey(routeId: string, fullPath: string, params: Record<strin
 type Clock = { now: () => number; after: (fn: () => void, ms: number) => unknown }
 const realClock: Clock = { now: () => Date.now(), after: (fn, ms) => setTimeout(fn, ms) }
 
-// Collects paths for `wait` ms and flushes them de-duplicated. A path in `throttle` flushes at most once per its ms;
-// later requests for it wait for the gap and go out together.
-export function coalescer(flush: (paths: string[]) => void, { wait = 150, throttle = {} as Record<string, number>, clock = realClock } = {}) {
+// Collects paths for `wait` ms and flushes them de-duplicated. A path `throttle` gives ms for flushes at most once per
+// that gap; later requests for it wait for the gap and go out together.
+export function coalescer(
+  flush: (paths: string[]) => void,
+  { wait = 150, throttle = (_: string): number | undefined => undefined, clock = realClock } = {},
+) {
   let pending = new Set<string>()
   let scheduled = false
   const last = new Map<string, number>()
@@ -35,7 +38,7 @@ export function coalescer(flush: (paths: string[]) => void, { wait = 150, thrott
     const later = new Set<string>()
     let next = Infinity
     for (const p of pending) {
-      const gap = throttle[p]
+      const gap = throttle(p)
       const since = now - (last.get(p) ?? -Infinity)
       if (gap && since < gap) {
         later.add(p)

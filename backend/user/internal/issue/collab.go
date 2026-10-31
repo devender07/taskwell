@@ -2,12 +2,12 @@ package issue
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +38,36 @@ type room struct {
 type client struct {
 	peer    Peer
 	canEdit bool
+	loaded  []int64   // ids of the stored updates sent on start: the only ones its compaction may delete
+	tokens  float64   // frame budget, see allow
+	last    time.Time // when tokens was last topped up
+}
+
+// Live-editing limits. A connection past them is closed; its tab reconnects and reloads.
+const (
+	maxUpdate  = 256 << 10 // one update; a 50,000-character paste is well under
+	maxCompact = 1 << 20   // a compacted document
+	maxStored  = 8 << 20   // all of an issue's stored updates
+	frameRate  = 60        // frames a second per session, sustained
+	frameBurst = 200
+)
+
+// allow spends one of the client's frame tokens, which refill at frameRate up to frameBurst.
+func (c *client) allow(now time.Time) bool {
+	c.tokens = min(frameBurst, c.tokens+now.Sub(c.last).Seconds()*frameRate)
+	c.last = now
+	if c.tokens < 1 {
+		return false
+	}
+	c.tokens--
+	return true
+}
+
+// compactable returns the ids c loaded up to and including upTo, once: the client compacts only right after ready.
+func (c *client) compactable(upTo int64) []int64 {
+	ids := slices.DeleteFunc(c.loaded, func(id int64) bool { return id > upTo })
+	c.loaded = nil
+	return ids
 }
 
 func (hb *hub) join(issueID string, c *client) {
@@ -114,6 +144,17 @@ func (hb *hub) closeAll() {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	for _, r := range hb.rooms {
+		for c := range r.clients {
+			c.peer.Close()
+		}
+	}
+}
+
+// closeRoom ends every connection on the issue here; their editors reconnect and reload from the database.
+func (hb *hub) closeRoom(issueID string) {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	if r := hb.rooms[issueID]; r != nil {
 		for c := range r.clients {
 			c.peer.Close()
 		}
@@ -197,11 +238,13 @@ func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
 		return err
 	}
 	var last int64
+	c.loaded = c.loaded[:0]
 	for _, u := range us {
 		if err := c.peer.Write(ctx, tag(msgUpdate, i.ID, u.data)); err != nil {
 			return err
 		}
 		last = u.id
+		c.loaded = append(c.loaded, u.id)
 	}
 	var flags byte
 	if i.CanEdit {
@@ -241,27 +284,46 @@ func (s *Session) Frame(ctx context.Context, data []byte) error {
 	}
 	h, c, issueID := s.h, s.c, s.issue.ID
 	body := data[tagLen:]
+	if !c.allow(time.Now()) {
+		s.reject("rate")
+		return nil
+	}
 	switch {
 	case data[0] == msgAwareness:
 		h.hub.broadcast(issueID, c, data)
-		if p := notePrefix(issueID, noteAwareness) + base64.StdEncoding.EncodeToString(data); len(p) <= maxNote {
+		if p := inlineNote(issueID, data); p != "" {
 			if err := h.model.notify(ctx, p); err != nil {
 				slog.Warn("collab awareness notify failed", "issue", issueID, "err", err)
 			}
 		}
 	case !c.canEdit:
 	case data[0] == msgUpdate:
-		if err := h.model.addDocUpdate(ctx, issueID, body); err != nil {
+		if len(body) > maxUpdate {
+			s.reject("update size")
+			return nil
+		}
+		ok, err := h.model.addDocUpdate(ctx, issueID, body, inlineNote(issueID, data))
+		if err != nil {
 			return err
+		}
+		if !ok {
+			s.reject("stored size")
+			return nil
 		}
 		h.hub.stored(issueID, c)
 		h.hub.broadcast(issueID, c, data)
 	case data[0] == msgCompact && len(body) > 8:
+		if len(body)-8 > maxCompact {
+			s.reject("compact size")
+			return nil
+		}
 		upTo := binary.BigEndian.Uint64(body)
 		if upTo > math.MaxInt64 {
 			return nil
 		}
-		return h.model.compactDoc(ctx, issueID, int64(upTo), body[8:])
+		if ids := c.compactable(int64(upTo)); len(ids) > 0 {
+			return h.model.compactDoc(ctx, issueID, ids, body[8:])
+		}
 	case data[0] == msgSave:
 		doc, msg := checkDescription(body)
 		if msg != "" {
@@ -271,6 +333,12 @@ func (s *Session) Frame(ctx context.Context, data []byte) error {
 		return h.model.saveDescription(ctx, issueID, s.userID, doc)
 	}
 	return nil
+}
+
+// reject closes the session's connection for breaking a live-editing limit.
+func (s *Session) reject(reason string) {
+	slog.Warn("collab frame rejected", "issue", s.issue.ID, "user_id", s.userID, "reason", reason)
+	s.c.peer.Close()
 }
 
 // tagLen is a frame's type byte and issue uuid.

@@ -14,9 +14,11 @@ var resync = text(map[string]string{"type": "resync"})
 // Listen fans out every instance's notifications on the realtime channel to the connections here until ctx ends,
 // reconnecting with backoff when its Postgres connection drops.
 func (h *Handler) Listen(ctx context.Context) {
+	presence := make(chan string, presenceQueue)
+	go h.sendPresence(ctx, presence)
 	wait := time.Second
 	for {
-		listened, err := h.listen(ctx)
+		listened, err := h.listen(ctx, presence)
 		if ctx.Err() != nil {
 			return
 		}
@@ -33,8 +35,26 @@ func (h *Handler) Listen(ctx context.Context) {
 	}
 }
 
-// listen holds one connection out of the pool, listening on realtime, until it fails.
-func (h *Handler) listen(ctx context.Context) (bool, error) {
+// presenceQueue bounds the issues waiting for their viewers to be loaded and sent.
+const presenceQueue = 256
+
+// sendPresence sends the queued issues' viewers until ctx ends.
+func (h *Handler) sendPresence(ctx context.Context, issues <-chan string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case id := <-issues:
+			qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			h.presence(qctx, id)
+			cancel()
+		}
+	}
+}
+
+// listen holds one connection out of the pool, listening on realtime, until it fails. Presence, the only delivery
+// that queries, goes to the presence queue, so the listener never waits on the pool.
+func (h *Handler) listen(ctx context.Context, presence chan<- string) (bool, error) {
 	pc, err := h.model.db.Acquire(ctx)
 	if err != nil {
 		return false, fmt.Errorf("acquire: %w", err)
@@ -51,12 +71,12 @@ func (h *Handler) listen(ctx context.Context) (bool, error) {
 		if err != nil {
 			return true, fmt.Errorf("wait: %w", err)
 		}
-		h.deliver(ctx, n.Payload)
+		h.deliver(ctx, n.Payload, presence)
 	}
 }
 
 // deliver sends a notification's event to its audience here, or the issue's viewers to its joined connections.
-func (h *Handler) deliver(ctx context.Context, payload string) {
+func (h *Handler) deliver(ctx context.Context, payload string, presence chan<- string) {
 	var e envelope
 	if err := json.Unmarshal([]byte(payload), &e); err != nil {
 		slog.Warn("realtime bad notification", "err", err)
@@ -68,8 +88,15 @@ func (h *Handler) deliver(ctx context.Context, payload string) {
 		h.hub.toWorkspace(id, e.Event)
 	case "user":
 		h.hub.toUser(id, e.Event)
+		if e.Close {
+			h.hub.closeUser(id)
+		}
 	case "issue":
-		h.presence(ctx, id)
+		select {
+		case presence <- id:
+		default: // ponytail: dropped, so viewers show stale until the issue's next presence change; dedupe queued ids if this logs
+			slog.Warn("realtime presence queue full", "issue", id)
+		}
 		return
 	default: // admin: the admin service's
 		return

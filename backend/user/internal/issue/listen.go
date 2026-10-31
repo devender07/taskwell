@@ -12,12 +12,22 @@ import (
 )
 
 // Live-editing frames cross API instances as notifications on the Postgres channel collab:
-// "<instance> <issue id> u <update id>" for a stored update, "<instance> <issue id> a <base64 tagged frame>" for awareness.
+// "<instance> <issue id> a <base64 tagged frame>" for awareness and updates small enough to fit,
+// "<instance> <issue id> u <update id>" for a stored update that doesn't.
 const (
-	noteUpdate    = "u"
-	noteAwareness = "a"
-	maxNote       = 7900 // Postgres rejects payloads of 8000 bytes or more
+	noteUpdate = "u"
+	noteFrame  = "a"
+	maxNote    = 7500 // Postgres rejects payloads of 8000 bytes or more
 )
+
+// inlineNote is the notification carrying the tagged frame itself; "" when it doesn't fit.
+func inlineNote(issueID string, frame []byte) string {
+	p := notePrefix(issueID, noteFrame)
+	if len(p)+base64.StdEncoding.EncodedLen(len(frame)) > maxNote {
+		return ""
+	}
+	return p + base64.StdEncoding.EncodeToString(frame)
+}
 
 // instance tells this process's notifications from other instances'.
 var instance = rand.Text()
@@ -37,9 +47,11 @@ func parseNote(s string) (note, bool) {
 // Listen relays other instances' live-editing frames to the connections here until ctx ends,
 // reconnecting with backoff when its Postgres connection drops.
 func (h *Handler) Listen(ctx context.Context) {
+	loads := make(chan note, loadQueue)
+	go h.loadUpdates(ctx, loads)
 	wait := time.Second
 	for {
-		listened, err := h.listen(ctx)
+		listened, err := h.listen(ctx, loads)
 		if ctx.Err() != nil {
 			return
 		}
@@ -56,8 +68,12 @@ func (h *Handler) Listen(ctx context.Context) {
 	}
 }
 
-// listen holds one connection out of the pool, listening on collab, until it fails.
-func (h *Handler) listen(ctx context.Context) (bool, error) {
+// loadQueue bounds the stored updates waiting to be loaded and relayed.
+const loadQueue = 256
+
+// listen holds one connection out of the pool, listening on collab, until it fails. It relays inline frames itself
+// and queues stored updates on loads, so it never waits on a query and Postgres's notification queue keeps draining.
+func (h *Handler) listen(ctx context.Context, loads chan<- note) (bool, error) {
 	pc, err := h.model.db.Acquire(ctx)
 	if err != nil {
 		return false, fmt.Errorf("acquire: %w", err)
@@ -74,39 +90,55 @@ func (h *Handler) listen(ctx context.Context) (bool, error) {
 		if err != nil {
 			return true, fmt.Errorf("wait: %w", err)
 		}
-		h.relay(ctx, n.Payload)
+		h.relay(n.Payload, loads)
 	}
 }
 
-// relay broadcasts another instance's frame to the connections here on its issue.
-func (h *Handler) relay(ctx context.Context, payload string) {
+// relay broadcasts another instance's frame to the connections here on its issue, or queues a stored update's load.
+// When the queue is full the issue's editors here are closed, so they reload instead of missing the update.
+func (h *Handler) relay(payload string, loads chan<- note) {
 	n, ok := parseNote(payload)
 	if !ok || n.instance == instance || !h.hub.has(n.issueID) {
 		return
 	}
-	var frame []byte
 	switch n.kind {
+	case noteFrame:
+		if frame, err := base64.StdEncoding.DecodeString(n.arg); err == nil {
+			h.hub.broadcast(n.issueID, nil, frame)
+		}
 	case noteUpdate:
-		id, err := strconv.ParseInt(n.arg, 10, 64)
-		if err != nil {
-			return
+		select {
+		case loads <- n:
+		default:
+			slog.Warn("collab relay queue full", "issue", n.issueID)
+			h.hub.closeRoom(n.issueID)
 		}
-		data, err := h.model.docUpdate(ctx, id)
-		if err != nil {
-			slog.Error("collab relay failed", "issue", n.issueID, "err", err)
-			return
-		}
-		if data == nil { // compacted away; clients get it from the compacted row on reload
-			return
-		}
-		frame = tag(msgUpdate, n.issueID, data)
-	case noteAwareness:
-		var err error
-		if frame, err = base64.StdEncoding.DecodeString(n.arg); err != nil {
-			return
-		}
-	default:
-		return
 	}
-	h.hub.broadcast(n.issueID, nil, frame)
+}
+
+// loadUpdates loads and relays the queued stored updates until ctx ends. An update that's gone (compacted) or fails
+// to load closes the issue's editors here, so they reload rather than diverge.
+func (h *Handler) loadUpdates(ctx context.Context, loads <-chan note) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case n := <-loads:
+			id, err := strconv.ParseInt(n.arg, 10, 64)
+			if err != nil {
+				continue
+			}
+			qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			data, err := h.model.docUpdate(qctx, id)
+			cancel()
+			if err != nil {
+				slog.Error("collab relay failed", "issue", n.issueID, "err", err)
+			}
+			if data == nil {
+				h.hub.closeRoom(n.issueID)
+				continue
+			}
+			h.hub.broadcast(n.issueID, nil, tag(msgUpdate, n.issueID, data))
+		}
+	}
 }

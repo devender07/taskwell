@@ -17,3 +17,9 @@ export function measure(doc: JSONContent): { length: number; empty: boolean } {
   walk(doc)
   return { length, empty: length === 0 && !solid }
 }
+
+// Uploaded files are the only images and the only relative links a document may hold.
+export const FILE_URL = /^\/api\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[^/?#]+$/i
+
+// An image's src as rendered: dropped unless it is an uploaded file, whether the doc came from JSON, a paste or Yjs.
+export const imageSrc = (src: unknown) => (typeof src === 'string' && FILE_URL.test(src) ? src : null)

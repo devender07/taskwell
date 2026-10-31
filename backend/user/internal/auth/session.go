@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 const (
 	accessCookie  = "tether_access"
 	refreshCookie = "tether_refresh"
 	googleCookie  = "tether_google" // state, PKCE verifier and remember flag for one Google round trip
+	signupCookie  = "tether_signup" // the nonce that binds a sign-up's code to the browser that signed up
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.
@@ -25,19 +28,48 @@ func remember(r *http.Request) bool {
 
 // Authenticate returns the user ID from a valid access token cookie, or "" when there is none.
 func (h *Handler) Authenticate(r *http.Request) (string, error) {
+	c, err := h.access(r)
+	if c == nil {
+		return "", err
+	}
+	return c.Subject, nil
+}
+
+// access returns the claims of a valid access token cookie, or nil when there is none.
+func (h *Handler) access(r *http.Request) (*claims, error) {
 	c, err := r.Cookie(accessCookie)
 	if err != nil {
-		return "", nil
+		return nil, nil
 	}
 	secret, err := h.jwtSecret(r.Context())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	userID, err := parseAccess(secret, c.Value)
+	cl, err := parseAccess(secret, c.Value)
 	if err != nil {
-		return "", nil // expired or forged: the client refreshes or signs in again
+		return nil, nil // expired or forged: the client refreshes or signs in again
 	}
-	return userID, nil
+	return cl, nil
+}
+
+// Session is Authenticate for the realtime socket, which outlives single requests: the access token must name a
+// sign-in that is still live (not signed out, reset or suspended), and the socket ends when the token expires.
+// The zero Session means not signed in.
+func (h *Handler) Session(r *http.Request) (realtime.Session, error) {
+	c, err := h.access(r)
+	if c == nil || c.SID == "" { // tokens from before sid existed: the client refreshes and gets one
+		return realtime.Session{}, err
+	}
+	s := realtime.Session{UserID: c.Subject, ID: c.SID, Expires: c.ExpiresAt.Time}
+	if ok, err := h.Alive(r.Context(), s); !ok {
+		return realtime.Session{}, err
+	}
+	return s, nil
+}
+
+// Alive reports whether the sign-in still exists and its user isn't suspended.
+func (h *Handler) Alive(ctx context.Context, s realtime.Session) (bool, error) {
+	return h.model.alive(ctx, s.UserID, s.ID)
 }
 
 // errSuspended is returned by startSession for a suspended account; callers tell the user errSuspendedMsg.
@@ -79,13 +111,14 @@ func (h *Handler) setTokens(ctx context.Context, w http.ResponseWriter, userID s
 	if err != nil {
 		return err
 	}
-	accessTTL := time.Duration(accessMinutes) * time.Minute
-	access, err := signAccess(secret, userID, accessTTL)
+	refresh := newToken()
+	sid, err := h.model.insertRefresh(ctx, hash(refresh), userID, f)
 	if err != nil {
 		return err
 	}
-	refresh := newToken()
-	if err := h.model.insertRefresh(ctx, hash(refresh), userID, f); err != nil {
+	accessTTL := time.Duration(accessMinutes) * time.Minute
+	access, err := signAccess(secret, userID, sid, accessTTL)
+	if err != nil {
 		return err
 	}
 	accessAge, refreshAge := 0, 0 // 0 = no Max-Age: the browser drops the cookie when it closes
@@ -110,7 +143,11 @@ func (h *Handler) clearCookies(ctx context.Context, w http.ResponseWriter) error
 	return nil
 }
 
+// jwtSecret is JWT_SECRET, or in dev (when it's unset) system_config's generated jwt_secret.
 func (h *Handler) jwtSecret(ctx context.Context) ([]byte, error) {
+	if h.secret != nil {
+		return h.secret, nil
+	}
 	s, err := h.cfg.Get(ctx, "jwt_secret")
 	if err != nil {
 		return nil, err
