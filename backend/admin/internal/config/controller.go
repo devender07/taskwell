@@ -54,7 +54,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, adminID string)
 		return nil
 	}
 	if !row.Secret || value != "" {
-		if row, err = h.model.set(ctx, adminID, key, value); err != nil {
+		if row, err = h.model.set(ctx, adminID, web.ClientIP(r), key, value); err != nil {
 			return err
 		}
 	}

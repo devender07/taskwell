@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/admin/internal/audit"
 	"github.com/devender07/tether/backend/admin/internal/realtime"
 )
 
@@ -100,7 +101,8 @@ func (m *model) users(ctx context.Context, q string, offset int) ([]User, int, e
 // setSuspended suspends or unsuspends the user, by the admin, and returns them, or nil when there is no such user.
 // Suspending deletes their refresh tokens and closes their sockets, so they are signed out once their access token
 // expires.
-func (m *model) setSuspended(ctx context.Context, adminID, id string, suspended bool) (*User, error) {
+// The change is recorded in the audit log with the admin's ip.
+func (m *model) setSuspended(ctx context.Context, adminID, ip, id string, suspended bool) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
@@ -124,6 +126,13 @@ func (m *model) setSuspended(ctx context.Context, adminID, id string, suspended 
 			return err
 		}
 		u = &got
+		action := audit.UserUnsuspend
+		if suspended {
+			action = audit.UserSuspend
+		}
+		if err := audit.Record(ctx, tx, adminID, action, got.Email, ip); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, "admin.users", adminID, "/users")
 	})
 	if err != nil {

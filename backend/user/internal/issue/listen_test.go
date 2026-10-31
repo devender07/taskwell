@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestNote(t *testing.T) {
-	n, ok := parseNote(notePrefix("issue-1", noteFrame) + "AQI=")
-	if !ok || n.instance != instance || n.issueID != "issue-1" || n.kind != noteFrame || n.arg != "AQI=" {
+	n, ok := parseNote(notePrefix("issue-1", noteBatch) + "aAQI=")
+	if !ok || n.instance != instance || n.issueID != "issue-1" || n.kind != noteBatch || n.arg != "aAQI=" {
 		t.Fatalf("round trip: %+v %v", n, ok)
 	}
 	if _, ok := parseNote("too short"); ok {
@@ -61,15 +62,59 @@ func TestTag(t *testing.T) {
 	}
 }
 
-func TestInlineNote(t *testing.T) {
+func TestBatchNotes(t *testing.T) {
 	id := "0192f2a1-7b3c-7d4e-8f90-a1b2c3d4e5f6"
-	frame := tag(msgUpdate, id, []byte{1, 2, 3})
-	n, ok := parseNote(inlineNote(id, frame))
-	if !ok || n.kind != noteFrame || n.arg != base64.StdEncoding.EncodeToString(frame) {
-		t.Fatalf("small update: %+v %v", n, ok)
+	small := frameItem(tag(msgUpdate, id, []byte{1, 2, 3}))
+	if small != "a"+base64.StdEncoding.EncodeToString(tag(msgUpdate, id, []byte{1, 2, 3})) {
+		t.Fatalf("frameItem = %q", small)
 	}
-	if p := inlineNote(id, make([]byte, maxNote)); p != "" {
-		t.Fatalf("big update inlined: %d bytes", len(p))
+	if it := frameItem(make([]byte, maxNote)); it != "" {
+		t.Fatalf("big frame inlined: %d bytes", len(it))
+	}
+	big := frameItem(make([]byte, maxItem*3/4-10)) // near the limit
+	if big == "" {
+		t.Fatal("frame under maxItem not inlined")
+	}
+	ps := batchNotes(id, []string{small, "u42", small, big})
+	if len(ps) != 2 {
+		t.Fatalf("got %d notes, want 2", len(ps))
+	}
+	var items []string
+	for _, p := range ps {
+		if len(p) > maxNote {
+			t.Fatalf("note of %d bytes", len(p))
+		}
+		n, ok := parseNote(p)
+		if !ok || n.kind != noteBatch || n.issueID != id {
+			t.Fatalf("bad note %.80q", p)
+		}
+		items = append(items, strings.Split(n.arg, ",")...)
+	}
+	if !slices.Equal(items, []string{small, "u42", small, big}) {
+		t.Fatal("items lost or reordered")
+	}
+}
+
+func TestOutboxCoalescesAwareness(t *testing.T) {
+	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
+	s := &Session{h: h, c: &client{}, issue: &Issue{ID: "i"}}
+	s.out.awareAt = time.Now() // just sent one
+	s.awareness([]byte{1})
+	s.awareness([]byte{2})
+	s.out.mu.Lock()
+	due, aware := time.Until(s.out.due), s.out.aware
+	s.out.timer.Stop()
+	s.out.mu.Unlock()
+	if string(aware) != string([]byte{2}) || due < awarenessEvery-50*time.Millisecond || due > awarenessEvery {
+		t.Fatalf("aware=%v due in %v, want the latest, due in about %v", aware, due, awarenessEvery)
+	}
+	s.queue("u1")
+	s.out.mu.Lock()
+	due = time.Until(s.out.due)
+	s.out.timer.Stop()
+	s.out.mu.Unlock()
+	if due > batchEvery {
+		t.Fatalf("an update waits %v, want at most %v", due, batchEvery)
 	}
 }
 

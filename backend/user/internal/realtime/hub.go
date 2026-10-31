@@ -37,6 +37,17 @@ func (hb *hub) add(c *Conn) {
 	addTo(hb.users, c.userID, c, struct{}{})
 }
 
+// count returns the number of connections here.
+func (hb *hub) count() int {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	n := 0
+	for _, conns := range hb.users {
+		n += len(conns)
+	}
+	return n
+}
+
 // all returns every connection here.
 func (hb *hub) all() []*Conn {
 	hb.mu.Lock()

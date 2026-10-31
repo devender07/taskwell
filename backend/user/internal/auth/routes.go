@@ -27,6 +27,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/google/callback", h.wrap(h.googleCallback))
 	mux.HandleFunc("GET /api/me", h.wrap(h.me))
 	mux.HandleFunc("POST /api/me", h.wrap(h.updateMe))
+	mux.HandleFunc("POST /api/me/password/code", h.wrap(h.limitIP(h.passwordCode)))
 }
 
 // wrap caps the body size and turns a returned error into a logged 500.
@@ -34,7 +35,7 @@ func (h *Handler) wrap(fn func(http.ResponseWriter, *http.Request) error) http.H
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		if err := fn(w, r); err != nil {
-			slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		}
 	}

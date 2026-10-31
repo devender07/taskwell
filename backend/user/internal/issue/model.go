@@ -473,7 +473,11 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			return err
 		}
 		if f.setDescription {
+			// The live document is replaced: every instance closes the issue's editors so they reload it.
 			if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteClose)); err != nil {
 				return err
 			}
 		}
@@ -772,25 +776,20 @@ func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, er
 	return us, nil
 }
 
-// addDocUpdate stores an update and tells the other API instances, in one statement (one transaction): with inline
-// as the notification when it's not "", else with the update's id. False when the issue's stored updates would pass
-// maxStored.
-func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte, inline string) (bool, error) {
-	rows, err := m.db.Query(ctx,
-		`with u as (insert into issue_doc_updates (issue_id, data)
-		   select $1, $2 where (select coalesce(sum(octet_length(data)), 0) from issue_doc_updates where issue_id = $1)
-		                       + octet_length($2::bytea) <= $5
-		   returning id)
-		 select u.id from u, pg_notify('collab', coalesce(nullif($4, ''), $3::text || u.id))`,
-		issueID, data, notePrefix(issueID, noteUpdate), inline, maxStored)
-	if err != nil {
-		return false, fmt.Errorf("add doc update: %w", err)
+// addDocUpdate stores an update and returns its id; ok is false when the issue's stored updates would pass maxStored.
+func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) (id int64, ok bool, err error) {
+	err = m.db.QueryRow(ctx,
+		`insert into issue_doc_updates (issue_id, data)
+		 select $1, $2 where (select coalesce(sum(octet_length(data)), 0) from issue_doc_updates where issue_id = $1)
+		                     + octet_length($2::bytea) <= $3
+		 returning id`, issueID, data, maxStored).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
 	if err != nil {
-		return false, fmt.Errorf("add doc update: %w", err)
+		return 0, false, fmt.Errorf("add doc update: %w", err)
 	}
-	return len(ids) == 1, nil
+	return id, true, nil
 }
 
 // docUpdate returns one stored update's data; nil when it's gone (compacted).
@@ -822,6 +821,15 @@ func (m *model) claimSeed(ctx context.Context, issueID string) (bool, error) {
 		return false, fmt.Errorf("claim seed: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// renewSeed extends a seed claim that's still held.
+func (m *model) renewSeed(ctx context.Context, issueID string) error {
+	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = now() where id = $1 and seed_claimed_at is not null`, issueID)
+	if err != nil {
+		return fmt.Errorf("renew seed claim: %w", err)
+	}
+	return nil
 }
 
 // setSeedClaim refreshes the seed claim (handed to another editor here) or clears it (free for any instance).

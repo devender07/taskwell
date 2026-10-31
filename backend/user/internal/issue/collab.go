@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -132,6 +133,14 @@ func (hb *hub) stored(issueID string, c *client) {
 	}
 }
 
+// seedPending reports whether an editor here still has to store the issue's seed.
+func (hb *hub) seedPending(issueID string) bool {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	r := hb.rooms[issueID]
+	return r != nil && r.seeder != nil
+}
+
 // has reports whether any connection here is on the issue.
 func (hb *hub) has(issueID string) bool {
 	hb.mu.Lock()
@@ -194,6 +203,99 @@ type Session struct {
 	issue  *Issue
 	wsID   string
 	userID string
+	out    outbox
+}
+
+// Each session's frames reach other instances in one notification at most every batchEvery, and its awareness (the
+// latest only) at most every awarenessEvery, so typing and cursor moves don't each commit a NOTIFY: those commits
+// serialize on one lock across the database. Awareness to the connections here is coalesced the same way.
+const (
+	batchEvery     = 50 * time.Millisecond
+	awarenessEvery = 250 * time.Millisecond
+)
+
+// outbox holds what a session hasn't sent other instances yet.
+// ponytail: an update's notification can be up to batchEvery late, and is lost if the process dies in that window
+// (the update is stored; other instances' editors miss it until they reload). Move the notify into the insert again
+// if that matters more than NOTIFY volume.
+type outbox struct {
+	mu      sync.Mutex
+	items   []string // batch items, see batchNotes
+	aware   []byte   // the latest awareness frame not yet sent
+	awareAt time.Time
+	timer   *time.Timer
+	due     time.Time // when the timer fires, while pending
+	pending bool
+	closed  bool
+}
+
+// queue adds a batch item for the next notification.
+func (s *Session) queue(item string) {
+	s.out.mu.Lock()
+	defer s.out.mu.Unlock()
+	s.out.items = append(s.out.items, item)
+	s.schedule(batchEvery)
+}
+
+// awareness keeps frame as the session's latest awareness, sent once awarenessEvery has passed since the last.
+func (s *Session) awareness(frame []byte) {
+	s.out.mu.Lock()
+	defer s.out.mu.Unlock()
+	s.out.aware = frame
+	s.schedule(time.Until(s.out.awareAt.Add(awarenessEvery)))
+}
+
+// schedule makes sure a flush runs within d. Called with out.mu held.
+func (s *Session) schedule(d time.Duration) {
+	o := &s.out
+	d = max(d, 0)
+	due := time.Now().Add(d)
+	if o.closed || o.pending && !o.due.After(due) {
+		return
+	}
+	o.pending, o.due = true, due
+	if o.timer == nil {
+		o.timer = time.AfterFunc(d, s.flush)
+	} else {
+		o.timer.Reset(d)
+	}
+}
+
+// flush sends the queued items, and the latest awareness when it's due, to the connections here and other instances.
+func (s *Session) flush() {
+	o := &s.out
+	o.mu.Lock()
+	o.pending = false
+	items := o.items
+	o.items = nil
+	var aware []byte
+	if o.aware != nil {
+		if wait := time.Until(o.awareAt.Add(awarenessEvery)); wait > 0 {
+			s.schedule(wait)
+		} else {
+			aware, o.aware, o.awareAt = o.aware, nil, time.Now()
+		}
+	}
+	closed := o.closed
+	o.mu.Unlock()
+	if aware != nil && !closed {
+		s.h.hub.broadcast(s.issue.ID, s.c, aware)
+		if it := frameItem(aware); it != "" {
+			items = append(items, it)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.send(ctx, items)
+}
+
+// send notifies other instances of items.
+func (s *Session) send(ctx context.Context, items []string) {
+	for _, p := range batchNotes(s.issue.ID, items) {
+		if err := s.h.model.notify(ctx, p); err != nil {
+			slog.Warn("collab notify failed", "issue", s.issue.ID, "err", err)
+		}
+	}
 }
 
 // Join checks that the user may open the issue (a member; can_edit decides whether their edits count) and returns
@@ -226,8 +328,22 @@ func (s *Session) Start(ctx context.Context) error {
 	return nil
 }
 
-// Leave takes the session out of its room and updates the seed claim when it was seeding.
-func (s *Session) Leave(ctx context.Context) { s.h.leave(ctx, s.issue.ID, s.c) }
+// Leave takes the session out of its room, sends its queued notifications (its unsent awareness is dropped) and
+// updates the seed claim when it was seeding.
+func (s *Session) Leave(ctx context.Context) {
+	s.out.mu.Lock()
+	s.out.closed = true
+	if s.out.timer != nil {
+		s.out.timer.Stop()
+	}
+	items := s.out.items
+	s.out.items, s.out.aware = nil, nil
+	s.out.mu.Unlock()
+	s.h.leave(ctx, s.issue.ID, s.c)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	s.send(ctx, items)
+}
 
 // sendStored sends the issue's stored updates, then ready.
 func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
@@ -258,10 +374,32 @@ func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
 		}
 		if ok {
 			h.hub.seeding(i.ID, c)
+			go h.renewSeed(context.WithoutCancel(ctx), i.ID)
 			flags |= 2
 		}
 	}
 	return c.peer.Write(ctx, tag(msgReady, i.ID, binary.BigEndian.AppendUint64([]byte{flags}, uint64(last))))
+}
+
+// seedRenew is how often a held seed claim is extended; claimSeed treats one older than 10s as abandoned.
+const seedRenew = 3 * time.Second
+
+// renewSeed extends the issue's seed claim while an editor here, the first seeder or one it was handed to, has yet
+// to store the seed, so a slow seeding client doesn't let another instance's editor seed it again.
+func (h *Handler) renewSeed(ctx context.Context, issueID string) {
+	t := time.NewTicker(seedRenew)
+	defer t.Stop()
+	for range t.C {
+		if !h.hub.seedPending(issueID) {
+			return
+		}
+		rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := h.model.renewSeed(rctx, issueID)
+		cancel()
+		if err != nil {
+			slog.Warn("collab seed renew failed", "issue", issueID, "err", err)
+		}
+	}
 }
 
 // leave takes c out of its room and updates the seed claim when c was seeding.
@@ -290,19 +428,14 @@ func (s *Session) Frame(ctx context.Context, data []byte) error {
 	}
 	switch {
 	case data[0] == msgAwareness:
-		h.hub.broadcast(issueID, c, data)
-		if p := inlineNote(issueID, data); p != "" {
-			if err := h.model.notify(ctx, p); err != nil {
-				slog.Warn("collab awareness notify failed", "issue", issueID, "err", err)
-			}
-		}
+		s.awareness(data)
 	case !c.canEdit:
 	case data[0] == msgUpdate:
 		if len(body) > maxUpdate {
 			s.reject("update size")
 			return nil
 		}
-		ok, err := h.model.addDocUpdate(ctx, issueID, body, inlineNote(issueID, data))
+		id, ok, err := h.model.addDocUpdate(ctx, issueID, body)
 		if err != nil {
 			return err
 		}
@@ -312,6 +445,11 @@ func (s *Session) Frame(ctx context.Context, data []byte) error {
 		}
 		h.hub.stored(issueID, c)
 		h.hub.broadcast(issueID, c, data)
+		if it := frameItem(data); it != "" {
+			s.queue(it)
+		} else {
+			s.queue("u" + strconv.FormatInt(id, 10))
+		}
 	case data[0] == msgCompact && len(body) > 8:
 		if len(body)-8 > maxCompact {
 			s.reject("compact size")

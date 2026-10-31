@@ -26,14 +26,37 @@ func remember(r *http.Request) bool {
 	return false
 }
 
-// Authenticate returns the user ID from a valid access token cookie, or "" when there is none.
+// Authenticate returns the user ID from a valid access token cookie, or "" when there is none or its sign-in has
+// ended (signed out, password reset or changed elsewhere, user suspended). The sign-in's state is cached for
+// aliveTTL; Forget clears it when a revocation is published.
 func (h *Handler) Authenticate(r *http.Request) (string, error) {
 	c, err := h.access(r)
-	if c == nil {
+	if c == nil || c.SID == "" { // tokens from before sid existed: the client refreshes and gets one
+		return "", err
+	}
+	if ok, err := h.live(r.Context(), c.Subject, c.SID); !ok {
 		return "", err
 	}
 	return c.Subject, nil
 }
+
+// live is Alive through the cache.
+func (h *Handler) live(ctx context.Context, userID, sid string) (bool, error) {
+	now := time.Now()
+	if alive, ok := h.alive.get(userID, sid, now); ok {
+		return alive, nil
+	}
+	alive, err := h.model.alive(ctx, userID, sid)
+	if err != nil {
+		return false, err
+	}
+	h.alive.put(userID, sid, alive, now)
+	return alive, nil
+}
+
+// Forget drops the cached state of the user's sign-ins, so their next request checks again. The realtime listener
+// calls it for every session.revoked event, from any instance.
+func (h *Handler) Forget(userID string) { h.alive.forget(userID, time.Now()) }
 
 // access returns the claims of a valid access token cookie, or nil when there is none.
 func (h *Handler) access(r *http.Request) (*claims, error) {

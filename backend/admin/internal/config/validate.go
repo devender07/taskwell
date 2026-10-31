@@ -43,7 +43,7 @@ func intRange(key string) (lo, hi int, ok bool) {
 		return 1, 65535, true
 	case key == "digest_hour_utc":
 		return 0, 23, true
-	case key == "upload_max_mb", strings.Contains(key, "_ttl_"),
+	case key == "upload_max_mb", key == "upload_quota_mb", strings.HasPrefix(key, "invite_daily_"), strings.Contains(key, "_ttl_"),
 		strings.HasSuffix(key, "_minutes"), strings.HasSuffix(key, "_hours"), strings.HasSuffix(key, "_days"):
 		return 1, 1_000_000, true // the cap keeps durations far from int32 overflow in make_interval
 	}

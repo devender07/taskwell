@@ -268,6 +268,33 @@ func (m *model) invites(ctx context.Context, workspaceID string) ([]Invite, erro
 }
 
 // isMember reports whether an account with this email is in the workspace.
+// verified reports whether the user's email is verified.
+func (m *model) verified(ctx context.Context, userID string) (bool, error) {
+	var ok bool
+	err := m.db.QueryRow(ctx, `select email_verified_at is not null from users where id = $1`, userID).Scan(&ok)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("read verification: %w", err)
+	}
+	return ok, nil
+}
+
+// takeInviteSend counts one invite email by the user in the workspace, unless the user has sent perUser or the
+// workspace perWorkspace in the last day; then it returns false. Rows older than a day are dropped.
+// ponytail: two concurrent sends can both pass the last free slot; take a per-workspace advisory lock if that matters.
+func (m *model) takeInviteSend(ctx context.Context, workspaceID, userID string, perUser, perWorkspace int) (bool, error) {
+	tag, err := m.db.Exec(ctx, `
+		with gone as (delete from invite_sends where at < now() - interval '1 day')
+		insert into invite_sends (workspace_id, user_id)
+		select $1, $2
+		where (select count(*) from invite_sends where user_id = $2 and at > now() - interval '1 day') < $3
+		  and (select count(*) from invite_sends where workspace_id = $1 and at > now() - interval '1 day') < $4`,
+		workspaceID, userID, perUser, perWorkspace)
+	if err != nil {
+		return false, fmt.Errorf("count invite send: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, error) {
 	var ok bool
 	err := m.db.QueryRow(ctx,

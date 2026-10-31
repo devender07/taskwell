@@ -84,6 +84,10 @@ func TestPermissions(t *testing.T) {
 	if subset([]string{"issues.create", permRolesManage}, member) {
 		t.Error("subset allows escalation")
 	}
+	lead := []string{permRolesManage, PermIssuesEditAny}
+	if subset(lead, []string{permRolesManage}) {
+		t.Error("a roles manager can reach up to a role with more permissions")
+	}
 	if !subset(member, allPermissions()) {
 		t.Error("admin can't grant everything")
 	}

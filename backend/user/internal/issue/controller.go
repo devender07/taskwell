@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -31,6 +32,7 @@ type Handler struct {
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
 	hub          *hub
+	listening    atomic.Bool // the collab LISTEN is up
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.
@@ -157,7 +159,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	q := searchQuery(r)
 	key, number, _ := parseIdentifier(q)
 	refs, err := h.model.search(r.Context(), ws.ID, normKey(r.URL.Query().Get("project")), q, key, number)
 	if err != nil {
@@ -173,7 +175,7 @@ func (h *Handler) searchAll(w http.ResponseWriter, r *http.Request, userID strin
 	if !ok || err != nil {
 		return err
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	q := searchQuery(r)
 	key, number, _ := parseIdentifier(q)
 	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, q, key, number)
 	if err != nil {
@@ -770,4 +772,13 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 
 func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
 	writeJSON(w, status, map[string]map[string]string{"errors": errs})
+}
+
+// maxQuery caps search text: longer queries only make trigram scans slower.
+const maxQuery = 200
+
+// searchQuery is the trimmed ?q=, cut to maxQuery characters.
+func searchQuery(r *http.Request) string {
+	q := []rune(strings.TrimSpace(r.URL.Query().Get("q")))
+	return string(q[:min(len(q), maxQuery)])
 }

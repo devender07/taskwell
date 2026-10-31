@@ -1,13 +1,11 @@
 package auth
 
 // A copy of the user service's auth/limit.go (modules can't share internal packages); keep the two in step.
+// clientIP lives in web (web.ClientIP), since the audit log records it too.
 
 import (
-	"net"
 	"net/http"
-	"net/netip"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -83,28 +81,4 @@ func tooMany(w http.ResponseWriter, wait time.Duration) bool {
 	w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 	web.WriteErr(w, http.StatusTooManyRequests, errTooMany)
 	return true
-}
-
-// clientIP is the request's peer address, or, when the peer is a proxy on this host or a private network, the
-// address that proxy appended last to X-Forwarded-For (Caddy and nginx's $proxy_add_x_forwarded_for do).
-// ponytail: any private-network peer is trusted as a proxy; pin a TRUSTED_PROXIES list if clients can reach the API
-// from inside that network.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	peer, err := netip.ParseAddr(host)
-	if err != nil || !(peer.IsLoopback() || peer.IsPrivate()) {
-		return host
-	}
-	xff := r.Header.Values("X-Forwarded-For")
-	if len(xff) == 0 {
-		return host
-	}
-	parts := strings.Split(xff[len(xff)-1], ",")
-	if last, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
-		return last.String()
-	}
-	return host
 }

@@ -15,6 +15,8 @@ const (
 	errInviteNotFound = "Invite not found."
 	errInviteInvalid  = "This invite link is invalid or has expired."
 	errNoMail         = "Email is not configured. Contact your administrator."
+	errUnverified     = "Verify your email before inviting people."
+	errInviteLimit    = "Too many invites were sent today. Try again tomorrow."
 )
 
 // members lists the workspace's members; people who can invite also get its invites.
@@ -60,7 +62,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 		writeFields(w, http.StatusConflict, map[string]string{"email": "They're already in this workspace."})
 		return nil
 	}
-	if ok, err := h.mailReady(w, r); !ok || err != nil {
+	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {
 		return err
 	}
 	days, err := h.cfg.GetInt(ctx, "invite_ttl_days")
@@ -85,7 +87,7 @@ func (h *Handler) resendInvite(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	if ok, err := h.mailReady(w, r); !ok || err != nil {
+	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {
 		return err
 	}
 	days, err := h.cfg.GetInt(ctx, "invite_ttl_days")
@@ -259,6 +261,36 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
+// canSend writes a 503 when SMTP isn't configured, a 403 when the caller's email isn't verified, or a 429 when the
+// caller or the workspace has used up today's invite emails, and returns false. Otherwise it counts one send.
+func (h *Handler) canSend(w http.ResponseWriter, r *http.Request, ws *Workspace, userID string) (bool, error) {
+	ctx := r.Context()
+	if ok, err := h.mailReady(w, r); !ok || err != nil {
+		return false, err
+	}
+	if ok, err := h.model.verified(ctx, userID); err != nil || !ok {
+		if err == nil {
+			writeErr(w, http.StatusForbidden, errUnverified)
+		}
+		return false, err
+	}
+	perUser, err := h.cfg.GetInt(ctx, "invite_daily_user_limit")
+	if err != nil {
+		return false, err
+	}
+	perWorkspace, err := h.cfg.GetInt(ctx, "invite_daily_workspace_limit")
+	if err != nil {
+		return false, err
+	}
+	if ok, err := h.model.takeInviteSend(ctx, ws.ID, userID, perUser, perWorkspace); err != nil || !ok {
+		if err == nil {
+			writeErr(w, http.StatusTooManyRequests, errInviteLimit)
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // mailReady writes a 503 and returns false when SMTP isn't configured.
 func (h *Handler) mailReady(w http.ResponseWriter, r *http.Request) (bool, error) {
 	ok, err := h.mail.Configured(r.Context())
@@ -274,7 +306,8 @@ func (h *Handler) sendInvite(ctx context.Context, workspace string, inv Invite, 
 		return err
 	}
 	link := strings.TrimRight(base, "/") + "/invite?token=" + url.QueryEscape(token)
-	return h.mail.Enqueue(ctx, h.model.db, inv.Email, inv.InvitedBy+" invited you to "+workspace+" on Tether",
+	// The subject stays fixed: names are free-form, and a subject is what a phishing relay would want to control.
+	return h.mail.Enqueue(ctx, h.model.db, inv.Email, "You're invited to a workspace on Tether",
 		fmt.Sprintf("%s invited you to join %s on Tether.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
 			inv.InvitedBy, workspace, link, days))
 }

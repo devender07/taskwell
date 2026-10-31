@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ type Handler struct {
 	mail          *mail.Mailer
 	secret        []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
 	lim           limits
+	alive         *aliveCache
 	onUserCreated func(ctx context.Context, userID, name string) error
 }
 
@@ -46,14 +48,15 @@ type Handler struct {
 // verified (it creates the default workspace).
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
 	onUserCreated func(ctx context.Context, userID, name string) error) *Handler {
-	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, secret: secret, lim: newLimits(), onUserCreated: onUserCreated}
+	return &Handler{model: &model{db: db}, cfg: cfg, mail: m, secret: secret, lim: newLimits(), alive: newAliveCache(),
+		onUserCreated: onUserCreated}
 }
 
 // userCreated runs the onUserCreated hook. A failure is logged, not returned: the account exists and the
 // app offers to create a workspace when the user has none.
 func (h *Handler) userCreated(ctx context.Context, u User) {
 	if err := h.onUserCreated(ctx, u.ID, u.Name); err != nil {
-		slog.Error("after user created", "user_id", u.ID, "err", err)
+		slog.ErrorContext(ctx, "after user created", "user_id", u.ID, "err", err)
 	}
 }
 
@@ -90,12 +93,16 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	nonce := newToken()
+	subject := "Your Tether verification code: " + code
+	body := fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
+		"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)
 	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"email": "An account with this email already exists."})
-		return nil
-	}
-	if err != nil {
+		// Answer exactly as for a new address, so sign-up can't tell who has an account; tell the owner instead.
+		if subject, body, err = h.signupTakenMail(ctx); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	secure, err := h.secure(ctx)
@@ -104,13 +111,24 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: nonce, Path: "/api/auth/signup", MaxAge: minutes * 60,
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
-	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Tether verification code: "+code,
-		fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
-			"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)); err != nil {
+	if err := h.mail.Enqueue(ctx, h.model.db, email, subject, body); err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"email": email})
 	return nil
+}
+
+// signupTakenMail is what a sign-up with an existing account's email sends that account instead of a code.
+func (h *Handler) signupTakenMail(ctx context.Context) (subject, body string, err error) {
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return "", "", err
+	}
+	base = strings.TrimRight(base, "/")
+	return "Someone tried to sign up with your email",
+		fmt.Sprintf("Someone tried to create a Tether account with this email, but you already have one.\n\n"+
+			"Sign in instead:\n\n%s/signin\n\nForgot your password? Reset it here:\n\n%s/forgot-password\n\n"+
+			"If this wasn't you, you can ignore this email. Your account hasn't changed.\n", base, base), nil
 }
 
 // signupVerify finishes a sign-up with the emailed code and signs the new account in.
@@ -322,31 +340,74 @@ func (h *Handler) reset(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	ok, err := h.model.resetPassword(r.Context(), hash(token), string(ph))
+	email, err := h.model.resetPassword(r.Context(), hash(token), string(ph))
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if email == "" {
 		writeErr(w, http.StatusUnauthorized, errBadReset)
 		return nil
+	}
+	if err := h.passwordChangedMail(r.Context(), email, false); err != nil {
+		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
-// changePassword sets a new password, checking the current one when the account has one (Google and email-code
-// accounts may not). Other sessions are signed out; this one stays.
+// passwordCode emails the signed-in user a code that changePassword needs to add a first password, so a stolen
+// session alone can't set one.
+func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	userID, err := h.Authenticate(r)
+	if err != nil {
+		return err
+	}
+	var p *Profile
+	if userID != "" {
+		if p, err = h.model.profile(ctx, userID); err != nil {
+			return err
+		}
+	}
+	if p == nil {
+		writeErr(w, http.StatusUnauthorized, errSignedOut)
+		return nil
+	}
+	if tooMany(w, h.lim.send.take(p.Email, time.Now())) {
+		return nil
+	}
+	code, err := newCode()
+	if err != nil {
+		return err
+	}
+	return h.sendSecret(w, r, p.Email, purposePasswordSet, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
+		return "Your Tether code to add a password: " + code,
+			fmt.Sprintf("Your code to add a password to your Tether account is %s\n\nIt expires in %d minutes. "+
+				"If you didn't ask for it, someone may be signed in to your account: sign out of every device by "+
+				"resetting your password.\n", code, minutes), nil
+	})
+}
+
+// changePassword sets a new password, checking the current one when the account has one, or else an emailed code
+// from passwordCode (Google and email-code accounts may have no password). Other sessions are signed out; this one
+// stays. The owner is emailed either way.
 func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	userID, err := h.Authenticate(r)
 	if err != nil {
 		return err
 	}
-	if userID == "" {
+	var p *Profile
+	if userID != "" {
+		if p, err = h.model.profile(ctx, userID); err != nil {
+			return err
+		}
+	}
+	if p == nil {
 		writeErr(w, http.StatusUnauthorized, errSignedOut)
 		return nil
 	}
-	current, pw := r.FormValue("current_password"), r.FormValue("password")
+	current, pw, code := r.FormValue("current_password"), r.FormValue("password"), strings.TrimSpace(r.FormValue("code"))
 	old, err := h.model.passwordHash(ctx, userID)
 	if err != nil {
 		return err
@@ -355,14 +416,31 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if msg := checkPassword(pw); msg != "" {
 		errs["password"] = msg
 	}
-	if old != nil && current == "" {
+	switch {
+	case old != nil && current == "":
 		errs["current_password"] = errCurrentRequired
-	} else if old != nil && bcrypt.CompareHashAndPassword([]byte(*old), []byte(current)) != nil {
+	case old != nil && bcrypt.CompareHashAndPassword([]byte(*old), []byte(current)) != nil:
 		errs["current_password"] = errCurrentWrong
+	case old == nil && checkCode(code) != "":
+		errs["code"] = checkCode(code)
 	}
 	if len(errs) > 0 {
 		writeFields(w, http.StatusBadRequest, errs)
 		return nil
+	}
+	if old == nil {
+		if locked, err := h.locked(w, r, "code:"+p.Email); err != nil || locked {
+			return err
+		}
+		if ok, err := h.model.useUserCode(ctx, userID, purposePasswordSet, hash(code)); err != nil {
+			return err
+		} else if !ok {
+			if err := h.model.fail(ctx, "code:"+p.Email); err != nil {
+				return err
+			}
+			writeFields(w, http.StatusBadRequest, map[string]string{"code": errBadCode})
+			return nil
+		}
 	}
 	ph, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
@@ -375,8 +453,26 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err := h.model.setPassword(ctx, userID, string(ph), keep); err != nil {
 		return err
 	}
+	if err := h.passwordChangedMail(ctx, p.Email, old == nil); err != nil {
+		return err
+	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// passwordChangedMail tells the owner a password was added (added) or changed, in case it wasn't them.
+func (h *Handler) passwordChangedMail(ctx context.Context, email string, added bool) error {
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return err
+	}
+	subject, what := "Your Tether password was changed", "The password for your Tether account was just changed."
+	if added {
+		subject, what = "A password was added to your Tether account", "A password was just added to your Tether account."
+	}
+	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
+		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",
+		what, strings.TrimRight(base, "/")))
 }
 
 // refresh trades a valid refresh token for a new access + refresh pair.
@@ -455,7 +551,8 @@ func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: googleCookie, Value: state + "." + verifier + "." + rememberFlag,
+	next := base64.RawURLEncoding.EncodeToString([]byte(safeRedirect(r.URL.Query().Get("redirect")))) // no dots
+	http.SetCookie(w, &http.Cookie{Name: googleCookie, Value: state + "." + verifier + "." + rememberFlag + "." + next,
 		Path: "/api/auth/google", MaxAge: 600, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	http.Redirect(w, r, googleConsentURL(cfg, state, verifier), http.StatusFound)
 	return nil
@@ -484,7 +581,7 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 		return fail("missing state cookie", err)
 	}
 	parts := strings.Split(c.Value, ".")
-	if len(parts) != 3 || subtle.ConstantTimeCompare([]byte(parts[0]), []byte(r.URL.Query().Get("state"))) != 1 {
+	if len(parts) != 4 || subtle.ConstantTimeCompare([]byte(parts[0]), []byte(r.URL.Query().Get("state"))) != 1 {
 		return fail("state mismatch", nil)
 	}
 	id, err := exchangeGoogleCode(ctx, cfg, r.URL.Query().Get("code"), parts[1])
@@ -514,8 +611,19 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	} else if err != nil {
 		return err
 	}
-	http.Redirect(w, r, base+"/", http.StatusFound)
+	next, _ := base64.RawURLEncoding.DecodeString(parts[3])
+	http.Redirect(w, r, base+safeRedirect(string(next)), http.StatusFound)
 	return nil
+}
+
+// safeRedirect returns v when it is a path on this site ("/invite?token=…"), else "/". It refuses "//host" and
+// "/\host" (browsers treat both as another host) and control characters. Mirrors the frontend's safeRedirect.
+func safeRedirect(v string) string {
+	if len(v) > 2048 || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") ||
+		strings.ContainsFunc(v, func(c rune) bool { return c == '\\' || c < 0x20 || c == 0x7f }) {
+		return "/"
+	}
+	return v
 }
 
 // googleConfig reads the OAuth client from system_config; the redirect URI is derived from app_base_url.

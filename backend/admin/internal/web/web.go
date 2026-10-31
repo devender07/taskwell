@@ -4,8 +4,11 @@ package web
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"strings"
 )
 
 const maxBody = 64 << 10
@@ -62,7 +65,7 @@ func SameOrigin(next http.Handler) http.Handler {
 }
 
 func fail(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 	WriteErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 }
 
@@ -78,4 +81,29 @@ func WriteErr(w http.ResponseWriter, status int, msg string) {
 
 func WriteFields(w http.ResponseWriter, status int, errs map[string]string) {
 	WriteJSON(w, status, map[string]map[string]string{"errors": errs})
+}
+
+// ClientIP is the request's peer address, or, when the peer is a proxy on this host or a private network, the
+// address that proxy appended last to X-Forwarded-For (Caddy and nginx's $proxy_add_x_forwarded_for do).
+// A copy of the user service's auth.clientIP; keep the two in step.
+// ponytail: any private-network peer is trusted as a proxy; pin a TRUSTED_PROXIES list if clients can reach the API
+// from inside that network.
+func ClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil || !(peer.IsLoopback() || peer.IsPrivate()) {
+		return host
+	}
+	xff := r.Header.Values("X-Forwarded-For")
+	if len(xff) == 0 {
+		return host
+	}
+	parts := strings.Split(xff[len(xff)-1], ",")
+	if last, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
+		return last.String()
+	}
+	return host
 }

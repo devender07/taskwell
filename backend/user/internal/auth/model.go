@@ -25,6 +25,8 @@ const (
 	purposeCode   = "signin_code"
 	purposeReset  = "password_reset"
 	purposeVerify = "email_verify"
+	// purposePasswordSet is the code a signed-in account without a password needs to add one.
+	purposePasswordSet = "password_set"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -369,17 +371,49 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *
 	return u, first, err
 }
 
-// resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and
-// revokes all the user's refresh tokens.
-// Returns false when the link is unknown, used or expired.
-func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHash string) (bool, error) {
-	ok := false
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var tokenID, userID string
+// useUserCode checks codeHash against the user's newest live code of purpose. A match uses it up and returns true;
+// a miss counts an attempt (the code dies after maxAttempts) and returns false.
+func (m *model) useUserCode(ctx context.Context, userID, purpose string, codeHash []byte) (ok bool, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var tokenID string
+		var stored []byte
 		err := tx.QueryRow(ctx, `
-			select id::text, user_id::text from auth_tokens
-			where token_hash = $1 and purpose = $2 and used_at is null and expires_at > now()
-			for update`, tokenHash, purposeReset).Scan(&tokenID, &userID)
+			select id::text, token_hash from auth_tokens
+			where user_id = $1 and purpose = $2 and used_at is null and expires_at > now() and attempts < $3
+			order by created_at desc limit 1
+			for update`, userID, purpose, maxAttempts).Scan(&tokenID, &stored)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("find code: %w", err)
+		}
+		if subtle.ConstantTimeCompare(stored, codeHash) != 1 {
+			if _, err := tx.Exec(ctx, `update auth_tokens set attempts = attempts + 1 where id = $1`, tokenID); err != nil {
+				return fmt.Errorf("count attempt: %w", err)
+			}
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = $1`, tokenID); err != nil {
+			return fmt.Errorf("use code: %w", err)
+		}
+		ok = true
+		return nil
+	})
+	return ok, err
+}
+
+// resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and
+// revokes all the user's refresh tokens. It returns the account's email, or "" when the link is unknown, used or
+// expired.
+func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHash string) (string, error) {
+	email := ""
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var tokenID, userID, addr string
+		err := tx.QueryRow(ctx, `
+			select t.id::text, t.user_id::text, u.email from auth_tokens t join users u on u.id = t.user_id
+			where t.token_hash = $1 and t.purpose = $2 and t.used_at is null and t.expires_at > now()
+			for update of t`, tokenHash, purposeReset).Scan(&tokenID, &userID, &addr)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -398,10 +432,10 @@ func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHas
 		if _, err := markVerified(ctx, tx, &User{ID: userID}, ""); err != nil {
 			return err
 		}
-		ok = true
+		email = addr
 		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
 	})
-	return ok, err
+	return email, err
 }
 
 // --- refresh tokens ---

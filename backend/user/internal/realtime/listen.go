@@ -64,8 +64,11 @@ func (h *Handler) listen(ctx context.Context, presence chan<- string) (bool, err
 	if _, err := conn.Exec(ctx, "listen realtime"); err != nil {
 		return false, fmt.Errorf("listen: %w", err)
 	}
-	// Events sent while nothing listened are lost: every tab reloads what it shows.
+	h.listening.Store(true)
+	defer h.listening.Store(false)
+	// Events sent while nothing listened are lost: every tab reloads what it shows, and config is read again.
 	h.hub.toAll(resync)
+	h.configChanged()
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
@@ -89,6 +92,7 @@ func (h *Handler) deliver(ctx context.Context, payload string, presence chan<- s
 	case "user":
 		h.hub.toUser(id, e.Event)
 		if e.Close {
+			h.revoked(id)
 			h.hub.closeUser(id)
 		}
 	case "issue":
@@ -98,7 +102,11 @@ func (h *Handler) deliver(ctx context.Context, payload string, presence chan<- s
 			slog.Warn("realtime presence queue full", "issue", id)
 		}
 		return
-	default: // admin: the admin service's
+	default: // admin: the admin service's, but a config change applies here too
+		var ev struct{ Kind string }
+		if json.Unmarshal(e.Event, &ev) == nil && ev.Kind == "admin.config" {
+			h.configChanged()
+		}
 		return
 	}
 	if e.WS == "" {
@@ -112,3 +120,15 @@ func (h *Handler) deliver(ctx context.Context, payload string, presence chan<- s
 		go h.dropWorkspace(ctx, c, e.WS)
 	}
 }
+
+func (h *Handler) configChanged() {
+	if h.ConfigChanged != nil {
+		h.ConfigChanged()
+	}
+}
+
+// Listening reports whether the realtime LISTEN is connected.
+func (h *Handler) Listening() bool { return h.listening.Load() }
+
+// Sockets returns the number of open realtime sockets here.
+func (h *Handler) Sockets() int { return h.hub.count() }

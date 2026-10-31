@@ -11,7 +11,10 @@ import (
 	"github.com/devender07/tether/backend/admin/internal/web"
 )
 
-const pageSize = 50
+const (
+	pageSize = 50
+	maxQuery = 200 // search text is cut to this many characters
+)
 
 type Handler struct {
 	model *model
@@ -22,13 +25,14 @@ func New(db *pgxpool.Pool, auth web.Authenticator) *Handler {
 	return &Handler{model: &model{db: db}, auth: auth}
 }
 
-// search reads ?q= and the 1-based ?page= (anything invalid is page 1) as a query and an offset.
+// search reads ?q= (cut to maxQuery characters) and the 1-based ?page= (anything invalid is page 1) as a query and an offset.
 func search(r *http.Request) (string, int) {
 	page, err := strconv.Atoi(r.URL.Query().Get("page"))
 	if err != nil || page < 1 {
 		page = 1
 	}
-	return strings.TrimSpace(r.URL.Query().Get("q")), (page - 1) * pageSize
+	q := []rune(strings.TrimSpace(r.URL.Query().Get("q")))
+	return string(q[:min(len(q), maxQuery)]), (page - 1) * pageSize
 }
 
 func (h *Handler) workspaces(w http.ResponseWriter, r *http.Request, _ string) error {
@@ -68,7 +72,7 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 	var u *User
 	if id.Scan(r.PathValue("id")) == nil {
 		var err error
-		if u, err = h.model.setSuspended(r.Context(), adminID, r.PathValue("id"), suspended); err != nil {
+		if u, err = h.model.setSuspended(r.Context(), adminID, web.ClientIP(r), r.PathValue("id"), suspended); err != nil {
 			return err
 		}
 	}

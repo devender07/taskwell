@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,7 +30,12 @@ type Handler struct {
 	member       func(ctx context.Context, userID, slug string) (string, error)
 	joinFn       JoinFunc
 	hub          *hub
-	conns        sync.WaitGroup // running sockets, which the server's Shutdown doesn't wait for (they're hijacked)
+	onRevoke     func(userID string) // see OnRevoke
+	conns        sync.WaitGroup      // running sockets, which the server's Shutdown doesn't wait for (they're hijacked)
+	listening    atomic.Bool         // the realtime LISTEN is up
+
+	// ConfigChanged, when set, runs when an admin changes system_config and whenever events may have been missed.
+	ConfigChanged func()
 }
 
 // New takes the auth handler's Session and Alive (the sign-in wasn't revoked and its user isn't suspended), member (the id of the workspace with the slug when the user is in it,

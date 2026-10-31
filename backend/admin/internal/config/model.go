@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/admin/internal/audit"
 	"github.com/devender07/tether/backend/admin/internal/realtime"
 )
 
@@ -67,8 +68,8 @@ func (m *model) get(ctx context.Context, key string) (*Setting, error) {
 	return s, nil
 }
 
-// set changes the value, by the admin.
-func (m *model) set(ctx context.Context, adminID, key, value string) (*Setting, error) {
+// set changes the value, by the admin from ip, and records the change (the key only) in the audit log.
+func (m *model) set(ctx context.Context, adminID, ip, key, value string) (*Setting, error) {
 	var s *Setting
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var err error
@@ -78,6 +79,9 @@ func (m *model) set(ctx context.Context, adminID, key, value string) (*Setting, 
 			err = errors.New("setting disappeared")
 		}
 		if err != nil {
+			return err
+		}
+		if err := audit.Record(ctx, tx, adminID, audit.ConfigUpdate, key, ip); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, "admin.config", adminID, "/config")

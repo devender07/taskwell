@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -14,20 +16,32 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/notify"
+	"github.com/devender07/tether/backend/user/internal/obs"
 	"github.com/devender07/tether/backend/user/internal/project"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/sweep"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
 func main() {
+	migrateOnly := flag.Bool("migrate", false, "apply the database migrations, then exit")
+	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
+	flag.Parse()
 	prod := os.Getenv("APP_ENV") == "production"
+	obs.Setup(prod)
+	metricsAddr := env("METRICS_ADDR", "127.0.0.1:9090")
+	if *healthcheck {
+		os.Exit(obs.Healthcheck(metricsAddr))
+	}
 	dbURL := env("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
 	addr := ":" + env("PORT", "8090")
 	secret := []byte(os.Getenv("JWT_SECRET"))
@@ -45,10 +59,20 @@ func main() {
 
 	pool, err := db.Open(context.Background(), dbURL)
 	if err != nil {
-		slog.Error("database", "err", err)
-		os.Exit(1)
+		fatal("database", "err", err)
 	}
 	defer pool.Close()
+	// Production runs -migrate as a release step, then starts with MIGRATE_ON_START=false.
+	if *migrateOnly || os.Getenv("MIGRATE_ON_START") != "false" {
+		if err := db.Migrate(context.Background(), pool); err != nil {
+			pool.Close()
+			fatal("migrate", "err", err)
+		}
+		if *migrateOnly {
+			slog.Info("migrations applied")
+			return
+		}
+	}
 
 	if secret == nil {
 		if err := auth.EnsureJWTSecret(context.Background(), pool); err != nil {
@@ -76,16 +100,26 @@ func main() {
 		return workspace.CreateDefault(ctx, pool, userID, name)
 	})
 	authH.Register(mux)
-	wsH := workspace.New(pool, authH.Authenticate, mailer, cfg)
+	// Every handler but auth's own signs requests in through this, so the access log knows the user.
+	authenticate := func(r *http.Request) (string, error) {
+		id, err := authH.Authenticate(r)
+		obs.SetUser(r.Context(), id)
+		return id, err
+	}
+	wsH := workspace.New(pool, authenticate, mailer, cfg)
 	wsH.Register(mux)
-	project.New(pool, authH.Authenticate, wsH.Member).Register(mux)
-	issueH := issue.New(pool, authH.Authenticate, wsH.Member)
+	project.New(pool, authenticate, wsH.Member).Register(mux)
+	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
 	// Background work stops after the server has drained (see shutdown), so it's on its own context.
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Go(func() { issueH.Listen(work) })
-	rtH := realtime.New(pool, authH.Session, authH.Alive,
+	rtH := realtime.New(pool, func(r *http.Request) (realtime.Session, error) {
+		s, err := authH.Session(r)
+		obs.SetUser(r.Context(), s.UserID)
+		return s, err
+	}, authH.Alive,
 		func(ctx context.Context, userID, slug string) (string, error) {
 			ws, err := wsH.Member(ctx, userID, slug)
 			if ws == nil {
@@ -100,39 +134,96 @@ func main() {
 			}
 			return s, "", nil
 		})
+	rtH.OnRevoke(authH.Forget)
+	if n, err := strconv.Atoi(os.Getenv("WS_MAX_CONNS_PER_USER")); err == nil && n > 0 {
+		realtime.MaxConnsPerUser = n
+	}
+	rtH.ConfigChanged = cfg.Invalidate
 	rtH.Register(mux)
 	wg.Go(func() { rtH.Listen(work) })
 	wg.Go(func() { rtH.Presence(work) })
-	notifyH := notify.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
+	notifyH := notify.New(pool, authenticate, wsH.Member, mailer, cfg)
 	notifyH.Register(mux)
 	wg.Go(func() {
 		notifyH.Run(work, duration("NOTIFY_INTERVAL", time.Minute), duration("NOTIFY_SETTLE", 30*time.Second))
 	})
 	wg.Go(func() { mailer.Run(work) })
-	fileH, err := file.New(pool, env("UPLOAD_DIR", "./uploads"), authH.Authenticate, wsH.Member, cfg,
+	uploadDir := env("UPLOAD_DIR", "./uploads")
+	fileH, err := file.New(pool, uploadDir, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	if err != nil {
-		slog.Error("startup", "err", err)
-		os.Exit(1)
+		fatal("startup", "err", err)
 	}
 	fileH.Register(mux)
+	sweeper := sweep.New(pool, uploadDir)
+	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 
-	srv := &http.Server{Addr: addr, Handler: withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))),
+	internal := http.NewServeMux()
+	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		switch err := pool.Ping(ctx); {
+		case err != nil:
+			http.Error(w, "database: "+err.Error(), http.StatusServiceUnavailable)
+		case !rtH.Listening():
+			http.Error(w, "realtime listener down", http.StatusServiceUnavailable)
+		case !issueH.Listening():
+			http.Error(w, "collab listener down", http.StatusServiceUnavailable)
+		default:
+			io.WriteString(w, "ok\n") //nolint:errcheck // the client's gone
+		}
+	})
+	internal.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		obs.WriteHTTP(w)
+		obs.WritePool(w, pool.Stat())
+		obs.Metric(w, "tether_realtime_sockets", "gauge", "Open realtime WebSockets.", "", float64(rtH.Sockets()))
+		writeDBMetrics(r.Context(), w, pool)
+	})
+	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
+
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux)))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
-	serve(srv, func() { stopWork(); wg.Wait() })
+	serve(srv, metrics, func() { stopWork(); wg.Wait() })
+}
+
+// writeDBMetrics writes the email queue's depth and oldest age and Postgres's NOTIFY queue usage; a failed query
+// leaves its samples out.
+func writeDBMetrics(ctx context.Context, w io.Writer, pool *pgxpool.Pool) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var queued, failed int64
+	var oldest, notifyUsage float64
+	err := pool.QueryRow(ctx, `
+		select count(*) filter (where failed_at is null), count(*) filter (where failed_at is not null),
+		       coalesce(extract(epoch from now() - min(created_at) filter (where failed_at is null)), 0),
+		       pg_notification_queue_usage()
+		from outbound_mail`).Scan(&queued, &failed, &oldest, &notifyUsage)
+	if err != nil {
+		slog.WarnContext(ctx, "metrics query failed", "err", err)
+		return
+	}
+	obs.Metric(w, "tether_mail_queued", "gauge", "Emails waiting to be sent.", "", float64(queued))
+	obs.Metric(w, "tether_mail_failed", "gauge", "Emails given up on, kept 30 days.", "", float64(failed))
+	obs.Metric(w, "tether_mail_oldest_seconds", "gauge", "Age of the oldest email waiting to be sent.", "", oldest)
+	obs.Metric(w, "tether_pg_notification_queue_usage", "gauge", "Fraction of Postgres's NOTIFY queue in use (0-1).", "", notifyUsage)
 }
 
 // serve runs srv until SIGINT or SIGTERM, then stops taking requests, lets in-flight ones finish (up to 20s) and calls
 // stop to end the background work. Keep the orchestrator's grace period above 40s (compose stop_grace_period).
-func serve(srv *http.Server, stop func()) {
+func serve(srv, metrics *http.Server, stop func()) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	slog.Info("user listening", "addr", srv.Addr)
+	merrc := make(chan error, 1)
+	go func() { merrc <- metrics.ListenAndServe() }()
+	slog.Info("user listening", "addr", srv.Addr, "metrics_addr", metrics.Addr)
 	select {
 	case err := <-errc:
 		fatal("server", "err", err)
+	case err := <-merrc:
+		fatal("metrics server", "err", err)
 	case <-ctx.Done():
 	}
 	slog.Info("shutting down")
@@ -145,6 +236,7 @@ func serve(srv *http.Server, stop func()) {
 		slog.Error("server", "err", err)
 	}
 	stop()
+	_ = metrics.Close() // readyz answers until here, so the orchestrator sees a draining instance as up
 	slog.Info("stopped")
 }
 

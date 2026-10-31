@@ -52,7 +52,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.auth(r)
 	if err != nil {
-		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		web.WriteErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	}
@@ -98,6 +98,13 @@ func (c *conn) send(msg []byte) {
 	default:
 		c.cancel()
 	}
+}
+
+// Sockets returns the number of admin tabs connected here.
+func (h *Handler) Sockets() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.conns)
 }
 
 // toAll queues msg for every admin tab here.

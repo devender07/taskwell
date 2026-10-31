@@ -67,7 +67,7 @@ function Audit() {
       <nav className="flex gap-4 text-body-sm" aria-label="Pages">
         {before ? <Link to="/audit">Newest</Link> : null}
         {more ? (
-          <Link to="/audit" search={{ before: entries[entries.length - 1].id }}>
+          <Link to="/audit" search={{ before: entries.at(-1)?.id }}>
             Older
           </Link>
         ) : null}

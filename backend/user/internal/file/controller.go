@@ -63,7 +63,25 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return err
 	}
-	f, ok, err := h.save(w, r, &ws.ID, userID, int64(mb)<<20, fmt.Sprintf("Files must be %d MB or smaller.", mb), false)
+	quota, err := h.cfg.GetInt(r.Context(), "upload_quota_mb")
+	if err != nil {
+		return err
+	}
+	used, err := h.model.used(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	// ponytail: concurrent uploads each see the same room, so the quota can be overshot by a few files.
+	limit, tooLarge := int64(mb)<<20, fmt.Sprintf("Files must be %d MB or smaller.", mb)
+	if left := int64(quota)<<20 - used; left < limit {
+		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%d MB). Delete some attachments or ask "+
+			"your administrator for more space.", quota)
+	}
+	if limit <= 0 {
+		writeErr(w, http.StatusRequestEntityTooLarge, tooLarge)
+		return nil
+	}
+	f, ok, err := h.save(w, r, &ws.ID, userID, limit, tooLarge, false)
 	if !ok || err != nil {
 		return err
 	}

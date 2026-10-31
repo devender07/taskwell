@@ -43,6 +43,15 @@ func (m *model) create(ctx context.Context, f *File, store func(id string) error
 	})
 }
 
+// used returns the bytes the workspace's files take up.
+func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
+	var n int64
+	if err := m.db.QueryRow(ctx, `select coalesce(sum(size), 0) from files where workspace_id = $1`, workspaceID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("sum file sizes: %w", err)
+	}
+	return n, nil
+}
+
 // find returns the file when userID may read it (a member of its workspace, or anyone for an avatar), else nil.
 func (m *model) find(ctx context.Context, id, userID string) (*File, error) {
 	f := File{ID: id}

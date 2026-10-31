@@ -111,13 +111,17 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	defer h.conns.Done()
 	s, err := h.authenticate(r)
 	if err != nil {
-		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	}
 	userID := s.UserID
 	if userID == "" {
 		writeErr(w, http.StatusUnauthorized, "Not signed in.")
+		return
+	}
+	if h.hub.userCount(userID) >= MaxConnsPerUser {
+		writeErr(w, http.StatusTooManyRequests, "Too many open tabs. Close some and try again.")
 		return
 	}
 	ws, err := websocket.Accept(w, r, nil)
@@ -140,7 +144,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	defer h.disconnect(r.Context(), c)
 	go c.write(ctx, ws)
 	if err := h.read(ctx, ws, c); err != nil && ctx.Err() == nil {
-		slog.Error("realtime connection failed", "user_id", userID, "err", err)
+		slog.ErrorContext(ctx, "realtime connection failed", "user_id", userID, "err", err)
 	}
 }
 

@@ -17,16 +17,43 @@ services:
       timeout: 3s
       retries: 20
 
+  # Release step: applies the migrations and exits; the services start once it has succeeded.
+  migrate:
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: user } }
+    image: tether-user
+    command: ["-migrate"]
+    restart: "no"
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      MIGRATE_LOCK_TIMEOUT: ${MIGRATE_LOCK_TIMEOUT:-10s}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+
   user:
     build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: user } }
     image: tether-user
     restart: unless-stopped
     stop_grace_period: 45s
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    # /readyz on the internal METRICS_ADDR: the database answers and both listeners are up. The image has no curl.
+    healthcheck:
+      test: ["CMD", "/app", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     environment:
       PORT: "8090"
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
+      MIGRATE_ON_START: "false"
+      METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9090}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      SWEEP_INTERVAL: ${SWEEP_INTERVAL:-24h}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
       DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
@@ -45,9 +72,17 @@ services:
     image: tether-admin
     restart: unless-stopped
     stop_grace_period: 45s
-    depends_on: [user] # the user service runs the migrations
+    depends_on: { migrate: { condition: service_completed_successfully } } # it refuses an old schema
+    healthcheck:
+      test: ["CMD", "/app", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     environment:
       PORT: "8080"
+      METRICS_ADDR: ${ADMIN_METRICS_ADDR:-127.0.0.1:9091}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
       DB_MAX_CONNS: ${ADMIN_DB_MAX_CONNS:-5}
@@ -59,7 +94,9 @@ services:
     build: { context: .., dockerfile: deploy/web.Dockerfile }
     image: tether-web
     restart: unless-stopped
-    depends_on: [user, admin]
+    depends_on:
+      user: { condition: service_healthy }
+      admin: { condition: service_healthy }
     environment:
       APP_HOST: ${APP_HOST:?set APP_HOST}
       ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST}

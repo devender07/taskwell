@@ -34,24 +34,15 @@ type model struct{ db *pgxpool.Pool }
 func (m *model) stats(ctx context.Context) (Stats, error) {
 	var s Stats
 	t := &s.Totals
-	// "Active" means a sign-in or refresh in the last 7 days; refresh tokens are the only activity the auth tables keep.
+	// "Active" means a sign-in or token refresh in the last 7 days: each inserts a refresh token, so its created_at
+	// is the activity, read through refresh_tokens_created_at_idx.
 	err := m.db.QueryRow(ctx, `
 		select (select count(*) from users), (select count(*) from workspaces), (select count(*) from projects),
-		       (select count(*) from issues),
-		       (select count(distinct user_id) from refresh_tokens where coalesce(used_at, created_at) > now() - interval '7 days')`).
-		Scan(&t.Users, &t.Workspaces, &t.Projects, &t.Issues, &s.ActiveUsers7d)
+		       (select count(*) from issues), (select count(*) from comments),
+		       (select count(distinct user_id) from refresh_tokens where created_at > now() - interval '7 days')`).
+		Scan(&t.Users, &t.Workspaces, &t.Projects, &t.Issues, &t.Comments, &s.ActiveUsers7d)
 	if err != nil {
 		return Stats{}, fmt.Errorf("totals: %w", err)
-	}
-	// ponytail: guard for databases from before the comments migration; drop it once every install has 014.
-	var hasComments bool
-	if err := m.db.QueryRow(ctx, `select to_regclass('comments') is not null`).Scan(&hasComments); err != nil {
-		return Stats{}, fmt.Errorf("find comments table: %w", err)
-	}
-	if hasComments {
-		if err := m.db.QueryRow(ctx, `select count(*) from comments`).Scan(&t.Comments); err != nil {
-			return Stats{}, fmt.Errorf("count comments: %w", err)
-		}
 	}
 	if s.Signups, err = m.perDay(ctx, "users"); err != nil {
 		return Stats{}, err
@@ -63,13 +54,15 @@ func (m *model) stats(ctx context.Context) (Stats, error) {
 }
 
 // perDay counts rows of table (a constant, never user input) created on each of the last 30 UTC days, oldest first.
+// The created_at range reads only those days' rows through the table's created_at index.
 func (m *model) perDay(ctx context.Context, table string) ([]Day, error) {
 	rows, err := m.db.Query(ctx, `
-		with today as (select (now() at time zone 'utc')::date as d)
-		select to_char(days.d, 'YYYY-MM-DD'), count(t.created_at)
-		from today, generate_series(today.d - 29, today.d, interval '1 day') as days(d)
-		left join `+table+` t on (t.created_at at time zone 'utc')::date = days.d::date
-		group by days.d order by days.d`)
+		with first as (select (now() at time zone 'utc')::date - 29 as d)
+		select to_char(days.d, 'YYYY-MM-DD'), coalesce(c.n, 0)
+		from first, generate_series(first.d, first.d + 29, interval '1 day') as days(d)
+		left join (select (created_at at time zone 'utc')::date as d, count(*) as n from `+table+`
+		           where created_at >= ((select d from first)::timestamp at time zone 'utc') group by 1) c on c.d = days.d::date
+		order by days.d`)
 	if err != nil {
 		return nil, fmt.Errorf("%s per day: %w", table, err)
 	}

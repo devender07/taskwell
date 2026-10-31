@@ -9,6 +9,7 @@ import (
 const (
 	errRoleNotFound  = "Role not found."
 	errRoleNameTaken = "A role with that name already exists."
+	errRoleAbove     = "You can't change a role that has permissions you don't have."
 )
 
 func (h *Handler) roles(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -106,7 +107,8 @@ func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request, userID stri
 }
 
 // existingRole returns the path's role. It writes a 404 when the workspace has no such role,
-// or a 403 with adminMsg for the Admin role, and returns ok=false.
+// a 403 with adminMsg for the Admin role, or a 403 when the role holds a permission the caller lacks
+// (no reaching up), and returns ok=false.
 func (h *Handler) existingRole(w http.ResponseWriter, r *http.Request, ws *Workspace, adminMsg string) (*Role, bool, error) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -122,6 +124,9 @@ func (h *Handler) existingRole(w http.ResponseWriter, r *http.Request, ws *Works
 		return nil, false, nil
 	case role.Builtin != nil && *role.Builtin == roleAdmin:
 		writeErr(w, http.StatusForbidden, adminMsg)
+		return nil, false, nil
+	case !subset(role.Permissions, ws.Permissions):
+		writeErr(w, http.StatusForbidden, errRoleAbove)
 		return nil, false, nil
 	}
 	return role, true, nil

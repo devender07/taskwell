@@ -56,7 +56,7 @@ func (h *Handler) wrap(fn func(w http.ResponseWriter, r *http.Request, userID st
 			err = fn(w, r, userID)
 		}
 		if err != nil {
-			slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		}
 	}
