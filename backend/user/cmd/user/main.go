@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/auth"
+	"github.com/devender07/tether/backend/user/internal/chat"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/issue"
@@ -137,6 +138,9 @@ func main() {
 		realtime.MaxConnsPerUser = n
 	}
 	rtH.ConfigChanged = cfg.Invalidate
+	chatH := chat.New(pool, authenticate, wsH.Member)
+	chatH.Register(mux)
+	rtH.ChatAudience = chatH.Audience
 	rtH.Register(mux)
 	wg.Go(func() { rtH.Listen(work) })
 	wg.Go(func() { rtH.Presence(work) })

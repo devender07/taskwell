@@ -21,7 +21,8 @@ import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
 import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$workspace/_main/inbox'
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
-import { Route as AppWorkspaceMainInboxIdentifierRouteImport } from './routes/_app/$workspace/_main/inbox/$identifier'
+import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
+import { Route as AppWorkspaceMainInboxActivityRouteImport } from './routes/_app/$workspace/_main/inbox/activity'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
 import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
@@ -32,6 +33,8 @@ import { Route as AppWorkspaceMainSettingsNotificationsRouteImport } from './rou
 import { Route as AppWorkspaceMainSettingsProfileRouteImport } from './routes/_app/$workspace/_main/settings/profile'
 import { Route as AppWorkspaceMainSettingsWorkflowRouteImport } from './routes/_app/$workspace/_main/settings/workflow'
 import { Route as AppWorkspaceMainSettingsWorkspaceRouteImport } from './routes/_app/$workspace/_main/settings/workspace'
+import { Route as AppWorkspaceMainInboxActivityIdentifierRouteImport } from './routes/_app/$workspace/_main/inbox/activity/$identifier'
+import { Route as AppWorkspaceMainInboxCChatIdRouteImport } from './routes/_app/$workspace/_main/inbox/c/$chatId'
 import { Route as AppWorkspaceMainSettingsRolesIndexRouteImport } from './routes/_app/$workspace/_main/settings/roles/index'
 import { Route as AppWorkspaceMainSettingsRolesRoleIdRouteImport } from './routes/_app/$workspace/_main/settings/roles/$roleId'
 import { Route as AppWorkspaceMainSettingsRolesNewRouteImport } from './routes/_app/$workspace/_main/settings/roles/new'
@@ -95,10 +98,16 @@ const AppWorkspaceMainMyIssuesRoute =
     path: '/my-issues',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
-const AppWorkspaceMainInboxIdentifierRoute =
-  AppWorkspaceMainInboxIdentifierRouteImport.update({
-    id: '/$identifier',
-    path: '/$identifier',
+const AppWorkspaceMainInboxIndexRoute =
+  AppWorkspaceMainInboxIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppWorkspaceMainInboxRoute,
+  } as any)
+const AppWorkspaceMainInboxActivityRoute =
+  AppWorkspaceMainInboxActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
     getParentRoute: () => AppWorkspaceMainInboxRoute,
   } as any)
 const AppWorkspaceMainIssueIdentifierRoute =
@@ -161,6 +170,18 @@ const AppWorkspaceMainSettingsWorkspaceRoute =
     path: '/settings/workspace',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainInboxActivityIdentifierRoute =
+  AppWorkspaceMainInboxActivityIdentifierRouteImport.update({
+    id: '/$identifier',
+    path: '/$identifier',
+    getParentRoute: () => AppWorkspaceMainInboxActivityRoute,
+  } as any)
+const AppWorkspaceMainInboxCChatIdRoute =
+  AppWorkspaceMainInboxCChatIdRouteImport.update({
+    id: '/c/$chatId',
+    path: '/c/$chatId',
+    getParentRoute: () => AppWorkspaceMainInboxRoute,
+  } as any)
 const AppWorkspaceMainSettingsRolesIndexRoute =
   AppWorkspaceMainSettingsRolesIndexRouteImport.update({
     id: '/settings/roles/',
@@ -191,7 +212,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
-  '/$workspace/inbox/$identifier': typeof AppWorkspaceMainInboxIdentifierRoute
+  '/$workspace/inbox/activity': typeof AppWorkspaceMainInboxActivityRouteWithChildren
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -200,8 +221,11 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/inbox/': typeof AppWorkspaceMainInboxIndexRoute
   '/$workspace/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings/': typeof AppWorkspaceMainSettingsIndexRoute
+  '/$workspace/inbox/activity/$identifier': typeof AppWorkspaceMainInboxActivityIdentifierRoute
+  '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
@@ -214,9 +238,8 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/': typeof AppIndexRoute
-  '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
-  '/$workspace/inbox/$identifier': typeof AppWorkspaceMainInboxIdentifierRoute
+  '/$workspace/inbox/activity': typeof AppWorkspaceMainInboxActivityRouteWithChildren
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -225,8 +248,11 @@ export interface FileRoutesByTo {
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/$workspace/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/$workspace/inbox': typeof AppWorkspaceMainInboxIndexRoute
   '/$workspace/projects': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsIndexRoute
+  '/$workspace/inbox/activity/$identifier': typeof AppWorkspaceMainInboxActivityIdentifierRoute
+  '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/roles': typeof AppWorkspaceMainSettingsRolesIndexRoute
@@ -245,7 +271,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
-  '/_app/$workspace/_main/inbox/$identifier': typeof AppWorkspaceMainInboxIdentifierRoute
+  '/_app/$workspace/_main/inbox/activity': typeof AppWorkspaceMainInboxActivityRouteWithChildren
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -254,8 +280,11 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
   '/_app/$workspace/_main/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/_app/$workspace/_main/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
+  '/_app/$workspace/_main/inbox/': typeof AppWorkspaceMainInboxIndexRoute
   '/_app/$workspace/_main/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/_app/$workspace/_main/settings/': typeof AppWorkspaceMainSettingsIndexRoute
+  '/_app/$workspace/_main/inbox/activity/$identifier': typeof AppWorkspaceMainInboxActivityIdentifierRoute
+  '/_app/$workspace/_main/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/_app/$workspace/_main/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
@@ -273,7 +302,7 @@ export interface FileRouteTypes {
     | '/$workspace/inbox'
     | '/$workspace/my-issues'
     | '/$workspace/'
-    | '/$workspace/inbox/$identifier'
+    | '/$workspace/inbox/activity'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/labels'
@@ -282,8 +311,11 @@ export interface FileRouteTypes {
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workflow'
     | '/$workspace/settings/workspace'
+    | '/$workspace/inbox/'
     | '/$workspace/projects/'
     | '/$workspace/settings/'
+    | '/$workspace/inbox/activity/$identifier'
+    | '/$workspace/inbox/c/$chatId'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/roles/'
@@ -296,9 +328,8 @@ export interface FileRouteTypes {
     | '/signup'
     | '/$workspace'
     | '/'
-    | '/$workspace/inbox'
     | '/$workspace/my-issues'
-    | '/$workspace/inbox/$identifier'
+    | '/$workspace/inbox/activity'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/labels'
@@ -307,8 +338,11 @@ export interface FileRouteTypes {
     | '/$workspace/settings/profile'
     | '/$workspace/settings/workflow'
     | '/$workspace/settings/workspace'
+    | '/$workspace/inbox'
     | '/$workspace/projects'
     | '/$workspace/settings'
+    | '/$workspace/inbox/activity/$identifier'
+    | '/$workspace/inbox/c/$chatId'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/roles'
@@ -326,7 +360,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/inbox'
     | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/'
-    | '/_app/$workspace/_main/inbox/$identifier'
+    | '/_app/$workspace/_main/inbox/activity'
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/labels'
@@ -335,8 +369,11 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings/profile'
     | '/_app/$workspace/_main/settings/workflow'
     | '/_app/$workspace/_main/settings/workspace'
+    | '/_app/$workspace/_main/inbox/'
     | '/_app/$workspace/_main/projects/'
     | '/_app/$workspace/_main/settings/'
+    | '/_app/$workspace/_main/inbox/activity/$identifier'
+    | '/_app/$workspace/_main/inbox/c/$chatId'
     | '/_app/$workspace/_main/settings/roles/$roleId'
     | '/_app/$workspace/_main/settings/roles/new'
     | '/_app/$workspace/_main/settings/roles/'
@@ -437,11 +474,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainMyIssuesRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
-    '/_app/$workspace/_main/inbox/$identifier': {
-      id: '/_app/$workspace/_main/inbox/$identifier'
-      path: '/$identifier'
-      fullPath: '/$workspace/inbox/$identifier'
-      preLoaderRoute: typeof AppWorkspaceMainInboxIdentifierRouteImport
+    '/_app/$workspace/_main/inbox/': {
+      id: '/_app/$workspace/_main/inbox/'
+      path: '/'
+      fullPath: '/$workspace/inbox/'
+      preLoaderRoute: typeof AppWorkspaceMainInboxIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainInboxRoute
+    }
+    '/_app/$workspace/_main/inbox/activity': {
+      id: '/_app/$workspace/_main/inbox/activity'
+      path: '/activity'
+      fullPath: '/$workspace/inbox/activity'
+      preLoaderRoute: typeof AppWorkspaceMainInboxActivityRouteImport
       parentRoute: typeof AppWorkspaceMainInboxRoute
     }
     '/_app/$workspace/_main/issue/$identifier': {
@@ -514,6 +558,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsWorkspaceRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/inbox/activity/$identifier': {
+      id: '/_app/$workspace/_main/inbox/activity/$identifier'
+      path: '/$identifier'
+      fullPath: '/$workspace/inbox/activity/$identifier'
+      preLoaderRoute: typeof AppWorkspaceMainInboxActivityIdentifierRouteImport
+      parentRoute: typeof AppWorkspaceMainInboxActivityRoute
+    }
+    '/_app/$workspace/_main/inbox/c/$chatId': {
+      id: '/_app/$workspace/_main/inbox/c/$chatId'
+      path: '/c/$chatId'
+      fullPath: '/$workspace/inbox/c/$chatId'
+      preLoaderRoute: typeof AppWorkspaceMainInboxCChatIdRouteImport
+      parentRoute: typeof AppWorkspaceMainInboxRoute
+    }
     '/_app/$workspace/_main/settings/roles/': {
       id: '/_app/$workspace/_main/settings/roles/'
       path: '/settings/roles'
@@ -538,12 +596,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppWorkspaceMainInboxActivityRouteChildren {
+  AppWorkspaceMainInboxActivityIdentifierRoute: typeof AppWorkspaceMainInboxActivityIdentifierRoute
+}
+
+const AppWorkspaceMainInboxActivityRouteChildren: AppWorkspaceMainInboxActivityRouteChildren =
+  {
+    AppWorkspaceMainInboxActivityIdentifierRoute:
+      AppWorkspaceMainInboxActivityIdentifierRoute,
+  }
+
+const AppWorkspaceMainInboxActivityRouteWithChildren =
+  AppWorkspaceMainInboxActivityRoute._addFileChildren(
+    AppWorkspaceMainInboxActivityRouteChildren,
+  )
+
 interface AppWorkspaceMainInboxRouteChildren {
-  AppWorkspaceMainInboxIdentifierRoute: typeof AppWorkspaceMainInboxIdentifierRoute
+  AppWorkspaceMainInboxActivityRoute: typeof AppWorkspaceMainInboxActivityRouteWithChildren
+  AppWorkspaceMainInboxIndexRoute: typeof AppWorkspaceMainInboxIndexRoute
+  AppWorkspaceMainInboxCChatIdRoute: typeof AppWorkspaceMainInboxCChatIdRoute
 }
 
 const AppWorkspaceMainInboxRouteChildren: AppWorkspaceMainInboxRouteChildren = {
-  AppWorkspaceMainInboxIdentifierRoute: AppWorkspaceMainInboxIdentifierRoute,
+  AppWorkspaceMainInboxActivityRoute:
+    AppWorkspaceMainInboxActivityRouteWithChildren,
+  AppWorkspaceMainInboxIndexRoute: AppWorkspaceMainInboxIndexRoute,
+  AppWorkspaceMainInboxCChatIdRoute: AppWorkspaceMainInboxCChatIdRoute,
 }
 
 const AppWorkspaceMainInboxRouteWithChildren =

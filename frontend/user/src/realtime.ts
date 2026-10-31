@@ -21,6 +21,8 @@ type Message =
   | { type: 'collab.joined'; issue: string; id: string }
   | { type: 'collab.error'; issue: string }
   | { type: 'presence'; issue: string; viewers: Viewer[] }
+  | Typing
+export type Typing = { type: 'typing'; chat: string; thread: string | null; user: PersonRef }
 export type LoaderContext = { route: { id: string; fullPath: string }; params: Record<string, string>; deps: unknown }
 
 // _app's beforeLoad fetches these; any load re-runs it.
@@ -30,6 +32,7 @@ const ALL = ['/']
 const loaded = loadedPaths()
 const subscribers = new Set<{ paths: string[]; refetch: () => void }>()
 const channels = new Set<Channel>()
+const typists = new Set<(t: Typing) => void>()
 
 let router: AnyRouter | null = null
 let ws: WebSocket | null = null
@@ -76,6 +79,8 @@ const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.
 // Issue lists and Home's activity and project counts refetch at most every 3s, so a teammate typing doesn't reload
 // them on every save.
 const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|activity|project-stats)$/
+// The chat list and its unread count refetch at most every second, so a busy chat doesn't reload them per message.
+const CHATS = /^\/workspaces\/[^/]+\/chats(\/unread-count)?$/
 
 const push = coalescer(
   (paths) => {
@@ -84,7 +89,7 @@ const push = coalescer(
     if (router?.state.matches.some(filter)) void reload(router, filter, touches(APP_PATHS, paths))
     for (const s of subscribers) if (touches(s.paths, paths)) s.refetch()
   },
-  { throttle: (p) => (LIST.test(p) ? 3000 : undefined) },
+  { throttle: (p) => (LIST.test(p) ? 3000 : CHATS.test(p) ? 1000 : undefined) },
 )
 
 // Only after `hello`; everything sent before then is sent again on hello.
@@ -165,6 +170,9 @@ function onMessage(data: unknown) {
       break
     case 'presence':
       channel(msg.issue)?.onPresence(msg.viewers)
+      break
+    case 'typing':
+      for (const fn of typists) fn(msg)
       break
   }
 }
@@ -276,6 +284,18 @@ export function useRealtime(slug: string | undefined) {
     workspace = slug
     if (slug) send({ type: 'subscribe', workspace: slug })
   }, [slug])
+}
+
+// Reloads the given routes' matches (e.g. the chat list and the open chat after this tab's own change), keeping the session.
+export const reloadRoutes = (r: AnyRouter, ids: string[]) => reload(r, (m) => ids.includes(m.routeId), false)
+
+// Tells the chat's other viewers this user is typing (in a thread when `thread` is its root's id). Callers throttle.
+export const sendTyping = (chat: string, thread: string | null) => send({ type: 'typing', chat, thread })
+
+// Others typing in any chat; returns the unsubscribe.
+export function onTyping(fn: (t: Typing) => void) {
+  typists.add(fn)
+  return () => void typists.delete(fn)
 }
 
 // Live editing of one issue's description over the shared socket. onOpen fires on every (re)join, followed by the

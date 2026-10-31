@@ -43,6 +43,7 @@ type envelope struct {
 	Aud   string          `json:"aud"`
 	WS    string          `json:"ws,omitempty"` // Event.WorkspaceID
 	Close bool            `json:"close,omitempty"`
+	Skip  string          `json:"skip,omitempty"` // a user whose connections don't get it: a typing frame's sender
 	Event json.RawMessage `json:"event,omitempty"`
 }
 

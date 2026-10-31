@@ -79,3 +79,43 @@ func TestExcerpt(t *testing.T) {
 		t.Errorf("short: %q", got)
 	}
 }
+
+func TestChatNotes(t *testing.T) {
+	cases := []struct {
+		name string
+		c    ChatChange
+		want string
+	}{
+		{"mentions, not the actor, once", ChatChange{ActorID: "a", Mentioned: []string{"a", "b", "b", "c"}}, "b:chat_mention c:chat_mention"},
+		{"direct message", ChatChange{ActorID: "a", Direct: "b"}, "b:message"},
+		{"mentioned in a direct message gets the mention only", ChatChange{ActorID: "a", Direct: "b", Mentioned: []string{"b"}}, "b:chat_mention"},
+		{"nothing", ChatChange{ActorID: "a"}, ""},
+	}
+	for _, c := range cases {
+		var got []string
+		for _, n := range chatNotes(c.c) {
+			got = append(got, n.userID+":"+n.kind)
+		}
+		if s := strings.Join(got, " "); s != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, s, c.want)
+		}
+	}
+}
+
+func TestChatEmails(t *testing.T) {
+	m := message{kind: "chat_mention", actor: "Maya", workspace: "Acme", slug: "acme", excerpt: "hi", chatID: "c1",
+		chatKind: "group", chatName: "Design team"}
+	subject, body := instantEmail(m, "http://app/")
+	if subject != "Maya mentioned you in Design team" ||
+		body != "Maya mentioned you in Design team\n\n> hi\n\nhttp://app/acme/inbox/c/c1\n\nChange email settings: http://app/acme/settings/notifications\n" {
+		t.Errorf("chat mention email: %q %q", subject, body)
+	}
+	m.kind = "message"
+	if subject, body := instantEmail(m, "http://app"); subject != "Maya sent you a message" || !strings.Contains(body, "/acme/inbox/c/c1") {
+		t.Errorf("message email: %q %q", subject, body)
+	}
+	_, body = digestEmail([]message{m, {kind: "assigned", actor: "Demo", identifier: "ENG-1", title: "T", workspace: "Acme", slug: "acme"}}, "http://app")
+	if !strings.Contains(body, "Acme\n- Maya: hi\n\nENG-1: T\n") {
+		t.Errorf("digest: %q", body)
+	}
+}

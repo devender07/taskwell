@@ -123,7 +123,7 @@ func TestDigestTimezone(t *testing.T) {
 	}
 	due, notDue := dbtest.User(t, pool, "Due"), dbtest.User(t, pool, "Later")
 	for user, tz := range map[string]string{due: past, notDue: before} {
-		if _, err := (&model{db: pool}).update(ctx, user, ptr("digest"), nil, nil, nil, nil, &tz); err != nil {
+		if _, err := (&model{db: pool}).update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, &tz); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -151,7 +151,7 @@ func TestDigestTimezone(t *testing.T) {
 	if sent(notDue) {
 		t.Errorf("user in %s (before %d:00) got a digest", before, hour)
 	}
-	if _, err := m.update(ctx, due, nil, nil, nil, nil, nil, ptr("Not/AZone")); err != errBadTimezone {
+	if _, err := m.update(ctx, due, nil, nil, nil, nil, nil, nil, ptr("Not/AZone")); err != errBadTimezone {
 		t.Errorf("unknown timezone: %v, want errBadTimezone", err)
 	}
 }
@@ -178,16 +178,16 @@ func TestTimezoneUnset(t *testing.T) {
 	if got := tz(m.settings(ctx, user)); got != "null" {
 		t.Fatalf("no settings: timezone %s, want null", got)
 	}
-	if got := tz(m.update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil)); got != "null" {
+	if got := tz(m.update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, nil)); got != "null" {
 		t.Fatalf("first update without a zone: %s, want null", got)
 	}
-	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, ptr("Europe/Berlin"))); got != "Europe/Berlin" {
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, ptr("Europe/Berlin"))); got != "Europe/Berlin" {
 		t.Fatalf("set: %s", got)
 	}
-	if got := tz(m.update(ctx, user, nil, ptr(false), nil, nil, nil, nil)); got != "Europe/Berlin" {
+	if got := tz(m.update(ctx, user, nil, ptr(false), nil, nil, nil, nil, nil)); got != "Europe/Berlin" {
 		t.Fatalf("update without a zone changed it to %s", got)
 	}
-	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, ptr(""))); got != "null" {
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, ptr(""))); got != "null" {
 		t.Fatalf(`"" left %s, want null`, got)
 	}
 	// Hour 0 UTC has always passed today, so a null-zone digest user is due.
@@ -206,5 +206,109 @@ func TestTimezoneUnset(t *testing.T) {
 	}
 	if !sent {
 		t.Error("null timezone got no digest at hour 0 UTC")
+	}
+}
+
+// TestChatEmail checks a direct message's email waits 10 minutes, and isn't sent when the message was read by then,
+// while a chat mention goes after the usual settle time unless the chat setting is off.
+func TestChatEmail(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
+	var wsID, chatID string
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `with w as (select id from workspaces where created_by = $1)
+			insert into chats (workspace_id, kind, pair) select id, 'direct', 'x' from w returning workspace_id::text, id::text`, ann).
+			Scan(&wsID, &chatID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dbtest.Join(t, pool, wsID, bob, "member")
+	send := func(kind string) string {
+		t.Helper()
+		var msgID string
+		if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `insert into messages (chat_id, author_id, body) values ($1, $2, '{}') returning id::text`,
+				chatID, ann).Scan(&msgID); err != nil {
+				return err
+			}
+			c := ChatChange{ChatID: chatID, MessageID: msgID, ActorID: ann, Excerpt: "hello", Direct: bob}
+			if kind == "chat_mention" {
+				c = ChatChange{ChatID: chatID, MessageID: msgID, ActorID: ann, Excerpt: "hello", Mentioned: []string{bob}}
+			}
+			return RecordChat(ctx, tx, c)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return msgID
+	}
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &model{db: pool}
+	// queued returns the subjects queued for bob in one run with no settle time.
+	queued := func() []string {
+		t.Helper()
+		if err := m.skipUnwanted(ctx, 0); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for {
+			more, err := m.queueNext(ctx, 0, func(_ pgx.Tx, to string, msg message) error {
+				if msg.actor == "Ann" && msg.chatID == chatID { // other tests' notifications may be queued too
+					subject, _ := instantEmail(msg, "http://app")
+					got = append(got, subject)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !more {
+				return got
+			}
+		}
+	}
+	send("message")
+	second := send("message")
+	var n int
+	if err := pool.QueryRow(ctx, `select count(*) from notifications where user_id = $1 and kind = 'message' and message_id = $2`,
+		bob, second).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("collapsed message notifications: %d %v", n, err)
+	}
+	if got := queued(); len(got) != 0 {
+		t.Errorf("message emailed before 10 minutes: %v", got)
+	}
+	exec(`update notifications set created_at = now() - interval '11 minutes' where user_id = $1`, bob)
+	if got := queued(); len(got) != 1 || got[0] != "Ann sent you a message" {
+		t.Errorf("message after 10 minutes: %v", got)
+	}
+
+	send("message")
+	exec(`update notifications set created_at = now() - interval '11 minutes', read_at = now() where user_id = $1 and emailed_at is null`, bob)
+	if got := queued(); len(got) != 0 {
+		t.Errorf("read message emailed: %v", got)
+	}
+	var skipped int
+	if err := pool.QueryRow(ctx, `select count(*) from notifications where user_id = $1 and emailed_at is null`, bob).Scan(&skipped); err != nil || skipped != 0 {
+		t.Errorf("read message not marked emailed: %d %v", skipped, err)
+	}
+
+	send("chat_mention")
+	if got := queued(); len(got) != 1 || got[0] != "Ann mentioned you in a message" {
+		t.Errorf("chat mention: %v", got)
+	}
+	if _, err := m.update(ctx, bob, nil, nil, nil, nil, nil, ptr(false), nil); err != nil {
+		t.Fatal(err)
+	}
+	send("chat_mention")
+	if got := queued(); len(got) != 0 {
+		t.Errorf("chat mention with chat emails off: %v", got)
 	}
 }

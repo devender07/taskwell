@@ -1,7 +1,7 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { filterOptions, type Option } from '@tether/shared/match'
-import { api, toFormErrors, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { api, toFormErrors, type Chat, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
@@ -62,6 +62,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   const [error, setError] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
   const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
+  const [chats, setChats] = useState<Chat[]>([])
   const listRef = useRef<HTMLDivElement>(null)
   const q = query.trim()
   const slug = workspace.slug
@@ -86,6 +87,13 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
       ctrl.abort()
     }
   }, [mode, q, slug, version])
+
+  useEffect(() => {
+    if (mode !== 'root') return
+    const ctrl = new AbortController()
+    api<Chat[]>(`/workspaces/${encodeURIComponent(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
+    return () => ctrl.abort()
+  }, [mode, slug])
 
   async function save(field: string, values: string[], stay = false) {
     if (!ctx) return
@@ -154,6 +162,10 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
+    actions.push({ value: 'activity', label: 'Go to Activity', run: () => go('inbox/activity') })
+    for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
+    actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
+    actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
     for (const name of SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
     if (ctx) {
       if (ctx.issue.can_edit) {

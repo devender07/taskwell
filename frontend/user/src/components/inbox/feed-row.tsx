@@ -7,7 +7,9 @@ import './inbox.css'
 
 type FeedRowProps = {
   workspace: string
-  identifier: string
+  identifier?: string
+  // A chat notification links to its chat (scrolled to the message) instead of an issue.
+  chat?: { id: string; message?: string }
   actor: PersonRef | null
   text: ReactNode
   excerpt?: string
@@ -16,12 +18,12 @@ type FeedRowProps = {
   at: string
   unread?: boolean
   onClick?: () => void
-  // Open the issue in the inbox's preview pane (keeping the inbox filter) instead of on its own page.
+  // Open the issue in Activity's preview pane (keeping its filter) instead of on its own page.
   inbox?: { filter?: 'unread'; selected: boolean }
 }
 
-// One line of who did what to which issue, linking to the issue: the inbox and Home's activity and inbox blocks.
-export function FeedRow({ workspace, identifier, actor, text, excerpt, more, at, unread, onClick, inbox }: FeedRowProps) {
+// One line of who did what to which issue or chat, linking to it: Activity and Home's activity and inbox blocks.
+export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt, more, at, unread, onClick, inbox }: FeedRowProps) {
   const name = actor?.name ?? 'Someone'
   const body = (
     <>
@@ -41,9 +43,21 @@ export function FeedRow({ workspace, identifier, actor, text, excerpt, more, at,
       ) : null}
     </>
   )
+  if (chat)
+    return (
+      <Link
+        to="/$workspace/inbox/c/$chatId"
+        params={{ workspace, chatId: chat.id }}
+        search={chat.message ? { message: chat.message } : {}}
+        className="inbox-link"
+        onClick={onClick}
+      >
+        {body}
+      </Link>
+    )
   return inbox ? (
     <Link
-      to="/$workspace/inbox/$identifier"
+      to="/$workspace/inbox/activity/$identifier"
       params={{ workspace, identifier }}
       search={inbox.filter ? { filter: inbox.filter } : {}}
       className="inbox-link"
@@ -70,6 +84,7 @@ export function IssueName({ issue }: { issue: { identifier: string; title: strin
 }
 
 export function notificationText(n: Notification): ReactNode {
+  if (n.issue === null) return n.kind === 'chat_mention' ? <>mentioned you in <span className="text-primary font-510">{n.chat.name}</span></> : <>sent you a message</>
   const issue = <IssueName issue={n.issue} />
   switch (n.kind) {
     case 'assigned':
@@ -86,3 +101,7 @@ export function notificationText(n: Notification): ReactNode {
       return <>mentioned you in {issue}</>
   }
 }
+
+// Where a notification's row links: its issue, or its chat scrolled to the message.
+export const notificationTarget = (n: Notification) =>
+  n.issue === null ? { chat: { id: n.chat.id, message: n.data.message_id } } : { identifier: n.issue.identifier }

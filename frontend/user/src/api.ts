@@ -64,15 +64,48 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
+export type ChatKind = 'workspace' | 'self' | 'direct' | 'group'
+export type Chat = {
+  id: string
+  kind: ChatKind
+  name: string
+  members: PersonRef[] // direct: both; group: all; self: you; workspace: none (it's everyone)
+  created_by: string | null
+  unread: number
+  mentioned: boolean
+  last_message: { author: PersonRef | null; excerpt: string; created_at: string } | null
+  last_message_at: string | null
+}
+export type Reaction = { emoji: string; count: number; mine: boolean; people: string[] }
+export type Message = {
+  id: string
+  chat_id: string
+  parent_id: string | null
+  author: PersonRef | null
+  body: Doc | null // null once deleted
+  deleted: boolean
+  created_at: string
+  edited_at: string | null
+  reply_count: number
+  last_reply_at: string | null
+  repliers: PersonRef[]
+  reactions: Reaction[]
+  can_edit: boolean
+  can_delete: boolean
+}
+// Oldest first; `?before=` the first message's id fetches the page before it.
+export type MessagePage = { messages: Message[]; has_more: boolean }
+export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string
-  kind: 'mention' | 'assigned' | 'status' | 'comment'
   actor: PersonRef | null
-  issue: { identifier: string; title: string; status: Status }
-  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string }
   read: boolean
   created_at: string
-}
+} & (
+  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null }
+  | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string } }
+)
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
 export type ActivityItem = ({ type: 'event' } & ActivityBase & IssueEvent) | ({ type: 'comment'; excerpt: string } & ActivityBase)
@@ -85,6 +118,7 @@ export type NotificationSettings = {
   assignments: boolean
   status: boolean
   comments: boolean
+  chat: boolean
   timezone: string | null // null until chosen
 }
 export type FieldErrors = Record<string, string | null | undefined>

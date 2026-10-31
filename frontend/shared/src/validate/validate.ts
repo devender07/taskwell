@@ -149,3 +149,13 @@ export const labelName: Check = (v) => {
 }
 
 export const labelColor: Check = (v) => (/^#[0-9a-f]{6}$/.test(v.toLowerCase()) ? null : 'Choose a color.')
+
+export const groupName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Name the group.'
+  if (s.length > 80) return 'Keep the name under 80 characters.'
+  return null
+}
+
+export const messageBody = (empty: boolean, length: number) =>
+  empty ? 'Write a message.' : length > 10000 ? 'Message must be 10,000 characters or fewer.' : null

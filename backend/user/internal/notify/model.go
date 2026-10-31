@@ -96,13 +96,111 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	return nil
 }
 
+// ChatChange is a new or edited chat message that may notify people, recorded with RecordChat in its transaction.
+type ChatChange struct {
+	ChatID, MessageID, ActorID string
+	Excerpt                    string   // the message's opening text (Excerpt)
+	Mentioned                  []string // people newly mentioned who can see the chat
+	Direct                     string   // the other person in a direct chat, for a new message; "" otherwise
+}
+
+// RecordChat writes the message's notifications in tx and tells the recipients' tabs: a chat_mention to each person
+// mentioned, and a message to the other person in a direct chat (unless mentioned). The recipient's unread message
+// notification for the chat, if any, is updated to this message instead of adding another. Never the actor, and
+// only workspace members.
+func RecordChat(ctx context.Context, tx pgx.Tx, c ChatChange) error {
+	ns := chatNotes(c)
+	if len(ns) == 0 {
+		return nil
+	}
+	users, kinds := make([]string, len(ns)), make([]string, len(ns))
+	for i, n := range ns {
+		users[i], kinds[i] = n.userID, n.kind
+	}
+	data, err := json.Marshal(map[string]string{"excerpt": c.Excerpt, "message_id": c.MessageID})
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx,
+		`with n as (select * from unnest($1::uuid[], $2::text[]) as n(user_id, kind)),
+		 bumped as (
+		   update notifications t set message_id = $4, data = $6, actor_id = $5, created_at = now(), emailed_at = null
+		   from n
+		   where n.kind = 'message' and t.id = (select id from notifications where user_id = n.user_id and chat_id = $3
+		     and kind = 'message' and read_at is null order by id desc limit 1)
+		   returning t.user_id),
+		 added as (
+		   insert into notifications (user_id, workspace_id, chat_id, message_id, actor_id, kind, data)
+		   select n.user_id, c.workspace_id, c.id, $4, $5, n.kind, $6
+		   from n join chats c on c.id = $3 join workspace_members m on m.workspace_id = c.workspace_id and m.user_id = n.user_id
+		   where not (n.kind = 'message' and n.user_id in (select user_id from bumped))
+		   returning user_id)
+		 select distinct user_id::text from (select user_id from bumped union all select user_id from added) x`,
+		users, kinds, c.ChatID, c.MessageID, c.ActorID, data)
+	if err != nil {
+		return fmt.Errorf("add chat notifications: %w", err)
+	}
+	notified, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("add chat notifications: %w", err)
+	}
+	if len(notified) == 0 {
+		return nil
+	}
+	var slug string
+	if err := tx.QueryRow(ctx, `select w.slug from chats c join workspaces w on w.id = c.workspace_id where c.id = $1`,
+		c.ChatID).Scan(&slug); err != nil {
+		return fmt.Errorf("notified workspace: %w", err)
+	}
+	for _, u := range notified {
+		if err := realtime.Publish(ctx, tx, changed(slug, c.ActorID, u)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReadChat marks the user's unread chat notifications for the chat's messages up to upTo read, in tx, and tells their
+// tabs when there were any.
+func ReadChat(ctx context.Context, tx pgx.Tx, userID, chatID, slug, upTo string) error {
+	tag, err := tx.Exec(ctx,
+		`update notifications set read_at = now()
+		 where user_id = $1 and chat_id = $2 and read_at is null and message_id <= $3`, userID, chatID, upTo)
+	if err != nil {
+		return fmt.Errorf("read chat notifications: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	return realtime.Publish(ctx, tx, changed(slug, userID, userID))
+}
+
+// ForgetMessage deletes the notifications about a deleted message, in tx, and tells the recipients' tabs.
+func ForgetMessage(ctx context.Context, tx pgx.Tx, messageID, slug, actorID string) error {
+	rows, err := tx.Query(ctx, `delete from notifications where message_id = $1 returning user_id::text`, messageID)
+	if err != nil {
+		return fmt.Errorf("delete message notifications: %w", err)
+	}
+	users, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("delete message notifications: %w", err)
+	}
+	for _, u := range slices.Compact(slices.Sorted(slices.Values(users))) {
+		if err := realtime.Publish(ctx, tx, changed(slug, actorID, u)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // --- inbox ---
 
 type Notification struct {
 	ID        string          `json:"id"`
 	Kind      string          `json:"kind"`
 	Actor     json.RawMessage `json:"actor"`
-	Issue     json.RawMessage `json:"issue"`
+	Issue     json.RawMessage `json:"issue"` // null for chat kinds
+	Chat      json.RawMessage `json:"chat"`  // {id, kind, name}; null for issue kinds
 	Data      json.RawMessage `json:"data"`
 	Read      bool            `json:"read"`
 	CreatedAt time.Time       `json:"created_at"`
@@ -117,11 +215,12 @@ type model struct{ db *pgxpool.Pool }
 func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([]Notification, bool, error) {
 	rows, err := m.db.Query(ctx,
 		`select n.id::text, n.kind, (select json_build_object('id', a.id, 'name', a.name) from users a where a.id = n.actor_id),
-		        json_build_object('identifier', p.key || '-' || i.number, 'title', i.title,
-		          'status', json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position)),
+		        case when i.id is not null then json_build_object('identifier', p.key || '-' || i.number, 'title', i.title,
+		          'status', json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position)) end,
+		        case when c.id is not null then json_build_object('id', c.id, 'kind', c.kind, 'name', chat_name(c, n.user_id)) end,
 		        n.data, n.read_at is not null, n.created_at
-		 from notifications n join issues i on i.id = n.issue_id join projects p on p.id = i.project_id
-		 join statuses s on s.id = i.status_id
+		 from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
+		 left join statuses s on s.id = i.status_id left join chats c on c.id = n.chat_id
 		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid)
 		 order by n.id desc limit $4`, userID, workspaceID, before, pageSize+1)
 	if err != nil {
@@ -129,7 +228,7 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([
 	}
 	ns, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Notification, error) {
 		var n Notification
-		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Data, &n.Read, &n.CreatedAt)
+		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Chat, &n.Data, &n.Read, &n.CreatedAt)
 		n.CreatedAt = n.CreatedAt.UTC()
 		return n, err
 	})
@@ -144,8 +243,10 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([
 
 func (m *model) unreadCount(ctx context.Context, userID, workspaceID string) (int, error) {
 	var n int
+	// Chat kinds are left out: the inbox badge adds chats/unread-count, which already counts those messages.
 	err := m.db.QueryRow(ctx,
-		`select count(*) from notifications where user_id = $1 and workspace_id = $2 and read_at is null`, userID, workspaceID).Scan(&n)
+		`select count(*) from notifications
+		 where user_id = $1 and workspace_id = $2 and read_at is null and kind not in ('chat_mention', 'message')`, userID, workspaceID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count unread: %w", err)
 	}
@@ -183,14 +284,15 @@ type Settings struct {
 	Assignments bool    `json:"assignments"`
 	Status      bool    `json:"status"`
 	Comments    bool    `json:"comments"`
+	Chat        bool    `json:"chat"`     // chat mentions (with Mentions) and direct messages
 	Timezone    *string `json:"timezone"` // IANA name the digest goes out at digest_hour_utc in; nil (UTC) until chosen
 }
 
-const settingsCols = `email, mentions, assignments, status, comments, timezone`
+const settingsCols = `email, mentions, assignments, status, comments, chat, timezone`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var s Settings
-	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments, &s.Timezone)
+	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments, &s.Chat, &s.Timezone)
 	return s, err
 }
 
@@ -201,7 +303,7 @@ var errBadTimezone = errors.New("unknown timezone")
 func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	s, err := scanSettings(m.db.QueryRow(ctx, `select `+settingsCols+` from notification_settings where user_id = $1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Settings{"instant", true, true, true, true, nil}, nil
+		return Settings{"instant", true, true, true, true, true, nil}, nil
 	}
 	if err != nil {
 		return s, fmt.Errorf("notification settings: %w", err)
@@ -211,7 +313,7 @@ func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 
 // update changes the user's non-nil settings and returns them all, telling their other tabs. A timezone of ""
 // clears it (back to never chosen).
-func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments *bool,
+func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments, chat *bool,
 	timezone *string) (Settings, error) {
 	var s Settings
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -227,13 +329,13 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 		}
 		var err error
 		if s, err = scanSettings(tx.QueryRow(ctx,
-			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, timezone)
+			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, chat, timezone)
 			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true),
-			   nullif($7, ''))
+			   coalesce($8, true), nullif($7, ''))
 			 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
 			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments),
-			   timezone = case when $7::text is null then s.timezone else nullif($7, '') end
-			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone)); err != nil {
+			   chat = coalesce($8, s.chat), timezone = case when $7::text is null then s.timezone else nullif($7, '') end
+			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone, chat)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.Event{Kind: "profile.changed", Actor: userID, Audience: realtime.ToUser(userID),
@@ -251,31 +353,40 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 // --- email worker ---
 
 const (
-	// wanted is whether the recipient's settings s (left joined) want the notification n emailed at all.
-	wanted = `coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
-		when 'status' then s.status else s.comments end, true)`
-	msgCols = `n.id::text, n.kind, coalesce(a.name, 'Someone'), p.key || '-' || i.number, i.title, w.name, w.slug,
-		coalesce(n.data #>> '{from,name}', ''), coalesce(n.data #>> '{to,name}', ''), coalesce(n.data ->> 'excerpt', ''),
-		n.data ? 'comment_id'`
-	msgFrom = ` from notifications n join issues i on i.id = n.issue_id join projects p on p.id = i.project_id
+	// wanted is whether the recipient's settings s (left joined) want the notification n emailed at all. A direct
+	// message read before its email was due isn't emailed.
+	wanted = `(coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
+		when 'status' then s.status when 'comment' then s.comments when 'chat_mention' then s.mentions and s.chat
+		else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null))`
+	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.
+	settled = `n.created_at < now() - make_interval(secs => case n.kind when 'message' then $2::float8 else $1::float8 end)`
+	msgCols = `n.id::text, n.kind, coalesce(a.name, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
+		w.name, w.slug, coalesce(n.data #>> '{from,name}', ''), coalesce(n.data #>> '{to,name}', ''),
+		coalesce(n.data ->> 'excerpt', ''), n.data ? 'comment_id', coalesce(c.id::text, ''), coalesce(c.kind, ''),
+		coalesce(chat_name(c, n.user_id), '')`
+	msgFrom = ` from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
+		left join chats c on c.id = n.chat_id
 		join workspaces w on w.id = n.workspace_id left join users a on a.id = n.actor_id
 		left join notification_settings s on s.user_id = n.user_id`
 )
+
+// messageDelay is how long a direct message notification waits before it's emailed, so a chat read meanwhile isn't.
+const messageDelay = 10 * time.Minute
 
 func scanMessage(row pgx.Row, extra ...any) (string, message, error) {
 	var id string
 	var m message
 	err := row.Scan(append([]any{&id, &m.kind, &m.actor, &m.identifier, &m.title, &m.workspace, &m.slug, &m.from, &m.to,
-		&m.excerpt, &m.onComment}, extra...)...)
+		&m.excerpt, &m.onComment, &m.chatID, &m.chatKind, &m.chatName}, extra...)...)
 	return id, m, err
 }
 
 // skipUnwanted marks the settled notifications nobody wants emailed as done.
 func (m *model) skipUnwanted(ctx context.Context, settle time.Duration) error {
 	_, err := m.db.Exec(ctx,
-		`update notifications n set emailed_at = now() from notification_settings s
-		 where s.user_id = n.user_id and n.emailed_at is null and n.created_at < now() - make_interval(secs => $1)
-		   and not `+wanted, settle.Seconds())
+		`update notifications t set emailed_at = now()
+		 from notifications n left join notification_settings s on s.user_id = n.user_id
+		 where t.id = n.id and n.emailed_at is null and `+settled+` and not `+wanted, settle.Seconds(), messageDelay.Seconds())
 	if err != nil {
 		return fmt.Errorf("skip unwanted emails: %w", err)
 	}
@@ -293,10 +404,10 @@ func (m *model) queueNext(ctx context.Context, settle time.Duration, queue func(
 		var err error
 		id, msg, err = scanMessage(tx.QueryRow(ctx,
 			`select `+msgCols+`, u.email`+msgFrom+` join users u on u.id = n.user_id
-			 where n.emailed_at is null and n.created_at < now() - make_interval(secs => $1)
+			 where n.emailed_at is null and `+settled+`
 			   and coalesce(s.email, 'instant') = 'instant' and `+wanted+`
 			 order by n.created_at limit 1
-			 for update of n skip locked`, settle.Seconds()), &to)
+			 for update of n skip locked`, settle.Seconds(), messageDelay.Seconds()), &to)
 		if errors.Is(err, pgx.ErrNoRows) {
 			id = ""
 			return nil
@@ -339,7 +450,7 @@ func (m *model) digestNext(ctx context.Context, hour int, queue func(tx pgx.Tx, 
 		}
 		rows, err := tx.Query(ctx, `select `+msgCols+msgFrom+`
 			where n.user_id = $1 and n.emailed_at is null and `+wanted+`
-			order by w.name, w.id, p.key, i.number, n.id`, userID)
+			order by w.name, w.id, p.key nulls first, i.number, n.id`, userID)
 		if err != nil {
 			return err
 		}

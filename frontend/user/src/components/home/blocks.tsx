@@ -6,7 +6,7 @@ import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issu
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
-import { FeedRow, IssueName, notificationText } from '@/components/inbox/feed-row'
+import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
 import { eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
 import { groupIssues } from '@/components/issues/view-search'
@@ -163,8 +163,8 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
               Mark all read
             </button>
           ) : null}
-          <Link to="/$workspace/inbox" params={{ workspace }} className="home-link">
-            View inbox
+          <Link to="/$workspace/inbox/activity" params={{ workspace }} className="home-link">
+            View activity
           </Link>
         </>
       }
@@ -178,7 +178,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
             <li key={n.id}>
               <FeedRow
                 workspace={workspace}
-                identifier={n.issue.identifier}
+                {...notificationTarget(n)}
                 actor={n.actor}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}

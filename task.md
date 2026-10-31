@@ -61,6 +61,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 - [x] Personal dashboard: greeting, needs attention (due this week, overdue in pink), assigned to me, unread inbox, live workspace activity, recently viewed, project progress
 
+## Chat
+
+- [x] Inbox is the workspace chat: workspace chat and personal notes by default, direct messages, private groups, @person and #issue mentions, attachments, reactions, threads, edit/delete, typing, unread counts, live; notifications live on as Activity; chat mentions and unread DMs notify and email
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)

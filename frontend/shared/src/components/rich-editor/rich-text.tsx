@@ -7,39 +7,43 @@ export type { Doc }
 type Mark = NonNullable<Doc['marks']>[number]
 
 // A saved document as the read-only editor would show it (same elements and classes), without a ProseMirror view.
-export function RichText({ doc, 'aria-label': ariaLabel }: { doc: Doc; 'aria-label'?: string }) {
+// `issueHref` turns `#ENG-12` issue mentions into links; without it they are plain text.
+export function RichText({ doc, 'aria-label': ariaLabel, issueHref }: { doc: Doc; 'aria-label'?: string; issueHref?: (identifier: string) => string }) {
+  const ctx: Ctx = { issueHref }
   return (
     <div className="rich-editor rich-editor-readonly">
       <div className="rich-editor-content rich-text" role="textbox" aria-readonly="true" aria-multiline="true" aria-label={ariaLabel}>
-        {blocks(doc.content)}
+        {blocks(doc.content, ctx)}
       </div>
     </div>
   )
 }
 
-const blocks = (nodes: Doc[] | undefined) => nodes?.map((n, i) => block(n, i))
+type Ctx = { issueHref?: (identifier: string) => string }
 
-function block(n: Doc, key: number): ReactNode {
+const blocks = (nodes: Doc[] | undefined, ctx: Ctx) => nodes?.map((n, i) => block(n, i, ctx))
+
+function block(n: Doc, key: number, ctx: Ctx): ReactNode {
   const a = n.attrs ?? {}
   switch (n.type) {
     case 'paragraph':
-      return <p key={key}>{n.content?.length ? inline(n.content, 0) : <br />}</p>
+      return <p key={key}>{n.content?.length ? inline(n.content, 0, ctx) : <br />}</p>
     case 'heading': {
       const H = (`h${Math.min(Math.max(Number(a.level) || 1, 1), 3)}`) as 'h1' | 'h2' | 'h3'
-      return <H key={key}>{inline(n.content ?? [], 0)}</H>
+      return <H key={key}>{inline(n.content ?? [], 0, ctx)}</H>
     }
     case 'bulletList':
-      return <ul key={key}>{blocks(n.content)}</ul>
+      return <ul key={key}>{blocks(n.content, ctx)}</ul>
     case 'orderedList':
       return (
         <ol key={key} start={a.start != null && a.start !== 1 ? Number(a.start) : undefined} type={/^[aAiI]$/.test(String(a.type)) ? (a.type as 'a') : undefined}>
-          {blocks(n.content)}
+          {blocks(n.content, ctx)}
         </ol>
       )
     case 'listItem':
-      return <li key={key}>{blocks(n.content)}</li>
+      return <li key={key}>{blocks(n.content, ctx)}</li>
     case 'blockquote':
-      return <blockquote key={key}>{blocks(n.content)}</blockquote>
+      return <blockquote key={key}>{blocks(n.content, ctx)}</blockquote>
     case 'codeBlock':
       return (
         <pre key={key}>
@@ -56,18 +60,18 @@ function block(n: Doc, key: number): ReactNode {
 }
 
 // Consecutive nodes sharing a mark share one element, as ProseMirror's serializer does: <strong>a<em>b</em></strong>.
-function inline(nodes: Doc[], depth: number): ReactNode[] {
+function inline(nodes: Doc[], depth: number, ctx: Ctx): ReactNode[] {
   const out: ReactNode[] = []
   for (let i = 0; i < nodes.length; ) {
     const mark = nodes[i]!.marks?.[depth]
     if (!mark) {
-      out.push(leaf(nodes[i]!, i))
+      out.push(leaf(nodes[i]!, i, ctx))
       i++
       continue
     }
     let j = i + 1
     while (j < nodes.length && same(nodes[j]!.marks?.[depth], mark)) j++
-    out.push(wrap(mark, inline(nodes.slice(i, j), depth + 1), i))
+    out.push(wrap(mark, inline(nodes.slice(i, j), depth + 1, ctx), i))
     i = j
   }
   return out
@@ -75,11 +79,21 @@ function inline(nodes: Doc[], depth: number): ReactNode[] {
 
 const same = (a: Mark | undefined, b: Mark) => !!a && a.type === b.type && JSON.stringify(a.attrs ?? {}) === JSON.stringify(b.attrs ?? {})
 
-function leaf(n: Doc, key: number): ReactNode {
+function leaf(n: Doc, key: number, ctx: Ctx): ReactNode {
   if (n.type === 'text') return n.text ?? ''
   if (n.type === 'hardBreak') return <br key={key} />
   if (n.type === 'mention') {
-    const { id, label } = n.attrs ?? {}
+    const { id, label, mentionSuggestionChar } = n.attrs ?? {}
+    if (mentionSuggestionChar === '#') {
+      const text = `#${label ?? id}`
+      return ctx.issueHref && id ? (
+        <a key={key} href={ctx.issueHref(String(id))} data-type="issue-mention" data-id={id}>
+          {text}
+        </a>
+      ) : (
+        text
+      )
+    }
     return (
       <span key={key} data-type="mention" data-id={id || undefined} data-label={label || undefined} data-mention-suggestion-char="@">
         {`@${label ?? id}`}

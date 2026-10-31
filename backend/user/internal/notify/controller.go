@@ -127,7 +127,8 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID 
 		}
 		return &on
 	}
-	mentions, assignments, status, comments := flag("mentions"), flag("assignments"), flag("status"), flag("comments")
+	mentions, assignments, status, comments, chat := flag("mentions"), flag("assignments"), flag("status"), flag("comments"),
+		flag("chat")
 	var timezone *string
 	if v, ok := form["timezone"]; ok {
 		timezone = &v[0]
@@ -139,7 +140,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID 
 		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": errs})
 		return nil
 	}
-	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments, timezone)
+	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments, chat, timezone)
 	if errors.Is(err, errBadTimezone) {
 		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": {"timezone": errTimezone}})
 		return nil

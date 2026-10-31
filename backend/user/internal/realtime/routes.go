@@ -3,7 +3,8 @@
 // issue descriptions (handed to the issue package through a JoinFunc) and who's viewing an issue.
 //
 // routes.go mounts the socket, socket.go serves it, hub.go indexes the connections, listen.go fans notifications out,
-// publish.go and event.go build events, presence.go tracks viewers and model.go owns every SQL query.
+// publish.go and event.go build events, presence.go tracks viewers, typing.go relays typing in chats and model.go owns
+// every SQL query.
 package realtime
 
 import (
@@ -36,6 +37,9 @@ type Handler struct {
 
 	// ConfigChanged, when set, runs when an admin changes system_config and whenever events may have been missed.
 	ConfigChanged func()
+	// ChatAudience, when set, returns who sees the chat with the id (ToWorkspace or ToUser audiences), or nil when the
+	// user can't open it. Typing frames go to that audience.
+	ChatAudience func(ctx context.Context, userID, chatID string) ([]string, error)
 }
 
 // New takes the auth handler's Session and Alive (the sign-in wasn't revoked and its user isn't suspended), member (the id of the workspace with the slug when the user is in it,

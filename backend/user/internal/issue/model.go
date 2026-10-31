@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/doc"
 	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/realtime"
 )
@@ -423,7 +424,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10)
 			 returning id::text`,
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
-			plainText(f.description)).Scan(&id); err != nil {
+			doc.PlainText(f.description)).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -438,7 +439,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			return err
 		}
 		if err := notify.Record(ctx, tx, notify.Change{IssueID: id, ActorID: userID, Watch: []string{userID},
-			Assignee: deref(f.assigneeID), Mentioned: mentions(f.description)}); err != nil {
+			Assignee: deref(f.assigneeID), Mentioned: doc.Mentions(f.description)}); err != nil {
 			return err
 		}
 		n, err := issueNames(ctx, tx, id)
@@ -505,7 +506,7 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 			   updated_at = now()
 			 where id = $1`,
 			id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
-			plainText(f.description)); err != nil {
+			doc.PlainText(f.description)); err != nil {
 			return err
 		}
 		if f.setLabels {
@@ -524,7 +525,7 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 		if err := addEvents(ctx, tx, id, actorID, es); err != nil {
 			return err
 		}
-		c := notify.Change{IssueID: id, ActorID: actorID, Mentioned: newMentions(before.description, after.description)}
+		c := notify.Change{IssueID: id, ActorID: actorID, Mentioned: doc.NewMentions(before.description, after.description)}
 		for _, e := range es {
 			switch e.kind {
 			case "status":
@@ -868,14 +869,14 @@ func (m *model) compactDoc(ctx context.Context, issueID string, ids []int64, dat
 
 // saveDescription sets the issue's description (nil clears it), logging the actor's edit and notifying the newly
 // mentioned when it changed.
-func (m *model) saveDescription(ctx context.Context, issueID, actorID string, doc json.RawMessage) error {
+func (m *model) saveDescription(ctx context.Context, issueID, actorID string, d json.RawMessage) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var old json.RawMessage
 		var changed bool
 		if err := tx.QueryRow(ctx,
 			`update issues i set description = $2, description_text = $3, updated_at = now()
 			 from (select id, description from issues where id = $1 for update) o where i.id = o.id
-			 returning o.description, o.description is distinct from $2::jsonb`, issueID, doc, plainText(doc)).Scan(&old, &changed); err != nil {
+			 returning o.description, o.description is distinct from $2::jsonb`, issueID, d, doc.PlainText(d)).Scan(&old, &changed); err != nil {
 			return err
 		}
 		if !changed {
@@ -884,7 +885,7 @@ func (m *model) saveDescription(ctx context.Context, issueID, actorID string, do
 		if err := addEvents(ctx, tx, issueID, actorID, []event{{"description", struct{}{}}}); err != nil {
 			return err
 		}
-		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: newMentions(old, doc)}); err != nil {
+		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: doc.NewMentions(old, d)}); err != nil {
 			return err
 		}
 		// The description itself is live over collab already, and lists don't show it.
@@ -1046,7 +1047,7 @@ func (m *model) activity(ctx context.Context, workspaceID string, before *time.T
 		err := row.Scan(&a.Type, &a.ID, &a.CreatedAt, &a.Actor, &a.Issue, &a.Kind, &a.Data, &body)
 		a.CreatedAt = a.CreatedAt.UTC()
 		if a.Type == "comment" {
-			r := []rune(strings.TrimSpace(plainText(body)))
+			r := []rune(strings.TrimSpace(doc.PlainText(body)))
 			excerpt := string(r[:min(len(r), 200)])
 			a.Excerpt = &excerpt
 		}
@@ -1111,7 +1112,7 @@ func (m *model) createComment(ctx context.Context, issueID, authorID string, bod
 			return err
 		}
 		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: authorID, Watch: []string{authorID},
-			CommentID: id, Excerpt: notify.Excerpt(plainText(body)), NewComment: true, Mentioned: mentions(body)}); err != nil {
+			CommentID: id, Excerpt: notify.Excerpt(doc.PlainText(body)), NewComment: true, Mentioned: doc.Mentions(body)}); err != nil {
 			return err
 		}
 		if err := publishComment(ctx, tx, issueID, authorID); err != nil {
@@ -1136,7 +1137,7 @@ func (m *model) updateComment(ctx context.Context, id, issueID, actorID string, 
 			return err
 		}
 		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, CommentID: id,
-			Excerpt: notify.Excerpt(plainText(body)), Mentioned: newMentions(old, body)}); err != nil {
+			Excerpt: notify.Excerpt(doc.PlainText(body)), Mentioned: doc.NewMentions(old, body)}); err != nil {
 			return err
 		}
 		return publishComment(ctx, tx, issueID, actorID)

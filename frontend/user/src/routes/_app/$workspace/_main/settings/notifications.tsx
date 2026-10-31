@@ -10,7 +10,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/notificati
   component: NotificationSettingsPage,
 })
 
-type Kind = 'mentions' | 'assignments' | 'status' | 'comments'
+type Kind = 'mentions' | 'assignments' | 'status' | 'comments' | 'chat'
 
 const modes: { value: NotificationSettings['email']; label: string }[] = [
   { value: 'instant', label: 'Right away' },
@@ -22,6 +22,7 @@ const kinds: { value: Kind; label: string }[] = [
   { value: 'assignments', label: 'Assigned to me' },
   { value: 'status', label: 'Status changes on issues I watch' },
   { value: 'comments', label: 'Comments on issues I watch' },
+  { value: 'chat', label: 'Direct messages and chat mentions' },
 ]
 
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -69,7 +70,7 @@ function NotificationSettingsPage() {
     <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
       <header className="grid gap-2">
         <h1 className="text-h2">Notifications</h1>
-        <p className="text-body-sm text-secondary">Your inbox always gets every notification. These settings choose what is emailed to you, in every workspace.</p>
+        <p className="text-body-sm text-secondary">Activity always gets every notification. These settings choose what is emailed to you, in every workspace.</p>
       </header>
       <section className="grid gap-6 p-6 bg-surface border rounded-lg">
         <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }}>

@@ -54,3 +54,4 @@
 @supports (-webkit-touch-callout: none) {
   .input .rich-editor-content { font-size: 16px; line-height: 24px; }
 }
+.rich-editor-content [data-type='issue-mention'] { font-weight: 510; }

@@ -134,3 +134,19 @@ func (m *model) release(ctx context.Context, connID string) error {
 	}
 	return nil
 }
+
+// --- typing ---
+
+func (m *model) userName(ctx context.Context, userID string) (string, error) {
+	var name string
+	if err := m.db.QueryRow(ctx, `select name from users where id = $1`, userID).Scan(&name); err != nil {
+		return "", fmt.Errorf("user name: %w", err)
+	}
+	return name, nil
+}
+
+// notify sends each payload on the realtime channel.
+func (m *model) notify(ctx context.Context, payloads []string) error {
+	_, err := m.db.Exec(ctx, `select pg_notify('realtime', p) from unnest($1::text[]) p`, payloads)
+	return err
+}

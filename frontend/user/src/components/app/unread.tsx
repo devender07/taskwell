@@ -3,21 +3,23 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
 import { api } from '@/api'
 import { connected, subscribePaths } from '@/realtime'
 
-type Unread = { count: number; refresh: () => void }
-const UnreadContext = createContext<Unread>({ count: 0, refresh() {} })
+// count: unread issue notifications (Activity; the API leaves chat kinds out); chats: chats/unread-count. The inbox
+// badges show their sum.
+type Unread = { count: number; chats: number; refresh: () => void }
+const UnreadContext = createContext<Unread>({ count: 0, chats: 0, refresh() {} })
 export const useUnread = () => use(UnreadContext)
 
 // Refetches on realtime events, on focus, and every 60s as a fallback (5 minutes while the socket is up).
 export function UnreadProvider({ children }: { children: ReactNode }) {
   const slug = useParams({ strict: false }).workspace
   const [state, setState] = useState<{ slug: string; count: number } | null>(null)
+  const [chatState, setChatState] = useState<{ slug: string; count: number } | null>(null)
 
   const refresh = useCallback(() => {
     if (!slug) return
-    api<{ count: number }>(`/workspaces/${encodeURIComponent(slug)}/notifications/unread-count`).then(
-      ({ count }) => setState({ slug, count }),
-      () => {},
-    )
+    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    api<{ count: number }>(`${ws}/notifications/unread-count`).then(({ count }) => setState({ slug, count }), () => {})
+    api<{ count: number }>(`${ws}/chats/unread-count`).then(({ count }) => setChatState({ slug, count }), () => {})
   }, [slug])
 
   useEffect(() => {
@@ -26,7 +28,8 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     let ticks = 0
     // ponytail: fallback poll; remove it once the socket has proven itself.
     const timer = setInterval(() => (!connected() || ++ticks % 5 === 0) && refresh(), 60_000)
-    const unsubscribe = subscribePaths([`/workspaces/${encodeURIComponent(slug)}/notifications/unread-count`], refresh)
+    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    const unsubscribe = subscribePaths([`${ws}/notifications/unread-count`, `${ws}/chats/unread-count`], refresh)
     window.addEventListener('focus', refresh)
     return () => {
       clearInterval(timer)
@@ -36,6 +39,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   }, [refresh, slug])
 
   const count = state && state.slug === slug ? state.count : 0
-  const value = useMemo(() => ({ count, refresh }), [count, refresh])
+  const chats = chatState && chatState.slug === slug ? chatState.count : 0
+  const value = useMemo(() => ({ count, chats, refresh }), [count, chats, refresh])
   return <UnreadContext value={value}>{children}</UnreadContext>
 }

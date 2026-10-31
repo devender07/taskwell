@@ -1,5 +1,5 @@
 import { useId, useReducer, useRef, useState } from 'react'
-import { EditorContent, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor } from '@tiptap/react'
+import { EditorContent, Extension, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Placeholder } from '@tiptap/extensions'
 import Mention from '@tiptap/extension-mention'
@@ -32,9 +32,14 @@ type RichEditorProps = {
   collab?: { doc: Y.Doc; awareness: Awareness; user: { name: string; color: string } }
   minHeight?: number
   upload?: (file: File) => Promise<{ url: string; name: string; image: boolean }>
+  // `#` suggests issues (shown as "ENG-12 Fix login"); the mention stores the identifier as both id and label.
+  issues?: (q: string) => Promise<{ id: string; label: string; title: string }[]>
+  // Set: Enter (outside lists and code blocks, with no suggestion open) calls it instead of starting a new line.
+  onSubmit?: () => void
+  issueHref?: (identifier: string) => string
 }
 
-type Suggest = { items: Option[]; index: number; rect: DOMRect | null; pick: (o: Option) => void }
+type Suggest = { kind: 'people' | 'issues'; items: Option[]; index: number; rect: DOMRect | null; pick: (o: Option) => void }
 
 type Upload = { id: number; name: string; error?: string }
 
@@ -46,6 +51,15 @@ const Image = Node.create({
   addAttributes: () => ({ src: { default: null }, alt: { default: '' } }),
   parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(el.getAttribute('src') ?? '') && null }],
   renderHTML: ({ HTMLAttributes }) => ['img', { ...HTMLAttributes, src: imageSrc(HTMLAttributes.src) }],
+})
+
+// Enter runs `submit` (which returns whether it handled it) unless the caret is in a list or code block.
+const SubmitOnEnter = Extension.create<{ submit: () => boolean }>({
+  name: 'submitOnEnter',
+  addOptions: () => ({ submit: () => false }),
+  addKeyboardShortcuts() {
+    return { Enter: ({ editor }) => !editor.isActive('listItem') && !editor.isActive('codeBlock') && this.options.submit() }
+  },
 })
 
 const starterKit = (editable: boolean, collab: boolean) =>
@@ -65,7 +79,8 @@ export const yDocToJSON = (doc: Y.Doc): Doc => yXmlFragmentToProsemirrorJSON(doc
 
 // Read-only and not live: rendered straight from the JSON, so a page of comments doesn't mount an editor each.
 export function RichEditor(props: RichEditorProps) {
-  if (props.editable === false && !props.collab && props.content) return <RichText doc={props.content} aria-label={props['aria-label']} />
+  if (props.editable === false && !props.collab && props.content)
+    return <RichText doc={props.content} aria-label={props['aria-label']} issueHref={props.issueHref} />
   return <Editable {...props} />
 }
 
@@ -81,19 +96,45 @@ function Editable({
   collab,
   minHeight = 96,
   upload,
+  issues,
+  onSubmit,
 }: RichEditorProps) {
   const [error, onEdit] = useFieldError(rawError)
   const id = useId()
   const errorId = `${id}-error`
   const [uploads, setUploads] = useState<Upload[]>([])
   const uploadSeq = useRef(0)
-  const latest = useRef({ onChange, onEdit, mentions, upload, attach })
-  latest.current = { onChange, onEdit, mentions, upload, attach }
+  const latest = useRef({ onChange, onEdit, mentions, upload, attach, issues, onSubmit })
+  latest.current = { onChange, onEdit, mentions, upload, attach, issues, onSubmit }
   const suggest = useRef<Suggest | null>(null)
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const show = (s: Suggest | null) => {
     suggest.current = s
     rerender()
+  }
+
+  const suggestion = (kind: Suggest['kind']) => {
+    const open = (p: { items: Option[]; clientRect?: (() => DOMRect | null) | null; command: (a: { id: string; label: string }) => void }) =>
+      show({ kind, items: p.items, index: 0, rect: p.clientRect?.() ?? null, pick: (o) => p.command({ id: o.value, label: o.hint ?? o.label }) })
+    return {
+      onStart: open,
+      onUpdate: open,
+      onExit: () => show(null),
+      onKeyDown: ({ event }: { event: KeyboardEvent }) => {
+        const s = suggest.current
+        if (!s || !s.items.length) return false
+        const n = s.items.length
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          show({ ...s, index: (s.index + (event.key === 'ArrowDown' ? 1 : n - 1)) % n })
+          return true
+        }
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          s.pick(s.items[s.index]!)
+          return true
+        }
+        return false
+      },
+    }
   }
 
   const editor = useEditor(
@@ -105,40 +146,29 @@ function Editable({
         Image,
         Placeholder.configure({ placeholder: placeholder ?? '' }),
         Mention.configure({
-          suggestion: {
-            char: '@',
-            allow: () => !!latest.current.mentions?.length,
-            items: ({ query }) =>
-              filterOptions(
-                (latest.current.mentions ?? []).map((m) => ({ value: m.id, label: m.name })),
-                query,
-                8,
-              ),
-            render: () => {
-              const open = (p: { items: Option[]; clientRect?: (() => DOMRect | null) | null; command: (a: { id: string; label: string }) => void }) =>
-                show({ items: p.items, index: 0, rect: p.clientRect?.() ?? null, pick: (o) => p.command({ id: o.value, label: o.label }) })
-              return {
-                onStart: open,
-                onUpdate: open,
-                onExit: () => show(null),
-                onKeyDown: ({ event }) => {
-                  const s = suggest.current
-                  if (!s || !s.items.length) return false
-                  const n = s.items.length
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                    show({ ...s, index: (s.index + (event.key === 'ArrowDown' ? 1 : n - 1)) % n })
-                    return true
-                  }
-                  if (event.key === 'Enter' || event.key === 'Tab') {
-                    s.pick(s.items[s.index]!)
-                    return true
-                  }
-                  return false
-                },
-              }
+          suggestions: [
+            {
+              char: '@',
+              allow: () => !!latest.current.mentions?.length,
+              items: ({ query }) =>
+                filterOptions(
+                  (latest.current.mentions ?? []).map((m) => ({ value: m.id, label: m.name })),
+                  query,
+                  8,
+                ),
+              render: () => suggestion('people'),
             },
-          },
+            {
+              char: '#',
+              allow: () => !!latest.current.issues,
+              // ponytail: one search per keystroke, no debounce; Tiptap shows whichever answer lands last.
+              items: async ({ query }) =>
+                ((await latest.current.issues?.(query).catch(() => [])) ?? []).slice(0, 8).map((i) => ({ value: i.id, label: `${i.label} ${i.title}`, hint: i.label })),
+              render: () => suggestion('issues'),
+            },
+          ],
         }),
+        SubmitOnEnter.configure({ submit: () => (suggest.current || !latest.current.onSubmit ? false : (latest.current.onSubmit(), true)) }),
         ...(collab
           ? [Collaboration.configure({ document: collab.doc }), CollaborationCaret.configure({ provider: { awareness: collab.awareness }, user: collab.user })]
           : []),
@@ -218,7 +248,7 @@ function Editable({
         {s && s.rect ? (
           <div className="autocomplete-panel rich-editor-mentions" style={{ position: 'fixed', top: s.rect.bottom + 4, left: s.rect.left, right: 'auto' }}>
             {s.items.length ? (
-              <ul className="autocomplete-list" role="listbox" aria-label="People">
+              <ul className="autocomplete-list" role="listbox" aria-label={s.kind === 'people' ? 'People' : 'Issues'}>
                 {s.items.map((o, i) => (
                   <li
                     key={o.value}
@@ -234,7 +264,7 @@ function Editable({
                 ))}
               </ul>
             ) : (
-              <p className="autocomplete-note">No people found</p>
+              <p className="autocomplete-note">{s.kind === 'people' ? 'No people found' : 'No issues found'}</p>
             )}
           </div>
         ) : null}

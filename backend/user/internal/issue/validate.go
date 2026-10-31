@@ -1,12 +1,14 @@
 package issue
 
 import (
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf16"
+
+	"github.com/devender07/tether/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
@@ -20,7 +22,28 @@ var (
 	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
 )
 
-func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
+func jsLen(s string) int { return doc.Len(s) }
+
+const (
+	maxDescriptionLen = 50000
+	maxCommentLen     = 20000
+)
+
+func checkDescription(raw []byte) (json.RawMessage, string) {
+	return doc.Check(raw, "Description", maxDescriptionLen)
+}
+
+// checkComment is doc.Check for a comment, which can't be empty.
+func checkComment(raw string) (json.RawMessage, string) {
+	if raw == "" {
+		return nil, "Write a comment."
+	}
+	d, msg := doc.Check([]byte(raw), "Comment", maxCommentLen)
+	if d == nil && msg == "" {
+		msg = "Write a comment."
+	}
+	return d, msg
+}
 
 func checkTitle(s string) string {
 	if s == "" {

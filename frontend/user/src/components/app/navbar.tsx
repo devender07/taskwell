@@ -39,10 +39,11 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
 
 function InboxBell() {
   const slug = useParams({ strict: false }).workspace
-  const { count } = useUnread()
+  const unread = useUnread()
+  const count = unread.count + unread.chats
   if (!slug) return null
   return (
-    <Link to="/$workspace/inbox" params={{ workspace: slug }} className="navbar-bell" aria-label={count ? `Inbox, ${count} unread` : 'Inbox'}>
+    <Link to="/$workspace/inbox/activity" params={{ workspace: slug }} className="navbar-bell" aria-label={count ? `Inbox, ${count} unread` : 'Inbox'}>
       <BellIcon />
       {count ? <span className="navbar-badge" aria-hidden>{count > 9 ? '9+' : count}</span> : null}
     </Link>

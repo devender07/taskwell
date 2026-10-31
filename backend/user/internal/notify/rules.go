@@ -18,6 +18,21 @@ type Change struct {
 	Mentioned        []string // user ids newly mentioned in the description or comment
 }
 
+// chatNotes returns who gets what for a chat message: the mentioned a chat_mention, the other person in a direct chat
+// a message unless mentioned. Never the actor.
+func chatNotes(c ChatChange) []note {
+	var ns []note
+	for _, u := range c.Mentioned {
+		if u != c.ActorID && !slices.ContainsFunc(ns, func(n note) bool { return n.userID == u }) {
+			ns = append(ns, note{u, "chat_mention", nil})
+		}
+	}
+	if c.Direct != "" && c.Direct != c.ActorID && !slices.Contains(c.Mentioned, c.Direct) {
+		ns = append(ns, note{c.Direct, "message", nil})
+	}
+	return ns
+}
+
 type note struct {
 	userID, kind string
 	data         any
@@ -69,10 +84,23 @@ type message struct {
 	from, to                       string // status names
 	excerpt                        string
 	onComment                      bool
+	chatID, chatKind, chatName     string // chat kinds only
 }
 
 // instantEmail returns the subject and body of the email for one notification; base is app_base_url.
 func instantEmail(m message, base string) (subject, body string) {
+	switch m.kind {
+	case "chat_mention":
+		where := m.chatName
+		if m.chatKind == "direct" {
+			where = "a message"
+		}
+		return m.actor + " mentioned you in " + where, m.actor + " mentioned you in " + where + "\n\n" + quote(m.excerpt) +
+			"\n\n" + chatURL(base, m) + footer(base, m.slug)
+	case "message":
+		return m.actor + " sent you a message", m.actor + " sent you a message\n\n" + quote(m.excerpt) + "\n\n" +
+			chatURL(base, m) + footer(base, m.slug)
+	}
 	what := m.identifier + ": " + m.title
 	switch m.kind {
 	case "assigned":
@@ -114,6 +142,11 @@ func digestEmail(ms []message, base string) (subject, body string) {
 		if m.slug != last.slug {
 			fmt.Fprintf(&b, "\n%s\n", m.workspace)
 		}
+		if m.chatID != "" {
+			last = m
+			b.WriteString("- " + m.actor + ": " + m.excerpt + "\n")
+			continue
+		}
 		if m.slug != last.slug || m.identifier != last.identifier {
 			fmt.Fprintf(&b, "\n%s: %s\n%s\n", m.identifier, m.title, issueURL(base, m))
 		}
@@ -136,6 +169,10 @@ func digestEmail(ms []message, base string) (subject, body string) {
 
 func issueURL(base string, m message) string {
 	return strings.TrimRight(base, "/") + "/" + m.slug + "/issue/" + m.identifier
+}
+
+func chatURL(base string, m message) string {
+	return strings.TrimRight(base, "/") + "/" + m.slug + "/inbox/c/" + m.chatID
 }
 
 func footer(base, slug string) string {

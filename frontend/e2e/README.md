@@ -4,7 +4,7 @@ Browser scripts that drive the real apps against a running stack. They use the `
 
 | Script | Covers |
 |---|---|
-| `user.mjs` | Password sign-in, quick-create (`C`) with a mention and assignee, the notifications bell updating live, palette search, live description editing between two users with presence and named carets, a comment with an image attachment, the JSON renderer matching the editor's DOM, the offline message, board drag and Shift+←/→ keyboard moves (announced, focus kept), turning single-key shortcuts off and on, timeline paging ("Show older activity"), Home blocks (assigned issue, recently viewed, live activity) |
+| `user.mjs` | Password sign-in, quick-create (`C`) with a mention and assignee, the notifications bell updating live, palette search, live description editing between two users with presence and named carets, a comment with an image attachment, the JSON renderer matching the editor's DOM, the offline message, board drag and Shift+←/→ keyboard moves (announced, focus kept), turning single-key shortcuts off and on, timeline paging ("Show older activity"), Home blocks (assigned issue, recently viewed, live activity), chat (a direct message arriving live with an unread pill that clears on opening, a thread reply, a reaction) |
 | `invite.mjs` | Inviting a fresh address from the members page, the invite and sign-up code read from Mailpit, signing up from the invite link, "Accept invite" landing in the workspace as a member |
 | `admin.mjs` | Admin sign-in with password and a TOTP code (wrong code refused), redirect back, realtime socket, sign-out |
 
@@ -22,7 +22,7 @@ E2E_ADMIN_TOTP_SECRET=<setup key> node e2e/admin.mjs
 
 Each line prints `PASS`, `FAIL` or `SKIP`, and the process exits non-zero on any failure. On a crash, screenshots go to `$E2E_OUT` (default: the OS temp directory). `HEADED=1` shows the browser.
 
-`user.mjs` creates one temporary issue (with about 110 comments for the paging check) and deletes it at the end; the two images it uploads become unreferenced and the API's daily sweep removes them. It signs in twice (once through the form, once over the API). Sign-in is rate-limited per IP, so leave a little time between runs.
+`user.mjs` creates one temporary issue (with about 110 comments for the paging check) and deletes it at the end, and deletes its chat messages (they stay as "This message was deleted." in the demo/Maya direct chat, since deletes are soft); the two images it uploads become unreferenced and the API's daily sweep removes them. It signs in twice (once through the form, once over the API). Sign-in is rate-limited per IP, so leave a little time between runs.
 
 `invite.mjs` signs demo in once over the API and signs up one new account (`invite-<timestamp>@tether.test`), reading both emails from Mailpit. At the end demo removes that member; the account itself stays, in no workspace, since the API has no way to delete a user.
 

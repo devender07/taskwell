@@ -1,4 +1,4 @@
-package issue
+package doc
 
 import (
 	"slices"
@@ -44,25 +44,17 @@ func TestCheckDoc(t *testing.T) {
 		{"max length", para(`{"type":"text","text":"` + strings.Repeat("é", 50000) + `"}`), "", false},
 	}
 	for _, c := range cases {
-		out, msg := checkDescription([]byte(c.doc))
+		out, msg := Check([]byte(c.doc), "Description", 50000)
 		if msg != c.wantErr || (out == nil) != c.wantNil {
 			t.Errorf("%s: got %q nil=%v, want %q nil=%v", c.name, msg, out == nil, c.wantErr, c.wantNil)
 		}
 	}
-	comments := []struct{ doc, want string }{
-		{"", "Write a comment."},
-		{`{"type":"doc","content":[{"type":"paragraph"}]}`, "Write a comment."},
-		{`{"type":`, "Comment is not valid."},
-		{para(`{"type":"image"}`), "Comment has unsupported content."},
-		{para(`{"type":"text","text":"` + strings.Repeat("a", 20001) + `"}`), "Comment must be 20,000 characters or fewer."},
-		{para(`{"type":"text","text":"` + strings.Repeat("a", 20000) + `"}`), ""},
+	issue := `{"type":"mention","attrs":{"id":"ENG-12","label":"ENG-12","mentionSuggestionChar":"#"}}`
+	if out, msg := Check([]byte(para(issue)), "Message", 10000); out == nil || msg != "" {
+		t.Errorf("issue mention: got %q nil=%v", msg, out == nil)
 	}
-	for _, c := range comments {
-		if out, msg := checkComment(c.doc); msg != c.want || (out == nil) != (c.want != "") {
-			t.Errorf("comment %.40q: got %q nil=%v, want %q", c.doc, msg, out == nil, c.want)
-		}
-	}
-	got := mentions([]byte(para(`{"type":"mention","attrs":{"id":"a"}},{"type":"mention","attrs":{"id":"b"}},{"type":"mention","attrs":{"id":"a"}}`)))
+	got := Mentions([]byte(para(`{"type":"mention","attrs":{"id":"a"}},{"type":"mention","attrs":{"id":"b","mentionSuggestionChar":"@"}},` +
+		issue + `,{"type":"mention","attrs":{"id":"a"}}`)))
 	if !slices.Equal(got, []string{"a", "b"}) {
 		t.Errorf("mentions: got %v", got)
 	}
@@ -75,8 +67,23 @@ func TestCheckDoc(t *testing.T) {
 		{"nil", ``, ""},
 	}
 	for _, c := range texts {
-		if got := plainText([]byte(c.doc)); got != c.want {
-			t.Errorf("plainText %s: got %q, want %q", c.name, got, c.want)
+		if got := PlainText([]byte(c.doc)); got != c.want {
+			t.Errorf("PlainText %s: got %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestKeepMentions(t *testing.T) {
+	in := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"mention","attrs":{"id":"a","label":"Ann"}},` +
+		`{"type":"mention","attrs":{"id":"b","label":"Bob","mentionSuggestionChar":"@"}},` +
+		`{"type":"mention","attrs":{"id":"ENG-1","label":"ENG-1","mentionSuggestionChar":"#"}}]}]}`
+	got := string(KeepMentions([]byte(in), func(id string) bool { return id == "a" }))
+	want := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"mention","attrs":{"id":"a","label":"Ann"}},` +
+		`{"type":"text","text":"@Bob"},{"type":"mention","attrs":{"id":"ENG-1","label":"ENG-1","mentionSuggestionChar":"#"}}]}]}`
+	if got != want {
+		t.Errorf("got %s", got)
+	}
+	if got := string(KeepMentions([]byte(in), func(string) bool { return true })); got != in {
+		t.Errorf("unchanged doc rewritten: %s", got)
 	}
 }

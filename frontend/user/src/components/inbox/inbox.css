@@ -20,17 +20,18 @@
 
 .inbox-row:has(.inbox-link[data-selected]) { background: rgba(255, 255, 255, 0.05); box-shadow: inset 2px 0 0 var(--link); }
 
-/* Inbox page: the list, and on laptop screens the selected issue beside it. Below 1024px the preview replaces the list. */
-.inbox-page { display: grid; width: 100%; align-content: start; }
+/* Activity: the list, and from 1440px the selected issue beside it (the chat list takes the first 260px). Below that the
+   preview replaces the list. */
+.inbox-page { display: grid; width: 100%; height: 100%; align-content: start; overflow-y: auto; }
 .inbox-list-pane { display: grid; gap: 24px; align-content: start; min-width: 0; padding: 40px 24px; }
 .inbox-preview { display: none; min-width: 0; padding: 24px; }
-@media (min-width: 1024px) {
-  .inbox-page { grid-template-columns: clamp(320px, 32%, 440px) minmax(0, 1fr); height: calc(100dvh - 56px); }
+@media (min-width: 1440px) {
+  .inbox-page { grid-template-columns: clamp(320px, 36%, 440px) minmax(0, 1fr); align-content: stretch; overflow: hidden; }
   .inbox-list-pane { overflow-y: auto; padding: 24px 16px 24px 24px; border-right: 1px solid var(--border); }
   .inbox-preview { display: block; overflow-y: auto; padding: 24px 32px; }
   .inbox-back { display: none; }
 }
-@media (max-width: 1023px) {
+@media (max-width: 1439px) {
   .inbox-page[data-selected] .inbox-list-pane { display: none; }
   .inbox-page[data-selected] .inbox-preview { display: block; }
 }

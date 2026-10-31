@@ -9,7 +9,8 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const onSettings = Boolean(useMatchRoute()({ to: '/$workspace/settings', params: { workspace }, fuzzy: true }))
   const navigate = useNavigate()
   const { openPalette } = useShortcuts()
-  const { count } = useUnread()
+  const unread = useUnread()
+  const count = unread.count + unread.chats
   const [expanded, setExpanded] = useState(onSettings)
   const [wasOnSettings, setWasOnSettings] = useState(onSettings)
   if (onSettings !== wasOnSettings) {

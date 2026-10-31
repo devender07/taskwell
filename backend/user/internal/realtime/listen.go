@@ -95,9 +95,9 @@ func (h *Handler) deliver(ctx context.Context, payload string, presence chan<- s
 	aud, id, _ := strings.Cut(e.Aud, ":")
 	switch aud {
 	case "ws":
-		h.hub.toWorkspace(id, e.Event)
+		h.hub.toWorkspace(id, e.Skip, e.Event)
 	case "user":
-		h.hub.toUser(id, e.Event)
+		h.hub.toUser(id, e.Skip, e.Event)
 		if e.Close {
 			h.revoked(id)
 			h.hub.closeUser(id)

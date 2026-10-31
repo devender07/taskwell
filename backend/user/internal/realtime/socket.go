@@ -52,6 +52,8 @@ type Conn struct {
 
 	mu     sync.Mutex // held while handling a live-editing message
 	joined map[string]Collab
+
+	chats map[string]*chatAccess // typing: the chats checked lately; only the read goroutine uses it
 }
 
 type frame struct {
@@ -138,7 +140,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(readLimit)
 
 	c := &Conn{id: connID, userID: userID, session: s, ws: ws, events: make(chan []byte, eventBuffer), frames: make(chan frame, frameBuffer),
-		joined: map[string]Collab{}}
+		joined: map[string]Collab{}, chats: map[string]*chatAccess{}}
 	// The tab's own live-editing saves carry its id as origin, like its REST calls.
 	ctx, cancel := context.WithCancel(context.WithValue(r.Context(), originKey{}, c.id))
 	defer cancel()
@@ -171,7 +173,10 @@ func (h *Handler) read(ctx context.Context, ws *websocket.Conn, c *Conn) error {
 			ws.Close(websocket.StatusMessageTooBig, "Message too big.")
 			return nil
 		}
-		var m struct{ Type, Workspace, Issue string }
+		var m struct {
+			Type, Workspace, Issue, Chat string
+			Thread                       *string
+		}
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
@@ -184,6 +189,8 @@ func (h *Handler) read(ctx context.Context, ws *websocket.Conn, c *Conn) error {
 			err = h.join(ctx, c, m.Workspace, m.Issue)
 		case "collab.leave":
 			err = h.leave(ctx, c, m.Issue)
+		case "typing":
+			err = h.typing(ctx, c, m.Chat, m.Thread)
 		}
 		if err != nil {
 			return err

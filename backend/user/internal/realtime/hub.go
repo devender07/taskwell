@@ -98,9 +98,10 @@ func (hb *hub) unsubscribe(workspaceID, userID string) []*Conn {
 	return cs
 }
 
-func (hb *hub) toWorkspace(id string, msg []byte) { hb.send(hb.spaces, id, msg) }
+// toWorkspace and toUser send msg to the workspace's subscribers or the user's connections, but not skip's.
+func (hb *hub) toWorkspace(id, skip string, msg []byte) { hb.send(hb.spaces, id, skip, msg) }
 
-func (hb *hub) toUser(id string, msg []byte) { hb.send(hb.users, id, msg) }
+func (hb *hub) toUser(id, skip string, msg []byte) { hb.send(hb.users, id, skip, msg) }
 
 // closeUser asks every connection of the user to re-authenticate.
 func (hb *hub) closeUser(id string) {
@@ -111,11 +112,13 @@ func (hb *hub) closeUser(id string) {
 	}
 }
 
-func (hb *hub) send(index map[string]map[*Conn]struct{}, key string, msg []byte) {
+func (hb *hub) send(index map[string]map[*Conn]struct{}, key, skip string, msg []byte) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	for c := range index[key] {
-		c.event(msg)
+		if skip == "" || c.userID != skip {
+			c.event(msg)
+		}
 	}
 }
 

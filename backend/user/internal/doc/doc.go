@@ -1,4 +1,5 @@
-package issue
+// Package doc validates and reads the rich-text documents users write: descriptions, comments and chat messages.
+package doc
 
 import (
 	"encoding/json"
@@ -6,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf16"
 )
 
 // node is a ProseMirror JSON node, as Tiptap's editor.getJSON() returns it. Re-marshalling drops unknown fields.
@@ -34,15 +36,17 @@ var (
 )
 
 const (
-	maxDocDepth       = 32
-	maxDescriptionLen = 50000
-	maxCommentLen     = 20000
-	maxAltLen         = 200
+	maxDocDepth = 32
+	maxAltLen   = 200
 )
 
-// checkDoc validates a rich-text document (a description, or a comment) up to maxLen characters, and returns it
-// normalized, or nil when it's empty, plus an error message naming it ("" when valid).
-func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
+// Len counts s in UTF-16 units, like JS String.length.
+func Len(s string) int { return len(utf16.Encode([]rune(s))) }
+
+// Check validates a rich-text document (a description, a comment, a message) up to maxLen characters, and returns it
+// normalized, or nil when it's empty, plus an error message naming it ("" when valid). Mentions are people
+// (attrs.mentionSuggestionChar missing or "@", attrs.id a user id) or issues ("#", attrs.id an identifier).
+func Check(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 	var doc node
 	if err := json.Unmarshal(raw, &doc); err != nil || doc.Type != "doc" {
 		return nil, name + " is not valid."
@@ -64,19 +68,19 @@ func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 			if id == "" {
 				return false
 			}
-			length, solid = length+jsLen(label), true
+			length, solid = length+Len(label), true
 		case "horizontalRule":
 			solid = true
 		case "image":
 			src, _ := n.Attrs["src"].(string)
 			alt, altOK := n.Attrs["alt"].(string)
 			if !slices.Contains(imageParents, parent) || !fileURL.MatchString(src) ||
-				n.Attrs["alt"] != nil && (!altOK || jsLen(alt) > maxAltLen) {
+				n.Attrs["alt"] != nil && (!altOK || Len(alt) > maxAltLen) {
 				return false
 			}
 			solid = true
 		}
-		length += jsLen(n.Text)
+		length += Len(n.Text)
 		for _, m := range n.Marks {
 			if !slices.Contains(markTypes, m.Type) {
 				return false
@@ -112,24 +116,9 @@ func checkDoc(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 	return out, ""
 }
 
-func checkDescription(raw []byte) (json.RawMessage, string) {
-	return checkDoc(raw, "Description", maxDescriptionLen)
-}
-
-// checkComment is checkDoc for a comment, which can't be empty.
-func checkComment(raw string) (json.RawMessage, string) {
-	if raw == "" {
-		return nil, "Write a comment."
-	}
-	doc, msg := checkDoc([]byte(raw), "Comment", maxCommentLen)
-	if doc == nil && msg == "" {
-		msg = "Write a comment."
-	}
-	return doc, msg
-}
-
-// mentions returns the user ids mentioned in a document, each once, in order. A nil or invalid doc has none.
-func mentions(raw []byte) []string {
+// Mentions returns the user ids of the people mentioned in a document, each once, in order; issue mentions ("#")
+// aren't people. A nil or invalid doc has none.
+func Mentions(raw []byte) []string {
 	var doc node
 	if json.Unmarshal(raw, &doc) != nil {
 		return nil
@@ -137,7 +126,8 @@ func mentions(raw []byte) []string {
 	var ids []string
 	var walk func(n node)
 	walk = func(n node) {
-		if id, _ := n.Attrs["id"].(string); n.Type == "mention" && id != "" && !slices.Contains(ids, id) {
+		char, _ := n.Attrs["mentionSuggestionChar"].(string)
+		if id, _ := n.Attrs["id"].(string); n.Type == "mention" && (char == "" || char == "@") && id != "" && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 		for _, c := range n.Content {
@@ -148,15 +138,15 @@ func mentions(raw []byte) []string {
 	return ids
 }
 
-// newMentions returns the user ids mentioned in doc but not in old.
-func newMentions(old, doc []byte) []string {
-	before := mentions(old)
-	return slices.DeleteFunc(mentions(doc), func(id string) bool { return slices.Contains(before, id) })
+// NewMentions returns the people mentioned in doc but not in old.
+func NewMentions(old, doc []byte) []string {
+	before := Mentions(old)
+	return slices.DeleteFunc(Mentions(doc), func(id string) bool { return slices.Contains(before, id) })
 }
 
-// plainText returns a document's searchable text: its text and mention labels, with a newline after each block and
+// PlainText returns a document's searchable text: its text and mention labels, with a newline after each block and
 // hard break. A nil or invalid doc has none.
-func plainText(raw []byte) string {
+func PlainText(raw []byte) string {
 	var doc node
 	if json.Unmarshal(raw, &doc) != nil {
 		return ""
@@ -178,4 +168,36 @@ func plainText(raw []byte) string {
 	}
 	walk(doc)
 	return strings.TrimSpace(b.String())
+}
+
+// KeepMentions returns the document with each person mention whose id keep rejects turned into plain text ("@" and
+// its label). A nil or invalid doc comes back as is.
+func KeepMentions(raw []byte, keep func(id string) bool) json.RawMessage {
+	var doc node
+	if json.Unmarshal(raw, &doc) != nil {
+		return raw
+	}
+	changed := false
+	var walk func(n *node)
+	walk = func(n *node) {
+		for i := range n.Content {
+			c := &n.Content[i]
+			char, _ := c.Attrs["mentionSuggestionChar"].(string)
+			if id, _ := c.Attrs["id"].(string); c.Type == "mention" && (char == "" || char == "@") && !keep(id) {
+				label, _ := c.Attrs["label"].(string)
+				*c, changed = node{Type: "text", Text: "@" + label, Marks: c.Marks}, true
+				continue
+			}
+			walk(c)
+		}
+	}
+	walk(&doc)
+	if !changed {
+		return raw
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return raw
+	}
+	return out
 }

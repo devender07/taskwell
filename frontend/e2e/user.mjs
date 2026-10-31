@@ -38,6 +38,11 @@ const shape = (root) =>
 const demo = await newPage(DEMO.email)
 const maya = await newPage(MAYA.email)
 let issue = null
+const chatMessages = [] // [request context, message id] to delete at the end
+for (const who of [demo, maya])
+  who.page.on('response', async (r) => {
+    if (r.request().method() === 'POST' && /\/chats\/[^/]+\/messages$/.test(new URL(r.url()).pathname) && r.status() === 201) chatMessages.push([who.req, (await r.json()).id])
+  })
 
 try {
   // Sign-in through the form (demo); maya signs in over the API, so one run makes two sign-ins.
@@ -236,11 +241,40 @@ try {
     t.ok('timeline: older items prepended', await waitFor(async () => (await count()) > before && !(await older.count()), 5000), `${before} → ${await count()} comments`)
     t.ok('timeline: oldest item first', (await demo.page.locator('ol > li').first().innerText()).includes('created the issue'))
   }
+
+  // Chat: a direct message arrives live with an unread pill that clears on opening; a thread reply and a reaction
+  // show live on the other side. The messages are deleted at the end (soft delete: they stay as "deleted").
+  const dm = await (await demo.req.post(`${API}/chats/direct`, multipart({ user_id: issue.assignee.id }))).json()
+  await maya.page.goto(`${B}/${WORKSPACE}/inbox/activity`)
+  await demo.page.goto(`${B}/${WORKSPACE}/inbox/c/${dm.id}`)
+  const box = (p, name) => p.getByRole('textbox', { name, exact: true })
+  await box(demo.page, 'Message').click()
+  await demo.page.keyboard.type(`e2e hello ${identifier}`)
+  await demo.page.keyboard.press('Enter')
+  const dmRow = maya.page.locator(`a.chat-row[href$="/inbox/c/${dm.id}"]`)
+  t.ok('chat: direct message unread live', await waitFor(async () => /1 unread/.test(await dmRow.getAttribute('aria-label')), 8000))
+  await dmRow.click()
+  t.ok('chat: opening clears unread', await waitFor(async () => !/unread/.test(await dmRow.getAttribute('aria-label')), 8000))
+  const mayaMsg = maya.page.locator('.chat-main article').filter({ hasText: `e2e hello ${identifier}` })
+  await mayaMsg.hover()
+  await mayaMsg.getByRole('button', { name: 'Reply in thread' }).click()
+  await box(maya.page, 'Reply').click()
+  await maya.page.keyboard.type('e2e reply')
+  await maya.page.keyboard.press('Enter')
+  const demoMsg = demo.page.locator('.chat-main article').filter({ hasText: `e2e hello ${identifier}` })
+  t.ok('chat: thread reply shows "1 reply" live', await waitFor(() => demoMsg.getByRole('link', { name: /1 reply/ }).isVisible(), 8000))
+  await maya.page.keyboard.press('Escape') // below 1440px the thread covers the chat
+  t.ok('chat: Esc closes the thread', await waitFor(() => !maya.page.url().includes('thread=')))
+  await demoMsg.hover()
+  await demoMsg.getByRole('button', { name: 'More actions' }).click()
+  await demo.page.locator('.popover').getByRole('button', { name: 'React with 👍' }).click()
+  t.ok('chat: reaction shows live', await waitFor(() => mayaMsg.getByRole('button', { name: '👍 1' }).isVisible(), 8000))
 } catch (e) {
   t.ok('run', false, e.message.split('\n')[0])
   await demo.page.screenshot({ path: shot('e2e-fail-demo.png') }).catch(() => {})
   await maya.page.screenshot({ path: shot('e2e-fail-maya.png') }).catch(() => {})
 } finally {
+  for (const [req, id] of chatMessages) await req.delete(`${API}/messages/${id}`).catch(() => {})
   if (issue) await demo.req.delete(`${API}/issues/${issue.identifier}`)
   await browser.close()
   t.ok('no page errors', errors.length === 0, errors.join('; '))
