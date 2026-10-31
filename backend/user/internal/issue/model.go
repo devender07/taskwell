@@ -1030,7 +1030,7 @@ func scanComment(row pgx.Row) (Comment, error) {
 }
 
 // timelinePage caps a timeline page's comments and events together.
-const timelinePage = 20
+const timelinePage = 10
 
 // timeline returns a page of the issue's comments and events: the newest timelinePage created before before (all
 // when nil), each oldest first, and whether there are older ones. A page never splits a created_at that's shared

@@ -170,7 +170,7 @@ func TestIssueFlows(t *testing.T) {
 	seen := map[string]bool{}
 	before := ""
 	for pages := 0; ; pages++ {
-		if pages > 250/timelinePage+2 {
+		if pages > total {
 			t.Fatal("too many pages")
 		}
 		path := "/issues/ENG-3/timeline"
