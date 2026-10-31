@@ -106,8 +106,8 @@ func TestClaim(t *testing.T) {
 }
 
 // TestRunner runs an AI run end to end against a local site in real Chrome with a scripted Claude: generated
-// cases, a sign-in that passes with the sealed password typed by the tester, and a redirect to the metadata
-// address that's blocked and fails. Needs CHROME_URL (e.g. google-chrome --headless=new --remote-debugging-port=9333),
+// cases, a sign-in that passes with the sealed password typed by the tester (and is recorded), a redirect to the
+// metadata address that's blocked and fails, then a run of just the sign-in case that replays it without Claude. Needs CHROME_URL (e.g. google-chrome --headless=new --remote-debugging-port=9333),
 // or CHROME_URL=http://127.0.0.1:9222 CHROME_IN_DOCKER=1 with the dev compose chrome.
 func TestRunner(t *testing.T) {
 	chromeURL := os.Getenv("CHROME_URL")
@@ -210,7 +210,7 @@ func TestRunner(t *testing.T) {
 			if strings.Contains(last, "Welcome Ann") {
 				result = "pass"
 			}
-			return tool("finish", map[string]any{"result": result, "summary": "Signed in.", "reproduction": []string{}}), nil
+			return tool("finish", map[string]any{"result": result, "summary": "Signed in.", "reproduction": []string{}, "check": "Welcome Ann"}), nil
 		}
 		if step == 0 {
 			return tool("navigate", map[string]string{"url": site.URL + "/evil"}), nil
@@ -304,6 +304,31 @@ func TestRunner(t *testing.T) {
 	u, _ := url.Parse(*d.LatestScreenshotURL)
 	if !strings.HasPrefix(u.Path, "/api/files/") {
 		t.Errorf("screenshot url %s", u)
+	}
+	if !cs[0].Recorded || cs[1].Recorded {
+		t.Fatalf("recorded: sign-in %v, evil %v; want only the passed case", cs[0].Recorded, cs[1].Recorded)
+	}
+
+	callsBefore := calls
+	gotPassword = ""
+	var replayID string
+	if err := pool.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, started_by, proxy_token, case_id)
+		values ($1, $2, 'ai', $3, 'tok2', $4) returning id::text`, wsID, issueID, ann, cs[0].ID).Scan(&replayID); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := m.claim(ctx, 2, ""); err != nil || id != replayID {
+		t.Fatalf("claim replay run: %q %v", id, err)
+	}
+	r.execute(ctx, replayID)
+	d, err = m.run(ctx, wsID, replayID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Status != "passed" || len(d.Results) != 1 || calls != callsBefore {
+		t.Fatalf("replay run %s with %d results and %d Claude calls: %+v", d.Status, len(d.Results), calls-callsBefore, d.Results)
+	}
+	if gotPassword != password || !strings.HasPrefix(d.Results[0].Log[0].Action, "replay navigate") {
+		t.Errorf("replay typed %q, log %+v", gotPassword, d.Results[0].Log)
 	}
 }
 

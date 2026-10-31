@@ -474,21 +474,29 @@ type pageState struct {
 	Elements []string `json:"elements"`
 }
 
-// stateJS tags the visible interactive elements with data-tether-ref and lists them, never a password's value.
-const stateJS = `(() => {
-  document.querySelectorAll('[data-tether-ref]').forEach(e => e.removeAttribute('data-tether-ref'));
+// elementsJS declares what stateJS, locateJS and resolveJS share: which elements are interactive, whether one is
+// visible, and its accessible-ish name.
+const elementsJS = `
   const sel = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[contenteditable=""],[contenteditable=true],[onclick]';
   const clean = s => String(s || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  const visible = el => { const r = el.getBoundingClientRect(), st = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none' && el.type !== 'hidden'; };
+  const nameOf = el => { const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || 'text').toLowerCase();
+    return clean(el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) || el.placeholder ||
+      el.innerText || (tag === 'input' && (type === 'submit' || type === 'button') ? el.value : '') || el.title || el.name); };
+`
+
+// stateJS tags the visible interactive elements with data-tether-ref and lists them, never a password's value.
+const stateJS = `(() => {` + elementsJS + `
+  document.querySelectorAll('[data-tether-ref]').forEach(e => e.removeAttribute('data-tether-ref'));
   const out = []; let n = 0;
   for (const el of document.querySelectorAll(sel)) {
     if (n >= 200) break;
-    const r = el.getBoundingClientRect(), st = getComputedStyle(el);
-    if (r.width === 0 || r.height === 0 || st.visibility === 'hidden' || st.display === 'none' || el.type === 'hidden') continue;
+    if (!visible(el)) continue;
     n++; el.setAttribute('data-tether-ref', String(n));
     const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || 'text').toLowerCase();
     const kind = el.getAttribute('role') || (tag === 'input' ? 'input type=' + type : tag);
-    const name = clean(el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) || el.placeholder ||
-      el.innerText || (tag === 'input' && (type === 'submit' || type === 'button') ? el.value : '') || el.title || el.name);
+    const name = nameOf(el);
     let line = '[' + n + '] ' + kind + ' "' + name + '"';
     if (tag === 'textarea' || (tag === 'input' && !['password', 'checkbox', 'radio', 'submit', 'button', 'file'].includes(type))) line += ' value="' + clean(el.value) + '"';
     if (type === 'checkbox' || type === 'radio') line += el.checked ? ' checked' : ' unchecked';

@@ -57,6 +57,7 @@ type Case struct {
 	Source     string      `json:"source"`
 	UpdatedAt  time.Time   `json:"updated_at"`
 	LastResult *LastResult `json:"last_result"`
+	Recorded   bool        `json:"recorded"` // a passed AI run's steps are saved; runs replay them without Claude
 }
 
 // caseFields is a case as a person or Claude wrote it.
@@ -143,7 +144,7 @@ func lockIssue(ctx context.Context, tx pgx.Tx, issueID string) error {
 
 // --- cases ---
 
-const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source, c.updated_at,
+const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source, c.updated_at, c.script is not null,
 	(select json_build_object('status', r.status, 'run_id', r.run_id, 'kind', t.kind, 'at', r.marked_at)
 	 from test_results r join test_runs t on t.id = r.run_id
 	 where r.case_id = c.id and r.marked_at is not null order by r.marked_at desc limit 1)
@@ -151,7 +152,7 @@ const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source
 
 func scanCase(row pgx.Row) (Case, error) {
 	var c Case
-	err := row.Scan(&c.ID, &c.Position, &c.Title, &c.Steps, &c.Expected, &c.Source, &c.UpdatedAt, &c.LastResult)
+	err := row.Scan(&c.ID, &c.Position, &c.Title, &c.Steps, &c.Expected, &c.Source, &c.UpdatedAt, &c.Recorded, &c.LastResult)
 	c.UpdatedAt = c.UpdatedAt.UTC()
 	if c.LastResult != nil {
 		c.LastResult.At = c.LastResult.At.UTC()
@@ -216,7 +217,7 @@ func (m *model) createCase(ctx context.Context, issueID, userID string, f caseFi
 func (m *model) updateCase(ctx context.Context, workspaceID, id, userID string, f caseFields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueID string
-		err := tx.QueryRow(ctx, `update test_cases c set title = $3, steps = $4, expected = $5, updated_at = now()
+		err := tx.QueryRow(ctx, `update test_cases c set title = $3, steps = $4, expected = $5, script = null, updated_at = now()
 			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
 			returning c.issue_id::text`, id, workspaceID, f.Title, f.Steps, f.Expected).Scan(&issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -462,7 +463,7 @@ func (m *model) createManual(ctx context.Context, workspaceID, issueID, userID s
 			values ($1, $2, 'manual', $3, 'running') returning id::text`, workspaceID, issueID, userID).Scan(&id); err != nil {
 			return err
 		}
-		n, err := snapshotCases(ctx, tx, id, issueID, maxCases)
+		n, err := snapshotCases(ctx, tx, id, issueID, "", maxCases)
 		if err != nil {
 			return err
 		}
@@ -478,10 +479,11 @@ func (m *model) createManual(ctx context.Context, workspaceID, issueID, userID s
 }
 
 // snapshotCases copies the issue's first limit saved cases into the run as pending results and returns how many.
-func snapshotCases(ctx context.Context, tx pgx.Tx, runID, issueID string, limit int) (int64, error) {
+func snapshotCases(ctx context.Context, tx pgx.Tx, runID, issueID, caseID string, limit int) (int64, error) {
 	tag, err := tx.Exec(ctx, `insert into test_results (run_id, case_id, position, title, steps, expected)
 		select $1, id, row_number() over (order by position, id) - 1, title, steps, expected
-		from test_cases where issue_id = $2 and deleted_at is null order by position, id limit $3`, runID, issueID, limit)
+		from test_cases where issue_id = $2 and deleted_at is null and ($4 = '' or id::text = $4)
+		order by position, id limit $3`, runID, issueID, limit, caseID)
 	if err != nil {
 		return 0, fmt.Errorf("snapshot test cases: %w", err)
 	}
@@ -804,7 +806,7 @@ func (m *model) testerAlive(ctx context.Context) (bool, error) {
 
 // createAI queues an AI run and returns its id: errNoSites, errLimit (spend >= limitMicros) or errRunActive when
 // one is already queued or running on the issue.
-func (m *model) createAI(ctx context.Context, wsID, issueID, userID string, regenerate bool, limitMicros int64) (string, error) {
+func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID string, regenerate bool, limitMicros int64) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if err := lockIssue(ctx, tx, issueID); err != nil {
@@ -820,6 +822,16 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID string, rege
 		if sites == 0 {
 			return errNoSites
 		}
+		if caseID != "" {
+			var ok bool
+			if err := tx.QueryRow(ctx, `select exists (select 1 from test_cases where id = $1 and issue_id = $2 and deleted_at is null)`,
+				caseID, issueID).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return errNotFound
+			}
+		}
 		n, err := spent(ctx, tx, wsID)
 		if err != nil {
 			return err
@@ -830,13 +842,13 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID string, rege
 		case active:
 			return errRunActive
 		}
-		if err := tx.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, regenerate, started_by, status, proxy_token)
-			values ($1, $2, 'ai', $3, $4, 'queued', $5) returning id::text`, wsID, issueID, regenerate, userID, rand.Text()).Scan(&id); err != nil {
+		if err := tx.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, regenerate, started_by, status, proxy_token, case_id)
+			values ($1, $2, 'ai', $3, $4, 'queued', $5, $6) returning id::text`, wsID, issueID, regenerate, userID, rand.Text(), nullable(caseID)).Scan(&id); err != nil {
 			return err
 		}
 		return publishRun(ctx, tx, issueID, id, userID, false)
 	})
-	if err != nil && !errors.Is(err, errNoSites) && !errors.Is(err, errLimit) && !errors.Is(err, errRunActive) {
+	if err != nil && !errors.Is(err, errNoSites) && !errors.Is(err, errLimit) && !errors.Is(err, errRunActive) && !errors.Is(err, errNotFound) {
 		return "", fmt.Errorf("queue ai run: %w", err)
 	}
 	return id, err
@@ -932,7 +944,7 @@ type accountRef struct{ id, label, username string }
 
 // job is what the tester needs to run a claimed run.
 type job struct {
-	runID, wsID, issueID, status, token, startedBy string
+	runID, wsID, issueID, status, token, startedBy, caseID string
 	regenerate                                     bool
 	issueTitle, description, project               string
 	sites                                          []Site
@@ -944,9 +956,9 @@ func (m *model) job(ctx context.Context, runID string) (*job, error) {
 	var desc []byte
 	var startedBy *string
 	err := m.db.QueryRow(ctx, `select r.workspace_id::text, r.issue_id::text, r.status, r.proxy_token, r.regenerate, r.started_by::text,
-		  i.title, i.description, p.name
+		  coalesce(r.case_id::text, ''), i.title, i.description, p.name
 		from test_runs r join issues i on i.id = r.issue_id join projects p on p.id = i.project_id where r.id = $1`, runID).
-		Scan(&j.wsID, &j.issueID, &j.status, &j.token, &j.regenerate, &startedBy, &j.issueTitle, &desc, &j.project)
+		Scan(&j.wsID, &j.issueID, &j.status, &j.token, &j.regenerate, &startedBy, &j.caseID, &j.issueTitle, &desc, &j.project)
 	if err != nil {
 		return nil, fmt.Errorf("read ai run: %w", err)
 	}
@@ -1003,7 +1015,7 @@ func (m *model) startCases(ctx context.Context, j *job, generated []caseFields) 
 				return err
 			}
 		}
-		if _, err := snapshotCases(ctx, tx, j.runID, j.issueID, maxCases); err != nil {
+		if _, err := snapshotCases(ctx, tx, j.runID, j.issueID, j.caseID, maxCases); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `update test_results set status = 'skipped', summary = $3, marked_at = now()
@@ -1026,6 +1038,27 @@ func nullable(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// script returns the case's recorded steps; nil when it has none.
+func (m *model) script(ctx context.Context, caseID string) (*script, error) {
+	var sc *script
+	err := m.db.QueryRow(ctx, `select script from test_cases where id = $1 and deleted_at is null`, caseID).Scan(&sc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read test script: %w", err)
+	}
+	return sc, nil
+}
+
+// saveScript records a passed case's steps for replay.
+func (m *model) saveScript(ctx context.Context, caseID string, sc *script) error {
+	if _, err := m.db.Exec(ctx, `update test_cases set script = $2 where id = $1 and deleted_at is null`, caseID, sc); err != nil {
+		return fmt.Errorf("save test script: %w", err)
+	}
+	return nil
 }
 
 // pending returns the run's results still to run, in order.

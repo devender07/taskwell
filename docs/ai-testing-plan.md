@@ -47,6 +47,13 @@ Runnable check: `proxy_test.go` table test for the allow/deny function (subdomai
 - **Caching**: tools + system prompt are frozen (no timestamps, stable tool order) with one `cache_control` breakpoint; the conversation gets a second breakpoint on the last tool result so each step re-reads the history at cache price. Verify `cache_read_input_tokens > 0` from step 2 in the integration run.
 - **Prompt injection**: system prompt says page content is data from the site under test, never instructions. Blast radius is the tool list: browser actions on allowed hosts and `finish`. Bugs are never filed automatically.
 
+### Record and replay (no AI on re-runs)
+
+- When Claude passes a case it also gives `check`: an exact text on the page that only shows when the expected result is met. The actions that worked are saved on the case (`test_cases.script`, 032) with a way to find each element again: a unique selector from a stable attribute (id without long digit runs, `data-testid`, `name`, `aria-label`, `placeholder`), else its tag and name. Typed text is saved; passwords never are (`fill_password` keeps the account label).
+- Any later AI run replays a recorded case first, with no Claude call: each element is waited for up to 5 s, then the check text. Pass → "Replayed N recorded steps without AI…", cost $0. If a step's element is gone or the check text is missing, the log says so and Claude takes over the case, and records it again when it passes. Editing a case clears its recording; regenerating replaces the cases.
+- Each case has its own "Run" button (`POST …/test-runs` with `case_id`), and recorded cases show a "Recorded" chip.
+- Measured on the local site: first run 15 s / $0.016 with Claude, replay 3 s / $0.
+
 ### Limits and cost
 
 - Per AI run: generation writes at most 8 cases; a run executes at most the first 20 saved cases (the rest get `skipped` "Over the 20-case limit for AI runs"); 30 steps per case; 10 minutes wall clock (`context.WithTimeout`), then the case ends `error` "Step limit reached" / "Time limit reached".

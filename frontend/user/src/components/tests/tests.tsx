@@ -162,7 +162,7 @@ export function ConfirmButton(props: { label: string; title: string; description
   )
 }
 
-type Start = { kind: 'ai' | 'manual'; regenerate?: boolean }
+type Start = { kind: 'ai' | 'manual'; regenerate?: boolean; caseId?: string }
 
 export function TestsSection({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const navigate = useNavigate()
@@ -176,10 +176,10 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
   const list = cases.data ?? []
   const noSite = sites.data?.length === 0
 
-  const [startError, start, starting] = useActionState(async (_prev: string | null, { kind, regenerate }: Start) => {
+  const [startError, start, starting] = useActionState(async (_prev: string | null, { kind, regenerate, caseId }: Start) => {
     let run
     try {
-      run = await startTestRun(workspace, issue.identifier, kind, regenerate)
+      run = await startTestRun(workspace, issue.identifier, kind, regenerate, caseId)
     } catch (e) {
       return toFormErrors(e).error
     }
@@ -243,7 +243,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
       ) : list.length === 0 && cases.data ? (
         <p className="text-body-sm text-secondary m-0">No test cases yet. Run an AI test to write them, or add one.</p>
       ) : (
-        <CaseList workspace={workspace} issue={issue} cases={list} manage={manage} onChange={cases.set} />
+        <CaseList workspace={workspace} issue={issue} cases={list} manage={manage} onChange={cases.set} onRun={runAi && !noSite && !starting ? (id) => run({ kind: 'ai', caseId: id }) : undefined} />
       )}
       {manage ? (
         adding ? (
@@ -278,9 +278,9 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
   )
 }
 
-type ListProps = { workspace: Workspace; issue: Issue; cases: TestCase[]; manage: boolean; onChange: (cases: TestCase[]) => void }
+type ListProps = { workspace: Workspace; issue: Issue; cases: TestCase[]; manage: boolean; onChange: (cases: TestCase[]) => void; onRun?: (caseId: string) => void }
 
-function CaseList({ workspace, issue, cases, manage, onChange }: ListProps) {
+function CaseList({ workspace, issue, cases, manage, onChange, onRun }: ListProps) {
   const [order, setOrder] = useOptimistic(cases)
   const [drag, setDrag] = useState<{ id: string; over: string | null } | null>(null)
 
@@ -329,6 +329,7 @@ function CaseList({ workspace, issue, cases, manage, onChange }: ListProps) {
               issue={issue}
               c={c}
               manage={manage}
+              onRun={onRun}
               handle={
                 manage ? (
                   <button
@@ -377,11 +378,12 @@ type RowProps = {
   c: TestCase
   manage: boolean
   handle: ReactNode
+  onRun?: (caseId: string) => void
   onSaved: (c: TestCase) => void
   onDeleted: () => void
 }
 
-function CaseRow({ workspace, issue, c, manage, handle, onSaved, onDeleted }: RowProps) {
+function CaseRow({ workspace, issue, c, manage, handle, onRun, onSaved, onDeleted }: RowProps) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
 
@@ -424,6 +426,16 @@ function CaseRow({ workspace, issue, c, manage, handle, onSaved, onDeleted }: Ro
         <button type="button" className="test-case-toggle flex-grow" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span className="text-label text-primary">{c.title}</span>
         </button>
+        {c.recorded ? (
+          <span className="label-chip flex-noshrink" title="Runs replay the steps recorded when it last passed, without AI. If the page changed, AI takes over.">
+            Recorded
+          </span>
+        ) : null}
+        {onRun ? (
+          <Button variant="ghost" onClick={() => onRun(c.id)} title={c.recorded ? 'Replay without AI' : 'Run with AI and record the steps'}>
+            Run
+          </Button>
+        ) : null}
         {manage ? (
           <>
             <Button variant="ghost" onClick={() => setEditing(true)}>

@@ -457,8 +457,15 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 	if err != nil {
 		return err
 	}
-	id, err := h.model.createAI(r.Context(), ws.ID, i.id, userID, r.PostForm.Get("regenerate") == "true", int64(limit*1e6))
+	caseID := r.PostForm.Get("case_id")
+	if caseID != "" && !isUUID(caseID) {
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	id, err := h.model.createAI(r.Context(), ws.ID, i.id, userID, caseID, caseID == "" && r.PostForm.Get("regenerate") == "true", int64(limit*1e6))
 	switch {
+	case errors.Is(err, errNotFound):
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
 	case errors.Is(err, errNoSites):
 		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
 	case errors.Is(err, errLimit):

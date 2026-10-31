@@ -271,6 +271,7 @@ export type TestCase = {
   source: 'ai' | 'manual'
   updated_at: string
   last_result: { status: TestStatus; run_id: string; kind: 'ai' | 'manual'; at: string } | null
+  recorded: boolean
 }
 export type TestStep = { position: number; action: string; url: string | null; screenshot_url: string | null }
 export type TestResult = {
@@ -331,10 +332,11 @@ export function orderTestCases(workspace: Workspace, identifier: string, ids: st
   return api<TestCase[]>(`${testCasesPath(workspace, identifier)}/order`, form)
 }
 
-export function startTestRun(workspace: Workspace, identifier: string, kind: 'ai' | 'manual', regenerate = false) {
+export function startTestRun(workspace: Workspace, identifier: string, kind: 'ai' | 'manual', regenerate = false, caseId?: string) {
   const form = new FormData()
   form.set('kind', kind)
   if (regenerate) form.set('regenerate', 'true')
+  if (caseId) form.set('case_id', caseId)
   return api<TestRun>(testRunsPath(workspace, identifier), form)
 }
 

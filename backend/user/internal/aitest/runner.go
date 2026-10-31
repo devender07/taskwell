@@ -171,7 +171,7 @@ func (r *Runner) runJob(ctx, stop context.Context, runID string) (status, msg st
 			slog.Error("ai run", "run", runID, "err", err)
 			return "error", "Something went wrong. Run it again."
 		}
-		pass, summary, repro, err := r.runCase(ctx, stop, j, x)
+		pass, summary, repro, err := r.runOne(ctx, stop, j, x)
 		if err != nil {
 			caseMsg, status, msg := r.failure(runID, err)
 			if caseMsg != "" {
@@ -195,6 +195,31 @@ func (r *Runner) runJob(ctx, stop context.Context, runID string) (status, msg st
 		return "error", "Something went wrong. Run it again."
 	}
 	return status, msg
+}
+
+// runOne replays the case's recorded script when it has one, with no Claude call; when there's none or the
+// replay no longer matches the page, Claude runs the case (and records it again when it passes).
+func (r *Runner) runOne(ctx, stop context.Context, j *job, x Result) (status, summary string, repro []string, err error) {
+	db := context.WithoutCancel(ctx)
+	logged := 0
+	sc, err := r.model.script(db, x.CaseID)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if sc != nil && !j.regenerate {
+		ok, why, err := r.replay(ctx, j, x, sc, &logged)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if ok {
+			return "passed", fmt.Sprintf("Replayed %d recorded steps without AI and found %q on the page.", len(sc.Steps), sc.Check), nil, nil
+		}
+		if err := r.model.addStep(db, j, r.o.UploadDir, x.ID, logged, why+" Claude takes over.", "", nil); err != nil {
+			return "", "", nil, err
+		}
+		logged++
+	}
+	return r.runCase(ctx, stop, j, x, logged)
 }
 
 // failure maps a run-ending err to the current case's message ("" leaves it to be skipped) and the run's status
@@ -277,7 +302,7 @@ func (r *Runner) browser(ctx context.Context) (*cdp, error) {
 
 // runCase drives one case until Claude calls finish ("passed" or "failed"), or returns "error" with a summary for
 // a case that couldn't finish. err ends the whole run.
-func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result) (status, summary string, repro []string, err error) {
+func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result, logged int) (status, summary string, repro []string, err error) {
 	db := context.WithoutCancel(ctx)
 	c, err := r.browser(ctx)
 	if err != nil {
@@ -292,7 +317,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result) (status, s
 	msgs := []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(caseIntro(j, x)))}
 	var last *anthropic.BetaToolResultBlockParam
 	var elements []string
-	logged := 0
+	var rec script
 	seenBlocked := map[string]bool{}
 	for range maxStepsPerCase {
 		p.Messages = msgs
@@ -322,15 +347,28 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result) (status, s
 		if uses[0].Name == "finish" {
 			switch in.Result {
 			case "pass":
+				rec.Check = strings.TrimSpace(in.Check)
+				if found, err := pg.waitFor(ctx, hasTextJS(rec.Check), 0); err == nil && found && rec.Check != "" {
+					if err := r.model.saveScript(db, x.CaseID, &rec); err != nil {
+						return "", "", nil, err
+					}
+				}
 				return "passed", in.Summary, nil, nil
 			case "blocked":
 				return "error", in.Summary, nil, nil
 			}
 			return "failed", in.Summary, in.Reproduction, nil
 		}
+		step := scriptStep{Tool: uses[0].Name, URL: in.URL, Text: in.Text, Value: in.Value, Key: in.Key, Seconds: in.Seconds, Account: in.Account}
+		if in.Ref > 0 && uses[0].Name != "navigate" && uses[0].Name != "press" && uses[0].Name != "wait" {
+			step.Target = pg.locate(ctx, in.Ref)
+		}
 		note, action, err := r.act(ctx, pg, j, uses[0].Name, in, elements)
 		if err != nil {
 			return "", "", nil, err
+		}
+		if note == "" && (step.Target != nil || uses[0].Name == "navigate" || uses[0].Name == "press" || uses[0].Name == "wait") {
+			rec.Steps = append(rec.Steps, step)
 		}
 		for _, host := range r.o.Proxy.takeBlocked(j.runID) {
 			if seenBlocked[host] || !pg.asked(host) {
