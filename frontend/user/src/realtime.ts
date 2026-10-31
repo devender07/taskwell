@@ -1,7 +1,7 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { coalescer, decodeFrame, encodeFrame, eventPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
-import { api, refreshAccess, setClient, type PersonRef, type Workspace } from '@/api'
+import { api, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches
 // the ones it has loaded; it also carries live description editing and who's viewing an issue.
@@ -39,6 +39,8 @@ let workspace: string | undefined
 let running = false
 let opened = false
 let delay = 1000
+let steady: ReturnType<typeof setTimeout> | undefined // resets the backoff once a socket has stayed up
+let reauthed = false // the last drop was the server asking for a fresh token, not a failure
 let retry: ReturnType<typeof setTimeout> | undefined
 let ping: ReturnType<typeof setInterval> | undefined
 let pong: ReturnType<typeof setTimeout> | undefined
@@ -81,7 +83,7 @@ const push = coalescer(
   (paths) => {
     const filter = (m: AnyRouteMatch) => touches(loadedBy(m), paths)
     router?.clearCache({ filter }) // hover-preloaded data for these paths is now stale
-    if (router?.state.matches.some(filter)) void router.invalidate({ filter })
+    if (router?.state.matches.some(filter)) void reload(router, filter, touches(APP_PATHS, paths))
     for (const s of subscribers) if (touches(s.paths, paths)) s.refetch()
   },
   { throttle: (p) => (LIST.test(p) ? 3000 : undefined) },
@@ -131,10 +133,11 @@ function onMessage(data: unknown) {
     case 'hello':
       client = msg.client
       setClient(client)
-      delay = 1000
+      clearTimeout(steady)
+      steady = setTimeout(() => (delay = 1000), 10_000)
       if (workspace) send({ type: 'subscribe', workspace })
       for (const ch of channels) join(ch)
-      if (opened) push(ALL)
+      if (opened) setTimeout(() => push(ALL), reauthed ? 0 : Math.random() * 2000) // spread a restart's refetches over 2s
       opened = true
       clearInterval(ping)
       ping = setInterval(checkAlive, 25_000)
@@ -178,6 +181,7 @@ function checkAlive() {
     if (!sock) return
     sock.onclose = null
     sock.close()
+    reauthed = false
     dropped(sock, true)
   }, 10_000)
 }
@@ -187,8 +191,12 @@ function connect() {
   sock.binaryType = 'arraybuffer'
   ws = sock
   sock.onmessage = (e) => onMessage(e.data)
-  // 4001: the access token expired or the sign-in may be revoked, so refresh before reconnecting.
-  sock.onclose = (e) => dropped(sock, client !== '' && e.code !== 4001)
+  // 4001: the access token expired or the sign-in may be revoked, so refresh before reconnecting, without backing off.
+  sock.onclose = (e) => {
+    reauthed = e.code === 4001
+    dropped(sock, client !== '' && !reauthed)
+    if (reauthed) delay = 1000
+  }
 }
 
 function dropped(sock: WebSocket, hello: boolean) {
@@ -198,6 +206,7 @@ function dropped(sock: WebSocket, hello: boolean) {
   setClient('')
   clearInterval(ping)
   clearTimeout(pong)
+  clearTimeout(steady)
   for (const ch of channels) {
     ch.uuid = ch.id = null
     ch.onClose()
@@ -205,9 +214,9 @@ function dropped(sock: WebSocket, hello: boolean) {
   }
   if (!running) return
   retry = setTimeout(async () => {
-    if (!hello) await refreshAccess().catch(() => {})
+    if (!hello && (await refreshAccess().catch(() => null))?.status === 401) return sessionEnded()
     if (running && !ws) connect()
-  }, delay)
+  }, delay * (0.5 + Math.random()))
   delay = Math.min(delay * 2, 10_000)
 }
 
@@ -235,6 +244,27 @@ function start(r: AnyRouter) {
       sock.close()
       dropped(sock, true)
     }
+  }
+}
+
+// After this tab's own change: reloads the page's own data (its deepest match) instead of the session and layouts,
+// and drops other cached pages so they load fresh. Other tabs hear about the change over the socket.
+export function reloadPage(r: AnyRouter) {
+  const page = r.state.matches.at(-1)?.id
+  r.clearCache()
+  return reload(r, (m) => m.id === page, false)
+}
+
+// _app's beforeLoad runs on every load; while this is false it reuses the session it already has.
+let reloadSession = true
+export const keepSession = () => !reloadSession
+
+async function reload(r: AnyRouter, filter: (m: AnyRouteMatch) => boolean, session: boolean) {
+  reloadSession = session
+  try {
+    await r.invalidate({ filter })
+  } finally {
+    reloadSession = true
   }
 }
 

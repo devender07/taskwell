@@ -3,9 +3,11 @@ import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { Avatar } from '@tether/shared/avatar'
 import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
+import { issueDescription } from '@tether/shared/validate'
 import { avatarSrc, uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
 import type { Viewer } from '@/realtime'
 import { REMOTE, connectCollab, type CollabState } from './collab'
+import { useUnsavedPrompt } from './timeline'
 
 type Session = { doc: Y.Doc; awareness: Awareness }
 
@@ -25,7 +27,13 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
   const [empty, setEmpty] = useState(!issue.description)
+  const [unsent, setUnsent] = useState(false)
+  const [tooLong, setTooLong] = useState<string | null>(null)
+  const [discarded, setDiscarded] = useState(false)
+  const [round, setRound] = useState(0) // a new doc after a change too large to sync
   const seed = useRef(issue.description)
+  const long = useRef(false)
+  useUnsavedPrompt(unsent)
   const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
   const slug = workspace.slug
   const identifier = issue.identifier
@@ -36,10 +44,12 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
     const awareness = new Awareness(doc)
     let dirty = false
     let seeding = false
+    let discard = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    // The server would reject an over-long description, so it isn't sent; the live doc keeps it until trimmed.
     const flush = () => {
       clearTimeout(timer)
-      if (dirty && conn.save(JSON.stringify(yDocToJSON(doc)))) dirty = false
+      if (dirty && !discard && !long.current && conn.save(JSON.stringify(yDocToJSON(doc)))) dirty = false
     }
     const conn = connectCollab(slug, identifier, doc, awareness, (s) => {
       if (!s) return setOffline(true)
@@ -50,10 +60,17 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       }
       setLive(s)
       setOffline(false)
+      setUnsent(false)
       if (dirty) flush()
-    }, (viewers) => onViewers(viewers.filter((v) => v.id !== userId)))
+    }, (viewers) => onViewers(viewers.filter((v) => v.id !== userId)), () => {
+      discard = true
+      setDiscarded(true)
+      setRound((r) => r + 1)
+    })
     doc.on('update', (_: Uint8Array, origin: unknown) => {
-      if (origin === REMOTE || seeding) return
+      if (origin === REMOTE || seeding || discard) return
+      if (!conn.ready()) setUnsent(true)
+      setDiscarded(false)
       dirty = true
       clearTimeout(timer)
       timer = setTimeout(flush, 1000)
@@ -68,7 +85,7 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       doc.destroy()
       onViewers([])
     }
-  }, [slug, identifier, userId, onViewers])
+  }, [slug, identifier, userId, onViewers, round])
 
   const collab = useMemo(
     () => session && { ...session, user: { name: user.name, color: caretColor(user.id) } },
@@ -90,7 +107,12 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
               mentions={mentions}
               minHeight={160}
               upload={(file) => uploadFile(workspace.slug, file)}
-              onChange={(doc) => setEmpty(!doc)}
+              onChange={(doc, length) => {
+                const error = issueDescription(length)
+                long.current = !!error
+                setTooLong(error)
+                setEmpty(!doc)
+              }}
             />
           </div>
           {!editable && empty ? none : null}
@@ -100,6 +122,11 @@ export function Description({ workspace, issue, user, members, onViewers }: Prop
       ) : issue.can_edit ? null : (
         none
       )}
+      {tooLong || discarded ? (
+        <p role="alert" className="text-caption text-accent m-0">
+          {tooLong ?? 'That change was too large to save (over 256 KB), so it was undone.'}
+        </p>
+      ) : null}
       {offline ? <p className="text-caption text-secondary m-0">Offline, reconnecting…</p> : null}
     </section>
   )

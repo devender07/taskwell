@@ -5,6 +5,7 @@ import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { labelColor, labelName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Label, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot } from '@/components/issues/fields'
 
@@ -31,7 +32,7 @@ function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?:
     } catch (e) {
       return toFormErrors(e)
     }
-    await router.invalidate()
+    await reloadPage(router)
     if (!label) setName('')
     onDone?.()
     return {}
@@ -97,7 +98,7 @@ function LabelRow({ workspace, label, manage }: { workspace: Workspace; label: L
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     setDeleting(false)
     return null
   }, null)

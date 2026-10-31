@@ -1,4 +1,4 @@
-import type { ErrorComponentProps } from '@tanstack/react-router'
+import { useRouter, type ErrorComponentProps } from '@tanstack/react-router'
 import { Button } from '../button/button'
 
 export function Pending() {
@@ -6,11 +6,12 @@ export function Pending() {
 }
 
 export function ErrorFallback({ error, reset }: ErrorComponentProps) {
+  const router = useRouter()
   return (
     <div role="alert" className="grid place-center min-h-screen p-4">
       <div className="grid justify-items-center gap-4 text-center">
         <p className="text-body-sm text-secondary">{error instanceof Error ? error.message : String(error)}</p>
-        <Button onClick={reset}>Try again</Button>
+        <Button onClick={() => router.invalidate().then(reset)}>Try again</Button>
       </div>
     </div>
   )

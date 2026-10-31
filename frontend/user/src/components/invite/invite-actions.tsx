@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
-import { api, toFormErrors, type Workspace } from '@/api'
+import { api, signOut, toFormErrors, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 export function JoinWorkspace({ token }: { token: string }) {
@@ -31,7 +31,7 @@ export function SwitchAccount({ redirect }: { redirect: string }) {
   const navigate = useNavigate()
   const [error, switchAccount, pending] = useActionState(async () => {
     try {
-      await api('/auth/signout', new FormData())
+      await signOut()
     } catch (e) {
       return toFormErrors(e).error
     }

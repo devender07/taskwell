@@ -76,6 +76,9 @@ export type NotificationPage = { notifications: Notification[]; has_more: boolea
 export type NotificationSettings = { email: 'instant' | 'digest' | 'off'; mentions: boolean; assignments: boolean; status: boolean; comments: boolean }
 export type FieldErrors = Record<string, string | null | undefined>
 
+export const issuePath = (workspace: Workspace, identifier: string) =>
+  `/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
+
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
@@ -99,10 +102,14 @@ export class ApiError extends Error {
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
 // A 401 outside /auth/* (except password change, which needs a session) refreshes the access token once and retries.
+// A failed refresh in a signed-in tab means the session ended: it goes to sign-in and the call never settles.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
   let res = await send(path, body, method, signal)
   if (res.status === 401 && (!path.startsWith('/auth/') || path === '/auth/password/change')) {
-    await refreshAccess()
+    if ((await refreshAccess()).status === 401 && signedIn) {
+      sessionEnded()
+      return new Promise<never>(() => {})
+    }
     res = await send(path, body, method, signal)
   }
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined)
@@ -123,7 +130,7 @@ async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET
 }
 
 // One refresh at a time per tab; concurrent 401s wait on the same request.
-let refreshing: Promise<unknown> | null = null
+let refreshing: Promise<Response> | null = null
 export function refreshAccess() {
   refreshing ??= send('/auth/refresh', new FormData()).finally(() => (refreshing = null))
   return refreshing
@@ -147,18 +154,47 @@ const avatarVersions = new Map<string, number>()
 export const avatarSrc = (userId: string) => `/api/users/${encodeURIComponent(userId)}/avatar${avatarVersions.has(userId) ? `?v=${avatarVersions.get(userId)}` : ''}`
 export const bumpAvatar = (userId: string) => avatarVersions.set(userId, Date.now())
 
+// True once this tab has seen a session; a failed refresh or another tab's sign-out then sends it to sign-in.
+let signedIn = false
+
+// Tells other tabs about sign-in and sign-out: signed-out tabs reload into the app, signed-in ones go to sign-in.
+const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('tether-auth') : null
+if (authChannel) {
+  authChannel.onmessage = (e) => {
+    if (e.data === 'signout') sessionEnded()
+    else if (e.data === 'signin' && !signedIn) location.reload()
+  }
+}
+
+// Full-page navigation to sign-in and back here; the reload also drops the socket and every cached page.
+export function sessionEnded() {
+  if (!signedIn) return
+  signedIn = false
+  location.assign(`/signin?redirect=${encodeURIComponent(location.pathname + location.search)}`)
+}
+
+export async function signOut() {
+  await api('/auth/signout', new FormData())
+  signedIn = false
+  authChannel?.postMessage('signout')
+}
+
 export async function getMe(): Promise<User | null> {
   try {
-    return await api<User>('/me')
+    const user = await api<User>('/me')
+    if (!signedIn) authChannel?.postMessage('signin')
+    signedIn = true
+    return user
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) return null
     throw e
   }
 }
 
-// An in-app path to return to after signing in. Anything else (another origin, "//x", "/\x") is dropped.
+// An in-app path to return to after signing in. Anything else (another origin, "//x", "/\x", control characters
+// that browsers strip, such as "/\t/x") is dropped.
 export function safeRedirect(v: unknown): string | undefined {
-  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') ? v : undefined
+  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !/[\\\x00-\x1f\x7f]/.test(v) ? v : undefined
 }
 
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.

@@ -47,3 +47,8 @@
 /* ponytail: fixed at the caret when the list opens; it doesn't follow a scroll or flip at the viewport edge. */
 .rich-editor-mentions { min-width: 200px; max-width: calc(100vw - 32px); }
 @media (pointer: coarse) { .rich-editor-mentions .autocomplete-option { min-height: 44px; } }
+
+/* iOS zooms into any focused field with text under 16px. */
+@supports (-webkit-touch-callout: none) {
+  .input .rich-editor-content { font-size: 16px; line-height: 24px; }
+}

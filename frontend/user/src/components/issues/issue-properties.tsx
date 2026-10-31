@@ -3,10 +3,10 @@ import { startTransition, useActionState, useMemo, useOptimistic, useRef, type R
 import { Avatar } from '@tether/shared/avatar'
 import { DatePicker } from '@tether/shared/date-picker'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { api, avatarSrc, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, issuePath, avatarSrc, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
-import { issuePath } from './issue-form'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
@@ -28,7 +28,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
       const { errors, error } = toFormErrors(e)
       return Object.values(errors).find(Boolean) ?? error
     }
-    await router.invalidate()
+    await reloadPage(router)
     return null
   }, null)
 

@@ -6,6 +6,7 @@ import { Input } from '@tether/shared/input'
 import { Textarea } from '@tether/shared/textarea'
 import { projectDescription, projectKey, projectKeyFormat, projectName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Project, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 
 type State = { errors?: FieldErrors; error?: string | null }
@@ -37,7 +38,7 @@ export function ProjectForm({ workspace, project, onDone }: { workspace: Workspa
     } catch (e) {
       return toFormErrors(e)
     }
-    if (saved.key === project?.key) await router.invalidate()
+    if (saved.key === project?.key) await reloadPage(router)
     else await navigate({ to: '/$workspace/projects/$key', params: { workspace: workspace.slug, key: saved.key }, replace: Boolean(project) })
     onDone?.()
     return {}
@@ -84,7 +85,7 @@ export function ArchiveProject({ workspace, project }: { workspace: Workspace; p
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     setOpen(false)
     return null
   }, null)

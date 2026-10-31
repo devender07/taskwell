@@ -36,8 +36,6 @@ export const password: Check = (v) => {
   return null
 }
 
-export const usernameOrEmail: Check = (v) => (v.includes('@') ? email(v) : username(v))
-
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 // Top-level app paths and likely future ones; mirrored in backend/user/internal/workspace/validate.go.
 const RESERVED_SLUGS = new Set(
@@ -121,8 +119,6 @@ export const issueDescription = (length: number) => (length > 50000 ? 'Descripti
 
 export const commentBody = (empty: boolean, length: number) =>
   empty ? 'Write a comment.' : length > 20000 ? 'Comment must be 20,000 characters or fewer.' : null
-
-export const issuePriority: Check = (v) => (/^[0-4]$/.test(v) ? null : 'Choose a priority.')
 
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 

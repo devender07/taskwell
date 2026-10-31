@@ -5,11 +5,11 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
-import { subscribePaths } from '@/realtime'
+import { reloadPage, subscribePaths } from '@/realtime'
 import { StatusIcon } from './fields'
-import { CreateIssueForm, issuePath } from './issue-form'
+import { CreateIssueForm } from './issue-form'
 
 export const refOption = (r: IssueRef): Option => ({ value: r.identifier, label: `${r.identifier} ${r.title}`, hint: r.status.name })
 
@@ -100,7 +100,7 @@ export function Relations({ workspace, issue }: { workspace: Workspace; issue: I
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     return null
   }, null)
 
@@ -149,7 +149,7 @@ function AddLink({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
       return toFormErrors(e)
     }
     setTarget(null)
-    await router.invalidate()
+    await reloadPage(router)
     return {}
   }, {})
 

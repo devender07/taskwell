@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { filterOptions, type Option } from '@tether/shared/match'
 import { api, toFormErrors, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
-import { subscribePaths } from '@/realtime'
+import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
 
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
@@ -101,7 +101,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
       return false
     }
     if (!stay) onClose()
-    router.invalidate()
+    reloadPage(router)
     return true
   }
 
@@ -169,7 +169,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
           api(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
             () => {
               onClose()
-              router.invalidate()
+              reloadPage(router)
             },
             (e) => setError(toFormErrors(e).error),
           ),

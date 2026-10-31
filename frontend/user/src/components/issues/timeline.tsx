@@ -1,5 +1,5 @@
 import { Link, useRouter } from '@tanstack/react-router'
-import { useActionState, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useActionState, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
@@ -8,10 +8,10 @@ import { Popover } from '@tether/shared/popover'
 import { RichEditor, type Doc } from '@tether/shared/rich-editor'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { commentBody } from '@tether/shared/validate'
-import { api, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
+import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { StatusIcon, formatDate, priorityLabel } from './fields'
-import { issuePath } from './issue-form'
 
 type Mentions = { id: string; name: string }[]
 type Draft = { doc: Doc | null; length: number }
@@ -19,7 +19,6 @@ type State = { errors?: FieldErrors; error?: string | null }
 
 type TimelineProps = { workspace: Workspace; issue: Issue; project: Project; timeline: TimelineData; members: Member[] }
 
-// ponytail: refreshed on navigation and after own actions; others' live edits don't show until then. Push over the collab socket if that matters.
 export function Timeline({ workspace, issue, project, timeline, members }: TimelineProps) {
   const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
   const items = useMemo(
@@ -203,15 +202,26 @@ function useSaveComment(path: string, draft: Draft, done: () => void) {
     } catch (e) {
       return toFormErrors(e)
     }
-    await router.invalidate()
+    await reloadPage(router)
     done()
     return {}
   }, {})
 }
 
+// Asks before the tab closes while `unsaved` (the browser shows its own wording).
+export function useUnsavedPrompt(unsaved: boolean) {
+  useEffect(() => {
+    if (!unsaved) return
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault()
+    addEventListener('beforeunload', ask)
+    return () => removeEventListener('beforeunload', ask)
+  }, [unsaved])
+}
+
 function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue: Issue; mentions: Mentions }) {
   const [draft, setDraft] = useState<Draft>({ doc: null, length: 0 })
   const [round, setRound] = useState(0)
+  useUnsavedPrompt(!!draft.doc)
   const [{ errors, error }, submit, pending] = useSaveComment(`${issuePath(workspace, issue.identifier)}/comments`, draft, () => {
     setDraft({ doc: null, length: 0 })
     setRound((n) => n + 1)
@@ -271,7 +281,7 @@ function DeleteComment({ workspace, comment, open, onClose }: { workspace: Works
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     onClose()
     return null
   }, null)

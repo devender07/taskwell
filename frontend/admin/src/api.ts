@@ -1,6 +1,9 @@
 import { redirect } from '@tanstack/react-router'
 
 export type Admin = { id: string; name: string; email: string }
+export type MfaChallenge = { mfa: 'verify' } | { mfa: 'enrol'; secret: string; otpauth_url: string }
+export type MfaResult = Admin & { recovery_codes?: string[] }
+export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
 export type Setting = { key: string; value: string; secret: boolean; has_value?: boolean; description: string; updated_at: string }
 export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string }
 export type UserRow = {
@@ -40,7 +43,7 @@ export class ApiError extends Error {
 }
 
 // GET without a body, POST with one. 204 resolves to undefined. A 401 outside /auth/* and /me means the
-// 8h session ran out: back to sign-in, returning here afterwards.
+// session ended (8h, or 1h unused): back to sign-in, returning here afterwards.
 // The realtime connection id, so the API can tag this tab's own changes and the tab skips their events.
 let client = ''
 export const setClient = (id: string) => (client = id)

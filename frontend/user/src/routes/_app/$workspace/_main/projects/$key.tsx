@@ -4,7 +4,7 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { ApiError, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
 import { loaderApi } from '@/realtime'
-import { CreateIssueForm } from '@/components/issues/issue-form'
+import { useShortcuts } from '@/components/app/shortcuts'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
 import { ArchiveProject, ProjectForm } from '@/components/projects/project-form'
@@ -41,7 +41,7 @@ function ProjectPage() {
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [editing, setEditing] = useState(false)
-  const [creating, setCreating] = useState(false)
+  const { openCreate } = useShortcuts()
   const manage = can(workspace, 'projects.manage')
   const create = can(workspace, 'issues.create') && !project.archived
 
@@ -80,22 +80,17 @@ function ProjectPage() {
       <section className="grid gap-4" aria-labelledby="issues-heading">
         <div className="flex items-center justify-between gap-4">
           <h2 id="issues-heading" className="text-label">Issues</h2>
-          {create && issues.length > 0 ? <Button title="New issue (C)" onClick={() => setCreating(true)}>New issue</Button> : null}
+          {create && issues.length > 0 ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
         </div>
         {issues.length === 0 ? (
           <div className="grid gap-4 p-6 bg-surface border rounded-lg justify-items-center text-center">
             <p className="text-body-sm text-secondary">No issues yet.</p>
-            {create ? <Button title="New issue (C)" onClick={() => setCreating(true)}>New issue</Button> : null}
+            {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
           </div>
         ) : (
           <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
         )}
       </section>
-      {create ? (
-        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue">
-          <CreateIssueForm workspace={workspace} project={project} statuses={statuses} labels={labels} members={members} />
-        </Dialog>
-      ) : null}
       {manage ? (
         <Dialog open={editing} onClose={() => setEditing(false)} title="Edit project">
           <ProjectForm workspace={workspace} project={project} onDone={() => setEditing(false)} />

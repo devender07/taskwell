@@ -5,7 +5,7 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { Logo } from '@tether/shared/logo'
 import { Popover } from '@tether/shared/popover'
-import { api, toFormErrors, type User, type Workspace } from '@/api'
+import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { useUnread } from './unread'
 import './navbar.css'
@@ -107,7 +107,7 @@ function AccountMenu({ user }: { user: User }) {
   const navigate = useNavigate()
   const [error, signOut, pending] = useActionState(async () => {
     try {
-      await api('/auth/signout', new FormData())
+      await endSession()
     } catch (e) {
       return toFormErrors(e).error
     }

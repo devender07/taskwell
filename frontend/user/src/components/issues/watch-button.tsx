@@ -2,6 +2,7 @@ import { useRouter } from '@tanstack/react-router'
 import { useOptimistic, useState, useTransition } from 'react'
 import { Button } from '@tether/shared/button'
 import { api, toFormErrors, type Issue, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 
 export function WatchButton({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const router = useRouter()
@@ -16,7 +17,7 @@ export function WatchButton({ workspace, issue }: { workspace: Workspace; issue:
       setWatching(next)
       try {
         await api(`/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(issue.identifier)}/watch`, undefined, next ? 'POST' : 'DELETE')
-        await router.invalidate()
+        await reloadPage(router)
       } catch (e) {
         setError(toFormErrors(e).error)
       }

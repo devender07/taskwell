@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { commentBody, dueDate, email, issueDescription, issuePriority, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, username, usernameOrEmail, workspaceName, workspaceSlug } from './validate.ts'
+import { commentBody, dueDate, email, issueDescription, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, username, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -16,8 +16,6 @@ assert.ok(name('x'.repeat(101)))
 assert.equal(password('correct horse'), null)
 assert.ok(password('short'))
 assert.ok(password('é'.repeat(40)))
-assert.equal(usernameOrEmail('dev07'), null)
-assert.ok(usernameOrEmail('dev@'))
 assert.ok(required('Code')(' '))
 assert.equal(workspaceName(' Acme '), null)
 assert.equal(workspaceName(' '), 'Workspace name is required.')
@@ -62,10 +60,6 @@ assert.equal(issueTitle('  '), 'Title is required.')
 assert.equal(issueTitle('x'.repeat(201)), 'Title must be 200 characters or fewer.')
 assert.equal(issueDescription(50000), null)
 assert.equal(issueDescription(50001), 'Description must be 50,000 characters or fewer.')
-assert.equal(issuePriority('0'), null)
-assert.equal(issuePriority('4'), null)
-assert.equal(issuePriority('5'), 'Choose a priority.')
-assert.equal(issuePriority(''), 'Choose a priority.')
 assert.equal(dueDate(''), null)
 assert.equal(dueDate('2028-02-29'), null)
 assert.equal(dueDate('2026-02-29'), 'Enter a valid date.')

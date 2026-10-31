@@ -24,3 +24,9 @@
 .input-prefixed:focus-within { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
 .input-prefixed:has(:disabled) { opacity: 0.4; cursor: not-allowed; }
 .input-prefixed:has([aria-invalid]) { border-color: var(--accent); }
+
+/* iOS zooms into any focused field with text under 16px. */
+@supports (-webkit-touch-callout: none) {
+  .input { font-size: 16px; }
+  .input.textarea { line-height: 24px; }
+}

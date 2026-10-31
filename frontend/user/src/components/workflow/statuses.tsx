@@ -7,6 +7,7 @@ import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { statusCategory, statusName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Status, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { StatusIcon, categoryLabel, categoryOptions, statusOptions } from '@/components/issues/fields'
 
@@ -31,7 +32,7 @@ function StatusForm({ workspace, status, onDone }: { workspace: Workspace; statu
     } catch (e) {
       return toFormErrors(e)
     }
-    await router.invalidate()
+    await reloadPage(router)
     if (!status) setName('')
     onDone?.()
     return {}
@@ -88,7 +89,7 @@ export function StatusList({ workspace, statuses, manage }: { workspace: Workspa
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     return null
   }, null)
 
@@ -176,7 +177,7 @@ function DeleteStatusForm({ workspace, status, statuses, onDone }: { workspace: 
     } catch (e) {
       return toFormErrors(e).error
     }
-    await router.invalidate()
+    await reloadPage(router)
     onDone()
     return null
   }, null)

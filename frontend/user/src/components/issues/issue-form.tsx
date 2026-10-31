@@ -7,14 +7,12 @@ import { Input } from '@tether/shared/input'
 import { RichEditor, type Doc } from '@tether/shared/rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, toFormErrors, uploadFile, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, issuePath, toFormErrors, uploadFile, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
-
-export const issuePath = (workspace: Workspace, identifier: string) =>
-  `/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
 
 type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; statuses: Status[]; labels: Label[]; members: Member[] }
 
@@ -123,7 +121,7 @@ export function EditIssueForm({ workspace, issue, onDone }: { workspace: Workspa
     } catch (e) {
       return toFormErrors(e)
     }
-    await router.invalidate()
+    await reloadPage(router)
     onDone()
     return {}
   }, {})

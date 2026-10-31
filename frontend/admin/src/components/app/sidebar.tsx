@@ -23,6 +23,7 @@ export function Sidebar({ email }: { email: string }) {
       <Link to="/users">Users</Link>
       <Link to="/workspaces">Workspaces</Link>
       <Link to="/config">Config</Link>
+      <Link to="/audit">Audit log</Link>
       <div className="sidebar-foot">
         <span className="text-caption text-secondary ellipsis" title={email}>{email}</span>
         <button type="button" onClick={signOut} disabled={signingOut}>
