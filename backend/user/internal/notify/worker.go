@@ -2,21 +2,19 @@ package notify
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-// maxFailures ends a run after that many failed sends; the rest wait for the next run.
-const maxFailures = 5
-
-// Run emails notifications now and every interval until ctx ends: instant emails for notifications older than
-// settle (so a quick status change collapses first), then the digests that are due.
+// Run queues notification emails now and every interval until ctx ends: instant emails for notifications older than
+// settle (so a quick status change collapses first), then the digests that are due. The mail worker sends them.
 func (h *Handler) Run(ctx context.Context, every, settle time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
-		if err := h.sendEmails(ctx, settle); err != nil && ctx.Err() == nil {
+		if err := h.queueEmails(ctx, settle); err != nil && ctx.Err() == nil {
 			slog.Error("notification emails failed", "err", err)
 		}
 		select {
@@ -27,9 +25,8 @@ func (h *Handler) Run(ctx context.Context, every, settle time.Duration) {
 	}
 }
 
-// sendEmails is one run. Without SMTP settings everything waits for a later run.
-// ponytail: a failing address is retried every run forever; add an attempt count when bounces show up.
-func (h *Handler) sendEmails(ctx context.Context, settle time.Duration) error {
+// queueEmails is one run. Without SMTP settings everything waits for a later run.
+func (h *Handler) queueEmails(ctx context.Context, settle time.Duration) error {
 	ok, err := h.mail.Configured(ctx)
 	if err != nil {
 		return err
@@ -49,32 +46,27 @@ func (h *Handler) sendEmails(ctx context.Context, settle time.Duration) error {
 	if err := h.model.skipUnwanted(ctx, settle); err != nil {
 		return err
 	}
-	var errs []error
-	failed := []string{} // not nil: pgx sends a nil slice as null, and "<> all(null)" matches nothing
-	for len(errs) < maxFailures && ctx.Err() == nil {
-		id, err := h.model.sendNext(ctx, settle, failed, func(to string, m message) error {
+	defer h.mail.Wake() // Enqueue's own wake can come before the transaction commits
+	for ctx.Err() == nil {
+		more, err := h.model.queueNext(ctx, settle, func(tx pgx.Tx, to string, m message) error {
 			subject, body := instantEmail(m, base)
-			return h.mail.Send(ctx, to, subject, body)
+			return h.mail.Enqueue(ctx, tx, to, subject, body)
 		})
-		if id == "" && err == nil {
+		if err != nil {
+			return err
+		}
+		if !more {
 			break
 		}
-		if err != nil {
-			errs, failed = append(errs, err), append(failed, id)
-		}
 	}
-	failed = []string{}
-	for len(errs) < maxFailures && ctx.Err() == nil {
-		userID, err := h.model.digestNext(ctx, hour, failed, func(to string, ms []message) error {
+	for ctx.Err() == nil {
+		more, err := h.model.digestNext(ctx, hour, func(tx pgx.Tx, to string, ms []message) error {
 			subject, body := digestEmail(ms, base)
-			return h.mail.Send(ctx, to, subject, body)
+			return h.mail.Enqueue(ctx, tx, to, subject, body)
 		})
-		if userID == "" && err == nil {
-			break
-		}
-		if err != nil {
-			errs, failed = append(errs, err), append(failed, userID)
+		if err != nil || !more {
+			return err
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }

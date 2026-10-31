@@ -21,7 +21,9 @@ type Handler struct {
 	secret []byte // ADMIN_JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
 }
 
-func New(db *pgxpool.Pool, secret []byte) *Handler { return &Handler{model: &model{db: db}, secret: secret} }
+func New(db *pgxpool.Pool, secret []byte) *Handler {
+	return &Handler{model: &model{db: db}, secret: secret}
+}
 
 func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 	email, pw := strings.ToLower(strings.TrimSpace(r.FormValue("email"))), r.FormValue("password")

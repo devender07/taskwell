@@ -9,6 +9,7 @@ package realtime
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,6 +29,7 @@ type Handler struct {
 	member       func(ctx context.Context, userID, slug string) (string, error)
 	joinFn       JoinFunc
 	hub          *hub
+	conns        sync.WaitGroup // running sockets, which the server's Shutdown doesn't wait for (they're hijacked)
 }
 
 // New takes the auth handler's Session and Alive (the sign-in wasn't revoked and its user isn't suspended), member (the id of the workspace with the slug when the user is in it,

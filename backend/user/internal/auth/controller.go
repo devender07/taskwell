@@ -104,7 +104,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: nonce, Path: "/api/auth/signup", MaxAge: minutes * 60,
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
-	if err := h.mail.Send(ctx, email, "Your Tether verification code: "+code,
+	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Tether verification code: "+code,
 		fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
 			"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)); err != nil {
 		return err
@@ -271,8 +271,7 @@ func (h *Handler) sendSecret(w http.ResponseWriter, r *http.Request, email, purp
 	if err != nil {
 		return err
 	}
-	// ponytail: a send failure surfaces as 500 only for existing accounts, a weak enumeration signal; send via a queue to close it.
-	if err := h.mail.Send(ctx, email, subject, body); err != nil {
+	if err := h.mail.Enqueue(ctx, h.model.db, email, subject, body); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

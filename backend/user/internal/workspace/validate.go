@@ -12,6 +12,11 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
+func isUUID(s string) bool { return uuidRe.MatchString(s) }
+
 // reserved are top-level app paths and likely future ones.
 var reserved = []string{"api", "admin", "app", "signin", "signup", "signout", "forgot-password", "reset-password",
 	"new-workspace", "settings", "account", "invite", "invites", "join", "help", "support", "docs", "status", "about",

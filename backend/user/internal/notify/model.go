@@ -253,10 +253,10 @@ func (m *model) skipUnwanted(ctx context.Context, settle time.Duration) error {
 	return nil
 }
 
-// sendNext locks the oldest settled notification due an instant email, sends it with send and marks it emailed;
-// It returns the notification's id, "" when there's none. Rows another instance holds are skipped, so each email
-// goes out once; so are the ids in skip.
-func (m *model) sendNext(ctx context.Context, settle time.Duration, skip []string, send func(to string, msg message) error) (string, error) {
+// queueNext locks the oldest settled notification due an instant email, queues it with queue in the same transaction
+// and marks it emailed. It returns false when there's none. Rows another instance holds are skipped, so each email is
+// queued once.
+func (m *model) queueNext(ctx context.Context, settle time.Duration, queue func(tx pgx.Tx, to string, msg message) error) (bool, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var to string
@@ -265,9 +265,9 @@ func (m *model) sendNext(ctx context.Context, settle time.Duration, skip []strin
 		id, msg, err = scanMessage(tx.QueryRow(ctx,
 			`select `+msgCols+`, u.email`+msgFrom+` join users u on u.id = n.user_id
 			 where n.emailed_at is null and n.created_at < now() - make_interval(secs => $1)
-			   and coalesce(s.email, 'instant') = 'instant' and `+wanted+` and n.id <> all($2::uuid[])
+			   and coalesce(s.email, 'instant') = 'instant' and `+wanted+`
 			 order by n.created_at limit 1
-			 for update of n skip locked`, settle.Seconds(), skip), &to)
+			 for update of n skip locked`, settle.Seconds()), &to)
 		if errors.Is(err, pgx.ErrNoRows) {
 			id = ""
 			return nil
@@ -275,22 +275,22 @@ func (m *model) sendNext(ctx context.Context, settle time.Duration, skip []strin
 		if err != nil {
 			return err
 		}
-		if err := send(to, msg); err != nil {
+		if err := queue(tx, to, msg); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `update notifications set emailed_at = now() where id = $1`, id)
 		return err
 	})
 	if err != nil {
-		return id, fmt.Errorf("send notification email: %w", err)
+		return false, fmt.Errorf("queue notification email: %w", err)
 	}
-	return id, nil
+	return id != "", nil
 }
 
-// digestNext locks a digest user whose digest for today (at hour UTC) is due, sends their unemailed wanted
-// notifications with send (skipped when there are none), marks them emailed and records the digest. It returns the
-// user's id, "" when nobody but the users in skip is due.
-func (m *model) digestNext(ctx context.Context, hour int, skip []string, send func(to string, msgs []message) error) (string, error) {
+// digestNext locks a digest user whose digest for today (at hour UTC) is due, queues their unemailed wanted
+// notifications with queue in the same transaction (nothing when there are none), marks them emailed and records the
+// digest. It returns false when nobody is due.
+func (m *model) digestNext(ctx context.Context, hour int, queue func(tx pgx.Tx, to string, msgs []message) error) (bool, error) {
 	var userID string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var to string
@@ -298,8 +298,7 @@ func (m *model) digestNext(ctx context.Context, hour int, skip []string, send fu
 			`select s.user_id::text, u.email from notification_settings s join users u on u.id = s.user_id
 			 cross join lateral (select (date_trunc('day', now() at time zone 'utc') + make_interval(hours => $1)) at time zone 'utc') d(at)
 			 where s.email = 'digest' and now() >= d.at and (s.last_digest_at is null or s.last_digest_at < d.at)
-			   and s.user_id <> all($2::uuid[])
-			 limit 1 for update of s skip locked`, hour, skip).Scan(&userID, &to)
+			 limit 1 for update of s skip locked`, hour).Scan(&userID, &to)
 		if errors.Is(err, pgx.ErrNoRows) {
 			userID = ""
 			return nil
@@ -329,7 +328,7 @@ func (m *model) digestNext(ctx context.Context, hour int, skip []string, send fu
 			for i, r := range rs {
 				ids[i], msgs[i] = r.id, r.msg
 			}
-			if err := send(to, msgs); err != nil {
+			if err := queue(tx, to, msgs); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `update notifications set emailed_at = now() where id = any($1::uuid[])`, ids); err != nil {
@@ -340,7 +339,7 @@ func (m *model) digestNext(ctx context.Context, hour int, skip []string, send fu
 		return err
 	})
 	if err != nil {
-		return userID, fmt.Errorf("send digest: %w", err)
+		return false, fmt.Errorf("queue digest: %w", err)
 	}
-	return userID, nil
+	return userID != "", nil
 }

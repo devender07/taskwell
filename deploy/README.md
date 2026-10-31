@@ -33,9 +33,20 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `JWT_SECRET` | user | | Required. 32+ random bytes |
 | `ADMIN_JWT_SECRET` | admin | | Required. Different from `JWT_SECRET` |
 | `DB_MAX_CONNS` | user | `20` | Pool size. Admin uses `ADMIN_DB_MAX_CONNS` (default 5) |
+| `DB_STATEMENT_TIMEOUT`, `DB_IDLE_TX_TIMEOUT` | user, admin | `30s`, `2min` | Postgres `statement_timeout` and `idle_in_transaction_session_timeout` for every pooled session |
 | `UPLOAD_DIR` | user | `/data/uploads` | The `uploads` volume. Back it up with the database |
 | `NOTIFY_INTERVAL`, `NOTIFY_SETTLE` | user | `1m`, `30s` | Notification worker cadence, quiet time before an email |
+| `MAIL_TIMEOUT` | user | `20s` | Longest one SMTP send may take, dial to QUIT |
+| `MAIL_RETRY_BASE`, `MAIL_MAX_ATTEMPTS` | user | `30s`, `8` | A failed send retries after `MAIL_RETRY_BASE`, doubling each time (at most 1h), until `MAIL_MAX_ATTEMPTS` sends have failed |
 | `PORT` | user, admin | `8090`, `8080` | Set by compose; Caddy expects these |
+
+## Email
+
+Every email (sign-up and sign-in codes, password resets, invites, notifications) is queued in the `outbound_mail` table and sent by a worker in the user service, so requests never wait on SMTP. A sent row is deleted. A row that failed `MAIL_MAX_ATTEMPTS` times stays with `failed_at` and `last_error` set and the worker logs `mail gave up`; to retry it, `update outbound_mail set failed_at = null, attempts = 0, next_attempt_at = now() where id = '...'`.
+
+## Shutdown
+
+On SIGTERM both services stop accepting connections, let in-flight requests finish (up to 20s), close realtime sockets (tabs reconnect) and stop their background workers. Compose gives them 45s (`stop_grace_period`); keep any other orchestrator's grace period above 40s.
 
 ## Backups
 

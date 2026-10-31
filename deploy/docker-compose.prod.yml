@@ -21,16 +21,22 @@ services:
     build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: user } }
     image: tether-user
     restart: unless-stopped
+    stop_grace_period: 45s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       PORT: "8090"
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
       DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
+      DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       UPLOAD_DIR: /data/uploads
       NOTIFY_INTERVAL: ${NOTIFY_INTERVAL:-1m}
       NOTIFY_SETTLE: ${NOTIFY_SETTLE:-30s}
+      MAIL_TIMEOUT: ${MAIL_TIMEOUT:-20s}
+      MAIL_RETRY_BASE: ${MAIL_RETRY_BASE:-30s}
+      MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-8}
     volumes:
       - uploads:/data/uploads
 
@@ -38,12 +44,15 @@ services:
     build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: admin } }
     image: tether-admin
     restart: unless-stopped
+    stop_grace_period: 45s
     depends_on: [user] # the user service runs the migrations
     environment:
       PORT: "8080"
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
       DB_MAX_CONNS: ${ADMIN_DB_MAX_CONNS:-5}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
+      DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
       ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?set ADMIN_JWT_SECRET}
 
   caddy:

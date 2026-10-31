@@ -2,12 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
+	"strconv"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -38,7 +44,7 @@ func main() {
 	}
 
 	// The user service owns the schema and runs migrations; this service only connects.
-	pool, err := pgxpool.New(context.Background(), dbURL)
+	pool, err := openPool(context.Background(), dbURL)
 	if err != nil {
 		slog.Error("database", "err", err)
 		os.Exit(1)
@@ -69,14 +75,73 @@ func main() {
 	stats.New(pool, authH.Authenticate).Register(mux)
 	rtH := realtime.New(pool, authH.Authenticate)
 	rtH.Register(mux)
-	go rtH.Listen(context.Background())
+	work, stopWork := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Go(func() { rtH.Listen(work) })
 
-	slog.Info("admin listening", "addr", addr)
-	// ponytail: no graceful shutdown or server timeouts, same as the user service; add both before production.
-	if err := http.ListenAndServe(addr, web.SameOrigin(realtime.WithOrigin(mux))); err != nil {
-		slog.Error("server", "err", err)
-		os.Exit(1)
+	srv := &http.Server{Addr: addr, Handler: withTimeouts(web.SameOrigin(realtime.WithOrigin(mux))),
+		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+	serve(srv, func() { stopWork(); wg.Wait() })
+}
+
+// openPool connects with DB_MAX_CONNS connections (default 5; budget it with the user service's against
+// max_connections), and the user service's DB_STATEMENT_TIMEOUT and DB_IDLE_TX_TIMEOUT defaults.
+func openPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
 	}
+	maxConns, err := strconv.ParseInt(env("DB_MAX_CONNS", "5"), 10, 32)
+	if err != nil || maxConns < 2 {
+		return nil, fmt.Errorf("DB_MAX_CONNS must be a number of at least 2") // the listener holds one
+	}
+	cfg.MaxConns = int32(maxConns)
+	cfg.ConnConfig.RuntimeParams["statement_timeout"] = env("DB_STATEMENT_TIMEOUT", "30s")
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = env("DB_IDLE_TX_TIMEOUT", "2min")
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// serve runs srv until SIGINT or SIGTERM, then stops taking requests, lets in-flight ones finish (up to 20s) and calls
+// stop to end the background work. Open sockets just drop; tabs reconnect.
+func serve(srv *http.Server, stop func()) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	slog.Info("admin listening", "addr", srv.Addr)
+	select {
+	case err := <-errc:
+		fatal("server", "err", err)
+	case <-ctx.Done():
+	}
+	slog.Info("shutting down")
+	sctx, scancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer scancel()
+	if err := srv.Shutdown(sctx); err != nil {
+		slog.Warn("shutdown: requests still running", "err", err)
+	}
+	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
+		slog.Error("server", "err", err)
+	}
+	stop()
+	slog.Info("stopped")
+}
+
+// withTimeouts gives each request 30s to read its body, respond and run (the context ends then). The realtime socket
+// sets its own.
+func withTimeouts(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/realtime" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = rc.SetWriteDeadline(time.Now().Add(35 * time.Second)) // room to write the error when ctx ends
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func fatal(msg string, args ...any) {

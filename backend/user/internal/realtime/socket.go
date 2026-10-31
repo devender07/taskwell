@@ -107,6 +107,8 @@ func text(v any) []byte {
 
 // serve runs one tab's socket until it disconnects.
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
+	h.conns.Add(1) // before the hijack, while the server's Shutdown still waits for this request
+	defer h.conns.Done()
 	s, err := h.authenticate(r)
 	if err != nil {
 		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)

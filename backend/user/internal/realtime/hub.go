@@ -37,6 +37,19 @@ func (hb *hub) add(c *Conn) {
 	addTo(hb.users, c.userID, c, struct{}{})
 }
 
+// all returns every connection here.
+func (hb *hub) all() []*Conn {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	var cs []*Conn
+	for _, conns := range hb.users {
+		for c := range conns {
+			cs = append(cs, c)
+		}
+	}
+	return cs
+}
+
 // remove takes c out of the user and workspace indexes; its issues leave one by one.
 func (hb *hub) remove(c *Conn) {
 	hb.mu.Lock()

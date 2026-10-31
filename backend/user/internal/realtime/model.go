@@ -75,6 +75,14 @@ func (m *model) unview(ctx context.Context, connID string, ids []string) error {
 	return nil
 }
 
+// forget deletes the instance's viewer rows, when it shuts down, and tells every instance.
+func (m *model) forget(ctx context.Context, instance string) error {
+	if _, err := m.db.Exec(ctx, `with d as (delete from issue_viewers where instance = $1 returning issue_id) `+changed, instance); err != nil {
+		return fmt.Errorf("delete instance viewers: %w", err)
+	}
+	return nil
+}
+
 // refresh keeps the instance's viewer rows fresh, and deletes every instance's stale ones (a crashed instance's),
 // telling every instance about those.
 func (m *model) refresh(ctx context.Context, instance string) error {

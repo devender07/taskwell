@@ -274,7 +274,7 @@ func (h *Handler) sendInvite(ctx context.Context, workspace string, inv Invite, 
 		return err
 	}
 	link := strings.TrimRight(base, "/") + "/invite?token=" + url.QueryEscape(token)
-	return h.mail.Send(ctx, inv.Email, inv.InvitedBy+" invited you to "+workspace+" on Tether",
+	return h.mail.Enqueue(ctx, h.model.db, inv.Email, inv.InvitedBy+" invited you to "+workspace+" on Tether",
 		fmt.Sprintf("%s invited you to join %s on Tether.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
 			inv.InvitedBy, workspace, link, days))
 }
