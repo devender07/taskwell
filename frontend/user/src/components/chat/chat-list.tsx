@@ -3,7 +3,6 @@ import { Avatar } from '@tether/shared/avatar'
 import { IconButton } from '@tether/shared/icon-button'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { avatarSrc, type Chat, type Member, type User } from '@/api'
-import { useUnread } from '@/components/app/unread'
 import { NewGroupDialog, NewMessageDialog } from './chat-dialogs'
 import './chat.css'
 
@@ -12,7 +11,6 @@ type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; m
 // The inbox's left column: Activity, the workspace chat, Notes, then groups and direct messages.
 export function ChatList({ slug, workspaceName, user, chats, members, dialog }: Props) {
   const navigate = useNavigate()
-  const { count } = useUnread()
   const top = chats.filter((c) => c.kind === 'workspace' || c.kind === 'self')
   const groups = chats.filter((c) => c.kind === 'group')
   const direct = chats.filter((c) => c.kind === 'direct')
@@ -21,15 +19,6 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
   return (
     <nav className="chat-list" aria-label="Chats">
       <ul className="chat-rows">
-        <li>
-          <Link to="/$workspace/inbox/activity" params={{ workspace: slug }} className="chat-row" aria-label={count ? `Activity, ${count} unread` : undefined}>
-            <span className="chat-row-icon" aria-hidden>
-              <BellIcon />
-            </span>
-            <span className="chat-row-name">Activity</span>
-            {count ? <span className="chat-pill" data-mentioned="">{count}</span> : null}
-          </Link>
-        </li>
         {top.map((c) => (
           <ChatRow key={c.id} slug={slug} chat={c} me={user} workspaceName={workspaceName} />
         ))}
@@ -110,15 +99,6 @@ function ChatRow({ slug, chat, me, workspaceName }: { slug: string; chat: Chat; 
 }
 
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
-
-function BellIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-    </svg>
-  )
-}
 
 function PlusIcon() {
   return (

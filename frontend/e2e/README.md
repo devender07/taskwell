@@ -4,7 +4,7 @@ Browser scripts that drive the real apps against a running stack. They use the `
 
 | Script | Covers |
 |---|---|
-| `user.mjs` | Password sign-in, quick-create (`C`) with a mention and assignee, the notifications bell updating live, palette search, live description editing between two users with presence and named carets, a comment with an image attachment, the JSON renderer matching the editor's DOM, the offline message, board drag and Shift+←/→ keyboard moves (announced, focus kept), turning single-key shortcuts off and on, timeline paging ("Show older activity"), Home blocks (assigned issue, recently viewed, live activity), chat (a direct message arriving live with an unread pill that clears on opening, a thread reply, a reaction) |
+| `user.mjs` | Password sign-in, quick-create (`C`) with a mention and assignee, the notifications bell updating live and its popover opening the issue, palette search, live description editing between two users with presence and named carets, a comment with an image attachment, the JSON renderer matching the editor's DOM, the offline message, board drag and Shift+←/→ keyboard moves (announced, focus kept), turning single-key shortcuts off and on, timeline paging ("Show older activity"), Home blocks (assigned issue, recently viewed, live activity), chat (a direct message arriving live with an unread pill that clears on opening, a thread reply, a reaction) |
 | `invite.mjs` | Inviting a fresh address from the members page, the invite and sign-up code read from Mailpit, signing up from the invite link, "Accept invite" landing in the workspace as a member |
 | `admin.mjs` | Admin sign-in with password and a TOTP code (wrong code refused), redirect back, realtime socket, sign-out |
 

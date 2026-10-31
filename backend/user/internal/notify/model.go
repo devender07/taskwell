@@ -243,10 +243,8 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([
 
 func (m *model) unreadCount(ctx context.Context, userID, workspaceID string) (int, error) {
 	var n int
-	// Chat kinds are left out: the inbox badge adds chats/unread-count, which already counts those messages.
 	err := m.db.QueryRow(ctx,
-		`select count(*) from notifications
-		 where user_id = $1 and workspace_id = $2 and read_at is null and kind not in ('chat_mention', 'message')`, userID, workspaceID).Scan(&n)
+		`select count(*) from notifications where user_id = $1 and workspace_id = $2 and read_at is null`, userID, workspaceID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count unread: %w", err)
 	}

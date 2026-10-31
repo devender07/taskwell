@@ -56,7 +56,7 @@ try {
 
   await maya.page.goto(`${B}/${WORKSPACE}/my-issues`)
   await maya.page.locator('h1').waitFor()
-  const bell = maya.page.getByRole('link', { name: /^Inbox/ }).first()
+  const bell = maya.page.getByRole('button', { name: /^Notifications/ })
   const bellBefore = await bell.getAttribute('aria-label')
 
   // Quick-create with a mention and an assignee, from the single-key shortcut.
@@ -82,6 +82,11 @@ try {
   t.ok('quick-create: issue created with a mention', JSON.stringify(issue.description).includes('"mention"') && issue.assignee?.name.startsWith('Maya'), identifier)
 
   t.ok('notifications: maya bell updates live', await waitFor(async () => (await bell.getAttribute('aria-label')) !== bellBefore, 5000), `${bellBefore} → ${await bell.getAttribute('aria-label')}`)
+  await bell.click()
+  const bellRow = maya.page.locator('.notifications .inbox-link', { hasText: identifier }).first()
+  t.ok('notifications: bell popover lists it', await waitFor(() => bellRow.isVisible(), 5000))
+  await bellRow.click()
+  t.ok('notifications: clicking opens the issue and closes the popover', await waitFor(async () => maya.page.url().endsWith(`/issue/${identifier}`) && !(await maya.page.locator('.notifications').count()), 5000), maya.page.url())
 
   // Command palette search.
   await demo.page.keyboard.press('Control+k')
@@ -191,7 +196,7 @@ try {
   // Home: maya's blocks show the issue assigned to her and the one she opened; demo's status change shows up live.
   await maya.page.goto(`${B}/${WORKSPACE}`)
   const region = (name) => maya.page.getByRole('region', { name })
-  const blocks = ['Needs attention', 'Assigned to me', 'Recent activity', 'Inbox', 'Recently viewed', 'Projects']
+  const blocks = ['Needs attention', 'Assigned to me', 'Recent activity', 'Notifications', 'Recently viewed', 'Projects']
   t.ok('home: every block renders', await waitFor(async () => (await Promise.all(blocks.map((b) => region(b).isVisible()))).every(Boolean), 5000))
   t.ok('home: assigned issue listed', await waitFor(() => region('Assigned to me').getByText(identifier).isVisible()))
   t.ok('home: opened issue in recently viewed', await region('Recently viewed').getByText(identifier).isVisible())
@@ -245,7 +250,7 @@ try {
   // Chat: a direct message arrives live with an unread pill that clears on opening; a thread reply and a reaction
   // show live on the other side. The messages are deleted at the end (soft delete: they stay as "deleted").
   const dm = await (await demo.req.post(`${API}/chats/direct`, multipart({ user_id: issue.assignee.id }))).json()
-  await maya.page.goto(`${B}/${WORKSPACE}/inbox/activity`)
+  await maya.page.goto(`${B}/${WORKSPACE}/inbox`)
   await demo.page.goto(`${B}/${WORKSPACE}/inbox/c/${dm.id}`)
   const box = (p, name) => p.getByRole('textbox', { name, exact: true })
   await box(demo.page, 'Message').click()

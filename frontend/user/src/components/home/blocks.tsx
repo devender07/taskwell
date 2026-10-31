@@ -155,7 +155,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
 
   return (
     <Card
-      title="Inbox"
+      title="Notifications"
       action={
         <>
           {unread.length || (count && cleared !== page) ? (
@@ -163,9 +163,6 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
               Mark all read
             </button>
           ) : null}
-          <Link to="/$workspace/inbox/activity" params={{ workspace }} className="home-link">
-            View activity
-          </Link>
         </>
       }
     >

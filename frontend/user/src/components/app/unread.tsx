@@ -3,8 +3,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
 import { api } from '@/api'
 import { connected, subscribePaths } from '@/realtime'
 
-// count: unread issue notifications (Activity; the API leaves chat kinds out); chats: chats/unread-count. The inbox
-// badges show their sum.
+// count: unread notifications (the navbar bell); chats: unread chat messages (the sidebar's Inbox).
 type Unread = { count: number; chats: number; refresh: () => void }
 const UnreadContext = createContext<Unread>({ count: 0, chats: 0, refresh() {} })
 export const useUnread = () => use(UnreadContext)

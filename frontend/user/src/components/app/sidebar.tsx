@@ -10,7 +10,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const navigate = useNavigate()
   const { openPalette } = useShortcuts()
   const unread = useUnread()
-  const count = unread.count + unread.chats
+  const count = unread.chats
   const [expanded, setExpanded] = useState(onSettings)
   const [wasOnSettings, setWasOnSettings] = useState(onSettings)
   if (onSettings !== wasOnSettings) {

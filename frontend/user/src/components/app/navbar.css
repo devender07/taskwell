@@ -46,3 +46,13 @@
   background: var(--accent);
   border-radius: 9999px;
 }
+
+.notifications { width: 400px; padding: 0; }
+.notifications-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 4px 16px; border-bottom: 1px solid var(--border); }
+.notifications-action { padding: 0; color: var(--text-2); font: 400 12px/18px var(--font); background: none; border: 0; cursor: pointer; }
+.notifications-action:hover { color: var(--text); }
+.notifications-action:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 4px; }
+.notifications-list { display: grid; max-height: min(560px, calc(100dvh - 140px)); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+@media (pointer: coarse) {
+  .notifications-action { min-height: 44px; }
+}

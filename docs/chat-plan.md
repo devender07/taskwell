@@ -239,3 +239,4 @@ Root message, its replies (same rendering), its own composer ("Reply…"), typin
 - Doc rules moved to `internal/doc` (one source for issues and chat); `#` mentions never notify. A mention of someone who can't see the chat is stored as plain "@Name".
 - Deleting a message deletes its notifications. Deleted messages without replies are hidden; with replies they show "This message was deleted."
 - The "New" divider is placed from the unread count; older pages don't refresh live (both `ponytail:`).
+- Activity was removed after launch: the chat list has no Activity entry and `/inbox/activity` is gone. Notifications live in a popover on the navbar bell (the 10 newest, unread dots, "Mark all read"; a row marks itself read and opens its issue or chat). The bell counts every unread notification (chat kinds included again); the sidebar's Inbox badge counts unread chat messages only. Home's block is called "Notifications".

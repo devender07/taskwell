@@ -7,7 +7,7 @@ import { Logo } from '@tether/shared/logo'
 import { Popover } from '@tether/shared/popover'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
-import { useUnread } from './unread'
+import { NotificationsBell } from './notifications-bell'
 import './navbar.css'
 
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
@@ -20,7 +20,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         <WorkspaceSwitcher workspaces={workspaces} />
       </div>
       <div className="flex items-center gap-2">
-        <InboxBell />
+        <NotificationsBell />
         <Popover
           aria-label="Account"
           placement="bottom-end"
@@ -34,19 +34,6 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         </Popover>
       </div>
     </header>
-  )
-}
-
-function InboxBell() {
-  const slug = useParams({ strict: false }).workspace
-  const unread = useUnread()
-  const count = unread.count + unread.chats
-  if (!slug) return null
-  return (
-    <Link to="/$workspace/inbox/activity" params={{ workspace: slug }} className="navbar-bell" aria-label={count ? `Inbox, ${count} unread` : 'Inbox'}>
-      <BellIcon />
-      {count ? <span className="navbar-badge" aria-hidden>{count > 9 ? '9+' : count}</span> : null}
-    </Link>
   )
 }
 
@@ -136,14 +123,6 @@ function AccountMenu({ user }: { user: User }) {
   )
 }
 
-function BellIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-    </svg>
-  )
-}
 
 function ChevronIcon() {
   return (

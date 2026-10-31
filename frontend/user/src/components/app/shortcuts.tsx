@@ -19,7 +19,6 @@ const HELP = [
   ['A', 'Assign (on an issue)'],
   ['P', 'Set priority (on an issue)'],
   ['L', 'Change labels (on an issue)'],
-  ['J / K', 'Next or previous notification (in Activity)'],
   ['Enter', 'Send a message (Shift+Enter for a new line)'],
   ['↑', 'Edit your last message (in an empty composer)'],
   ['?', 'Show keyboard shortcuts'],
@@ -50,9 +49,7 @@ export const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.
 
 export function Shortcuts({ children }: { children: ReactNode }) {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const issuePage = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
-  const inboxIssue = useMatch({ from: '/_app/$workspace/_main/inbox/activity/$identifier', shouldThrow: false })?.loaderData
-  const issue = issuePage ?? inboxIssue
+  const issue = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
   const pageProject = useMatch({ from: '/_app/$workspace/_main/projects/$key', shouldThrow: false })?.loaderData?.project.key
   const pathname = useLocation({ select: (l) => l.pathname })
   const [palette, setPalette] = useState<Mode | null>(null)

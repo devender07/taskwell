@@ -13,17 +13,13 @@ type FeedRowProps = {
   actor: PersonRef | null
   text: ReactNode
   excerpt?: string
-  // Earlier updates folded into this row (the inbox shows one row per issue).
-  more?: number
   at: string
   unread?: boolean
   onClick?: () => void
-  // Open the issue in Activity's preview pane (keeping its filter) instead of on its own page.
-  inbox?: { filter?: 'unread'; selected: boolean }
 }
 
-// One line of who did what to which issue or chat, linking to it: Activity and Home's activity and inbox blocks.
-export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt, more, at, unread, onClick, inbox }: FeedRowProps) {
+// One line of who did what to which issue or chat, linking to it: the notifications popover and Home's blocks.
+export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt, at, unread, onClick }: FeedRowProps) {
   const name = actor?.name ?? 'Someone'
   const body = (
     <>
@@ -33,7 +29,6 @@ export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt
           <span className="text-primary">{name}</span> {text}
         </span>
         {excerpt ? <span className="text-caption text-secondary ellipsis">{excerpt}</span> : null}
-        {more ? <span className="text-caption text-secondary">+{more} earlier {more === 1 ? 'update' : 'updates'}</span> : null}
       </span>
       <time dateTime={at} title={fullTime(at)} className="text-caption text-secondary flex-noshrink">
         {relativeTime(at)}
@@ -55,20 +50,7 @@ export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt
         {body}
       </Link>
     )
-  return inbox ? (
-    <Link
-      to="/$workspace/inbox/activity/$identifier"
-      params={{ workspace, identifier }}
-      search={inbox.filter ? { filter: inbox.filter } : {}}
-      className="inbox-link"
-      data-selected={inbox.selected || undefined}
-      aria-current={inbox.selected ? 'true' : undefined}
-      activeProps={{ 'aria-current': inbox.selected ? 'true' : undefined }}
-      onClick={onClick}
-    >
-      {body}
-    </Link>
-  ) : (
+  return (
     <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier }} className="inbox-link" onClick={onClick}>
       {body}
     </Link>

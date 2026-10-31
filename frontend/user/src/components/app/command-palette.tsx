@@ -162,7 +162,6 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
-    actions.push({ value: 'activity', label: 'Go to Activity', run: () => go('inbox/activity') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
     actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
