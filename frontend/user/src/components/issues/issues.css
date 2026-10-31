@@ -84,18 +84,18 @@
 .board { display: flex; gap: 12px; padding-bottom: 8px; overflow-x: auto; }
 .board-column {
   display: grid;
-  grid-template-rows: auto 1fr;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   flex-shrink: 0;
   width: 280px;
-  min-height: 160px;
+  min-height: 0;
   padding: 12px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 .board-column[data-over] { border-color: var(--link); }
+.board-cards { display: grid; align-content: start; gap: 8px; min-height: 0; margin: 0; padding: 2px; overflow-y: auto; list-style: none; }
 .board-card {
   display: grid;
   gap: 8px;

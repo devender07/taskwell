@@ -4,6 +4,7 @@ import {
   startTransition,
   useActionState,
   useEffect,
+  useLayoutEffect,
   useId,
   useMemo,
   useRef,
@@ -387,6 +388,28 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
     if (ghost.current) ghost.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`
   }
 
+  // The board runs to the bottom of the window, so its horizontal scrollbar sits there and each column scrolls on its
+  // own. It's re-measured when the window or the content above it (filters, chips) changes size.
+  useLayoutEffect(() => {
+    const board = boardRef.current
+    const above = board?.parentElement
+    if (!board || !above) return
+    const fit = () => {
+      const top = board.getBoundingClientRect().top + window.scrollY
+      const main = board.closest('main')
+      const gap = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24
+      board.style.height = `max(320px, calc(100dvh - ${Math.round(top + gap)}px))`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(above)
+    window.addEventListener('resize', fit)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', fit)
+    }
+  }, [])
+
   useEffect(() => {
     const board = boardRef.current
     if (!board) return
@@ -512,7 +535,7 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
             <span className="text-label ellipsis">{g.label}</span>
             <span className="text-caption text-secondary">{g.issues.length}</span>
           </header>
-          <ul className="grid gap-2 m-0 p-0" style={{ listStyle: 'none' }}>
+          <ul className="board-cards">
             {g.issues.map((issue) => (
               <li key={issue.id}>
                 <BoardCard workspace={workspace} issue={issue} column={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={handlers} />
