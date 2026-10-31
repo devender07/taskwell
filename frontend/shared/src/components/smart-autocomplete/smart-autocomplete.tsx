@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useFieldError } from '../input/field-error'
 import { filterOptions, splitMatch, type Option } from './match'
 import '../input/input.css'
@@ -125,6 +125,30 @@ export function SmartAutocomplete({
   useEffect(() => {
     if (open && current >= 0) listRef.current?.children[current]?.scrollIntoView({ block: 'nearest' })
   }, [open, current])
+
+  // The list is position: fixed under the field (above it when there's more room there), so a dialog's or card's
+  // overflow can't clip it. It follows scrolling and resizing while open.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    const anchor = panel?.parentElement
+    if (!open || !panel || !anchor) return
+    const place = () => {
+      const r = anchor.getBoundingClientRect()
+      const below = innerHeight - r.bottom - 8
+      const up = below < Math.min(panel.offsetHeight, 240) && r.top - 8 > below
+      panel.style.left = `${r.left}px`
+      panel.style.width = `${r.width}px`
+      panel.style.top = up ? '' : `${r.bottom + 4}px`
+      panel.style.bottom = up ? `${innerHeight - r.top + 4}px` : ''
+    }
+    place()
+    addEventListener('scroll', place, true)
+    addEventListener('resize', place)
+    return () => {
+      removeEventListener('scroll', place, true)
+      removeEventListener('resize', place)
+    }
+  })
 
   // Opening highlights the selected option, so arrows move from where you are.
   function openList() {
