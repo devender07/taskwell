@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,8 +74,21 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, `set statement_timeout = 0`); err != nil {
 		return fmt.Errorf("prepare migrate session: %w", err)
 	}
-	if _, err := conn.Exec(ctx, `select pg_advisory_lock($1)`, migrateLock); err != nil {
-		return fmt.Errorf("migrate lock: %w", err)
+	// Poll instead of blocking in pg_advisory_lock: create index concurrently waits for every open transaction,
+	// including a blocked lock call, so another instance waiting here would deadlock with it.
+	for {
+		var got bool
+		if err := conn.QueryRow(ctx, `select pg_try_advisory_lock($1)`, migrateLock).Scan(&got); err != nil {
+			return fmt.Errorf("migrate lock: %w", err)
+		}
+		if got {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("migrate lock: %w", ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	if _, err := conn.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return fmt.Errorf("prepare schema_migrations: %w", err)

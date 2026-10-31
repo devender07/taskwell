@@ -20,8 +20,8 @@ func TestPayload(t *testing.T) {
 	}{
 		{"issue paths", Event{Kind: "issue.updated", Workspace: "acme", Audience: ToWorkspace("w1"),
 			Paths: append(IssuePaths("acme", "ENG-12", "ENG"), Issue("acme", "ENG-12"))},
-			[]string{"/workspaces/acme/issues/ENG-12", "/workspaces/acme/issues/ENG-12/timeline", "/workspaces/acme/my-issues",
-				"/workspaces/acme/projects/ENG/issues"}},
+			[]string{"/workspaces/acme/activity", "/workspaces/acme/issues/ENG-12", "/workspaces/acme/issues/ENG-12/timeline",
+				"/workspaces/acme/my-issues", "/workspaces/acme/project-stats", "/workspaces/acme/projects/ENG/issues"}},
 		{"too long collapses to the workspace prefix", Event{Kind: "issue.updated", Workspace: "acme", Audience: ToWorkspace("w1"),
 			Paths: append(many, Project("acme", "ENG"))}, []string{"/workspaces/acme/"}},
 		{"user event", Event{Kind: "profile.changed", Audience: ToUser("u1"), Paths: []string{"/me"}}, []string{"/me"}},

@@ -1,4 +1,5 @@
-// Package project implements the user service's project API: list, create, open, update, archive and unarchive.
+// Package project implements the user service's project API: list, create, open, update, archive and unarchive,
+// plus each active project's issue counts for Home.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query.
@@ -16,6 +17,7 @@ const maxBody = 128 << 10
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects", h.wrap(h.list))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects", h.wrap(h.create))
+	mux.HandleFunc("GET /api/workspaces/{slug}/project-stats", h.wrap(h.stats))
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}", h.wrap(h.update))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/archive", h.wrap(h.archive))

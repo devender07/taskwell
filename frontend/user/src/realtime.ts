@@ -73,8 +73,9 @@ const loadedBy = (m: AnyRouteMatch) =>
   m.routeId === '/_app' ? APP_PATHS : (loaded.get(keyOf(m)) ?? [])
 const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)
 
-// Issue lists refetch at most every 3s, so a teammate typing doesn't reload them on every save.
-const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues)$/
+// Issue lists and Home's activity and project counts refetch at most every 3s, so a teammate typing doesn't reload
+// them on every save.
+const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|activity|project-stats)$/
 
 const push = coalescer(
   (paths) => {

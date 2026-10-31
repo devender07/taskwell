@@ -403,19 +403,46 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 
 // --- comments and activity ---
 
+// readBefore returns ?before= (nil when absent), or writes a 400 and returns ok=false.
+func readBefore(w http.ResponseWriter, r *http.Request) (*time.Time, bool) {
+	v := r.URL.Query().Get("before")
+	if v == "" {
+		return nil, true
+	}
+	t, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+		return nil, false
+	}
+	return &t, true
+}
+
+// activity is the workspace's feed for Home.
+func (h *Handler) activity(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	before, ok := readBefore(w, r)
+	if !ok {
+		return nil
+	}
+	as, more, err := h.model.activity(r.Context(), ws.ID, before)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": as, "has_more": more})
+	return nil
+}
+
 func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, i, ok, err := h.issue(w, r, userID)
 	if !ok || err != nil {
 		return err
 	}
-	var before *time.Time
-	if v := r.URL.Query().Get("before"); v != "" {
-		t, err := time.Parse(time.RFC3339Nano, v)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
-			return nil
-		}
-		before = &t
+	before, ok := readBefore(w, r)
+	if !ok {
+		return nil
 	}
 	cs, es, more, err := h.model.timeline(r.Context(), i.ID, before)
 	if err != nil {

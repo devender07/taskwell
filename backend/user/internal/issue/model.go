@@ -446,7 +446,8 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			return err
 		}
 		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
-			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug)})...)); err != nil {
+			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
+				realtime.Activity(n.slug), realtime.ProjectStats(n.slug)})...)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
@@ -715,7 +716,7 @@ func (m *model) unlink(ctx context.Context, a, b, actorID string) (bool, error) 
 	return found, nil
 }
 
-// publishLink tells the workspace both linked issues' pages and timelines changed.
+// publishLink tells the workspace both linked issues' pages and timelines, and the activity feed, changed.
 func publishLink(ctx context.Context, tx pgx.Tx, a, b, actorID string) error {
 	var paths []string
 	var n names
@@ -726,7 +727,7 @@ func publishLink(ctx context.Context, tx pgx.Tx, a, b, actorID string) error {
 		}
 		paths = append(paths, realtime.Issue(n.slug, n.identifier), realtime.Timeline(n.slug, n.identifier))
 	}
-	return realtime.Publish(ctx, tx, n.event("issue.updated", actorID, paths...))
+	return realtime.Publish(ctx, tx, n.event("issue.updated", actorID, append(paths, realtime.Activity(n.slug))...))
 }
 
 func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labelIDs []string) error {
@@ -1000,6 +1001,80 @@ func timelineCut(cs []Comment, es []Event) ([]Comment, []Event, bool) {
 	return cs, es, true
 }
 
+// Activity is one item of the workspace's activity feed: an event (Kind and Data, as on the timeline) or a comment
+// (Excerpt).
+type Activity struct {
+	Type      string          `json:"type"` // "event" or "comment"
+	ID        string          `json:"id"`
+	CreatedAt time.Time       `json:"created_at"`
+	Actor     *Person         `json:"actor"`
+	Issue     json.RawMessage `json:"issue"` // {identifier, title, status}
+	Kind      string          `json:"kind,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	Excerpt   *string         `json:"excerpt,omitempty"`
+}
+
+// activityPage caps an activity page.
+const activityPage = 30
+
+// activity returns a page of the workspace's events (but description edits) and comments on issues in active
+// projects, newest first: the newest activityPage created before before (all when nil), and whether there are older
+// ones. Like the timeline, a page never splits a shared created_at.
+// ponytail: the created_at indexes are workspace-wide, so a quiet workspace's page scans other workspaces' newer rows;
+// denormalise workspace_id onto issue_events and comments with (workspace_id, created_at) indexes when that shows up.
+func (m *model) activity(ctx context.Context, workspaceID string, before *time.Time) ([]Activity, bool, error) {
+	const issue = `json_build_object('identifier', p.key || '-' || i.number, 'title', i.title, 'status',
+		json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position))`
+	const actor = `(select json_build_object('id', u.id, 'name', u.name) from users u where u.id = %s)`
+	const from = ` join issues i on i.id = %s.issue_id join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
+		 where i.workspace_id = $1 and p.archived_at is null and ($2::timestamptz is null or %[1]s.created_at < $2)`
+	rows, err := m.db.Query(ctx,
+		`(select 'event', e.id::text, e.created_at, `+fmt.Sprintf(actor, "e.actor_id")+`, `+issue+`, e.kind, e.data, null::jsonb
+		  from issue_events e`+fmt.Sprintf(from, "e")+` and e.kind <> 'description'
+		  order by e.created_at desc, e.id desc limit $3)
+		 union all
+		 (select 'comment', c.id::text, c.created_at, `+fmt.Sprintf(actor, "c.author_id")+`, `+issue+`, '', null, c.body
+		  from comments c`+fmt.Sprintf(from, "c")+`
+		  order by c.created_at desc, c.id desc limit $3)
+		 order by 3 desc, 2 desc limit $3`, workspaceID, before, activityPage+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list activity: %w", err)
+	}
+	as, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Activity, error) {
+		var a Activity
+		var body []byte
+		err := row.Scan(&a.Type, &a.ID, &a.CreatedAt, &a.Actor, &a.Issue, &a.Kind, &a.Data, &body)
+		a.CreatedAt = a.CreatedAt.UTC()
+		if a.Type == "comment" {
+			r := []rune(strings.TrimSpace(plainText(body)))
+			excerpt := string(r[:min(len(r), 200)])
+			a.Excerpt = &excerpt
+		}
+		return a, err
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list activity: %w", err)
+	}
+	as, more := activityCut(as)
+	return as, more, nil
+}
+
+// activityCut keeps the newest activityPage of as (newest first), dropping the whole created_at group the next one is
+// in, and reports whether any were dropped. A page that's all one created_at is kept whole (see timelineCut).
+func activityCut(as []Activity) ([]Activity, bool) {
+	if len(as) <= activityPage {
+		return as, false
+	}
+	cut, n := as[activityPage].CreatedAt, activityPage
+	for n > 0 && as[n-1].CreatedAt.Equal(cut) {
+		n--
+	}
+	if n == 0 {
+		n = activityPage
+	}
+	return as[:n], true
+}
+
 // comment returns the workspace's comment with the id; nil when there's none.
 func (m *model) comment(ctx context.Context, workspaceID, id string) (*Comment, error) {
 	if !isUUID(id) {
@@ -1072,13 +1147,13 @@ func (m *model) updateComment(ctx context.Context, id, issueID, actorID string, 
 	return nil
 }
 
-// publishComment tells the workspace the issue's timeline changed.
+// publishComment tells the workspace the issue's timeline and the activity feed changed.
 func publishComment(ctx context.Context, tx pgx.Tx, issueID, actorID string) error {
 	n, err := issueNames(ctx, tx, issueID)
 	if err != nil {
 		return err
 	}
-	return realtime.Publish(ctx, tx, n.event("comment.changed", actorID, realtime.Timeline(n.slug, n.identifier)))
+	return realtime.Publish(ctx, tx, n.event("comment.changed", actorID, realtime.Timeline(n.slug, n.identifier), realtime.Activity(n.slug)))
 }
 
 // setWatching starts or stops the user watching the issue, telling their other tabs.

@@ -1,7 +1,8 @@
 import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { ApiError, can, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData } from '@/api'
+import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
@@ -24,7 +25,10 @@ export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')
       loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
       loaderApi<TimelineData>(ctx, `${path}/issues/${encodeURIComponent(params.identifier)}/timeline`),
     ]).catch((e) => {
-      if (e instanceof ApiError && e.status === 404) throw notFound()
+      if (e instanceof ApiError && e.status === 404) {
+        pruneRecent(params.workspace, params.identifier)
+        throw notFound()
+      }
       throw e
     })
     const [issue, project, statuses, labels, { members }, timeline] = data
@@ -44,6 +48,7 @@ function IssuePage() {
   const [editing, setEditing] = useState(false)
   const [viewers, setViewers] = useState<Viewer[]>([])
   const create = can(workspace, 'issues.create') && !project.archived
+  useEffect(() => recordRecent(workspace.slug, { identifier: issue.identifier, title: issue.title }), [workspace.slug, issue.identifier, issue.title])
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>

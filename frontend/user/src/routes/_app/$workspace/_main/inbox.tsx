@@ -1,14 +1,12 @@
-import { Link, createFileRoute, useLoaderData, useNavigate } from '@tanstack/react-router'
-import { useState, type ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
+import { createFileRoute, useLoaderData, useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { IconButton } from '@tether/shared/icon-button'
 import { Tabs } from '@tether/shared/tabs'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { api, avatarSrc, toFormErrors, type Notification, type NotificationPage } from '@/api'
+import { api, toFormErrors, type NotificationPage } from '@/api'
 import { loaderApi } from '@/realtime'
 import { useUnread } from '@/components/app/unread'
-import '@/components/inbox/inbox.css'
+import { FeedRow, notificationText } from '@/components/inbox/feed-row'
 
 type Filter = 'all' | 'unread'
 
@@ -101,24 +99,16 @@ function Inbox() {
           <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
             {shown.map((n) => (
               <li key={n.id} className="inbox-row">
-                <Link
-                  to="/$workspace/issue/$identifier"
-                  params={{ workspace: workspace.slug, identifier: n.issue.identifier }}
-                  className="inbox-link"
+                <FeedRow
+                  workspace={workspace.slug}
+                  identifier={n.issue.identifier}
+                  actor={n.actor}
+                  text={notificationText(n)}
+                  excerpt={n.data.excerpt}
+                  at={n.created_at}
+                  unread={!n.read}
                   onClick={() => (n.read ? undefined : mark(true, [n.id]))}
-                >
-                  <Avatar name={n.actor?.name ?? 'Someone'} size={24} src={n.actor && avatarSrc(n.actor.id)} />
-                  <span className="grid gap-1 flex-grow" style={{ minWidth: 0 }}>
-                    <span className="text-caption text-secondary" style={{ overflowWrap: 'anywhere' }}>
-                      <span className="text-primary">{n.actor?.name ?? 'Someone'}</span> {describe(n)}
-                    </span>
-                    {n.data.excerpt ? <span className="text-caption text-secondary ellipsis">{n.data.excerpt}</span> : null}
-                  </span>
-                  <time dateTime={n.created_at} title={fullTime(n.created_at)} className="text-caption text-secondary flex-noshrink">
-                    {relativeTime(n.created_at)}
-                  </time>
-                  <span className="inbox-dot flex-noshrink" data-unread={!n.read || undefined} aria-label={n.read ? undefined : 'Unread'} role={n.read ? undefined : 'img'} />
-                </Link>
+                />
                 <IconButton aria-label={n.read ? 'Mark as unread' : 'Mark as read'} style={{ width: 44, height: 44 }} className="flex-noshrink" onClick={() => mark(!n.read, [n.id])}>
                   {n.read ? <UnreadIcon /> : <ReadIcon />}
                 </IconButton>
@@ -136,28 +126,6 @@ function Inbox() {
       )}
     </main>
   )
-}
-
-function describe(n: Notification): ReactNode {
-  const issue = (
-    <>
-      <span className="text-primary font-510">{n.issue.identifier}</span> <span className="text-primary">{n.issue.title}</span>
-    </>
-  )
-  switch (n.kind) {
-    case 'assigned':
-      return <>assigned you {issue}</>
-    case 'status':
-      return (
-        <>
-          moved {issue} from {n.data.from?.name ?? 'another status'} to {n.data.to?.name ?? n.issue.status.name}
-        </>
-      )
-    case 'comment':
-      return <>commented on {issue}</>
-    case 'mention':
-      return <>mentioned you in {issue}</>
-  }
 }
 
 function ReadIcon() {

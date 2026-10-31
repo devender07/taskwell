@@ -1,5 +1,5 @@
 import { Link, useRouter } from '@tanstack/react-router'
-import { useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
@@ -12,7 +12,8 @@ import { commentBody } from '@tether/shared/validate'
 import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { StatusIcon, formatDate, priorityLabel } from './fields'
+import { eventText } from './event-text'
+import { StatusIcon } from './fields'
 
 type Mentions = { id: string; name: string }[]
 type Draft = { doc: Doc | null; length: number }
@@ -128,50 +129,8 @@ function IssueLink({ workspace, issue }: { workspace: string; issue: { identifie
   )
 }
 
-function describe(workspace: string, e: IssueEvent): ReactNode {
-  const names = (ls: { name: string }[]) => ls.map((l) => l.name).join(', ')
-  switch (e.kind) {
-    case 'created':
-      return 'created the issue'
-    case 'description':
-      return 'edited the description'
-    case 'title':
-      return `changed the title to “${e.data.to}”`
-    case 'status':
-      return `moved from ${e.data.from.name} to ${e.data.to.name}`
-    case 'assignee': {
-      const { from, to } = e.data
-      if (!to) return `unassigned ${from?.name ?? 'the issue'}`
-      return to.id === e.actor?.id ? 'assigned to themselves' : `assigned to ${to.name}`
-    }
-    case 'priority':
-      return e.data.to === 0 ? 'removed priority' : `set priority to ${priorityLabel(e.data.to)}`
-    case 'due_date':
-      return e.data.to ? `set the due date to ${formatDate(e.data.to)}` : 'removed the due date'
-    case 'labels':
-      return [e.data.added.length ? `added ${names(e.data.added)}` : '', e.data.removed.length ? `removed ${names(e.data.removed)}` : '']
-        .filter(Boolean)
-        .join(', ')
-    case 'parent':
-      return e.data.to ? (
-        <>made this a sub-issue of <IssueLink workspace={workspace} issue={e.data.to} /></>
-      ) : e.data.from ? (
-        <>removed the parent <IssueLink workspace={workspace} issue={e.data.from} /></>
-      ) : null
-    case 'link':
-      return (
-        <>
-          {e.data.removed ? 'removed the link to' : e.data.type === 'blocks' ? 'marked this as blocking' : 'marked this as blocked by'}{' '}
-          <IssueLink workspace={workspace} issue={e.data.issue} />
-        </>
-      )
-    default:
-      return null
-  }
-}
-
 function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }) {
-  const text = describe(workspace, event)
+  const text = eventText(event, (issue) => <IssueLink workspace={workspace} issue={issue} />)
   if (!text) return null
   const actor = event.actor?.name ?? 'Someone'
   return (

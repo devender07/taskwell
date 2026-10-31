@@ -57,6 +57,10 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Live description editing on the same socket; "also viewing" presence on issues
 - [x] Admin app updates live (sign-ups, workspaces, stats, suspensions, config)
 
+## Home
+
+- [x] Personal dashboard: greeting, needs attention (due this week, overdue in pink), assigned to me, unread inbox, live workspace activity, recently viewed, project progress
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)

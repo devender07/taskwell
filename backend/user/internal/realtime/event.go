@@ -81,9 +81,17 @@ func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issu
 
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
-// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, and my issues.
+// Activity is the workspace's activity feed on Home.
+func Activity(slug string) string { return Workspace(slug) + "/activity" }
+
+// ProjectStats is the per-project issue counts on Home.
+func ProjectStats(slug string) string { return Workspace(slug) + "/project-stats" }
+
+// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues, and
+// Home's activity and project counts.
 func IssuePaths(slug, identifier, key string) []string {
-	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug)}
+	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug),
+		Activity(slug), ProjectStats(slug)}
 }
 
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it

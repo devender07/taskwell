@@ -74,6 +74,11 @@ export type Notification = {
   created_at: string
 }
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
+type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
+export type ActivityItem = ({ type: 'event' } & ActivityBase & IssueEvent) | ({ type: 'comment'; excerpt: string } & ActivityBase)
+// Newest first; `?before=` the last item's created_at fetches the next page.
+export type ActivityPage = { items: ActivityItem[]; has_more: boolean }
+export type ProjectStats = { key: string; open: number; done: number; canceled: number; overdue: number }
 export type NotificationSettings = {
   email: 'instant' | 'digest' | 'off'
   mentions: boolean

@@ -52,10 +52,41 @@ func (m *model) list(ctx context.Context, workspaceID string, archived bool) ([]
 	return ps, nil
 }
 
+// Stats are an active project's issue counts by status category; overdue are open issues due before today.
+type Stats struct {
+	Key      string `json:"key"`
+	Open     int    `json:"open"`
+	Done     int    `json:"done"`
+	Canceled int    `json:"canceled"`
+	Overdue  int    `json:"overdue"`
+}
+
+// stats returns every active project's counts, in list's order.
+func (m *model) stats(ctx context.Context, workspaceID string) ([]Stats, error) {
+	rows, err := m.db.Query(ctx,
+		`select p.key,
+		        count(*) filter (where s.category in ('backlog', 'unstarted', 'started')),
+		        count(*) filter (where s.category = 'completed'),
+		        count(*) filter (where s.category = 'canceled'),
+		        count(*) filter (where s.category in ('backlog', 'unstarted', 'started') and i.due_date < current_date)
+		 from projects p left join issues i on i.project_id = p.id left join statuses s on s.id = i.status_id
+		 where p.workspace_id = $1 and p.archived_at is null
+		 group by p.id order by lower(p.name), p.key`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("project stats: %w", err)
+	}
+	ss, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Stats])
+	if err != nil {
+		return nil, fmt.Errorf("project stats: %w", err)
+	}
+	return ss, nil
+}
+
 // changed publishes project.changed for the projects with the keys (old and new) in tx, plus admin events.
 func changed(ctx context.Context, tx pgx.Tx, e realtime.Event, keys ...string) error {
 	e.Kind = "project.changed"
-	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.MyIssues(e.Workspace)}
+	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.MyIssues(e.Workspace),
+		realtime.ProjectStats(e.Workspace), realtime.Activity(e.Workspace)} // archiving hides its issues from the feed
 	for _, k := range keys {
 		e.Paths = append(e.Paths, realtime.Project(e.Workspace, k), realtime.ProjectIssues(e.Workspace, k))
 	}

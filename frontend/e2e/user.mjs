@@ -183,6 +183,16 @@ try {
   await demo.page.keyboard.press('Shift+ArrowLeft')
   t.ok('board: Shift+← moves it back', await waitFor(async () => (await statusOf()) === target.id))
 
+  // Home: maya's blocks show the issue assigned to her and the one she opened; demo's status change shows up live.
+  await maya.page.goto(`${B}/${WORKSPACE}`)
+  const region = (name) => maya.page.getByRole('region', { name })
+  const blocks = ['Needs attention', 'Assigned to me', 'Recent activity', 'Inbox', 'Recently viewed', 'Projects']
+  t.ok('home: every block renders', await waitFor(async () => (await Promise.all(blocks.map((b) => region(b).isVisible()))).every(Boolean), 5000))
+  t.ok('home: assigned issue listed', await waitFor(() => region('Assigned to me').getByText(identifier).isVisible()))
+  t.ok('home: opened issue in recently viewed', await region('Recently viewed').getByText(identifier).isVisible())
+  await demo.req.post(`${API}/issues/${identifier}`, multipart({ status_id: from }))
+  t.ok('home: activity updates live', await waitFor(async () => (await region('Recent activity').locator('li').first().innerText()).includes(`moved ${identifier}`), 8000))
+
   // Single-key shortcuts can be turned off in Settings → Profile; Ctrl+K keeps working.
   await demo.page.goto(`${B}/${WORKSPACE}/settings/profile`)
   const toggle = demo.page.getByRole('checkbox', { name: 'Single-key shortcuts' })

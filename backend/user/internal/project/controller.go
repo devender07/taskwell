@@ -45,6 +45,19 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	return nil
 }
 
+func (h *Handler) stats(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, false)
+	if !ok || err != nil {
+		return err
+	}
+	ss, err := h.model.stats(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, ss)
+	return nil
+}
+
 func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, true)
 	if !ok || err != nil {
