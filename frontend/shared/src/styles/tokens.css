@@ -64,3 +64,14 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/24px var(--font); }
 html { scrollbar-gutter: stable; }
 
+/* Scrollbars: thin grey vertical, 10px horizontal. Chrome and Safari use the ::-webkit-scrollbar rules (setting
+   scrollbar-width or scrollbar-color would switch them off); Firefox can't size them per axis, so it gets thin. */
+::-webkit-scrollbar { width: 6px; height: 10px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+::-webkit-scrollbar-button { display: none; }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+}
+
