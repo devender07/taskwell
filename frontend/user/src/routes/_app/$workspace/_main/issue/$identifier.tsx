@@ -1,26 +1,28 @@
 import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
-import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData } from '@/api'
-import { Description } from '@/components/issues/description'
+import { ApiError, can, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData } from '@/api'
+import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
 import { WatchButton } from '@/components/issues/watch-button'
+import { loaderApi, type Viewer } from '@/realtime'
 import '@/components/issues/issues.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
-  loader: async ({ params }) => {
+  loader: async (ctx) => {
+    const { params } = ctx
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const key = params.identifier.replace(/-.*/, '').toUpperCase()
     const data = await Promise.all([
-      api<Issue>(`${path}/issues/${encodeURIComponent(params.identifier)}`),
-      api<Project>(`${path}/projects/${encodeURIComponent(key)}`),
-      api<Status[]>(`${path}/statuses`),
-      api<Label[]>(`${path}/labels`),
-      api<{ members: Member[] }>(`${path}/members`),
-      api<TimelineData>(`${path}/issues/${encodeURIComponent(params.identifier)}/timeline`),
+      loaderApi<Issue>(ctx, `${path}/issues/${encodeURIComponent(params.identifier)}`),
+      loaderApi<Project>(ctx, `${path}/projects/${encodeURIComponent(key)}`),
+      loaderApi<Status[]>(ctx, `${path}/statuses`),
+      loaderApi<Label[]>(ctx, `${path}/labels`),
+      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
+      loaderApi<TimelineData>(ctx, `${path}/issues/${encodeURIComponent(params.identifier)}/timeline`),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -40,6 +42,7 @@ function IssuePage() {
   const { user } = Route.useRouteContext()
   const { issue, project, statuses, labels, members, timeline } = Route.useLoaderData()
   const [editing, setEditing] = useState(false)
+  const [viewers, setViewers] = useState<Viewer[]>([])
   const create = can(workspace, 'issues.create') && !project.archived
 
   return (
@@ -67,6 +70,7 @@ function IssuePage() {
             <header className="flex items-start justify-between gap-4">
               <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
               <div className="flex items-start gap-2 flex-noshrink">
+                <Viewers viewers={viewers} />
                 <WatchButton key={issue.id} workspace={workspace} issue={issue} />
                 {issue.can_edit ? (
                   <Button variant="secondary" onClick={() => setEditing(true)}>
@@ -76,7 +80,7 @@ function IssuePage() {
               </div>
             </header>
           )}
-          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} />
+          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} onViewers={setViewers} />
           {issue.parent ? null : (
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
           )}

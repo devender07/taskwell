@@ -1,9 +1,10 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { api, can, type Status } from '@/api'
+import { can, type Status } from '@/api'
+import { loaderApi } from '@/realtime'
 import { AddStatus, StatusList } from '@/components/workflow/statuses'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/workflow')({
-  loader: ({ params }) => api<Status[]>(`/workspaces/${encodeURIComponent(params.workspace)}/statuses`),
+  loader: (ctx) => loaderApi<Status[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/statuses`),
   component: WorkflowSettings,
 })
 

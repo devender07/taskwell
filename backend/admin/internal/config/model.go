@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/admin/internal/realtime"
 )
 
 type Setting struct {
@@ -65,12 +67,21 @@ func (m *model) get(ctx context.Context, key string) (*Setting, error) {
 	return s, nil
 }
 
-func (m *model) set(ctx context.Context, key, value string) (*Setting, error) {
-	s, err := scan(m.db.QueryRow(ctx,
-		`update system_config set value = $2, updated_at = now() where key = $1 returning `+columns, key, value))
-	if err == nil && s == nil {
-		err = errors.New("setting disappeared")
-	}
+// set changes the value, by the admin.
+func (m *model) set(ctx context.Context, adminID, key, value string) (*Setting, error) {
+	var s *Setting
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		s, err = scan(tx.QueryRow(ctx,
+			`update system_config set value = $2, updated_at = now() where key = $1 returning `+columns, key, value))
+		if err == nil && s == nil {
+			err = errors.New("setting disappeared")
+		}
+		if err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, "admin.config", adminID, "/config")
+	})
 	if err != nil {
 		return nil, fmt.Errorf("update config %s: %w", key, err)
 	}

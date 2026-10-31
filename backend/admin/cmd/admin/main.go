@@ -13,6 +13,7 @@ import (
 	"github.com/devender07/tether/backend/admin/internal/auth"
 	"github.com/devender07/tether/backend/admin/internal/config"
 	"github.com/devender07/tether/backend/admin/internal/directory"
+	"github.com/devender07/tether/backend/admin/internal/realtime"
 	"github.com/devender07/tether/backend/admin/internal/stats"
 )
 
@@ -52,10 +53,13 @@ func main() {
 	config.New(pool, authH.Authenticate).Register(mux)
 	directory.New(pool, authH.Authenticate).Register(mux)
 	stats.New(pool, authH.Authenticate).Register(mux)
+	rtH := realtime.New(pool, authH.Authenticate)
+	rtH.Register(mux)
+	go rtH.Listen(context.Background())
 
 	slog.Info("admin listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts, same as the user service; add both before production.
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, realtime.WithOrigin(mux)); err != nil {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}

@@ -10,12 +10,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
-// Record writes the change's notifications and new watchers in tx, the change's own transaction. Recipients and
-// watchers who aren't members of the issue's workspace are skipped. A status notification the recipient hasn't read
-// from the last 10 minutes on the same issue is updated (new "to", time and actor, emailed again) instead of
-// adding another.
+// Record writes the change's notifications and new watchers in tx, the change's own transaction, and tells the
+// recipients' tabs. Recipients and watchers who aren't members of the issue's workspace are skipped. A status
+// notification the recipient hasn't read from the last 10 minutes on the same issue is updated (new "to", time and
+// actor, emailed again) instead of adding another.
 func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	var watchers []string
 	if c.Status != nil || c.NewComment {
@@ -27,24 +29,44 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 			return fmt.Errorf("list watchers: %w", err)
 		}
 	}
+	var notified []string
 	for _, n := range notes(c, watchers) {
 		data, err := json.Marshal(n.data)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx,
+		tag, err := tx.Exec(ctx,
 			`with bumped as (
 			   update notifications set data = jsonb_set(data, '{to}', $5::jsonb -> 'to'), actor_id = $3, created_at = now(),
 			     emailed_at = null
 			   where $4 = 'status' and id = (select id from notifications where user_id::text = $1 and issue_id = $2
 			     and kind = 'status' and read_at is null and created_at > now() - interval '10 minutes' order by id desc limit 1)
+			   returning id),
+			 added as (
+			   insert into notifications (user_id, workspace_id, issue_id, actor_id, kind, data)
+			   select m.user_id, i.workspace_id, i.id, $3, $4, $5
+			   from issues i join workspace_members m on m.workspace_id = i.workspace_id and m.user_id::text = $1
+			   where i.id = $2 and not exists (select 1 from bumped)
 			   returning id)
-			 insert into notifications (user_id, workspace_id, issue_id, actor_id, kind, data)
-			 select m.user_id, i.workspace_id, i.id, $3, $4, $5
-			 from issues i join workspace_members m on m.workspace_id = i.workspace_id and m.user_id::text = $1
-			 where i.id = $2 and not exists (select 1 from bumped)`,
-			n.userID, c.IssueID, c.ActorID, n.kind, data); err != nil {
+			 select id from bumped union all select id from added`,
+			n.userID, c.IssueID, c.ActorID, n.kind, data)
+		if err != nil {
 			return fmt.Errorf("add %s notification: %w", n.kind, err)
+		}
+		if tag.RowsAffected() > 0 && !slices.Contains(notified, n.userID) {
+			notified = append(notified, n.userID)
+		}
+	}
+	if len(notified) > 0 {
+		var wsID, slug string
+		if err := tx.QueryRow(ctx, `select w.id::text, w.slug from issues i join workspaces w on w.id = i.workspace_id where i.id = $1`,
+			c.IssueID).Scan(&wsID, &slug); err != nil {
+			return fmt.Errorf("notified workspace: %w", err)
+		}
+		for _, u := range notified {
+			if err := realtime.Publish(ctx, tx, changed(slug, c.ActorID, u)); err != nil {
+				return err
+			}
 		}
 	}
 	watch := slices.Concat(c.Watch, c.Mentioned)
@@ -120,11 +142,23 @@ func (m *model) unreadCount(ctx context.Context, userID, workspaceID string) (in
 	return n, nil
 }
 
+// changed tells the recipient's tabs their notifications in the workspace changed.
+func changed(slug, actorID, recipientID string) realtime.Event {
+	ws := realtime.Workspace(slug)
+	return realtime.Event{Kind: "notifications.changed", Workspace: slug, Actor: actorID, Audience: realtime.ToUser(recipientID),
+		Paths: []string{ws + "/notifications", ws + "/notifications/unread-count"}}
+}
+
 // setRead marks the user's notifications in the workspace with the ids (all of them when all is true) read or unread.
-func (m *model) setRead(ctx context.Context, userID, workspaceID string, ids []string, all, read bool) error {
-	_, err := m.db.Exec(ctx,
-		`update notifications set read_at = case when $5 then coalesce(read_at, now()) end
-		 where user_id = $1 and workspace_id = $2 and ($4 or id::text = any($3::text[]))`, userID, workspaceID, ids, all, read)
+func (m *model) setRead(ctx context.Context, userID, workspaceID, slug string, ids []string, all, read bool) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`update notifications set read_at = case when $5 then coalesce(read_at, now()) end
+			 where user_id = $1 and workspace_id = $2 and ($4 or id::text = any($3::text[]))`, userID, workspaceID, ids, all, read); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, changed(slug, userID, userID))
+	})
 	if err != nil {
 		return fmt.Errorf("mark notifications: %w", err)
 	}
@@ -161,14 +195,22 @@ func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	return s, nil
 }
 
-// update changes the user's non-nil settings and returns them all.
+// update changes the user's non-nil settings and returns them all, telling their other tabs.
 func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments *bool) (Settings, error) {
-	s, err := scanSettings(m.db.QueryRow(ctx,
-		`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments)
-		 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true))
-		 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
-		   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments)
-		 returning `+settingsCols, userID, email, mentions, assignments, status, comments))
+	var s Settings
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if s, err = scanSettings(tx.QueryRow(ctx,
+			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments)
+			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true))
+			 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
+			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments)
+			 returning `+settingsCols, userID, email, mentions, assignments, status, comments)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.Event{Kind: "profile.changed", Actor: userID, Audience: realtime.ToUser(userID),
+			Paths: []string{"/me/notification-settings"}})
+	})
 	if err != nil {
 		return s, fmt.Errorf("update notification settings: %w", err)
 	}

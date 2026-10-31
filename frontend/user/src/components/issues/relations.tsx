@@ -7,10 +7,17 @@ import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { api, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
+import { subscribePaths } from '@/realtime'
 import { StatusIcon } from './fields'
 import { CreateIssueForm, issuePath } from './issue-form'
 
 export const refOption = (r: IssueRef): Option => ({ value: r.identifier, label: `${r.identifier} ${r.title}`, hint: r.status.name })
+
+// Reloads an open issue picker when issues in the workspace change.
+export const subscribeIssues = (workspace: Workspace) => (reload: () => void) => {
+  const ws = `/workspaces/${encodeURIComponent(workspace.slug)}`
+  return subscribePaths([`${ws}/issues/`, `${ws}/projects/`], reload)
+}
 
 // Issue search for pickers, minus the issue being edited; `project` limits it to one project key.
 export function searchIssues(workspace: Workspace, exclude: string, project?: string) {
@@ -157,6 +164,7 @@ function AddLink({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
             label="Issue"
             placeholder="Search issues"
             loadOptions={async (q, signal) => (await searchIssues(workspace, issue.identifier)(q, signal)).map(refOption)}
+            subscribe={subscribeIssues(workspace)}
             value={target}
             onChange={setTarget}
             error={errors?.issue}

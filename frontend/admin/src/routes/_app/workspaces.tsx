@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { api, formatDate, listQuery, validateListSearch, type WorkspaceRow } from '@/api'
+import { formatDate, listQuery, validateListSearch, type WorkspaceRow } from '@/api'
 import { Pager, SearchForm } from '@/components/app/list-controls'
+import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/workspaces')({
   validateSearch: validateListSearch,
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => api<{ workspaces: WorkspaceRow[]; total: number }>(`/workspaces?${listQuery(deps)}`),
+  loader: (ctx) => loaderApi<{ workspaces: WorkspaceRow[]; total: number }>(ctx, `/workspaces?${listQuery(ctx.deps)}`),
   component: Workspaces,
 })
 

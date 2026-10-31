@@ -41,10 +41,14 @@ export class ApiError extends Error {
 
 // GET without a body, POST with one. 204 resolves to undefined. A 401 outside /auth/* and /me means the
 // 8h session ran out: back to sign-in, returning here afterwards.
+// The realtime connection id, so the API can tag this tab's own changes and the tab skips their events.
+let client = ''
+export const setClient = (id: string) => (client = id)
+
 export async function api<T = void>(path: string, body?: FormData): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', body })
+    res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', body, headers: client ? { 'X-Tether-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }

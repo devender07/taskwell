@@ -110,9 +110,13 @@ export async function api<T = void>(path: string, body?: FormData, method = body
   return data as T
 }
 
+// The realtime connection id, so the API can tag this tab's own changes and the tab skips their events.
+let client = ''
+export const setClient = (id: string) => (client = id)
+
 async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal) {
   try {
-    return await fetch(`/api${path}`, { method, body, signal })
+    return await fetch(`/api${path}`, { method, body, signal, headers: client ? { 'X-Tether-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }

@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 const (
@@ -47,9 +49,14 @@ type model struct{ db *pgxpool.Pool }
 // createUser inserts a user; email must already be normalized. Returns errEmailTaken on a duplicate.
 func (m *model) createUser(ctx context.Context, name, email, passwordHash string) (User, error) {
 	var u User
-	err := m.db.QueryRow(ctx,
-		`insert into users (name, email, password_hash) values ($1, $2, $3) returning id::text, name, email`,
-		name, email, passwordHash).Scan(&u.ID, &u.Name, &u.Email)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx,
+			`insert into users (name, email, password_hash) values ($1, $2, $3) returning id::text, name, email`,
+			name, email, passwordHash).Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
+	})
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return User{}, errEmailTaken
 	}
@@ -160,8 +167,11 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			return err
 		}
 		created = true
-		return tx.QueryRow(ctx, `insert into users (name, email, google_sub) values ($1, $2, $3) returning id::text, name, email`,
-			name, email, sub).Scan(&u.ID, &u.Name, &u.Email)
+		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub) values ($1, $2, $3) returning id::text, name, email`,
+			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
 	})
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return User{}, false, errEmailTaken // the email belongs to an account linked to a different Google account
@@ -175,8 +185,13 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 // updateName returns the updated user, or nil when there is no such user.
 func (m *model) updateName(ctx context.Context, id, name string) (*User, error) {
 	var u User
-	err := m.db.QueryRow(ctx, `update users set name = $2 where id = $1 returning id::text, name, email`, id, name).
-		Scan(&u.ID, &u.Name, &u.Email)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `update users set name = $2 where id = $1 returning id::text, name, email`, id, name).
+			Scan(&u.ID, &u.Name, &u.Email); err != nil {
+			return err
+		}
+		return realtime.PublishProfile(ctx, tx, id)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

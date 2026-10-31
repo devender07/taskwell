@@ -1,7 +1,8 @@
-import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
+import { Outlet, createFileRoute, redirect, useParams } from '@tanstack/react-router'
 import { api, getMe, type Workspace } from '@/api'
 import { Navbar } from '@/components/app/navbar'
 import { UnreadProvider } from '@/components/app/unread'
+import { useRealtime } from '@/realtime'
 
 // Pathless layout: everything under _app/ needs a session and gets the navbar.
 // The workspace list lives in context (not a loader) so the `/` redirect can read it without a second request.
@@ -18,6 +19,7 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   const { user, workspaces } = Route.useRouteContext()
+  useRealtime(useParams({ strict: false }).workspace)
   return (
     <UnreadProvider>
       <Navbar user={user} workspaces={workspaces} />

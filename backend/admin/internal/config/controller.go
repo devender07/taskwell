@@ -31,7 +31,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, _ string) error {
 }
 
 // update sets one value. An empty value for a secret keeps the stored one (the form can't show it to edit).
-func (h *Handler) update(w http.ResponseWriter, r *http.Request, _ string) error {
+func (h *Handler) update(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	key, value := r.PathValue("key"), r.FormValue("value")
 	row, err := h.model.get(ctx, key)
@@ -54,7 +54,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, _ string) error
 		return nil
 	}
 	if !row.Secret || value != "" {
-		if row, err = h.model.set(ctx, key, value); err != nil {
+		if row, err = h.model.set(ctx, adminID, key, value); err != nil {
 			return err
 		}
 	}

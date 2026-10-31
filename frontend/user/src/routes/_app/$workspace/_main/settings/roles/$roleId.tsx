@@ -1,12 +1,14 @@
 import { Link, createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
-import { api, can, type Permission, type Role } from '@/api'
+import { can, type Permission, type Role } from '@/api'
+import { loaderApi } from '@/realtime'
 import { DeleteRole, RoleForm } from '@/components/roles/role-form'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/$roleId')({
-  loader: async ({ params }) => {
+  loader: async (ctx) => {
+    const { params } = ctx
     const [catalog, roles] = await Promise.all([
-      api<Permission[]>('/permissions'),
-      api<Role[]>(`/workspaces/${encodeURIComponent(params.workspace)}/roles`),
+      loaderApi<Permission[]>(ctx, '/permissions'),
+      loaderApi<Role[]>(ctx, `/workspaces/${encodeURIComponent(params.workspace)}/roles`),
     ])
     const role = roles.find((r) => r.id === params.roleId)
     if (!role) throw notFound()

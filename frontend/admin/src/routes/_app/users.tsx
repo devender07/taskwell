@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { relativeTime } from '@tether/shared/time'
-import { api, formatDate, listQuery, validateListSearch, type UserRow } from '@/api'
+import { formatDate, listQuery, validateListSearch, type UserRow } from '@/api'
 import { Pager, SearchForm } from '@/components/app/list-controls'
 import { SuspendButton } from '@/components/users/suspend-button'
+import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/users')({
   validateSearch: validateListSearch,
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => api<{ users: UserRow[]; total: number }>(`/users?${listQuery(deps)}`),
+  loader: (ctx) => loaderApi<{ users: UserRow[]; total: number }>(ctx, `/users?${listQuery(ctx.deps)}`),
   component: Users,
 })
 

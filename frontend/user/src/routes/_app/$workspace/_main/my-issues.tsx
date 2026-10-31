@@ -1,17 +1,19 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { api, type Issue, type Label, type Member, type Status } from '@/api'
+import type { Issue, Label, Member, Status } from '@/api'
+import { loaderApi } from '@/realtime'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
 
 export const Route = createFileRoute('/_app/$workspace/_main/my-issues')({
   validateSearch: validateViewSearch,
-  loader: async ({ params }) => {
+  loader: async (ctx) => {
+    const { params } = ctx
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const [issues, statuses, labels, { members }] = await Promise.all([
-      api<Issue[]>(`${path}/my-issues`),
-      api<Status[]>(`${path}/statuses`),
-      api<Label[]>(`${path}/labels`),
-      api<{ members: Member[] }>(`${path}/members`),
+      loaderApi<Issue[]>(ctx, `${path}/my-issues`),
+      loaderApi<Status[]>(ctx, `${path}/statuses`),
+      loaderApi<Label[]>(ctx, `${path}/labels`),
+      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
     ])
     return { issues, statuses, labels, members }
   },

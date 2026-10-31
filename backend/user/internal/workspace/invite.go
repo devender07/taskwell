@@ -68,7 +68,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	token := newToken()
-	inv, err := h.model.invite(ctx, ws.ID, email, userID, role.ID, hash(token), days)
+	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, hash(token), days)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func (h *Handler) resendInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	token := newToken()
-	inv, err := h.model.renew(ctx, ws.ID, r.PathValue("id"), hash(token), days)
+	inv, err := h.model.renew(ctx, ws, userID, r.PathValue("id"), hash(token), days)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (h *Handler) cancelInvite(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	deleted, err := h.model.cancelInvite(r.Context(), ws.ID, r.PathValue("id"))
+	deleted, err := h.model.cancelInvite(r.Context(), ws, userID, r.PathValue("id"))
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func (h *Handler) changeMember(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	mb, err := h.model.setMemberRole(r.Context(), ws.ID, r.PathValue("userId"), role.ID)
+	mb, err := h.model.setMemberRole(r.Context(), ws, userID, r.PathValue("userId"), role.ID)
 	if errors.Is(err, errLastAdmin) {
 		writeErr(w, http.StatusConflict, errNoAdmin)
 		return nil
@@ -243,7 +243,7 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 			return err
 		}
 	}
-	removed, err := h.model.removeMember(r.Context(), ws.ID, target)
+	removed, err := h.model.removeMember(r.Context(), ws, userID, target)
 	if errors.Is(err, errLastAdmin) {
 		writeErr(w, http.StatusConflict, errNoAdmin)
 		return nil

@@ -51,6 +51,12 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Email notifications with per-user settings and a daily digest option
 - [x] Watch / unwatch an issue
 
+## Realtime
+
+- [x] One WebSocket per tab: every write publishes (in its transaction, via Postgres NOTIFY) which REST paths changed; open tabs refetch just those
+- [x] Live description editing on the same socket; "also viewing" presence on issues
+- [x] Admin app updates live (sign-ups, workspaces, stats, suspensions, config)
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)

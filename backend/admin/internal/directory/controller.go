@@ -56,19 +56,19 @@ func (h *Handler) suspend(w http.ResponseWriter, r *http.Request, adminID string
 		web.WriteErr(w, http.StatusBadRequest, "You can't suspend yourself.")
 		return nil
 	}
-	return h.setSuspended(w, r, true)
+	return h.setSuspended(w, r, adminID, true)
 }
 
-func (h *Handler) unsuspend(w http.ResponseWriter, r *http.Request, _ string) error {
-	return h.setSuspended(w, r, false)
+func (h *Handler) unsuspend(w http.ResponseWriter, r *http.Request, adminID string) error {
+	return h.setSuspended(w, r, adminID, false)
 }
 
-func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, suspended bool) error {
+func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID string, suspended bool) error {
 	var id pgtype.UUID
 	var u *User
 	if id.Scan(r.PathValue("id")) == nil {
 		var err error
-		if u, err = h.model.setSuspended(r.Context(), r.PathValue("id"), suspended); err != nil {
+		if u, err = h.model.setSuspended(r.Context(), adminID, r.PathValue("id"), suspended); err != nil {
 			return err
 		}
 	}

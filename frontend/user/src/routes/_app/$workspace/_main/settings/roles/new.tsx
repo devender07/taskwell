@@ -1,9 +1,10 @@
 import { Link, createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { api, type Permission } from '@/api'
+import type { Permission } from '@/api'
+import { loaderApi } from '@/realtime'
 import { RoleForm } from '@/components/roles/role-form'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/new')({
-  loader: () => api<Permission[]>('/permissions'),
+  loader: (ctx) => loaderApi<Permission[]>(ctx, '/permissions'),
   component: NewRole,
 })
 

@@ -3,7 +3,7 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
-// activity events and collab.go relays live edits. Changes record their notifications with notify.Record.
+// activity events and collab.go relays live edits (joined over the realtime socket). Changes record their notifications with notify.Record.
 package issue
 
 import (
@@ -41,8 +41,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/comments", h.wrap(h.createComment))
 	mux.HandleFunc("POST /api/workspaces/{slug}/comments/{id}", h.wrap(h.updateComment))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/comments/{id}", h.wrap(h.deleteComment))
-	// The WebSocket isn't wrapped: its connection is hijacked, so it does its own auth checks before upgrading.
-	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/collab", h.collab)
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

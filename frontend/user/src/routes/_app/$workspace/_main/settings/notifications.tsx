@@ -2,9 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Checkbox } from '@tether/shared/checkbox'
 import { api, toFormErrors, type NotificationSettings } from '@/api'
+import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/notifications')({
-  loader: () => api<NotificationSettings>('/me/notification-settings'),
+  loader: (ctx) => loaderApi<NotificationSettings>(ctx, '/me/notification-settings'),
   component: NotificationSettingsPage,
 })
 
@@ -23,9 +24,16 @@ const kinds: { value: Kind; label: string }[] = [
 ]
 
 function NotificationSettingsPage() {
-  const [settings, setSettings] = useState<NotificationSettings>(Route.useLoaderData())
+  const data = Route.useLoaderData()
+  const [loaded, setLoaded] = useState(data)
+  const [settings, setSettings] = useState<NotificationSettings>(data)
   const [saved, setSaved] = useState(0)
   const [error, setError] = useState<string | null>(null)
+
+  if (data !== loaded) {
+    setLoaded(data)
+    setSettings(data)
+  }
 
   useEffect(() => {
     if (!saved) return

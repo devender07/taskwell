@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { Tabs } from '@tether/shared/tabs'
-import { api, can, type Project } from '@/api'
+import { can, type Project } from '@/api'
+import { loaderApi } from '@/realtime'
 import { ProjectForm } from '@/components/projects/project-form'
 import '@/components/projects/projects.css'
 
@@ -12,8 +13,8 @@ type View = 'active' | 'archived'
 export const Route = createFileRoute('/_app/$workspace/_main/projects/')({
   validateSearch: (search): { archived?: true } => (search.archived === true ? { archived: true } : {}),
   loaderDeps: ({ search }) => ({ archived: search.archived }),
-  loader: ({ params, deps }) =>
-    api<Project[]>(`/workspaces/${encodeURIComponent(params.workspace)}/projects${deps.archived ? '?archived=true' : ''}`),
+  loader: (ctx) =>
+    loaderApi<Project[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/projects${ctx.deps.archived ? '?archived=true' : ''}`),
   component: Projects,
 })
 

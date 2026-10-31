@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { api, type Setting } from '@/api'
+import type { Setting } from '@/api'
+import { loaderApi } from '@/realtime'
 import { SettingRow } from '@/components/config/setting-row'
 
 export const Route = createFileRoute('/_app/config')({
-  loader: () => api<Setting[]>('/config'),
+  loader: (ctx) => loaderApi<Setting[]>(ctx, '/config'),
   component: Config,
 })
 

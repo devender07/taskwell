@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { api, type Day, type Stats } from '@/api'
+import type { Day, Stats } from '@/api'
+import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/')({
-  loader: () => api<Stats>('/stats'),
+  loader: (ctx) => loaderApi<Stats>(ctx, '/stats'),
   component: Overview,
 })
 

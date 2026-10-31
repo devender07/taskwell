@@ -4,18 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"math"
-	"net/http"
+	"strings"
 	"sync"
 	"time"
-
-	"github.com/coder/websocket"
-
-	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
-// Live-editing frame types: the first byte of every binary frame.
+// Live-editing frame types: the first byte of every binary frame. Bytes 1-16 are the issue's uuid (see tag).
 const (
 	msgReady byte = iota
 	msgUpdate
@@ -23,13 +21,6 @@ const (
 	msgCompact
 	msgSave
 	msgSeed
-)
-
-const (
-	maxFrame   = 1 << 20
-	sendBuffer = 256
-	writeWait  = 10 * time.Second
-	pingEvery  = 30 * time.Second
 )
 
 // hub holds a room per issue being edited live on this API instance; listen.go relays other instances' frames.
@@ -43,10 +34,9 @@ type room struct {
 	seeder  *client // the editor here told to seed the document from the saved description, until its seed is stored
 }
 
-// client is one connection. The hub queues frames on send; a writer goroutine drains it.
+// client is one session in a room. The hub queues tagged frames on its peer.
 type client struct {
-	send    chan []byte
-	cancel  context.CancelFunc
+	peer    Peer
 	canEdit bool
 }
 
@@ -77,23 +67,18 @@ func (hb *hub) leave(issueID string, c *client) (seeding, passed bool) {
 	if r.seeder != c {
 		return false, false
 	}
-	return true, r.passSeed()
+	return true, r.passSeed(issueID)
 }
 
 // passSeed hands an unfinished seed to another editor in the room. Called with hb.mu held.
 // ponytail: the new seeder skips seeding if its user already typed into the empty document; their text then
 // replaces the saved description. Rare: needs the first editor to leave within a second of opening the issue.
-func (r *room) passSeed() bool {
+func (r *room) passSeed(issueID string) bool {
 	r.seeder = nil
 	for c := range r.clients {
-		if !c.canEdit {
-			continue
-		}
-		select {
-		case c.send <- []byte{msgSeed}:
+		if c.canEdit && c.peer.Send(tag(msgSeed, issueID, nil)) {
 			r.seeder = c
 			return true
-		default:
 		}
 	}
 	return false
@@ -130,13 +115,13 @@ func (hb *hub) closeAll() {
 	defer hb.mu.Unlock()
 	for _, r := range hb.rooms {
 		for c := range r.clients {
-			c.cancel()
+			c.peer.Close()
 		}
 	}
 }
 
-// broadcast queues msg for every connection on the issue but from, ending any whose buffer is full
-// (its handler then leaves the room).
+// broadcast queues msg, a tagged frame, for every session on the issue but from, ending any connection whose buffer
+// is full (it then leaves the room).
 func (hb *hub) broadcast(issueID string, from *client, msg []byte) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
@@ -148,60 +133,63 @@ func (hb *hub) broadcast(issueID string, from *client, msg []byte) {
 		if c == from {
 			continue
 		}
-		select {
-		case c.send <- msg:
-		default:
-			c.cancel()
+		if !c.peer.Send(msg) {
+			c.peer.Close()
 		}
 	}
 }
 
-// collab serves the live-editing WebSocket for an issue's description.
-func (h *Handler) collab(w http.ResponseWriter, r *http.Request) {
-	var ws *workspace.Workspace
-	var i *Issue
-	ok := false
-	userID, err := h.authenticate(r)
-	if err == nil && userID == "" {
-		writeErr(w, http.StatusUnauthorized, "Not signed in.")
-		return
-	}
-	if err == nil {
-		ws, i, ok, err = h.issue(w, r, userID)
-	}
-	if err != nil {
-		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
-		return
-	}
-	if !ok {
-		return
-	}
-	allow(i, userID, ws.Permissions)
-
-	conn, err := websocket.Accept(w, r, nil)
-	if err != nil {
-		return // Accept has written the error response
-	}
-	defer conn.CloseNow()
-	conn.SetReadLimit(maxFrame)
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	c := &client{send: make(chan []byte, sendBuffer), cancel: cancel, canEdit: i.CanEdit}
-	// Join before loading: an update stored after the load is broadcast to us, one stored before is in the load
-	// (and maybe broadcast too; Yjs ignores duplicates).
-	h.hub.join(i.ID, c)
-	defer h.leave(r.Context(), i.ID, c)
-	if err := h.sendStored(ctx, conn, i, c); err != nil {
-		slog.Info("collab load failed", "issue", i.ID, "err", err)
-		return
-	}
-	go c.write(ctx, conn)
-	h.readFrames(ctx, conn, c, i.ID, userID, i.CanEdit)
+// Peer is a realtime connection as live editing needs it.
+type Peer interface {
+	Send(frame []byte) bool                        // queue without waiting; false when the buffer is full
+	Write(ctx context.Context, frame []byte) error // queue, waiting for room
+	Close()                                        // end the connection; its tab reconnects and reloads
 }
 
+// Session is one connection's live editing of one issue, joined over the realtime socket.
+type Session struct {
+	h      *Handler
+	c      *client
+	issue  *Issue
+	wsID   string
+	userID string
+}
+
+// Join checks that the user may open the issue (a member; can_edit decides whether their edits count) and returns
+// its session, not yet started; nil and the message to show when they can't.
+func (h *Handler) Join(ctx context.Context, peer Peer, userID, slug, identifier string) (*Session, string, error) {
+	ws, err := h.member(ctx, userID, slug)
+	if err != nil || ws == nil {
+		return nil, errNotFound, err
+	}
+	i, err := h.find(ctx, ws.ID, identifier)
+	if err != nil || i == nil {
+		return nil, errIssueNotFound, err
+	}
+	allow(i, userID, ws.Permissions)
+	return &Session{h: h, c: &client{peer: peer, canEdit: i.CanEdit}, issue: i, wsID: ws.ID, userID: userID}, "", nil
+}
+
+func (s *Session) ID() string { return s.issue.ID }
+
+func (s *Session) WorkspaceID() string { return s.wsID }
+
+// Start enters the issue's room and sends the stored updates, then ready.
+func (s *Session) Start(ctx context.Context) error {
+	// Join before loading: an update stored after the load is broadcast to us, one stored before is in the load
+	// (and maybe broadcast too; Yjs ignores duplicates).
+	s.h.hub.join(s.issue.ID, s.c)
+	if err := s.h.sendStored(ctx, s.issue, s.c); err != nil {
+		return fmt.Errorf("collab load: %w", err)
+	}
+	return nil
+}
+
+// Leave takes the session out of its room and updates the seed claim when it was seeding.
+func (s *Session) Leave(ctx context.Context) { s.h.leave(ctx, s.issue.ID, s.c) }
+
 // sendStored sends the issue's stored updates, then ready.
-func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue, c *client) error {
+func (h *Handler) sendStored(ctx context.Context, i *Issue, c *client) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	us, err := h.model.docUpdates(ctx, i.ID)
@@ -210,7 +198,7 @@ func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue
 	}
 	var last int64
 	for _, u := range us {
-		if err := conn.Write(ctx, websocket.MessageBinary, append([]byte{msgUpdate}, u.data...)); err != nil {
+		if err := c.peer.Write(ctx, tag(msgUpdate, i.ID, u.data)); err != nil {
 			return err
 		}
 		last = u.id
@@ -230,7 +218,7 @@ func (h *Handler) sendStored(ctx context.Context, conn *websocket.Conn, i *Issue
 			flags |= 2
 		}
 	}
-	return conn.Write(ctx, websocket.MessageBinary, binary.BigEndian.AppendUint64([]byte{msgReady, flags}, uint64(last)))
+	return c.peer.Write(ctx, tag(msgReady, i.ID, binary.BigEndian.AppendUint64([]byte{flags}, uint64(last))))
 }
 
 // leave takes c out of its room and updates the seed claim when c was seeding.
@@ -246,76 +234,52 @@ func (h *Handler) leave(ctx context.Context, issueID string, c *client) {
 	}
 }
 
-// readFrames handles the client's frames until it disconnects or a store fails.
-func (h *Handler) readFrames(ctx context.Context, conn *websocket.Conn, c *client, issueID, userID string, canEdit bool) {
-	for {
-		typ, data, err := conn.Read(ctx)
-		if err != nil {
-			return
-		}
-		if typ != websocket.MessageBinary || len(data) < 2 {
-			continue
-		}
-		body := data[1:]
-		switch {
-		case data[0] == msgAwareness:
-			h.hub.broadcast(issueID, c, data)
-			if p := notePrefix(issueID, noteAwareness) + base64.StdEncoding.EncodeToString(data); len(p) <= maxNote {
-				if err := h.model.notify(ctx, p); err != nil {
-					slog.Warn("collab awareness notify failed", "issue", issueID, "err", err)
-				}
-			}
-		case !canEdit:
-		case data[0] == msgUpdate:
-			if err := h.model.addDocUpdate(ctx, issueID, body); err != nil {
-				slog.Error("collab update failed", "issue", issueID, "err", err)
-				return
-			}
-			h.hub.stored(issueID, c)
-			h.hub.broadcast(issueID, c, data)
-		case data[0] == msgCompact && len(body) > 8:
-			upTo := binary.BigEndian.Uint64(body)
-			if upTo > math.MaxInt64 {
-				continue
-			}
-			if err := h.model.compactDoc(ctx, issueID, int64(upTo), body[8:]); err != nil {
-				slog.Error("collab compact failed", "issue", issueID, "err", err)
-				return
-			}
-		case data[0] == msgSave:
-			doc, msg := checkDescription(body)
-			if msg != "" {
-				slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
-				continue
-			}
-			if err := h.model.saveDescription(ctx, issueID, userID, doc); err != nil {
-				slog.Error("collab save failed", "issue", issueID, "err", err)
-				return
-			}
-		}
+// Frame handles one binary frame from the client: type, the issue's uuid, payload. An error ends the connection.
+func (s *Session) Frame(ctx context.Context, data []byte) error {
+	if len(data) < tagLen+1 {
+		return nil
 	}
+	h, c, issueID := s.h, s.c, s.issue.ID
+	body := data[tagLen:]
+	switch {
+	case data[0] == msgAwareness:
+		h.hub.broadcast(issueID, c, data)
+		if p := notePrefix(issueID, noteAwareness) + base64.StdEncoding.EncodeToString(data); len(p) <= maxNote {
+			if err := h.model.notify(ctx, p); err != nil {
+				slog.Warn("collab awareness notify failed", "issue", issueID, "err", err)
+			}
+		}
+	case !c.canEdit:
+	case data[0] == msgUpdate:
+		if err := h.model.addDocUpdate(ctx, issueID, body); err != nil {
+			return err
+		}
+		h.hub.stored(issueID, c)
+		h.hub.broadcast(issueID, c, data)
+	case data[0] == msgCompact && len(body) > 8:
+		upTo := binary.BigEndian.Uint64(body)
+		if upTo > math.MaxInt64 {
+			return nil
+		}
+		return h.model.compactDoc(ctx, issueID, int64(upTo), body[8:])
+	case data[0] == msgSave:
+		doc, msg := checkDescription(body)
+		if msg != "" {
+			slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
+			return nil
+		}
+		return h.model.saveDescription(ctx, issueID, s.userID, doc)
+	}
+	return nil
 }
 
-// write sends queued frames and pings until ctx ends or a write fails, then ends the connection.
-func (c *client) write(ctx context.Context, conn *websocket.Conn) {
-	defer c.cancel()
-	ping := time.NewTicker(pingEvery)
-	defer ping.Stop()
-	for {
-		var err error
-		wctx, cancel := context.WithTimeout(ctx, writeWait)
-		select {
-		case <-ctx.Done():
-			cancel()
-			return
-		case msg := <-c.send:
-			err = conn.Write(wctx, websocket.MessageBinary, msg)
-		case <-ping.C:
-			err = conn.Ping(wctx)
-		}
-		cancel()
-		if err != nil {
-			return
-		}
-	}
+// tagLen is a frame's type byte and issue uuid.
+const tagLen = 17
+
+// tag builds a frame for the issue: the type, the issue's uuid as 16 raw bytes, the payload.
+func tag(typ byte, issueID string, payload []byte) []byte {
+	b := make([]byte, tagLen, tagLen+len(payload))
+	b[0] = typ
+	_, _ = hex.Decode(b[1:], []byte(strings.ReplaceAll(issueID, "-", ""))) // a uuid from the database
+	return append(b, payload...)
 }

@@ -1,16 +1,39 @@
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
 import { api, toFormErrors, type FieldErrors, type Setting } from '@/api'
 
 type State = { setting: Setting; value: string; saved?: boolean; errors?: FieldErrors; error?: string | null }
 
-export function SettingRow({ setting: initial }: { setting: Setting }) {
+// Takes a newer value from a refetch (another admin saved it) unless this row is being edited.
+export function SettingRow({ setting }: { setting: Setting }) {
+  const [latest, setLatest] = useState(setting)
+  const [version, setVersion] = useState(0)
+  const [editing, setEditing] = useState(false)
+  if (!editing && Date.parse(setting.updated_at) > Date.parse(latest.updated_at)) {
+    setLatest(setting)
+    setVersion((v) => v + 1)
+  }
+  return (
+    <Row
+      key={version}
+      setting={latest}
+      onEdit={() => setEditing(true)}
+      onSaved={(s) => {
+        setLatest(s)
+        setEditing(false)
+      }}
+    />
+  )
+}
+
+function Row({ setting: initial, onEdit, onSaved }: { setting: Setting; onEdit: () => void; onSaved: (s: Setting) => void }) {
   const [state, submit, pending] = useActionState(async (prev: State, form: FormData): Promise<State> => {
     const value = String(form.get('value') ?? '')
     if (prev.setting.secret && !value) return { setting: prev.setting, value }
     try {
       const setting = await api<Setting>(`/config/${encodeURIComponent(prev.setting.key)}`, form)
+      onSaved(setting)
       return { setting, value: setting.value, saved: true }
     } catch (e) {
       return { setting: prev.setting, value, ...toFormErrors(e) }
@@ -22,7 +45,7 @@ export function SettingRow({ setting: initial }: { setting: Setting }) {
   const locked = setting.key === 'jwt_secret'
 
   return (
-    <form action={submit} noValidate className="setting">
+    <form action={submit} noValidate className="setting" onInput={onEdit}>
       <div className="grid gap-1" style={{ minWidth: 0 }}>
         <label htmlFor={id} className="text-label" style={{ fontFamily: 'var(--mono)', overflowWrap: 'anywhere' }}>
           {setting.key}

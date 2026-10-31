@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 // roleAdmin is the Admin role's workspace_roles.builtin.
@@ -87,9 +89,11 @@ func (m *model) create(ctx context.Context, userID, name, slug string) (Workspac
 			ws.ID, memberDefaults).Scan(&ws.Role.ID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx,
-			`insert into workspace_members (workspace_id, user_id, role_id) values ($1, $2, $3)`, ws.ID, userID, ws.Role.ID)
-		return err
+		if _, err := tx.Exec(ctx,
+			`insert into workspace_members (workspace_id, user_id, role_id) values ($1, $2, $3)`, ws.ID, userID, ws.Role.ID); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(userID))
 	})
 	if isUniqueViolation(err) {
 		return Workspace{}, errTaken
@@ -129,9 +133,27 @@ func (m *model) membership(ctx context.Context, userID, slug string) (*Workspace
 	return &ws, nil
 }
 
-// update renames the workspace and changes its slug. Returns errTaken when the new slug belongs to another workspace.
-func (m *model) update(ctx context.Context, id, name, slug string) error {
-	_, err := m.db.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, id, name, slug)
+// event is kind in the workspace ws, by the actor, with paths.
+func event(ws *Workspace, actorID, kind string, paths ...string) realtime.Event {
+	return realtime.Event{Kind: kind, Workspace: ws.Slug, Actor: actorID, Audience: realtime.ToWorkspace(ws.ID), Paths: paths}
+}
+
+// update renames the workspace and changes its slug, by the actor. Returns errTaken when the new slug belongs to
+// another workspace.
+func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, ws.ID, name, slug); err != nil {
+			return err
+		}
+		e := event(ws, actorID, "workspace.changed", realtime.Workspace(ws.Slug), "/workspaces")
+		if slug != ws.Slug {
+			e.NewSlug = slug
+		}
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
+	})
 	if isUniqueViolation(err) {
 		return errTaken
 	}
@@ -146,9 +168,20 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// delete removes the workspace; members, roles and invites go with it (on delete cascade).
-func (m *model) delete(ctx context.Context, id string) error {
-	if _, err := m.db.Exec(ctx, `delete from workspaces where id = $1`, id); err != nil {
+// delete removes the workspace, by the actor; members, roles and invites go with it (on delete cascade).
+func (m *model) delete(ctx context.Context, ws *Workspace, actorID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `delete from workspaces where id = $1`, ws.ID); err != nil {
+			return err
+		}
+		e := event(ws, actorID, "workspace.removed", "/workspaces")
+		e.WorkspaceID = ws.ID
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
+	})
+	if err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
 	}
 	return nil
@@ -246,31 +279,51 @@ func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, 
 	return ok, nil
 }
 
+// invitesChanged is the event for a change to the workspace's invites (the members page lists them).
+func invitesChanged(ws *Workspace, actorID string) realtime.Event {
+	p := realtime.Workspace(ws.Slug)
+	return event(ws, actorID, "members.changed", p+"/invites", p+"/members")
+}
+
 // invite creates the invite, or replaces the token, expiry, inviter and role of a pending one for the same email.
-func (m *model) invite(ctx context.Context, workspaceID, email, invitedBy, roleID string, tokenHash []byte, days int) (Invite, error) {
-	inv, err := scanInvite(m.db.QueryRow(ctx,
-		`with i as (
-		   insert into workspace_invites (workspace_id, email, invited_by, role_id, token_hash, expires_at)
-		   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
-		   on conflict (workspace_id, email) do update
-		     set invited_by = excluded.invited_by, role_id = excluded.role_id,
-		         token_hash = excluded.token_hash, expires_at = excluded.expires_at
-		   returning *) `+inviteCols,
-		workspaceID, email, invitedBy, roleID, tokenHash, days))
+func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, roleID string, tokenHash []byte, days int) (Invite, error) {
+	var inv Invite
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if inv, err = scanInvite(tx.QueryRow(ctx,
+			`with i as (
+			   insert into workspace_invites (workspace_id, email, invited_by, role_id, token_hash, expires_at)
+			   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
+			   on conflict (workspace_id, email) do update
+			     set invited_by = excluded.invited_by, role_id = excluded.role_id,
+			         token_hash = excluded.token_hash, expires_at = excluded.expires_at
+			   returning *) `+inviteCols,
+			ws.ID, email, invitedBy, roleID, tokenHash, days)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, invitesChanged(ws, invitedBy))
+	})
 	if err != nil {
 		return Invite{}, fmt.Errorf("create invite: %w", err)
 	}
 	return inv, nil
 }
 
-// renew gives the workspace's invite a new token and expiry; nil when there's no such invite.
-func (m *model) renew(ctx context.Context, workspaceID, id string, tokenHash []byte, days int) (*Invite, error) {
-	inv, err := scanInvite(m.db.QueryRow(ctx,
-		`with i as (
-		   update workspace_invites set token_hash = $3, expires_at = now() + make_interval(days => $4)
-		    where workspace_id = $1 and id::text = $2
-		   returning *) `+inviteCols,
-		workspaceID, id, tokenHash, days))
+// renew gives the workspace's invite a new token and expiry, by the actor; nil when there's no such invite.
+func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, tokenHash []byte, days int) (*Invite, error) {
+	var inv Invite
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if inv, err = scanInvite(tx.QueryRow(ctx,
+			`with i as (
+			   update workspace_invites set token_hash = $3, expires_at = now() + make_interval(days => $4)
+			    where workspace_id = $1 and id::text = $2
+			   returning *) `+inviteCols,
+			ws.ID, id, tokenHash, days)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, invitesChanged(ws, actorID))
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -280,13 +333,20 @@ func (m *model) renew(ctx context.Context, workspaceID, id string, tokenHash []b
 	return &inv, nil
 }
 
-// cancelInvite deletes the workspace's invite; false when there's no such invite.
-func (m *model) cancelInvite(ctx context.Context, workspaceID, id string) (bool, error) {
-	tag, err := m.db.Exec(ctx, `delete from workspace_invites where workspace_id = $1 and id::text = $2`, workspaceID, id)
+// cancelInvite deletes the workspace's invite, by the actor; false when there's no such invite.
+func (m *model) cancelInvite(ctx context.Context, ws *Workspace, actorID, id string) (bool, error) {
+	deleted := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from workspace_invites where workspace_id = $1 and id::text = $2`, ws.ID, id)
+		if deleted = tag.RowsAffected() == 1; err != nil || !deleted {
+			return err
+		}
+		return realtime.Publish(ctx, tx, invitesChanged(ws, actorID))
+	})
 	if err != nil {
 		return false, fmt.Errorf("cancel invite: %w", err)
 	}
-	return tag.RowsAffected() == 1, nil
+	return deleted, nil
 }
 
 // inviteInfo returns the unexpired invite with this token hash; nil when there's none.
@@ -339,8 +399,14 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 		}
 		w, err := scanWorkspace(tx.QueryRow(ctx,
 			`select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, workspaceID, userID))
+		if err != nil {
+			return err
+		}
 		ws = &w
-		return err
+		if err := realtime.Publish(ctx, tx, invitesChanged(ws, userID)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(userID))
 	})
 	if errors.Is(err, errWrongEmail) {
 		return nil, inviteEmail, err
@@ -418,11 +484,50 @@ func (m *model) memberRole(ctx context.Context, workspaceID, userID string) (*Ro
 	return &r, nil
 }
 
-// createRole adds a custom role. Returns errNameTaken when the workspace has a role with that name (any case).
-func (m *model) createRole(ctx context.Context, workspaceID, name string, perms []string) (Role, error) {
-	r, err := scanRole(m.db.QueryRow(ctx,
-		`with r as (insert into workspace_roles (workspace_id, name, permissions) values ($1, $2, $3) returning *)
-		 select `+roleCols+` from r`, workspaceID, name, perms))
+// rolesChanged publishes roles.changed, and workspace.permissions to every member holding the role with the id
+// (none when it's "").
+func rolesChanged(ctx context.Context, tx pgx.Tx, ws *Workspace, actorID, roleID string) error {
+	p := realtime.Workspace(ws.Slug)
+	if err := realtime.Publish(ctx, tx, event(ws, actorID, "roles.changed", p+"/roles", p+"/members")); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `select user_id::text from workspace_members where workspace_id = $1 and role_id::text = $2`, ws.ID, roleID)
+	if err != nil {
+		return err
+	}
+	holders, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	// ponytail: one notification per holder; a role held by thousands would want one workspace-wide event instead.
+	for _, u := range holders {
+		if err := realtime.Publish(ctx, tx, permissionsChanged(ws, actorID, u)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// permissionsChanged tells the member's tabs their permissions in the workspace changed.
+func permissionsChanged(ws *Workspace, actorID, userID string) realtime.Event {
+	e := event(ws, actorID, "workspace.permissions", realtime.Workspace(ws.Slug), realtime.All(ws.Slug))
+	e.Audience = realtime.ToUser(userID)
+	return e
+}
+
+// createRole adds a custom role, by the actor. Returns errNameTaken when the workspace has a role with that name
+// (any case).
+func (m *model) createRole(ctx context.Context, ws *Workspace, actorID, name string, perms []string) (Role, error) {
+	var r Role
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if r, err = scanRole(tx.QueryRow(ctx,
+			`with r as (insert into workspace_roles (workspace_id, name, permissions) values ($1, $2, $3) returning *)
+			 select `+roleCols+` from r`, ws.ID, name, perms)); err != nil {
+			return err
+		}
+		return rolesChanged(ctx, tx, ws, actorID, "")
+	})
 	if isUniqueViolation(err) {
 		return Role{}, errNameTaken
 	}
@@ -432,13 +537,20 @@ func (m *model) createRole(ctx context.Context, workspaceID, name string, perms 
 	return r, nil
 }
 
-// updateRole renames the role and replaces its permissions; nil when there's no such role.
+// updateRole renames the role and replaces its permissions, by the actor; nil when there's no such role.
 // Returns errNameTaken like createRole.
-func (m *model) updateRole(ctx context.Context, workspaceID, id, name string, perms []string) (*Role, error) {
-	r, err := scanRole(m.db.QueryRow(ctx,
-		`with r as (update workspace_roles set name = $3, permissions = $4
-		             where workspace_id = $1 and id::text = $2 returning *)
-		 select `+roleCols+` from r`, workspaceID, id, name, perms))
+func (m *model) updateRole(ctx context.Context, ws *Workspace, actorID, id, name string, perms []string) (*Role, error) {
+	var r Role
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if r, err = scanRole(tx.QueryRow(ctx,
+			`with r as (update workspace_roles set name = $3, permissions = $4
+			             where workspace_id = $1 and id::text = $2 returning *)
+			 select `+roleCols+` from r`, ws.ID, id, name, perms)); err != nil {
+			return err
+		}
+		return rolesChanged(ctx, tx, ws, actorID, r.ID)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -451,10 +563,16 @@ func (m *model) updateRole(ctx context.Context, workspaceID, id, name string, pe
 	return &r, nil
 }
 
-// deleteRole deletes a custom role, moving its members and invites to the Member role; false when there's no such role.
-func (m *model) deleteRole(ctx context.Context, workspaceID, id string) (bool, error) {
+// deleteRole deletes a custom role, by the actor, moving its members and invites to the Member role; false when
+// there's no such role.
+func (m *model) deleteRole(ctx context.Context, ws *Workspace, actorID, id string) (bool, error) {
+	workspaceID := ws.ID
 	deleted := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// Its holders' permissions change: tell them before they move to Member.
+		if err := rolesChanged(ctx, tx, ws, actorID, id); err != nil {
+			return err
+		}
 		var memberRole string
 		if err := tx.QueryRow(ctx, `select id::text from workspace_roles where workspace_id = $1 and builtin = 'member'`,
 			workspaceID).Scan(&memberRole); err != nil {
@@ -479,19 +597,26 @@ func (m *model) deleteRole(ctx context.Context, workspaceID, id string) (bool, e
 	return deleted, nil
 }
 
-// setMemberRole changes a member's role; nil when they aren't a member. Returns errLastAdmin when it would leave no admin.
-func (m *model) setMemberRole(ctx context.Context, workspaceID, userID, roleID string) (*Member, error) {
+// setMemberRole changes a member's role, by the actor; nil when they aren't a member. Returns errLastAdmin when it
+// would leave no admin.
+func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userID, roleID string) (*Member, error) {
 	var mb *Member
-	err := m.keepingAdmin(ctx, workspaceID, func(tx pgx.Tx) error {
+	err := m.keepingAdmin(ctx, ws.ID, func(tx pgx.Tx) error {
 		r, err := scanMember(tx.QueryRow(ctx,
 			`with m as (update workspace_members set role_id = $3 where workspace_id = $1 and user_id::text = $2 returning *)
 			 select `+memberCols+` from m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id`,
-			workspaceID, userID, roleID))
+			ws.ID, userID, roleID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+		if err != nil {
+			return err
+		}
 		mb = &r
-		return err
+		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, permissionsChanged(ws, actorID, mb.ID))
 	})
 	if errors.Is(err, errLastAdmin) {
 		return nil, err
@@ -502,17 +627,27 @@ func (m *model) setMemberRole(ctx context.Context, workspaceID, userID, roleID s
 	return mb, nil
 }
 
-// removeMember takes the user out of the workspace and unassigns their issues there; false when they aren't a member.
-// Returns errLastAdmin when it would leave no admin.
-func (m *model) removeMember(ctx context.Context, workspaceID, userID string) (bool, error) {
+// removeMember takes the user out of the workspace and unassigns their issues there, by the actor (the user when they
+// leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
+func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID string) (bool, error) {
 	removed := false
-	err := m.keepingAdmin(ctx, workspaceID, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id::text = $2`, workspaceID, userID)
+	err := m.keepingAdmin(ctx, ws.ID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id::text = $2`, ws.ID, userID)
 		if removed = tag.RowsAffected() == 1; err != nil || !removed {
 			return err
 		}
-		_, err = tx.Exec(ctx, `update issues set assignee_id = null where workspace_id = $1 and assignee_id::text = $2`, workspaceID, userID)
-		return err
+		if _, err = tx.Exec(ctx, `update issues set assignee_id = null where workspace_id = $1 and assignee_id::text = $2`, ws.ID, userID); err != nil {
+			return err
+		}
+		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {
+			return err
+		}
+		gone := event(ws, actorID, "workspace.removed", "/workspaces")
+		gone.Audience, gone.WorkspaceID = realtime.ToUser(userID), ws.ID
+		if err := realtime.Publish(ctx, tx, gone); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
 	})
 	if errors.Is(err, errLastAdmin) {
 		return false, err

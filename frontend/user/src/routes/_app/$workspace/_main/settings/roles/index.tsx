@@ -1,9 +1,10 @@
 import { Link, createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { api, can, type Role } from '@/api'
+import { can, type Role } from '@/api'
+import { loaderApi } from '@/realtime'
 import '@/components/roles/roles.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/')({
-  loader: ({ params }) => api<Role[]>(`/workspaces/${encodeURIComponent(params.workspace)}/roles`),
+  loader: (ctx) => loaderApi<Role[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/roles`),
   component: RolesSettings,
 })
 

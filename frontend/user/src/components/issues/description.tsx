@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
+import { Avatar } from '@tether/shared/avatar'
 import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
-import { uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
+import { avatarSrc, uploadFile, type Issue, type Member, type User, type Workspace } from '@/api'
+import type { Viewer } from '@/realtime'
 import { REMOTE, connectCollab, type CollabState } from './collab'
-import { issuePath } from './issue-form'
 
 type Session = { doc: Y.Doc; awareness: Awareness }
 
@@ -16,14 +17,19 @@ function caretColor(id: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(CARET_COLORS[Math.abs(h) % CARET_COLORS.length]!).trim()
 }
 
-export function Description({ workspace, issue, user, members }: { workspace: Workspace; issue: Issue; user: User; members: Member[] }) {
+type Props = { workspace: Workspace; issue: Issue; user: User; members: Member[]; onViewers: (viewers: Viewer[]) => void }
+
+// The live description editor; `onViewers` (a stable setter) gets the other people who have this issue open.
+export function Description({ workspace, issue, user, members, onViewers }: Props) {
   const [session, setSession] = useState<Session | null>(null)
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
   const [empty, setEmpty] = useState(!issue.description)
   const seed = useRef(issue.description)
   const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
-  const path = `${issuePath(workspace, issue.identifier)}/collab`
+  const slug = workspace.slug
+  const identifier = issue.identifier
+  const userId = user.id
 
   useEffect(() => {
     const doc = new Y.Doc()
@@ -35,7 +41,7 @@ export function Description({ workspace, issue, user, members }: { workspace: Wo
       clearTimeout(timer)
       if (dirty && conn.save(JSON.stringify(yDocToJSON(doc)))) dirty = false
     }
-    const conn = connectCollab(path, doc, awareness, (s) => {
+    const conn = connectCollab(slug, identifier, doc, awareness, (s) => {
       if (!s) return setOffline(true)
       if (s.seed && seed.current && doc.getXmlFragment('default').length === 0) {
         seeding = true
@@ -45,7 +51,7 @@ export function Description({ workspace, issue, user, members }: { workspace: Wo
       setLive(s)
       setOffline(false)
       if (dirty) flush()
-    })
+    }, (viewers) => onViewers(viewers.filter((v) => v.id !== userId)))
     doc.on('update', (_: Uint8Array, origin: unknown) => {
       if (origin === REMOTE || seeding) return
       dirty = true
@@ -60,8 +66,9 @@ export function Description({ workspace, issue, user, members }: { workspace: Wo
       conn.destroy()
       awareness.destroy()
       doc.destroy()
+      onViewers([])
     }
-  }, [path])
+  }, [slug, identifier, userId, onViewers])
 
   const collab = useMemo(
     () => session && { ...session, user: { name: user.name, color: caretColor(user.id) } },
@@ -95,5 +102,31 @@ export function Description({ workspace, issue, user, members }: { workspace: Wo
       )}
       {offline ? <p className="text-caption text-secondary m-0">Offline, reconnecting…</p> : null}
     </section>
+  )
+}
+
+const SHOWN_VIEWERS = 5
+
+export function Viewers({ viewers }: { viewers: Viewer[] }) {
+  if (viewers.length === 0) return null
+  const extra = viewers.length - SHOWN_VIEWERS
+  return (
+    <div
+      role="img"
+      aria-label={`Also viewing: ${viewers.map((v) => v.name).join(', ')}`}
+      className="flex items-center flex-noshrink"
+      style={{ height: 40, paddingLeft: 4 }}
+    >
+      {viewers.slice(0, SHOWN_VIEWERS).map((v) => (
+        <span key={v.id} title={v.name} className="inline-grid rounded-full" style={{ marginLeft: -4, boxShadow: '0 0 0 2px var(--bg)' }}>
+          <Avatar name={v.name} size={24} src={avatarSrc(v.id)} />
+        </span>
+      ))}
+      {extra > 0 ? (
+        <span className="text-caption text-secondary" style={{ marginLeft: 4 }} title={viewers.slice(SHOWN_VIEWERS).map((v) => v.name).join(', ')}>
+          +{extra}
+        </span>
+      ) : null}
+    </div>
   )
 }

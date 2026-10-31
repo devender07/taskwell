@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { filterOptions, type Option } from '@tether/shared/match'
 import { api, toFormErrors, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
+import { subscribePaths } from '@/realtime'
 import './shortcuts.css'
 
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
@@ -59,10 +60,17 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   const [found, setFound] = useState<{ q: string; data: SearchResult } | null>(null)
   const [queued, setQueued] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [version, setVersion] = useState(0)
   const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
   const listRef = useRef<HTMLDivElement>(null)
   const q = query.trim()
   const slug = workspace.slug
+
+  useEffect(() => {
+    if (mode !== 'root') return
+    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    return subscribePaths([`${ws}/search`, `${ws}/issues/`, `${ws}/projects`, `${ws}/projects/`], () => setVersion((v) => v + 1))
+  }, [mode, slug])
 
   useEffect(() => {
     if (mode !== 'root') return
@@ -77,7 +85,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [mode, q, slug])
+  }, [mode, q, slug, version])
 
   async function save(field: string, values: string[], stay = false) {
     if (!ctx) return

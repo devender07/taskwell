@@ -14,6 +14,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/project"
+	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
@@ -48,6 +49,24 @@ func main() {
 	issueH := issue.New(pool, authH.Authenticate, wsH.Member)
 	issueH.Register(mux)
 	go issueH.Listen(context.Background())
+	rtH := realtime.New(pool, authH.Authenticate,
+		func(ctx context.Context, userID, slug string) (string, error) {
+			ws, err := wsH.Member(ctx, userID, slug)
+			if ws == nil {
+				return "", err
+			}
+			return ws.ID, nil
+		},
+		func(ctx context.Context, c *realtime.Conn, userID, slug, identifier string) (realtime.Collab, string, error) {
+			s, msg, err := issueH.Join(ctx, c, userID, slug, identifier)
+			if s == nil {
+				return nil, msg, err // not a nil *issue.Session inside the interface
+			}
+			return s, "", nil
+		})
+	rtH.Register(mux)
+	go rtH.Listen(context.Background())
+	go rtH.Presence(context.Background())
 	notifyH := notify.New(pool, authH.Authenticate, wsH.Member, mailer, cfg)
 	notifyH.Register(mux)
 	go notifyH.Run(context.Background(), duration("NOTIFY_INTERVAL", time.Minute), duration("NOTIFY_SETTLE", 30*time.Second))
@@ -61,7 +80,7 @@ func main() {
 
 	slog.Info("user listening", "addr", addr)
 	// ponytail: no graceful shutdown or server timeouts; add http.Server with timeouts + signal handling before production.
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, realtime.WithOrigin(mux)); err != nil {
 		slog.Error("server", "err", err)
 		os.Exit(1)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/notify"
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 var (
@@ -137,6 +138,52 @@ func scanIssue(row pgx.Row) (Issue, error) {
 
 // model owns every query for issues, statuses and labels.
 type model struct{ db *pgxpool.Pool }
+
+// names are what an issue's realtime events need, read in the change's transaction.
+type names struct {
+	wsID, slug, identifier, key string
+	related                     []string // identifiers of its parent, sub-issues and linked issues: their pages show it
+}
+
+func issueNames(ctx context.Context, tx pgx.Tx, id string) (names, error) {
+	var n names
+	err := tx.QueryRow(ctx,
+		`select w.id::text, w.slug, p.key || '-' || i.number, p.key,
+		        array(select rp.key || '-' || r.number from issues r join projects rp on rp.id = r.project_id
+		              where r.id = i.parent_id or r.parent_id = i.id
+		                 or r.id in (select blocked_id from issue_links where blocker_id = i.id
+		                             union select blocker_id from issue_links where blocked_id = i.id))
+		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
+		 where i.id::text = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.related)
+	if err != nil {
+		return n, fmt.Errorf("issue names: %w", err)
+	}
+	return n, nil
+}
+
+// event is kind for the issue's workspace, by the actor, with paths.
+func (n names) event(kind, actorID string, paths ...string) realtime.Event {
+	return realtime.Event{Kind: kind, Workspace: n.slug, Actor: actorID, Audience: realtime.ToWorkspace(n.wsID), Paths: paths}
+}
+
+// relatedPaths are the pages of the issue's parent, sub-issues and linked issues.
+func (n names) relatedPaths() []string {
+	ps := make([]string, len(n.related))
+	for i, r := range n.related {
+		ps[i] = realtime.Issue(n.slug, r)
+	}
+	return ps
+}
+
+// publishIssue publishes kind about the issue as named before and after the change: its pages, lists and the
+// pages of the issues related to it.
+func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, ns ...names) error {
+	var paths []string
+	for _, n := range ns {
+		paths = slices.Concat(paths, realtime.IssuePaths(n.slug, n.identifier, n.key), n.relatedPaths())
+	}
+	return realtime.Publish(ctx, tx, ns[0].event(kind, actorID, paths...))
+}
 
 // --- issues ---
 
@@ -371,8 +418,19 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		if err := addEvents(ctx, tx, id, userID, []event{{"created", struct{}{}}}); err != nil {
 			return err
 		}
-		return notify.Record(ctx, tx, notify.Change{IssueID: id, ActorID: userID, Watch: []string{userID},
-			Assignee: deref(f.assigneeID), Mentioned: mentions(f.description)})
+		if err := notify.Record(ctx, tx, notify.Change{IssueID: id, ActorID: userID, Watch: []string{userID},
+			Assignee: deref(f.assigneeID), Mentioned: mentions(f.description)}); err != nil {
+			return err
+		}
+		n, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
+			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug)})...)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -391,6 +449,10 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		before, err := snap(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		namedBefore, err := issueNames(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -442,7 +504,14 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 				c.Assignee = personID(after.assignee)
 			}
 		}
-		return notify.Record(ctx, tx, c)
+		if err := notify.Record(ctx, tx, c); err != nil {
+			return err
+		}
+		namedAfter, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
 	})
 	if errors.As(err, new(parentError)) {
 		return err
@@ -578,7 +647,10 @@ func (m *model) link(ctx context.Context, blockerID, blockedID, actorID string) 
 		if tag.RowsAffected() == 0 {
 			return errLinked
 		}
-		return addLinkEvents(ctx, tx, blockerID, blockedID, actorID, false)
+		if err := addLinkEvents(ctx, tx, blockerID, blockedID, actorID, false); err != nil {
+			return err
+		}
+		return publishLink(ctx, tx, blockerID, blockedID, actorID)
 	})
 	if errors.Is(err, errLinked) {
 		return err
@@ -604,12 +676,29 @@ func (m *model) unlink(ctx context.Context, a, b, actorID string) (bool, error) 
 			return err
 		}
 		found = true
-		return addLinkEvents(ctx, tx, blocker, blocked, actorID, true)
+		if err := addLinkEvents(ctx, tx, blocker, blocked, actorID, true); err != nil {
+			return err
+		}
+		return publishLink(ctx, tx, blocker, blocked, actorID)
 	})
 	if err != nil {
 		return false, fmt.Errorf("unlink issues: %w", err)
 	}
 	return found, nil
+}
+
+// publishLink tells the workspace both linked issues' pages and timelines changed.
+func publishLink(ctx context.Context, tx pgx.Tx, a, b, actorID string) error {
+	var paths []string
+	var n names
+	for _, id := range []string{a, b} {
+		var err error
+		if n, err = issueNames(ctx, tx, id); err != nil {
+			return err
+		}
+		paths = append(paths, realtime.Issue(n.slug, n.identifier), realtime.Timeline(n.slug, n.identifier))
+	}
+	return realtime.Publish(ctx, tx, n.event("issue.updated", actorID, paths...))
 }
 
 func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labelIDs []string) error {
@@ -623,8 +712,21 @@ func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labe
 	return err
 }
 
-func (m *model) delete(ctx context.Context, id string) error {
-	if _, err := m.db.Exec(ctx, `delete from issues where id::text = $1`, id); err != nil {
+func (m *model) delete(ctx context.Context, id, actorID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		n, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `delete from issues where id::text = $1`, id); err != nil {
+			return err
+		}
+		if err := publishIssue(ctx, tx, "issue.deleted", actorID, n); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if err != nil {
 		return fmt.Errorf("delete issue: %w", err)
 	}
 	return nil
@@ -738,7 +840,16 @@ func (m *model) saveDescription(ctx context.Context, issueID, actorID string, do
 		if err := addEvents(ctx, tx, issueID, actorID, []event{{"description", struct{}{}}}); err != nil {
 			return err
 		}
-		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: newMentions(old, doc)})
+		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, Mentioned: newMentions(old, doc)}); err != nil {
+			return err
+		}
+		// The description itself is live over collab already.
+		n, err := issueNames(ctx, tx, issueID)
+		if err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, n.event("issue.updated", actorID,
+			realtime.Timeline(n.slug, n.identifier), realtime.ProjectIssues(n.slug, n.key)))
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("save description: %w", err)
@@ -843,8 +954,14 @@ func (m *model) createComment(ctx context.Context, issueID, authorID string, bod
 			issueID, authorID, body).Scan(&id); err != nil {
 			return err
 		}
-		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: authorID, Watch: []string{authorID},
-			CommentID: id, Excerpt: notify.Excerpt(plainText(body)), NewComment: true, Mentioned: mentions(body)})
+		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: authorID, Watch: []string{authorID},
+			CommentID: id, Excerpt: notify.Excerpt(plainText(body)), NewComment: true, Mentioned: mentions(body)}); err != nil {
+			return err
+		}
+		if err := publishComment(ctx, tx, issueID, authorID); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(authorID))
 	})
 	if err != nil {
 		return "", fmt.Errorf("create comment: %w", err)
@@ -862,8 +979,11 @@ func (m *model) updateComment(ctx context.Context, id, issueID, actorID string, 
 			 returning o.body`, id, body).Scan(&old); err != nil {
 			return err
 		}
-		return notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, CommentID: id,
-			Excerpt: notify.Excerpt(plainText(body)), Mentioned: newMentions(old, body)})
+		if err := notify.Record(ctx, tx, notify.Change{IssueID: issueID, ActorID: actorID, CommentID: id,
+			Excerpt: notify.Excerpt(plainText(body)), Mentioned: newMentions(old, body)}); err != nil {
+			return err
+		}
+		return publishComment(ctx, tx, issueID, actorID)
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("update comment: %w", err)
@@ -871,20 +991,50 @@ func (m *model) updateComment(ctx context.Context, id, issueID, actorID string, 
 	return nil
 }
 
-// setWatching starts or stops the user watching the issue.
+// publishComment tells the workspace the issue's timeline changed.
+func publishComment(ctx context.Context, tx pgx.Tx, issueID, actorID string) error {
+	n, err := issueNames(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
+	return realtime.Publish(ctx, tx, n.event("comment.changed", actorID, realtime.Timeline(n.slug, n.identifier)))
+}
+
+// setWatching starts or stops the user watching the issue, telling their other tabs.
 func (m *model) setWatching(ctx context.Context, issueID, userID string, on bool) error {
 	sql := `delete from issue_watchers where issue_id = $1 and user_id = $2`
 	if on {
 		sql = `insert into issue_watchers (issue_id, user_id) values ($1, $2) on conflict do nothing`
 	}
-	if _, err := m.db.Exec(ctx, sql, issueID, userID); err != nil {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, issueID, userID); err != nil {
+			return err
+		}
+		n, err := issueNames(ctx, tx, issueID)
+		if err != nil {
+			return err
+		}
+		e := n.event("issue.watch", userID, realtime.Issue(n.slug, n.identifier))
+		e.Audience = realtime.ToUser(userID)
+		return realtime.Publish(ctx, tx, e)
+	})
+	if err != nil {
 		return fmt.Errorf("set watching: %w", err)
 	}
 	return nil
 }
 
-func (m *model) deleteComment(ctx context.Context, id string) error {
-	if _, err := m.db.Exec(ctx, `delete from comments where id = $1`, id); err != nil {
+func (m *model) deleteComment(ctx context.Context, id, issueID, actorID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `delete from comments where id = $1`, id); err != nil {
+			return err
+		}
+		if err := publishComment(ctx, tx, issueID, actorID); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if err != nil {
 		return fmt.Errorf("delete comment: %w", err)
 	}
 	return nil
@@ -923,12 +1073,27 @@ func (m *model) listStatuses(ctx context.Context, workspaceID string) ([]Status,
 	return ss, nil
 }
 
-// createStatus appends a status after the last one. Returns errNameTaken when the name is in use.
-func (m *model) createStatus(ctx context.Context, workspaceID, name, category string) (Status, error) {
-	s, err := scanStatus(m.db.QueryRow(ctx,
-		`insert into statuses (workspace_id, name, category, position)
-		 values ($1, $2, $3, (select coalesce(max(position) + 1, 0) from statuses where workspace_id = $1))
-		 returning `+statusCols, workspaceID, name, category))
+// publishing runs fn in a transaction that publishes e when fn succeeds.
+func (m *model) publishing(ctx context.Context, e realtime.Event, fn func(pgx.Tx) error) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, e)
+	})
+}
+
+// createStatus appends a status after the last one, publishing e. Returns errNameTaken when the name is in use.
+func (m *model) createStatus(ctx context.Context, workspaceID, name, category string, e realtime.Event) (Status, error) {
+	var s Status
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		var err error
+		s, err = scanStatus(tx.QueryRow(ctx,
+			`insert into statuses (workspace_id, name, category, position)
+			 values ($1, $2, $3, (select coalesce(max(position) + 1, 0) from statuses where workspace_id = $1))
+			 returning `+statusCols, workspaceID, name, category))
+		return err
+	})
 	if isUniqueViolation(err) {
 		return s, errNameTaken
 	}
@@ -938,11 +1103,17 @@ func (m *model) createStatus(ctx context.Context, workspaceID, name, category st
 	return s, nil
 }
 
-// updateStatus renames and recategorizes a status; nil when there's none. Returns errNameTaken when the name is in use.
-func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string) (*Status, error) {
-	s, err := scanStatus(m.db.QueryRow(ctx,
-		`update statuses set name = $3, category = $4 where workspace_id = $1 and id::text = $2 returning `+statusCols,
-		workspaceID, id, name, category))
+// updateStatus renames and recategorizes a status, publishing e; nil when there's none. Returns errNameTaken when the
+// name is in use.
+func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, e realtime.Event) (*Status, error) {
+	var s Status
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		var err error
+		s, err = scanStatus(tx.QueryRow(ctx,
+			`update statuses set name = $3, category = $4 where workspace_id = $1 and id::text = $2 returning `+statusCols,
+			workspaceID, id, name, category))
+		return err
+	})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil
@@ -963,9 +1134,9 @@ func lockStatuses(ctx context.Context, tx pgx.Tx, workspaceID string) ([]string,
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// reorderStatuses sets positions to the order of ids. Returns errBadOrder unless ids is every status once.
-func (m *model) reorderStatuses(ctx context.Context, workspaceID string, ids []string) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+// reorderStatuses sets positions to the order of ids, publishing e. Returns errBadOrder unless ids is every status once.
+func (m *model) reorderStatuses(ctx context.Context, workspaceID string, ids []string, e realtime.Event) error {
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		have, err := lockStatuses(ctx, tx, workspaceID)
 		if err != nil {
 			return err
@@ -990,10 +1161,10 @@ func (m *model) reorderStatuses(ctx context.Context, workspaceID string, ids []s
 	return nil
 }
 
-// deleteStatus deletes a status, moving its issues to moveTo; false when there's no such status.
-// Returns errLastStatus for the workspace's only status, and errInUse when issues use it and moveTo
-// isn't another of the workspace's statuses.
-func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string) (bool, error) {
+// deleteStatus deletes a status, moving its issues to moveTo, and publishes e (every workspace path too when issues
+// moved); false when there's no such status. Returns errLastStatus for the workspace's only status, and errInUse when
+// issues use it and moveTo isn't another of the workspace's statuses.
+func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string, e realtime.Event) (bool, error) {
 	found := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		ids, err := lockStatuses(ctx, tx, workspaceID)
@@ -1004,10 +1175,11 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 		if len(ids) == 1 {
 			return errLastStatus
 		}
-		if _, err := tx.Exec(ctx,
+		moved, err := tx.Exec(ctx,
 			`update issues i set status_id = s.id from statuses s
 			 where i.status_id::text = $2 and s.workspace_id = $1 and s.id::text = $3 and s.id::text <> $2`,
-			workspaceID, id, moveTo); err != nil {
+			workspaceID, id, moveTo)
+		if err != nil {
 			return err
 		}
 		var inUse bool
@@ -1017,8 +1189,13 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 		if inUse {
 			return errInUse
 		}
-		_, err = tx.Exec(ctx, `delete from statuses where id::text = $1`, id)
-		return err
+		if _, err = tx.Exec(ctx, `delete from statuses where id::text = $1`, id); err != nil {
+			return err
+		}
+		if moved.RowsAffected() > 0 {
+			e.Paths = append(e.Paths, realtime.All(e.Workspace))
+		}
+		return realtime.Publish(ctx, tx, e)
 	})
 	if errors.Is(err, errLastStatus) || errors.Is(err, errInUse) {
 		return true, err
@@ -1051,10 +1228,15 @@ func (m *model) listLabels(ctx context.Context, workspaceID string) ([]Label, er
 	return ls, nil
 }
 
-// createLabel returns errNameTaken when the name is in use.
-func (m *model) createLabel(ctx context.Context, workspaceID, name, color string) (Label, error) {
-	l, err := scanLabel(m.db.QueryRow(ctx,
-		`insert into labels (workspace_id, name, color) values ($1, $2, $3) returning `+labelCols, workspaceID, name, color))
+// createLabel publishes e. Returns errNameTaken when the name is in use.
+func (m *model) createLabel(ctx context.Context, workspaceID, name, color string, e realtime.Event) (Label, error) {
+	var l Label
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		var err error
+		l, err = scanLabel(tx.QueryRow(ctx,
+			`insert into labels (workspace_id, name, color) values ($1, $2, $3) returning `+labelCols, workspaceID, name, color))
+		return err
+	})
 	if isUniqueViolation(err) {
 		return l, errNameTaken
 	}
@@ -1064,11 +1246,16 @@ func (m *model) createLabel(ctx context.Context, workspaceID, name, color string
 	return l, nil
 }
 
-// updateLabel returns nil when there's no such label, and errNameTaken when the name is in use.
-func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color string) (*Label, error) {
-	l, err := scanLabel(m.db.QueryRow(ctx,
-		`update labels set name = $3, color = $4 where workspace_id = $1 and id::text = $2 returning `+labelCols,
-		workspaceID, id, name, color))
+// updateLabel publishes e. It returns nil when there's no such label, and errNameTaken when the name is in use.
+func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color string, e realtime.Event) (*Label, error) {
+	var l Label
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		var err error
+		l, err = scanLabel(tx.QueryRow(ctx,
+			`update labels set name = $3, color = $4 where workspace_id = $1 and id::text = $2 returning `+labelCols,
+			workspaceID, id, name, color))
+		return err
+	})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil
@@ -1080,13 +1267,20 @@ func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color st
 	return &l, nil
 }
 
-// deleteLabel deletes a label, which removes it from its issues; false when there's none.
-func (m *model) deleteLabel(ctx context.Context, workspaceID, id string) (bool, error) {
-	tag, err := m.db.Exec(ctx, `delete from labels where workspace_id = $1 and id::text = $2`, workspaceID, id)
+// deleteLabel deletes a label, which removes it from its issues, and publishes e; false when there's none.
+func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realtime.Event) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from labels where workspace_id = $1 and id::text = $2`, workspaceID, id)
+		if found = tag.RowsAffected() == 1; err != nil || !found {
+			return err
+		}
+		return realtime.Publish(ctx, tx, e)
+	})
 	if err != nil {
 		return false, fmt.Errorf("delete label: %w", err)
 	}
-	return tag.RowsAffected() == 1, nil
+	return found, nil
 }
 
 func isUniqueViolation(err error) bool {

@@ -14,6 +14,8 @@ type SmartAutocompleteProps = {
   placeholder?: string
   options?: Option[]
   loadOptions?: (query: string, signal: AbortSignal) => Promise<Option[]>
+  // With loadOptions: registers `reload` while the list is open (e.g. for live updates); returns the unsubscribe.
+  subscribe?: (reload: () => void) => () => void
   value?: Option | null
   defaultValue?: Option | null
   onChange?: (option: Option | null) => void
@@ -34,6 +36,7 @@ export function SmartAutocomplete({
   placeholder,
   options = [],
   loadOptions,
+  subscribe,
   value,
   defaultValue = null,
   onChange,
@@ -57,10 +60,13 @@ export function SmartAutocomplete({
   const panelRef = useRef<HTMLDivElement>(null)
   const pressing = useRef(false)
   const loadRef = useRef(loadOptions)
+  const subscribeRef = useRef(subscribe)
+  const [version, setVersion] = useState(0)
 
+  // Compared by value: a refetch that rebuilds the same option keeps what's being typed.
   if (selected !== prevSelected) {
     setPrevSelected(selected)
-    setQuery(selected?.label ?? '')
+    if (selected?.value !== prevSelected?.value || selected?.label !== prevSelected?.label) setQuery(selected?.label ?? '')
   }
 
   // Showing the selected label means "not searching yet": list everything.
@@ -71,9 +77,14 @@ export function SmartAutocomplete({
 
   useEffect(() => {
     loadRef.current = loadOptions
+    subscribeRef.current = subscribe
   })
 
   const remote = Boolean(loadOptions)
+  useEffect(() => {
+    if (remote && open) return subscribeRef.current?.(() => setVersion((v) => v + 1))
+  }, [remote, open])
+
   useEffect(() => {
     if (!remote || !open) return
     const ctrl = new AbortController()
@@ -96,7 +107,7 @@ export function SmartAutocomplete({
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [remote, open, term])
+  }, [remote, open, term, version])
 
   // iOS blurs the input when an option is tapped, before the click lands: a press in the list keeps it open
   // through that blur, and a press outside closes it.

@@ -33,7 +33,7 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request, userID stri
 	if !ok {
 		return nil
 	}
-	role, err := h.model.createRole(r.Context(), ws.ID, name, perms)
+	role, err := h.model.createRole(r.Context(), ws, userID, name, perms)
 	if errors.Is(err, errNameTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
 		return nil
@@ -64,7 +64,7 @@ func (h *Handler) updateRole(w http.ResponseWriter, r *http.Request, userID stri
 	if builtin {
 		name = role.Name
 	}
-	updated, err := h.model.updateRole(ctx, ws.ID, role.ID, name, perms)
+	updated, err := h.model.updateRole(ctx, ws, userID, role.ID, name, perms)
 	if errors.Is(err, errNameTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
 		return nil
@@ -93,7 +93,7 @@ func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request, userID stri
 		writeErr(w, http.StatusForbidden, "Built-in roles can't be deleted.")
 		return nil
 	}
-	deleted, err := h.model.deleteRole(r.Context(), ws.ID, role.ID)
+	deleted, err := h.model.deleteRole(r.Context(), ws, userID, role.ID)
 	if err != nil {
 		return err
 	}

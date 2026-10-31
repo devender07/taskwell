@@ -1,13 +1,15 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { api, can, type Invite, type Member, type Role } from '@/api'
+import { can, type Invite, type Member, type Role } from '@/api'
+import { loaderApi, trackPath } from '@/realtime'
 import { InviteForm, MemberList, PendingInvites } from '@/components/workspace/members'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/members')({
-  loader: async ({ params }) => {
-    const path = `/workspaces/${encodeURIComponent(params.workspace)}`
+  loader: async (ctx) => {
+    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}`
+    trackPath(ctx, `${path}/invites`) // the members response lists invites too
     const [{ members, invites }, roles] = await Promise.all([
-      api<{ members: Member[]; invites: Invite[] }>(`${path}/members`),
-      api<Role[]>(`${path}/roles`),
+      loaderApi<{ members: Member[]; invites: Invite[] }>(ctx, `${path}/members`),
+      loaderApi<Role[]>(ctx, `${path}/roles`),
     ])
     return { members, invites, roles }
   },

@@ -10,5 +10,5 @@ export default defineConfig({
     react(),
   ],
   resolve: { alias: { '@': '/src' } },
-  server: { host: true, port: 5174, proxy: { '/api': 'http://localhost:8080' } },
+  server: { host: true, port: 5174, proxy: { '/api': { target: 'http://localhost:8080', ws: true } } },
 })

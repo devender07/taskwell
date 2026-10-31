@@ -6,6 +6,7 @@ import { IconButton } from '@tether/shared/icon-button'
 import { Tabs } from '@tether/shared/tabs'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { api, avatarSrc, toFormErrors, type Notification, type NotificationPage } from '@/api'
+import { loaderApi } from '@/realtime'
 import { useUnread } from '@/components/app/unread'
 import '@/components/inbox/inbox.css'
 
@@ -13,7 +14,7 @@ type Filter = 'all' | 'unread'
 
 export const Route = createFileRoute('/_app/$workspace/_main/inbox')({
   validateSearch: (search): { filter?: 'unread' } => (search.filter === 'unread' ? { filter: 'unread' } : {}),
-  loader: ({ params }) => api<NotificationPage>(`/workspaces/${encodeURIComponent(params.workspace)}/notifications`),
+  loader: (ctx) => loaderApi<NotificationPage>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/notifications`),
   component: Inbox,
 })
 
@@ -28,17 +29,22 @@ function Inbox() {
   const { filter = 'all' } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const { count, refresh } = useUnread()
-  const [loaded, setLoaded] = useState(page)
+  const [loaded, setLoaded] = useState({ page, slug: workspace.slug })
   const [items, setItems] = useState(page.notifications)
   const [hasMore, setHasMore] = useState(page.has_more)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const path = `/workspaces/${encodeURIComponent(workspace.slug)}/notifications`
 
-  if (page !== loaded) {
-    setLoaded(page)
-    setItems(page.notifications)
-    setHasMore(page.has_more)
+  // A refetch replaces the first page and keeps any older pages already loaded.
+  // ponytail: older pages keep their read state until the inbox is reopened.
+  if (page !== loaded.page) {
+    const oldest = page.notifications.at(-1)
+    const keep = loaded.slug === workspace.slug && page.has_more && oldest
+    const older = keep ? items.filter((n) => Date.parse(n.created_at) < Date.parse(oldest.created_at)) : []
+    setLoaded({ page, slug: workspace.slug })
+    setItems([...page.notifications, ...older])
+    setHasMore(older.length ? hasMore : page.has_more)
   }
 
   const shown = filter === 'unread' ? items.filter((n) => !n.read) : items

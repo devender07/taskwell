@@ -81,7 +81,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	err = h.model.update(r.Context(), ws.ID, name, slug)
+	err = h.model.update(r.Context(), ws, userID, name, slug)
 	if errors.Is(err, errTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
@@ -157,7 +157,7 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	if err := h.model.delete(r.Context(), ws.ID); err != nil {
+	if err := h.model.delete(r.Context(), ws, userID); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

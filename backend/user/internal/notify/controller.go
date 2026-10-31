@@ -86,7 +86,7 @@ func (h *Handler) mark(w http.ResponseWriter, r *http.Request, userID string, re
 		writeErr(w, http.StatusBadRequest, "Choose notifications.")
 		return nil
 	}
-	if err := h.model.setRead(r.Context(), userID, ws.ID, ids, all, read); err != nil {
+	if err := h.model.setRead(r.Context(), userID, ws.ID, ws.Slug, ids, all, read); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

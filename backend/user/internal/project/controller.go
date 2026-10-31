@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -53,7 +54,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	p, err := h.model.create(r.Context(), ws.ID, userID, name, key, desc)
+	p, err := h.model.create(r.Context(), ws.ID, userID, name, key, desc, event(ws, userID))
 	if errors.Is(err, errTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
@@ -83,7 +84,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	p, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), name, key, desc)
+	p, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), name, key, desc, event(ws, userID))
 	if errors.Is(err, errTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
@@ -104,7 +105,7 @@ func (h *Handler) setArchived(w http.ResponseWriter, r *http.Request, userID str
 	if !ok || err != nil {
 		return err
 	}
-	p, err := h.model.setArchived(r.Context(), ws.ID, normKey(r.PathValue("key")), archived)
+	p, err := h.model.setArchived(r.Context(), ws.ID, normKey(r.PathValue("key")), archived, event(ws, userID))
 	return respond(w, p, err)
 }
 
@@ -123,6 +124,11 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string, 
 		return nil, false, nil
 	}
 	return ws, true, nil
+}
+
+// event is a change by the user in the workspace; the model fills in its kind and paths.
+func event(ws *workspace.Workspace, userID string) realtime.Event {
+	return realtime.Event{Workspace: ws.Slug, Actor: userID, Audience: realtime.ToWorkspace(ws.ID)}
 }
 
 // readForm returns the normalized name, key and description, or writes a 400 with field errors and returns ok=false.

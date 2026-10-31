@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -144,7 +145,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) 
 		writeErr(w, http.StatusForbidden, errForbidden)
 		return nil
 	}
-	if err := h.model.delete(r.Context(), i.ID); err != nil {
+	if err := h.model.delete(r.Context(), i.ID, userID); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -453,7 +454,7 @@ func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, userID s
 	if !ok || err != nil {
 		return err
 	}
-	if err := h.model.deleteComment(r.Context(), c.ID); err != nil {
+	if err := h.model.deleteComment(r.Context(), c.ID, c.issueID, userID); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -539,7 +540,7 @@ func (h *Handler) createStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok {
 		return nil
 	}
-	s, err := h.model.createStatus(r.Context(), ws.ID, name, category)
+	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, workflowChanged(ws, userID, "statuses"))
 	if errors.Is(err, errNameTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
 		return nil
@@ -560,7 +561,8 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok {
 		return nil
 	}
-	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category)
+	// Issues show their status's name and category.
+	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
@@ -580,7 +582,7 @@ func (h *Handler) orderStatuses(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	_ = r.ParseMultipartForm(maxBody)
-	err = h.model.reorderStatuses(r.Context(), ws.ID, r.PostForm["ids"])
+	err = h.model.reorderStatuses(r.Context(), ws.ID, r.PostForm["ids"], workflowChanged(ws, userID, "statuses"))
 	if errors.Is(err, errBadOrder) {
 		writeErr(w, http.StatusBadRequest, "Send every status once.")
 		return nil
@@ -601,7 +603,7 @@ func (h *Handler) deleteStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	found, err := h.model.deleteStatus(r.Context(), ws.ID, r.PathValue("id"), r.URL.Query().Get("move_to"))
+	found, err := h.model.deleteStatus(r.Context(), ws.ID, r.PathValue("id"), r.URL.Query().Get("move_to"), workflowChanged(ws, userID, "statuses"))
 	switch {
 	case errors.Is(err, errLastStatus):
 		writeErr(w, http.StatusConflict, "A workspace needs at least one status.")
@@ -647,7 +649,7 @@ func (h *Handler) createLabel(w http.ResponseWriter, r *http.Request, userID str
 	if !ok {
 		return nil
 	}
-	l, err := h.model.createLabel(r.Context(), ws.ID, name, color)
+	l, err := h.model.createLabel(r.Context(), ws.ID, name, color, workflowChanged(ws, userID, "labels"))
 	if errors.Is(err, errNameTaken) {
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
 		return nil
@@ -668,7 +670,8 @@ func (h *Handler) updateLabel(w http.ResponseWriter, r *http.Request, userID str
 	if !ok {
 		return nil
 	}
-	l, err := h.model.updateLabel(r.Context(), ws.ID, r.PathValue("id"), name, color)
+	// Issue rows show label names.
+	l, err := h.model.updateLabel(r.Context(), ws.ID, r.PathValue("id"), name, color, workflowChanged(ws, userID, "labels", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
@@ -687,7 +690,7 @@ func (h *Handler) deleteLabel(w http.ResponseWriter, r *http.Request, userID str
 	if !ok || err != nil {
 		return err
 	}
-	found, err := h.model.deleteLabel(r.Context(), ws.ID, r.PathValue("id"))
+	found, err := h.model.deleteLabel(r.Context(), ws.ID, r.PathValue("id"), workflowChanged(ws, userID, "labels", realtime.All(ws.Slug)))
 	if err != nil {
 		return err
 	}
@@ -703,6 +706,13 @@ func (h *Handler) deleteLabel(w http.ResponseWriter, r *http.Request, userID str
 func readLabel(w http.ResponseWriter, r *http.Request) (name, color string, ok bool) {
 	name, color = strings.TrimSpace(r.FormValue("name")), normColor(r.FormValue("color"))
 	return name, color, checkFields(w, map[string]string{"name": checkLabelName(name), "color": checkColor(color)})
+}
+
+// workflowChanged is the event for a change to the workspace's "statuses" or "labels" (what), plus the other paths
+// it touches.
+func workflowChanged(ws *workspace.Workspace, userID, what string, paths ...string) realtime.Event {
+	return realtime.Event{Kind: "workflow.changed", Workspace: ws.Slug, Actor: userID, Audience: realtime.ToWorkspace(ws.ID),
+		Paths: append(paths, realtime.Workspace(ws.Slug)+"/"+what)}
 }
 
 // --- shared ---

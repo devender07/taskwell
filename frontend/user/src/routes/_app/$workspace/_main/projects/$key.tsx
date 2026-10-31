@@ -2,7 +2,8 @@ import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanst
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { ApiError, api, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { ApiError, can, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { loaderApi } from '@/realtime'
 import { CreateIssueForm } from '@/components/issues/issue-form'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
@@ -12,15 +13,16 @@ import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
   validateSearch: validateViewSearch,
-  loader: async ({ params }) => {
+  loader: async (ctx) => {
+    const { params } = ctx
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const [project, issues, statuses, labels, { members }] = await Promise.all([
-      api<Project>(projectPath),
-      api<Issue[]>(`${projectPath}/issues`),
-      api<Status[]>(`${path}/statuses`),
-      api<Label[]>(`${path}/labels`),
-      api<{ members: Member[] }>(`${path}/members`),
+      loaderApi<Project>(ctx, projectPath),
+      loaderApi<Issue[]>(ctx, `${projectPath}/issues`),
+      loaderApi<Status[]>(ctx, `${path}/statuses`),
+      loaderApi<Label[]>(ctx, `${path}/labels`),
+      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e

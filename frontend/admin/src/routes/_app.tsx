@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
 import { getMe } from '@/api'
 import { Sidebar } from '@/components/app/sidebar'
+import { useRealtime } from '@/realtime'
 
 export const Route = createFileRoute('/_app')({
   beforeLoad: async ({ location }) => {
@@ -13,6 +14,7 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   const { admin } = Route.useRouteContext()
+  useRealtime()
   return (
     <div className="shell">
       <Sidebar email={admin.email} />

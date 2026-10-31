@@ -7,7 +7,7 @@ import { api, avatarSrc, toFormErrors, type Issue, type IssueRef, type Label, ty
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { issuePath } from './issue-form'
-import { refOption, searchIssues } from './relations'
+import { refOption, searchIssues, subscribeIssues } from './relations'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
 type Patch = { form: FormData; next: Partial<Issue> }
@@ -91,6 +91,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
               label="Parent"
               placeholder="No parent"
               loadOptions={loadParents}
+              subscribe={subscribeIssues(workspace)}
               value={issue.parent ? refOption(issue.parent) : null}
               onChange={(o) => {
                 const id = o?.value ?? ''

@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/admin/internal/realtime"
 )
 
 type Workspace struct {
@@ -95,9 +97,9 @@ func (m *model) users(ctx context.Context, q string, offset int) ([]User, int, e
 	return us, total, nil
 }
 
-// setSuspended suspends or unsuspends the user and returns them, or nil when there is no such user. Suspending
-// deletes their refresh tokens, so they are signed out once their access token expires.
-func (m *model) setSuspended(ctx context.Context, id string, suspended bool) (*User, error) {
+// setSuspended suspends or unsuspends the user, by the admin, and returns them, or nil when there is no such user.
+// Suspending deletes their refresh tokens, so they are signed out once their access token expires.
+func (m *model) setSuspended(ctx context.Context, adminID, id string, suspended bool) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
@@ -114,8 +116,11 @@ func (m *model) setSuspended(ctx context.Context, id string, suspended bool) (*U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+		if err != nil {
+			return err
+		}
 		u = &got
-		return err
+		return realtime.Publish(ctx, tx, "admin.users", adminID, "/users")
 	})
 	if err != nil {
 		return nil, fmt.Errorf("set suspended: %w", err)

@@ -12,7 +12,7 @@ import (
 )
 
 // Live-editing frames cross API instances as notifications on the Postgres channel collab:
-// "<instance> <issue id> u <update id>" for a stored update, "<instance> <issue id> a <base64 frame>" for awareness.
+// "<instance> <issue id> u <update id>" for a stored update, "<instance> <issue id> a <base64 tagged frame>" for awareness.
 const (
 	noteUpdate    = "u"
 	noteAwareness = "a"
@@ -99,7 +99,7 @@ func (h *Handler) relay(ctx context.Context, payload string) {
 		if data == nil { // compacted away; clients get it from the compacted row on reload
 			return
 		}
-		frame = append([]byte{msgUpdate}, data...)
+		frame = tag(msgUpdate, n.issueID, data)
 	case noteAwareness:
 		var err error
 		if frame, err = base64.StdEncoding.DecodeString(n.arg); err != nil {

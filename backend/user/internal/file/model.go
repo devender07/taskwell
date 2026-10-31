@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/realtime"
 )
 
 type model struct{ db *pgxpool.Pool }
@@ -89,7 +91,7 @@ func (m *model) setAvatar(ctx context.Context, userID string, fileID *string) (o
 			}
 			old = *prev
 		}
-		return nil
+		return realtime.PublishProfile(ctx, tx, userID)
 	})
 	return old, err
 }

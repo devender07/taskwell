@@ -3,6 +3,7 @@ import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { api, toFormErrors, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm } from '@/components/issues/issue-form'
+import { subscribePaths } from '@/realtime'
 
 type Data = { projects: Project[]; statuses: Status[]; labels: Label[]; members: Member[] }
 
@@ -26,10 +27,16 @@ export default function QuickCreate({ workspace, projectKey }: { workspace: Work
   const [data, setData] = useState<Data | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState<string | null>(null)
+  const [version, setVersion] = useState(0)
+  const path = `/workspaces/${encodeURIComponent(workspace.slug)}`
+
+  useEffect(
+    () => subscribePaths([`${path}/projects`, `${path}/statuses`, `${path}/labels`, `${path}/members`], () => setVersion((v) => v + 1)),
+    [path],
+  )
 
   useEffect(() => {
     let live = true
-    const path = `/workspaces/${encodeURIComponent(workspace.slug)}`
     Promise.all([
       api<Project[]>(`${path}/projects`),
       api<Status[]>(`${path}/statuses`),
@@ -40,7 +47,7 @@ export default function QuickCreate({ workspace, projectKey }: { workspace: Work
         if (!live) return
         const projects = all.filter((p) => !p.archived)
         const keys = projects.map((p) => p.key)
-        setKey([projectKey, lastProject(workspace.slug)].find((k) => k && keys.includes(k)) ?? keys[0] ?? null)
+        setKey((cur) => (cur && keys.includes(cur) ? cur : ([projectKey, lastProject(workspace.slug)].find((k) => k && keys.includes(k)) ?? keys[0] ?? null)))
         setData({ projects, statuses, labels, members })
       },
       (e) => live && setError(toFormErrors(e).error),
@@ -48,10 +55,9 @@ export default function QuickCreate({ workspace, projectKey }: { workspace: Work
     return () => {
       live = false
     }
-  }, [workspace.slug, projectKey])
+  }, [path, workspace.slug, projectKey, version])
 
-  if (error) return <FormError>{error}</FormError>
-  if (!data) return <p className="text-body-sm text-secondary">Loading…</p>
+  if (!data) return error ? <FormError>{error}</FormError> : <p className="text-body-sm text-secondary">Loading…</p>
   if (data.projects.length === 0) return <p className="text-body-sm text-secondary">No active projects. Create a project first.</p>
 
   const options = data.projects.map((p) => ({ value: p.key, label: p.name, hint: p.key }))
