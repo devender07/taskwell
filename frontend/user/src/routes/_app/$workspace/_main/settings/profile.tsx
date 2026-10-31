@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { AvatarForm } from '@/components/settings/avatar-form'
 import { PasswordForm } from '@/components/settings/password-form'
 import { ProfileForm } from '@/components/settings/profile-form'
+import { ShortcutsSetting } from '@/components/settings/shortcuts-setting'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/profile')({
   component: ProfileSettings,
@@ -23,6 +24,9 @@ function ProfileSettings() {
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <PasswordForm key={user.id} user={user} />
+      </section>
+      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+        <ShortcutsSetting />
       </section>
     </main>
   )

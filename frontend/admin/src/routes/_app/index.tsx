@@ -25,7 +25,7 @@ function Overview() {
         {tiles.map(([label, value]) => (
           <div key={label} className="grid gap-1 p-5 bg-surface border rounded-lg">
             <span className="text-caption text-secondary">{label}</span>
-            <span className="text-h2">{value.toLocaleString('en-US')}</span>
+            <span className="text-h2">{value.toLocaleString(undefined)}</span>
           </div>
         ))}
       </section>
@@ -37,7 +37,7 @@ function Overview() {
   )
 }
 
-const shortDate = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const shortDate = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 function BarChart({ title, days }: { title: string; days: Day[] }) {
   const max = Math.max(1, ...days.map((d) => d.count))
@@ -46,7 +46,7 @@ function BarChart({ title, days }: { title: string; days: Day[] }) {
     <section className="grid gap-4 p-5 bg-surface border rounded-lg">
       <header className="flex items-baseline justify-between gap-3">
         <h2 className="text-label">{title}</h2>
-        <span className="text-caption text-secondary">{total.toLocaleString('en-US')} in the last 30 days</span>
+        <span className="text-caption text-secondary">{total.toLocaleString(undefined)} in the last 30 days</span>
       </header>
       <div className="bars" role="img" aria-label={`${title} per day, last 30 days: ${total} total, at most ${max} in a day`}>
         {days.map((d) => (

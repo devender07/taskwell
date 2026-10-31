@@ -64,6 +64,32 @@ export function coalescer(
   }
 }
 
+// The API paths each route match's loader fetched, by matchKey. `prune` (after each navigation) drops matches that
+// aren't on screen and haven't loaded for `ttl` ms (the router's default gcTime, after which their cache is gone too).
+export function loadedPaths(ttl = 30 * 60_000, clock = realClock) {
+  const map = new Map<string, { paths: Set<string>; at: number }>()
+  return {
+    add(key: string, path: string) {
+      let e = map.get(key)
+      if (!e) map.set(key, (e = { paths: new Set(), at: 0 }))
+      e.at = clock.now()
+      e.paths.add(path)
+    },
+    get: (key: string) => map.get(key)?.paths,
+    prune(live: string[]) {
+      const now = clock.now()
+      for (const k of live) {
+        const e = map.get(k)
+        if (e) e.at = now
+      }
+      for (const [k, e] of map) if (now - e.at > ttl) map.delete(k)
+    },
+    get size() {
+      return map.size
+    },
+  }
+}
+
 // Collab frames on the shared socket: type byte, the issue uuid as 16 bytes, then the payload.
 export function uuidBytes(uuid: string) {
   const hex = uuid.replace(/-/g, '')

@@ -1,5 +1,19 @@
 import { Link, useNavigate, useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import {
+  memo,
+  startTransition,
+  useActionState,
+  useEffect,
+  useId,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
@@ -263,7 +277,7 @@ function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
   return null
 }
 
-export function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
+export const IssueRow = memo(function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
   return (
     <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row">
       <StatusIcon category={issue.status.category} label={issue.status.name} />
@@ -277,7 +291,7 @@ export function IssueRow({ workspace, issue }: { workspace: string; issue: Issue
       <Assignee issue={issue} />
     </Link>
   )
-}
+})
 
 function LabelDots({ issue }: { issue: Issue }) {
   if (!issue.labels.length) return null
@@ -328,21 +342,30 @@ function CardBody({ issue }: { issue: Issue }) {
 }
 
 type Drag = { issue: Issue; over: string | null; width: number }
+type CardHandlers = {
+  press: (e: ReactPointerEvent<HTMLAnchorElement>, issue: Issue, from: string) => void
+  key: (e: ReactKeyboardEvent<HTMLAnchorElement>, issue: Issue, from: string) => void
+  click: (e: ReactMouseEvent<HTMLAnchorElement>) => void
+  contextMenu: (e: ReactMouseEvent<HTMLAnchorElement>) => void
+}
 
 const HOLD_MS = 150
 const SLOP_PX = 6
 const EDGE_PX = 56 // dragging this close to the board's side scrolls it, so off-screen columns are reachable
 
 // Columns are drop targets ([data-column]); cards drag with pointer events so mouse, pen and touch all work.
-// Touch needs a short hold first, so a swipe still scrolls the board.
-// ponytail: no keyboard drag; change status, assignee or priority on the issue page instead.
+// Touch needs a short hold first, so a swipe still scrolls the board. From the keyboard, Shift+←/→ on a focused card
+// moves it to the next column, announced in a live region. Cards are memoized, so a drag re-renders only the columns.
 function Board({ workspace, groups, by, onMove }: { workspace: string; groups: IssueGroup[]; by: GroupBy; onMove: (issue: Issue, key: string) => void }) {
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [announcement, setAnnouncement] = useState('')
   const boardRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const suppressClick = useRef(false)
+  const refocus = useRef<{ id: string; column: string; until: number } | null>(null)
   const pos = useRef({ x: 0, y: 0 })
   const ghost = useRef<HTMLDivElement | null>(null)
+  const hint = useId()
   const place = () => {
     if (ghost.current) ghost.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`
   }
@@ -354,6 +377,28 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
     board.addEventListener('touchmove', block, { passive: false })
     return () => board.removeEventListener('touchmove', block)
   }, [])
+
+  // A keyboard move re-mounts the card in its new column (more than once: optimistic, then saved); focus follows it
+  // there for a few seconds, unless the user has moved focus elsewhere.
+  useEffect(() => {
+    const want = refocus.current
+    if (!want) return
+    if (Date.now() > want.until) return void (refocus.current = null)
+    const el = boardRef.current?.querySelector<HTMLElement>(`[data-column="${CSS.escape(want.column)}"] [data-issue="${CSS.escape(want.id)}"]`)
+    const lost = !document.activeElement || document.activeElement === document.body
+    if (el && lost) el.focus()
+  })
+
+  function keyMove(e: ReactKeyboardEvent<HTMLAnchorElement>, issue: Issue, from: string) {
+    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !issue.can_edit) return
+    e.preventDefault()
+    const at = groups.findIndex((g) => g.key === from)
+    const to = groups[at + (e.key === 'ArrowLeft' ? -1 : 1)]
+    if (!to) return setAnnouncement(`${issue.identifier} is already in the ${e.key === 'ArrowLeft' ? 'first' : 'last'} column.`)
+    refocus.current = { id: issue.id, column: to.key, until: Date.now() + 3000 }
+    onMove(issue, to.key)
+    setAnnouncement(`Moved ${issue.identifier} to ${to.label}.`)
+  }
 
   function press(e: ReactPointerEvent<HTMLAnchorElement>, issue: Issue, from: string) {
     suppressClick.current = false
@@ -425,6 +470,22 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
     window.addEventListener('pointercancel', onCancel)
   }
 
+  const latest = useRef({ press, keyMove })
+  latest.current = { press, keyMove }
+  const handlers = useMemo<CardHandlers>(
+    () => ({
+      press: (e, issue, from) => latest.current.press(e, issue, from),
+      key: (e, issue, from) => latest.current.keyMove(e, issue, from),
+      click: (e) => {
+        if (!suppressClick.current || e.detail === 0) return
+        e.preventDefault()
+        suppressClick.current = false
+      },
+      contextMenu: (e) => dragging.current && e.preventDefault(),
+    }),
+    [],
+  )
+
   return (
     <div ref={boardRef} className="board" aria-label="Board" role="region">
       {groups.map((g) => (
@@ -437,28 +498,14 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
           <ul className="grid gap-2 m-0 p-0" style={{ listStyle: 'none' }}>
             {g.issues.map((issue) => (
               <li key={issue.id}>
-                <Link
-                  to="/$workspace/issue/$identifier"
-                  params={{ workspace, identifier: issue.identifier }}
-                  className="board-card"
-                  draggable={false}
-                  data-draggable={issue.can_edit ? '' : undefined}
-                  data-dragging={drag?.issue.id === issue.id ? '' : undefined}
-                  onPointerDown={(e) => press(e, issue, g.key)}
-                  onContextMenu={(e) => dragging.current && e.preventDefault()}
-                  onClick={(e) => {
-                    if (!suppressClick.current || e.detail === 0) return
-                    e.preventDefault()
-                    suppressClick.current = false
-                  }}
-                >
-                  <CardBody issue={issue} />
-                </Link>
+                <BoardCard workspace={workspace} issue={issue} column={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={handlers} />
               </li>
             ))}
           </ul>
         </section>
       ))}
+      <p id={hint} className="sr-only">Press Shift+Left or Shift+Right to move to another column.</p>
+      <p className="sr-only" role="status">{announcement}</p>
       {drag ? (
         <div
           aria-hidden
@@ -475,3 +522,26 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
     </div>
   )
 }
+
+type BoardCardProps = { workspace: string; issue: Issue; column: string; dragging: boolean; hint: string; on: CardHandlers }
+
+const BoardCard = memo(function BoardCard({ workspace, issue, column, dragging, hint, on }: BoardCardProps) {
+  return (
+    <Link
+      to="/$workspace/issue/$identifier"
+      params={{ workspace, identifier: issue.identifier }}
+      className="board-card"
+      draggable={false}
+      data-issue={issue.id}
+      data-draggable={issue.can_edit ? '' : undefined}
+      data-dragging={dragging ? '' : undefined}
+      aria-describedby={issue.can_edit ? hint : undefined}
+      onPointerDown={(e) => on.press(e, issue, column)}
+      onKeyDown={(e) => on.key(e, issue, column)}
+      onContextMenu={on.contextMenu}
+      onClick={on.click}
+    >
+      <CardBody issue={issue} />
+    </Link>
+  )
+})

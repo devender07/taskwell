@@ -10,5 +10,6 @@ export default defineConfig({
     react(),
   ],
   resolve: { alias: { '@': '/src' } },
+  build: { target: ['safari15.4', 'chrome111', 'firefox114', 'edge111'] }, // the oldest browsers supported
   server: { host: true, port: 5174, proxy: { '/api': { target: 'http://localhost:8080', ws: true } } },
 })

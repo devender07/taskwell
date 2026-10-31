@@ -2,7 +2,9 @@
 
 Date: 2026-10-31. Scope: the whole repo (both Go services, the Postgres schema, both frontends, and the deploy setup). Three read-only reviews covered security, reliability and operations, and the frontend. Each finding was checked against the code; anything not confirmed is marked *needs check*.
 
-**Verdict: not ready for production yet.** The features work and the foundations are good: parameterized SQL, workspace scoping on every query, rotating refresh tokens, transactional realtime events, and careful file serving. But there are no deploy artifacts, no CI, and no rate limiting. A few indexes are bypassed on hot paths. Several account-security gaps would be exploitable on the open internet. Everything in **P0** must be done before real users sign up. **P1** should land before the first paying customer.
+**Status (2026-10-31): every P0, P1 and P2 item below has been fixed** (commits b7bf57d, 5e9a697, a49d73f, 76f34f8, 1f4debd and the P2 frontend commit after it), except the open items listed at the end. The original findings are kept for reference.
+
+**Original verdict: not ready for production yet.** The features work and the foundations are good: parameterized SQL, workspace scoping on every query, rotating refresh tokens, transactional realtime events, and careful file serving. But there are no deploy artifacts, no CI, and no rate limiting. A few indexes are bypassed on hot paths. Several account-security gaps would be exploitable on the open internet. Everything in **P0** must be done before real users sign up. **P1** should land before the first paying customer.
 
 Severity guide:
 - **P0** blocks launch (security hole, data loss or outage risk).
@@ -196,3 +198,17 @@ Severity guide:
    3. R5: exact-id compaction.
    4. The 1 MB reconnect loop.
 5. **Then:** the rest of P1, followed by P2 as usage grows.
+
+---
+
+## Open items after the fixes
+
+- **Rate limits and caps are per instance.** The IP and email buckets on auth routes and the per-user WebSocket cap are counted in memory on each API instance. Failed-attempt counts and invite caps are in Postgres, so those hold across instances.
+- **Admin MFA enrolment:** whoever first passes an admin's password can enrol MFA. Promote people and have them sign in straight away, or use `tether-admin -reset-mfa`. TOTP secrets are stored in the database unencrypted.
+- **Admin IP allowlist** is not built; add it at the proxy.
+- **Offline editors and REST writes:** an editor that is offline during a REST description write merges its old text back when it reconnects. This is rare: the app itself doesn't write descriptions over REST once an issue exists.
+- **Digest timezone:** UTC can't be told apart from "never chosen", so the browser's zone is suggested again.
+- **Board moves flicker:** after a move, the card shows in its old column for about 25 ms before the reloaded data arrives.
+- **Fonts:** Berkeley Mono is commercial and isn't bundled; the system monospace fallback is used.
+- **Editor bundle:** the editor chunk is still 590 kB (190 kB gzipped), loaded only on issue pages and in the create dialog.
+- **No invite e2e test:** invite acceptance isn't covered by the end-to-end suite.

@@ -62,7 +62,8 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'parent'; data: Change<EventRef | null> }
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
 )
-export type Timeline = { comments: Comment[]; events: IssueEvent[] }
+// One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
+export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
 export type Notification = {
   id: string
   kind: 'mention' | 'assigned' | 'status' | 'comment'
@@ -73,7 +74,14 @@ export type Notification = {
   created_at: string
 }
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
-export type NotificationSettings = { email: 'instant' | 'digest' | 'off'; mentions: boolean; assignments: boolean; status: boolean; comments: boolean }
+export type NotificationSettings = {
+  email: 'instant' | 'digest' | 'off'
+  mentions: boolean
+  assignments: boolean
+  status: boolean
+  comments: boolean
+  timezone: string
+}
 export type FieldErrors = Record<string, string | null | undefined>
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
@@ -83,6 +91,8 @@ export const issuePath = (workspace: Workspace, identifier: string) =>
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
 const FALLBACK = 'Something went wrong. Try again.'
+const OFFLINE = "You're offline. Reconnect and try again."
+const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
 
 export class ApiError extends Error {
   status: number
@@ -90,8 +100,9 @@ export class ApiError extends Error {
   error: string | null
 
   constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
-    // Field errors stand on their own; anything else (no body, proxy 500, network) gets the generic message.
-    const error = body?.error ?? (body?.errors ? null : FALLBACK)
+    // Field errors stand on their own; no response at all (status 0) says offline or unreachable; anything else
+    // (no body, proxy 500) gets the generic message.
+    const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
     super(error ?? `HTTP ${status}`)
     this.status = status
     this.errors = body?.errors ?? {}

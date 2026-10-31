@@ -24,7 +24,7 @@ const ACTIONS: Record<string, string> = {
 }
 
 const formatTime = (iso: string) =>
-  new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 function Audit() {
   const { entries, more } = Route.useLoaderData()

@@ -13,15 +13,15 @@ export function JoinWorkspace({ token }: { token: string }) {
     } catch (e) {
       return toFormErrors(e).error
     }
-    await navigate({ to: '/$workspace', params: { workspace: workspace.slug } })
+    await navigate({ to: '/$workspace', params: { workspace: workspace.slug }, replace: true })
     return null
   }, null)
 
   return (
     <form action={join} className="grid gap-4">
       <FormError>{error}</FormError>
-      <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? 'Joining…' : 'Join workspace'}
+      <Button type="submit" className="w-full" disabled={pending} autoFocus>
+        {pending ? 'Joining…' : 'Accept invite'}
       </Button>
     </form>
   )

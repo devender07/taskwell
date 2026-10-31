@@ -1,11 +1,11 @@
 import { Link, useRouter } from '@tanstack/react-router'
-import { useActionState, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
-import { RichEditor, type Doc } from '@tether/shared/rich-editor'
+import { RichEditor, RichText, type Doc } from '@tether/shared/rich-editor'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { commentBody } from '@tether/shared/validate'
 import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
@@ -19,25 +19,79 @@ type State = { errors?: FieldErrors; error?: string | null }
 
 type TimelineProps = { workspace: Workspace; issue: Issue; project: Project; timeline: TimelineData; members: Member[] }
 
+type Page = { comments: Comment[]; events: IssueEvent[] }
+const NONE: Page = { comments: [], events: [] }
+const at = (x: { created_at: string }) => Date.parse(x.created_at)
+
+// `timeline` is the newest page (the loader's, replaced on every realtime refetch); older pages load on demand and
+// stay below it.
 export function Timeline({ workspace, issue, project, timeline, members }: TimelineProps) {
   const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
-  const items = useMemo(
-    () =>
-      [
-        ...timeline.comments.map((c) => ({ at: c.created_at, comment: c, event: null })),
-        ...timeline.events.map((e) => ({ at: e.created_at, comment: null, event: e })),
-      ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)),
-    [timeline],
+  const [older, setOlder] = useState<Page>(NONE)
+  const [olderMore, setOlderMore] = useState<boolean | null>(null) // has_more of the last older page; null before one loads
+  const [newest, setNewest] = useState(timeline)
+  if (timeline !== newest) {
+    setNewest(timeline)
+    if (!timeline.has_more) {
+      setOlder(NONE)
+      setOlderMore(null)
+    } else if (older !== NONE) {
+      // Enough new activity to push items off the newest page: keep them, so there's no gap above the older pages.
+      const edge = Math.min(...[...timeline.comments, ...timeline.events].map(at))
+      setOlder({
+        comments: [...older.comments, ...newest.comments.filter((c) => at(c) < edge)],
+        events: [...older.events, ...newest.events.filter((e) => at(e) < edge)],
+      })
+    }
+  }
+
+  const items = useMemo(() => {
+    const ids = new Set([...timeline.comments, ...timeline.events].map((x) => x.id))
+    const seen = (x: { id: string }) => !ids.has(x.id) && (ids.add(x.id), true)
+    return [
+      ...timeline.comments.map((c) => ({ at: c.created_at, comment: c, event: null })),
+      ...timeline.events.map((e) => ({ at: e.created_at, comment: null, event: e })),
+      ...older.comments.filter(seen).map((c) => ({ at: c.created_at, comment: c, event: null })),
+      ...older.events.filter(seen).map((e) => ({ at: e.created_at, comment: null, event: e })),
+    ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+  }, [timeline, older])
+
+  // An edit or delete refetches only the newest page; a comment on an older one is patched here.
+  const patchOlder = useCallback(
+    (id: string, next: Comment | null) =>
+      setOlder((o) => (o === NONE ? o : { ...o, comments: next ? o.comments.map((c) => (c.id === id ? next : c)) : o.comments.filter((c) => c.id !== id) })),
+    [],
   )
+
+  const [loadError, loadOlder, loading] = useActionState(async () => {
+    const before = items[0]?.at
+    if (!before) return null
+    try {
+      const page = await api<TimelineData>(`${issuePath(workspace, issue.identifier)}/timeline?before=${encodeURIComponent(before)}`)
+      setOlder((o) => ({ comments: [...page.comments, ...o.comments], events: [...page.events, ...o.events] }))
+      setOlderMore(page.has_more)
+    } catch (e) {
+      return toFormErrors(e).error
+    }
+    return null
+  }, null)
 
   return (
     <section className="grid gap-4" aria-labelledby="activity-heading">
       <h2 id="activity-heading" className="text-label">Activity</h2>
+      {(olderMore ?? timeline.has_more) ? (
+        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          <Button type="submit" variant="ghost" disabled={loading}>
+            {loading ? 'Loading…' : 'Show older activity'}
+          </Button>
+          <FormError>{loadError}</FormError>
+        </form>
+      ) : null}
       <ol className="grid gap-3 m-0 p-0" style={{ listStyle: 'none' }}>
         {items.map(({ comment, event }) =>
           comment ? (
             <li key={comment.id}>
-              <CommentCard workspace={workspace} comment={comment} mentions={mentions} />
+              <CommentCard workspace={workspace} comment={comment} mentions={mentions} onChange={patchOlder} />
             </li>
           ) : event ? (
             <EventRow key={event.id} workspace={workspace.slug} event={event} />
@@ -131,7 +185,9 @@ function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }
   )
 }
 
-function CommentCard({ workspace, comment, mentions }: { workspace: Workspace; comment: Comment; mentions: Mentions }) {
+type CommentCardProps = { workspace: Workspace; comment: Comment; mentions: Mentions; onChange: (id: string, next: Comment | null) => void }
+
+function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProps) {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const author = comment.author?.name ?? 'Someone'
@@ -179,31 +235,40 @@ function CommentCard({ workspace, comment, mentions }: { workspace: Workspace; c
         ) : null}
       </header>
       {editing ? (
-        <EditComment workspace={workspace} comment={comment} mentions={mentions} onDone={() => setEditing(false)} />
+        <EditComment
+          workspace={workspace}
+          comment={comment}
+          mentions={mentions}
+          onDone={(saved) => {
+            if (saved) onChange(comment.id, saved)
+            setEditing(false)
+          }}
+        />
       ) : (
-        <RichEditor key={comment.edited_at ?? ''} aria-label={`Comment by ${author}`} content={comment.body} editable={false} />
+        <RichText aria-label={`Comment by ${author}`} doc={comment.body} />
       )}
-      {comment.can_delete ? <DeleteComment workspace={workspace} comment={comment} open={deleting} onClose={() => setDeleting(false)} /> : null}
+      {comment.can_delete ? <DeleteComment workspace={workspace} comment={comment} open={deleting} onClose={() => setDeleting(false)} onDeleted={() => onChange(comment.id, null)} /> : null}
     </article>
   )
 }
 
 const commentPath = (workspace: Workspace, id: string) => `/workspaces/${encodeURIComponent(workspace.slug)}/comments/${encodeURIComponent(id)}`
 
-function useSaveComment(path: string, draft: Draft, done: () => void) {
+function useSaveComment(path: string, draft: Draft, done: (saved: Comment) => void) {
   const router = useRouter()
   return useActionState(async (): Promise<State> => {
     const body = commentBody(!draft.doc, draft.length)
     if (body) return { errors: { body } }
     const form = new FormData()
     form.set('body', JSON.stringify(draft.doc))
+    let saved: Comment
     try {
-      await api<Comment>(path, form)
+      saved = await api<Comment>(path, form)
     } catch (e) {
       return toFormErrors(e)
     }
     await reloadPage(router)
-    done()
+    done(saved)
     return {}
   }, {})
 }
@@ -246,7 +311,7 @@ function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue:
   )
 }
 
-function EditComment({ workspace, comment, mentions, onDone }: { workspace: Workspace; comment: Comment; mentions: Mentions; onDone: () => void }) {
+function EditComment({ workspace, comment, mentions, onDone }: { workspace: Workspace; comment: Comment; mentions: Mentions; onDone: (saved?: Comment) => void }) {
   const [draft, setDraft] = useState<Draft>({ doc: comment.body, length: 0 })
   const [{ errors, error }, submit, pending] = useSaveComment(commentPath(workspace, comment.id), draft, onDone)
 
@@ -262,7 +327,7 @@ function EditComment({ workspace, comment, mentions, onDone }: { workspace: Work
       />
       <FormError>{error}</FormError>
       <div className="flex items-center justify-end gap-3">
-        <Button variant="ghost" onClick={onDone} disabled={pending}>
+        <Button variant="ghost" onClick={() => onDone()} disabled={pending}>
           Cancel
         </Button>
         <Button type="submit" disabled={pending}>
@@ -273,7 +338,9 @@ function EditComment({ workspace, comment, mentions, onDone }: { workspace: Work
   )
 }
 
-function DeleteComment({ workspace, comment, open, onClose }: { workspace: Workspace; comment: Comment; open: boolean; onClose: () => void }) {
+type DeleteCommentProps = { workspace: Workspace; comment: Comment; open: boolean; onClose: () => void; onDeleted: () => void }
+
+function DeleteComment({ workspace, comment, open, onClose, onDeleted }: DeleteCommentProps) {
   const router = useRouter()
   const [error, remove, pending] = useActionState(async () => {
     try {
@@ -282,6 +349,7 @@ function DeleteComment({ workspace, comment, open, onClose }: { workspace: Works
       return toFormErrors(e).error
     }
     await reloadPage(router)
+    onDeleted()
     onClose()
     return null
   }, null)

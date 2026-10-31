@@ -6,6 +6,9 @@
 
 .rich-editor-content { padding: var(--space-2) 14px; font: 400 14px/21px var(--font); color: var(--text); outline: none; overflow-wrap: anywhere; }
 .rich-editor-readonly .rich-editor-content { padding: 0; }
+/* What Tiptap's injected .ProseMirror styles give the editor, for the JSON renderer (rich-text.tsx). */
+.rich-text { position: relative; overflow-wrap: anywhere; white-space: pre-wrap; white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: 'liga' 0; }
+.rich-text pre { white-space: pre-wrap; }
 .rich-editor-content > * + * { margin-top: var(--space-2); }
 .rich-editor-content h1 { font: 590 20px/26.6px var(--font); margin-top: var(--space-4); }
 .rich-editor-content h2 { font: 590 16px/24px var(--font); margin-top: var(--space-4); }
@@ -18,10 +21,10 @@
 .rich-editor-content pre { padding: var(--space-3) var(--space-4); background: rgba(255, 255, 255, 0.03); overflow-x: auto; }
 .rich-editor-content pre code { font: 400 14px/21px var(--mono); padding: 0; background: none; border-radius: 0; }
 .rich-editor-content hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin-block: var(--space-4); }
-.rich-editor-content a { color: var(--link); text-decoration: underline; }
+.rich-editor-content a { color: var(--text); text-decoration: underline; text-decoration-color: var(--link); text-underline-offset: 2px; }
 .rich-editor-content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
 .rich-editor-content img.ProseMirror-selectednode { outline: 2px solid var(--link); outline-offset: 2px; }
-.rich-editor-content [data-type='mention'] { color: var(--link); font-weight: 510; }
+.rich-editor-content [data-type='mention'] { padding: 0 var(--space-1); color: #fff; font-weight: 510; background: var(--link); border-radius: 4px; }
 .rich-editor-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -46,7 +49,6 @@
 
 /* ponytail: fixed at the caret when the list opens; it doesn't follow a scroll or flip at the viewport edge. */
 .rich-editor-mentions { min-width: 200px; max-width: calc(100vw - 32px); }
-@media (pointer: coarse) { .rich-editor-mentions .autocomplete-option { min-height: 44px; } }
 
 /* iOS zooms into any focused field with text under 16px. */
 @supports (-webkit-touch-callout: none) {

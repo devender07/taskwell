@@ -1,5 +1,5 @@
 import { useId, useReducer, useRef, useState } from 'react'
-import { EditorContent, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor, type JSONContent } from '@tiptap/react'
+import { EditorContent, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Placeholder } from '@tiptap/extensions'
 import Mention from '@tiptap/extension-mention'
@@ -11,12 +11,14 @@ import type { Awareness } from 'y-protocols/awareness'
 import { IconButton } from '../icon-button/icon-button'
 import { useFieldError } from '../input/field-error'
 import { filterOptions, type Option } from '../smart-autocomplete/match'
-import { FILE_URL, imageSrc, measure } from './doc'
+import { FILE_URL, imageSrc, isAllowedHref, measure, type Doc } from './doc'
+import { RichText } from './rich-text'
 import '../input/input.css'
 import '../smart-autocomplete/smart-autocomplete.css'
 import './rich-editor.css'
 
-export type Doc = JSONContent
+export type { Doc }
+export { RichText }
 
 type RichEditorProps = {
   label?: string
@@ -36,8 +38,6 @@ type Suggest = { items: Option[]; index: number; rect: DOMRect | null; pick: (o:
 
 type Upload = { id: number; name: string; error?: string }
 
-const SAFE_HREF = /^(https?:\/\/|mailto:)/i
-
 const Image = Node.create({
   name: 'image',
   group: 'block',
@@ -51,7 +51,7 @@ const Image = Node.create({
 const starterKit = (editable: boolean, collab: boolean) =>
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
-    link: { openOnClick: !editable, autolink: true, isAllowedUri: (url) => SAFE_HREF.test(url) || FILE_URL.test(url) },
+    link: { openOnClick: !editable, autolink: true, isAllowedUri: isAllowedHref },
     undoRedo: collab ? false : undefined,
   })
 
@@ -63,7 +63,13 @@ export function seedYDoc(doc: Y.Doc, json: Doc) {
 // The live document as editor.getJSON() would return it, read straight from the Y.Doc.
 export const yDocToJSON = (doc: Y.Doc): Doc => yXmlFragmentToProsemirrorJSON(doc.getXmlFragment('default'))
 
-export function RichEditor({
+// Read-only and not live: rendered straight from the JSON, so a page of comments doesn't mount an editor each.
+export function RichEditor(props: RichEditorProps) {
+  if (props.editable === false && !props.collab && props.content) return <RichText doc={props.content} aria-label={props['aria-label']} />
+  return <Editable {...props} />
+}
+
+function Editable({
   label,
   'aria-label': ariaLabel,
   content,

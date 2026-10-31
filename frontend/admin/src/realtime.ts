@@ -1,6 +1,6 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { coalescer, eventPaths, matchKey, touches, type RealtimeEvent } from '@tether/shared/realtime'
+import { coalescer, eventPaths, loadedPaths, matchKey, touches, type RealtimeEvent } from '@tether/shared/realtime'
 import { api, getMe, setClient } from '@/api'
 
 // The admin service's realtime socket (docs/realtime-plan.md): events name the admin API paths that changed and
@@ -9,8 +9,8 @@ import { api, getMe, setClient } from '@/api'
 type Message = RealtimeEvent | { type: 'hello'; client: string } | { type: 'pong' | 'resync' | 'error' }
 type LoaderContext = { route: { id: string; fullPath: string }; params: Record<string, string>; deps: unknown }
 
-// ponytail: one entry per route match ever loaded, never pruned; prune on navigation if long sessions grow it.
-const loaded = new Map<string, Set<string>>()
+const loaded = loadedPaths()
+const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)
 
 let router: AnyRouter | null = null
 let ws: WebSocket | null = null
@@ -18,22 +18,20 @@ let client = ''
 let running = false
 let opened = false
 let delay = 1000
+let steady: ReturnType<typeof setTimeout> | undefined // resets the backoff once a socket has stayed up
 let retry: ReturnType<typeof setTimeout> | undefined
 let ping: ReturnType<typeof setInterval> | undefined
 let pong: ReturnType<typeof setTimeout> | undefined
 
 // A loader's GET, tracked so events for its path reload the match.
 export function loaderApi<T>(ctx: LoaderContext, path: string) {
-  const key = matchKey(ctx.route.id, ctx.route.fullPath, ctx.params, ctx.deps)
-  let paths = loaded.get(key)
-  if (!paths) loaded.set(key, (paths = new Set()))
-  paths.add(path)
+  loaded.add(matchKey(ctx.route.id, ctx.route.fullPath, ctx.params, ctx.deps), path)
   return api<T>(path)
 }
 
 const push = coalescer(
   (paths) => {
-    const filter = (m: AnyRouteMatch) => touches(loaded.get(matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)) ?? [], paths)
+    const filter = (m: AnyRouteMatch) => touches(loaded.get(keyOf(m)) ?? [], paths)
     if (router?.state.matches.some(filter)) void router.invalidate({ filter })
   },
   { throttle: (p) => (p === '/stats' ? 5000 : undefined) },
@@ -54,8 +52,9 @@ function onMessage(data: unknown) {
   if (msg.type === 'hello') {
     client = msg.client
     setClient(client)
-    delay = 1000
-    if (opened) push(['/'])
+    clearTimeout(steady)
+    steady = setTimeout(() => (delay = 1000), 10_000)
+    if (opened) setTimeout(() => push(['/']), Math.random() * 2000) // spread a restart's refetches over 2s
     opened = true
     clearInterval(ping)
     ping = setInterval(checkAlive, 25_000)
@@ -92,6 +91,7 @@ function dropped(sock: WebSocket, hello: boolean) {
   setClient('')
   clearInterval(ping)
   clearTimeout(pong)
+  clearTimeout(steady)
   if (!running) return
   retry = setTimeout(async () => {
     if (!hello && !(await getMe().catch(() => true))) {
@@ -99,7 +99,7 @@ function dropped(sock: WebSocket, hello: boolean) {
       return
     }
     if (running && !ws) connect()
-  }, delay)
+  }, delay * (0.5 + Math.random()))
   delay = Math.min(delay * 2, 10_000)
 }
 
@@ -117,7 +117,9 @@ function start(r: AnyRouter) {
   opened = false
   connect()
   document.addEventListener('visibilitychange', onVisible)
+  const unsubscribe = r.subscribe('onResolved', () => loaded.prune(r.state.matches.map(keyOf)))
   return () => {
+    unsubscribe()
     running = false
     clearTimeout(retry)
     document.removeEventListener('visibilitychange', onVisible)

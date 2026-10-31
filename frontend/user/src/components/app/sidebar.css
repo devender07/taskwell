@@ -58,3 +58,7 @@
   .sidebar-children { grid-auto-flow: column; }
   .sidebar-children a { padding-left: 12px; }
 }
+
+@media (pointer: coarse) {
+  .sidebar a, .sidebar-group { height: 44px; }
+}

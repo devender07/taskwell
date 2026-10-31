@@ -19,22 +19,24 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const [closing, setClosing] = useState(false)
+  const exit = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return
-    if (open && !dialog.open) {
+    if (open) {
+      clearTimeout(exit.current) // reopened while fading out
       setClosing(false)
-      dialog.showModal()
-    } else if (!open && dialog.open) {
+      if (!dialog.open) dialog.showModal()
+    } else if (dialog.open) {
       setClosing(true)
-      const t = setTimeout(() => {
+      exit.current = setTimeout(() => {
         dialog.close()
         setClosing(false)
       }, EXIT_MS)
-      return () => clearTimeout(t)
     }
   }, [open])
+  useEffect(() => () => clearTimeout(exit.current), [])
 
   return (
     <dialog
@@ -42,6 +44,7 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
       className="dialog"
       data-state={closing ? 'closing' : 'open'}
       aria-labelledby={titleId}
+      aria-describedby={description ? `${titleId}-desc` : undefined}
       onCancel={(e) => {
         e.preventDefault() // Esc: run our animated close instead of the browser's instant one
         if (dismissible) onClose()
@@ -54,7 +57,7 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
             <h2 id={titleId} className="text-h2">
               {title}
             </h2>
-            {description ? <p className="text-body-sm text-secondary">{description}</p> : null}
+            {description ? <p id={`${titleId}-desc`} className="text-body-sm text-secondary">{description}</p> : null}
           </header>
           {children}
           {dismissible ? (

@@ -26,3 +26,9 @@
   .date-picker-nav:hover, .date-picker-link:hover, .date-picker-day:hover:not([aria-selected='true']) { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 }
 .date-picker-nav:focus-visible, .date-picker-day:focus-visible, .date-picker-link:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+
+@media (pointer: coarse) {
+  .date-picker { width: 336px; max-width: calc(100vw - 32px); }
+  .date-picker-nav { width: 44px; height: 44px; }
+  .date-picker-day, .date-picker-link { height: 44px; }
+}

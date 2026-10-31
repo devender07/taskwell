@@ -1,4 +1,21 @@
+/* Inter Variable 4.1, self-hosted from the official release (SIL OFL 1.1, ../fonts/LICENSE.txt). */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/InterVariable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/InterVariable-Italic.woff2') format('woff2');
+}
+
 :root {
+  color-scheme: dark;
   --bg: #08090a;
   --surface: #0f1011;
   --text: #f7f8f8;
@@ -6,6 +23,8 @@
   --border: rgba(255, 255, 255, 0.05);
   --accent: #f91880;
   --success: #00ba7c;
+  /* 4.2:1 on --bg, under 4.5:1 for text: used for focus rings, borders and underlines (3:1 is enough there).
+     Link text is --text with a --link underline; mentions use DESIGN's primary link pairing, #fff on --link (4.7:1). */
   --link: #5e6ad2;
   --font: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --space-1: 4px;
@@ -19,6 +38,7 @@
   --space-12: 48px;
   --space-14: 56px;
   --space-24: 96px;
+  /* Berkeley Mono is a commercial font and isn't bundled: it shows only where installed, otherwise the fallbacks. */
   --mono: 'Berkeley Mono', Monaco, 'Courier New', monospace;
 }
 

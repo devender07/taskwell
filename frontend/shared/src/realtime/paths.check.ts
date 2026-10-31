@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/realtime/paths.check.ts
 import { assert } from '../check.ts'
-import { coalescer, decodeFrame, encodeFrame, eventPaths, matchKey, pathMatches, touches, uuidBytes, uuidString } from './paths.ts'
+import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, pathMatches, touches, uuidBytes, uuidString } from './paths.ts'
 
 assert.ok(pathMatches('/workspaces/acme/issues/ENG-1', '/workspaces/acme/issues/ENG-1'))
 assert.ok(pathMatches('/workspaces/acme/projects?archived=true', '/workspaces/acme/projects'))
@@ -68,4 +68,20 @@ assert.equal(decoded.type, 2)
 assert.equal(decoded.id, id)
 assert.deepEqual([...decoded.payload], [7, 8])
 assert.equal(decodeFrame(new Uint8Array(5)), null)
+let t = 0
+const reg = loadedPaths(1000, { now: () => t, after: () => 0 })
+reg.add('a', '/x')
+reg.add('a', '/y')
+reg.add('b', '/z')
+assert.deepEqual([...reg.get('a')!], ['/x', '/y'])
+t = 1500
+reg.prune(['a']) // on screen: kept however old
+assert.equal(reg.size, 1)
+assert.equal(reg.get('b'), undefined)
+t = 2000
+reg.prune([])
+assert.equal(reg.size, 1) // seen on screen 500 ms ago
+t = 2600
+reg.prune([])
+assert.equal(reg.size, 0)
 console.log('realtime paths ok')

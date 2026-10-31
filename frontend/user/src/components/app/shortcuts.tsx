@@ -27,6 +27,22 @@ type Actions = { openPalette: () => void; openCreate: () => void }
 const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {} })
 export const useShortcuts = () => use(ShortcutsContext)
 
+// Single-key shortcuts (C, /, ?, S, A, P, L) can be turned off in Settings → Profile (WCAG 2.1.4); ⌘K stays.
+const SINGLE_KEYS = 'tether:single-key-shortcuts'
+export function singleKeyShortcuts() {
+  try {
+    return localStorage.getItem(SINGLE_KEYS) !== 'off'
+  } catch {
+    return true
+  }
+}
+export function setSingleKeyShortcuts(on: boolean) {
+  try {
+    if (on) localStorage.removeItem(SINGLE_KEYS)
+    else localStorage.setItem(SINGLE_KEYS, 'off')
+  } catch {}
+}
+
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || Boolean(t.closest('input, textarea, select')))
 
 export function Shortcuts({ children }: { children: ReactNode }) {
@@ -57,7 +73,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
       setPalette((p) => (p ? null : 'root'))
       return
     }
-    if (open || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return
+    if (open || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || !singleKeyShortcuts()) return
     const mode = ISSUE_KEYS[e.key]
     if (e.key === 'c' && canCreate) setCreating(true)
     else if (e.key === '/') setPalette('root')

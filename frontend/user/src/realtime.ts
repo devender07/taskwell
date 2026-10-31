@@ -1,6 +1,6 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { coalescer, decodeFrame, encodeFrame, eventPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
+import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
 import { api, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches
@@ -27,8 +27,7 @@ type LoaderContext = { route: { id: string; fullPath: string }; params: Record<s
 const APP_PATHS = ['/workspaces', '/me']
 const ALL = ['/']
 
-// ponytail: one entry per route match ever loaded, never pruned; prune on navigation if long sessions grow it.
-const loaded = new Map<string, Set<string>>()
+const loaded = loadedPaths()
 const subscribers = new Set<{ paths: string[]; refetch: () => void }>()
 const channels = new Set<Channel>()
 
@@ -48,10 +47,7 @@ let notice: string | null = null
 
 // Events for `path` reload the loader's route match.
 export function trackPath(ctx: LoaderContext, path: string) {
-  const key = matchKey(ctx.route.id, ctx.route.fullPath, ctx.params, ctx.deps)
-  let paths = loaded.get(key)
-  if (!paths) loaded.set(key, (paths = new Set()))
-  paths.add(path)
+  loaded.add(matchKey(ctx.route.id, ctx.route.fullPath, ctx.params, ctx.deps), path)
 }
 
 // A loader's GET, tracked so events for its path reload the match.
@@ -74,7 +70,8 @@ export const readNotice = () => notice
 export const clearNotice = () => void (notice = null)
 
 const loadedBy = (m: AnyRouteMatch) =>
-  m.routeId === '/_app' ? APP_PATHS : (loaded.get(matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)) ?? [])
+  m.routeId === '/_app' ? APP_PATHS : (loaded.get(keyOf(m)) ?? [])
+const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)
 
 // Issue lists refetch at most every 3s, so a teammate typing doesn't reload them on every save.
 const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues)$/
@@ -234,7 +231,9 @@ function start(r: AnyRouter) {
   opened = false
   connect()
   document.addEventListener('visibilitychange', onVisible)
+  const unsubscribe = r.subscribe('onResolved', () => loaded.prune(r.state.matches.map(keyOf)))
   return () => {
+    unsubscribe()
     running = false
     clearTimeout(retry)
     document.removeEventListener('visibilitychange', onVisible)

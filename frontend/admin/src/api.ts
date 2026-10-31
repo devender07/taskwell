@@ -27,6 +27,8 @@ export type FieldErrors = Record<string, string | null | undefined>
 
 export const PAGE_SIZE = 50
 const FALLBACK = 'Something went wrong. Try again.'
+const OFFLINE = "You're offline. Reconnect and try again."
+const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
 
 export class ApiError extends Error {
   status: number
@@ -34,7 +36,8 @@ export class ApiError extends Error {
   error: string | null
 
   constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
-    const error = body?.error ?? (body?.errors ? null : FALLBACK)
+    // Status 0: the request never got a response.
+    const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
     super(error ?? `HTTP ${status}`)
     this.status = status
     this.errors = body?.errors ?? {}
@@ -95,4 +98,4 @@ export function validateListSearch(search: Record<string, unknown>): ListSearch 
 
 export const listQuery = ({ q, page }: ListSearch) => new URLSearchParams({ q: q ?? '', page: String(page ?? 1) }).toString()
 
-export const formatDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+export const formatDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
