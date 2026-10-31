@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/aitest"
 	"github.com/devender07/tether/backend/user/internal/auth"
 	"github.com/devender07/tether/backend/user/internal/chat"
 	"github.com/devender07/tether/backend/user/internal/db"
@@ -110,6 +111,12 @@ func main() {
 	project.New(pool, authenticate, wsH.Member).Register(mux)
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
+	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
+	if err != nil {
+		fatal(err.Error())
+	}
+	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: !prod && os.Getenv("AI_TEST_ALLOW_PRIVATE") == "true"},
+		authenticate, wsH.Member).Register(mux)
 	// Background work stops after the server has drained (see shutdown), so it's on its own context.
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup

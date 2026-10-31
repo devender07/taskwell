@@ -1,4 +1,5 @@
 # Production stack: docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+# With AI test runs: add --profile ai (needs ANTHROPIC_API_KEY).
 name: tether-prod
 
 services:
@@ -58,6 +59,7 @@ services:
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
       DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      TEST_SECRET_KEY: ${TEST_SECRET_KEY:?set TEST_SECRET_KEY}
       UPLOAD_DIR: /data/uploads
       NOTIFY_INTERVAL: ${NOTIFY_INTERVAL:-1m}
       NOTIFY_SETTLE: ${NOTIFY_SETTLE:-30s}
@@ -92,6 +94,54 @@ services:
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY}
       ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-}
 
+  # AI test runs (docker compose --profile ai ...): the tester claims runs, calls Claude and drives Chrome through
+  # its egress proxy. Chrome sits alone with it on the internal browser network: no route to Postgres, the APIs or
+  # the internet except through the proxy, which only lets out the workspace's test sites.
+  tester:
+    profiles: ["ai"]
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: tester, MOD: user } }
+    image: tether-tester
+    restart: unless-stopped
+    stop_grace_period: 2m # a run finishes its current step (one Claude call) before it stops
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      chrome: { condition: service_started }
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tether}?sslmode=disable
+      DB_MAX_CONNS: ${TESTER_DB_MAX_CONNS:-5}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-30s}
+      DB_IDLE_TX_TIMEOUT: ${DB_IDLE_TX_TIMEOUT:-2min}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-} # the tester refuses to start without it
+      TEST_SECRET_KEY: ${TEST_SECRET_KEY:?set TEST_SECRET_KEY}
+      AI_TEST_BROWSERS: ${AI_TEST_BROWSERS:-2}
+      UPLOAD_DIR: /data/uploads
+      CHROME_URL: http://chrome:9222
+      PROXY_ADDR: ":3128"
+      PROXY_URL: http://tester:3128
+    networks: [default, browser]
+    volumes:
+      - uploads:/data/uploads
+
+  chrome:
+    profiles: ["ai"]
+    image: chromedp/headless-shell:156.0.8078.48
+    restart: unless-stopped
+    shm_size: 1gb
+    command:
+      - --proxy-server=http://tester:3128
+      - --proxy-bypass-list=<-loopback>
+      - --force-webrtc-ip-handling-policy=disable_non_proxied_udp
+      - --disable-background-networking
+      - --disable-component-update
+      - --disable-sync
+      - --disable-default-apps
+      - --disable-domain-reliability
+      - --no-pings
+      - --disable-features=AutofillServerCommunication,OptimizationHints,MediaRouter,Translate
+    networks: [browser]
+
   caddy:
     build: { context: .., dockerfile: deploy/web.Dockerfile }
     image: tether-web
@@ -109,6 +159,10 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
+
+networks:
+  browser:
+    internal: true
 
 volumes:
   pgdata:

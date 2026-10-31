@@ -36,6 +36,10 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `ADMIN_JWT_SECRET` | admin | | Required. Different from `JWT_SECRET` |
 | `MFA_ENCRYPTION_KEY` | admin | | Required in production, 32+ bytes. Encrypts admins' TOTP secrets (AES-GCM). Changing it makes every stored factor unreadable; then `-reset-mfa` each admin. In dev it falls back to a key derived from `jwt_secret`, with a warning |
 | `ADMIN_ALLOWED_IPS` | admin | empty (any) | Comma-separated IPs and CIDR ranges allowed to use the admin API (403 for others). The client IP is the last `X-Forwarded-For` entry when the peer is a private or loopback address (Caddy), else the peer. Warns at start in production when empty. `Caddyfile` has an equivalent edge rule, commented out |
+| `TEST_SECRET_KEY` | user, tester | | Required in production, 32+ bytes. Seals test account passwords (AES-GCM). Changing it makes saved test account passwords unreadable: save them again |
+| `ANTHROPIC_API_KEY` | tester | | Required by the tester in production. Only the tester reads it; never in `system_config` |
+| `AI_TEST_BROWSERS` | tester | `2` | AI runs one tester runs at once. More throughput: more tester + chrome pairs. `system_config` `ai_test_workspace_concurrency` caps one workspace's running runs, `ai_test_monthly_limit_usd` its monthly Claude spend |
+| `CHROME_URL`, `PROXY_ADDR`, `PROXY_URL` | tester | `http://chrome:9222`, `:3128`, `http://tester:3128` | Set by compose: Chrome's DevTools endpoint, the egress proxy's listen address and how Chrome reaches it |
 | `DB_MAX_CONNS` | user | `20` | Pool size. Admin uses `ADMIN_DB_MAX_CONNS` (default 5) |
 | `DB_STATEMENT_TIMEOUT`, `DB_IDLE_TX_TIMEOUT` | user, admin | `30s`, `2min` | Postgres `statement_timeout` and `idle_in_transaction_session_timeout` for every pooled session |
 | `UPLOAD_DIR` | user | `/data/uploads` | The `uploads` volume. Back it up with the database |
@@ -48,6 +52,10 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `MIGRATE_ON_START` | user | `true` | Compose sets `false`: the `migrate` service runs them |
 | `MIGRATE_LOCK_TIMEOUT` | migrate | `10s` | Postgres `lock_timeout` for each transactional migration |
 | `SWEEP_INTERVAL` | user | `24h` | Retention sweep cadence |
+
+## AI testing
+
+`--profile ai` adds the `tester` (the user image's `tester` command) and a `chrome` container on the internal `browser` network, which only the tester also joins. Chrome sends every request through the tester's egress proxy, which lets out only the workspace's registered test sites on public addresses. The tester checks in every 30s (`system_config` `ai_tester_heartbeat`); without a check-in in the last 90s the API answers "AI testing isn't set up on this server." A tester stopped mid-run ends its runs as "The test runner restarted"; runs a crashed tester left are ended after 15 minutes.
 
 ## Migrations
 
@@ -65,7 +73,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 
 ## Retention
 
-The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures, stale presence and socket rows, and rate-limit buckets untouched for an hour. Uploads that no description, comment, unsaved live edit or avatar references are deleted 24 hours after upload, with their files; so are files on disk without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
+The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures, stale presence and socket rows, and rate-limit buckets untouched for an hour. Uploads that no description, comment, unsaved live edit, avatar or AI test step references are deleted 24 hours after upload, with their files; so are files on disk without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
 
 ## Email
 

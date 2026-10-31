@@ -29,6 +29,12 @@ const (
 	PermCommentsCreate = "comments.create"
 	// PermCommentsManage lets a member edit and delete anyone's comments.
 	PermCommentsManage = "comments.manage"
+	// PermAITestsRun gates starting and cancelling AI test runs.
+	PermAITestsRun = "ai_tests.run"
+	// PermTestsManage gates editing an issue's test cases and running them by hand.
+	PermTestsManage = "tests.manage"
+	// PermAITestsManage gates the workspace's test sites and test accounts.
+	PermAITestsManage = "ai_tests.manage"
 )
 
 // catalog is every permission in display order.
@@ -44,6 +50,9 @@ var catalog = []Permission{
 	{PermWorkflowManage, "Issues", "Manage statuses and labels", true},
 	{PermCommentsCreate, "Comments", "Comment on issues", true},
 	{PermCommentsManage, "Comments", "Edit and delete anyone's comments", true},
+	{PermAITestsRun, "Testing", "Run AI tests on issues", true},
+	{PermTestsManage, "Testing", "Edit test cases and run tests manually", true},
+	{PermAITestsManage, "Testing", "Manage test sites and test accounts", true},
 }
 
 func allPermissions() []string {

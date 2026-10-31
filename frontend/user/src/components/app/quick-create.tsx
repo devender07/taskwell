@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { api, toFormErrors, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
-import { CreateIssueForm } from '@/components/issues/issue-form'
+import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
 import { subscribePaths } from '@/realtime'
 
 type Data = { projects: Project[]; statuses: Status[]; labels: Label[]; members: Member[] }
@@ -23,7 +23,7 @@ function rememberProject(slug: string, key: string) {
   } catch {}
 }
 
-export default function QuickCreate({ workspace, projectKey }: { workspace: Workspace; projectKey?: string }) {
+export default function QuickCreate({ workspace, projectKey, prefill }: { workspace: Workspace; projectKey?: string; prefill?: Prefill }) {
   const [data, setData] = useState<Data | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState<string | null>(null)
@@ -73,7 +73,7 @@ export default function QuickCreate({ workspace, projectKey }: { workspace: Work
       />
       {project ? (
         <div onSubmit={() => rememberProject(workspace.slug, project.key)}>
-          <CreateIssueForm workspace={workspace} project={project} statuses={data.statuses} labels={data.labels} members={data.members} />
+          <CreateIssueForm workspace={workspace} project={project} prefill={prefill} statuses={data.statuses} labels={data.labels} members={data.members} />
         </div>
       ) : null}
     </div>

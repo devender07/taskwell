@@ -62,6 +62,8 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'labels'; data: { added: Label[]; removed: Label[] } }
   | { kind: 'parent'; data: Change<EventRef | null> }
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
+  | { kind: 'test_run'; data: { run_id: string; kind: 'ai' | 'manual'; status: string; passed: number; failed: number; skipped: number; error: number } }
+  | { kind: 'test_cases_regenerated'; data: { run_id: string } }
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
@@ -257,3 +259,90 @@ export async function redirectIfSignedIn({ search }: { search: { redirect?: stri
 export function toFormErrors(e: unknown): { errors: FieldErrors; error: string | null } {
   return e instanceof ApiError ? { errors: e.errors, error: e.error } : { errors: {}, error: FALLBACK }
 }
+
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error'
+export type RunStatus = 'queued' | 'generating' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled' | 'limit_reached'
+export type TestCase = {
+  id: string
+  position: number
+  title: string
+  steps: string[]
+  expected: string
+  source: 'ai' | 'manual'
+  updated_at: string
+  last_result: { status: TestStatus; run_id: string; kind: 'ai' | 'manual'; at: string } | null
+}
+export type TestStep = { position: number; action: string; url: string | null; screenshot_url: string | null }
+export type TestResult = {
+  id: string
+  case_id: string
+  title: string
+  steps: string[]
+  expected: string
+  status: TestStatus
+  summary: string | null
+  reproduction: string[] | null
+  marked_by: PersonRef | null
+  marked_at: string | null
+  log: TestStep[] | null
+}
+export type TestRun = {
+  id: string
+  kind: 'ai' | 'manual'
+  issue: { identifier: string; title: string }
+  status: RunStatus
+  error: string | null
+  started_by: PersonRef | null
+  created_at: string
+  finished_at: string | null
+  cost_usd: number | null
+  results: TestResult[]
+  latest_screenshot_url: string | null
+}
+// The contract doesn't spell the summary out: the run without results, with per-status counts when the API sends them.
+export type TestRunSummary = Omit<TestRun, 'results' | 'latest_screenshot_url'> & { counts?: Partial<Record<TestStatus, number>> }
+export type TestSite = { id: string; base_url: string; host: string }
+export type TestAccount = { id: string; label: string; username: string; password_set: boolean }
+export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
+
+export const workspacePath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}`
+export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`
+export const testRunsPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-runs`
+export const testRunPath = (workspace: Workspace, id: string) => `${workspacePath(workspace)}/test-runs/${encodeURIComponent(id)}`
+export const testSitesPath = (workspace: Workspace) => `${workspacePath(workspace)}/test-sites`
+export const testAccountsPath = (workspace: Workspace) => `${workspacePath(workspace)}/test-accounts`
+
+const caseForm = (c: Pick<TestCase, 'title' | 'steps' | 'expected'>) => {
+  const form = new FormData()
+  form.set('title', c.title)
+  for (const s of c.steps) form.append('steps', s)
+  form.set('expected', c.expected)
+  return form
+}
+
+export const saveTestCase = (workspace: Workspace, identifier: string, c: Pick<TestCase, 'title' | 'steps' | 'expected'>, id?: string) =>
+  api<TestCase>(id ? `${workspacePath(workspace)}/test-cases/${encodeURIComponent(id)}` : testCasesPath(workspace, identifier), caseForm(c))
+
+export const deleteTestCase = (workspace: Workspace, id: string) => api(`${workspacePath(workspace)}/test-cases/${encodeURIComponent(id)}`, undefined, 'DELETE')
+
+export function orderTestCases(workspace: Workspace, identifier: string, ids: string[]) {
+  const form = new FormData()
+  for (const id of ids) form.append('ids', id)
+  return api<TestCase[]>(`${testCasesPath(workspace, identifier)}/order`, form)
+}
+
+export function startTestRun(workspace: Workspace, identifier: string, kind: 'ai' | 'manual', regenerate = false) {
+  const form = new FormData()
+  form.set('kind', kind)
+  if (regenerate) form.set('regenerate', 'true')
+  return api<TestRun>(testRunsPath(workspace, identifier), form)
+}
+
+export function markTestResult(workspace: Workspace, run: string, result: string, status: 'passed' | 'failed' | 'skipped', note: string) {
+  const form = new FormData()
+  form.set('status', status)
+  form.set('note', note)
+  return api<TestRun>(`${testRunPath(workspace, run)}/results/${encodeURIComponent(result)}`, form)
+}
+
+export const cancelTestRun = (workspace: Workspace, run: string) => api<TestRun>(`${testRunPath(workspace, run)}/cancel`, new FormData())

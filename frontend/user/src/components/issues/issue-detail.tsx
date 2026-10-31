@@ -8,6 +8,7 @@ import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
+import { TestsSection } from '@/components/tests/tests'
 import { WatchButton } from '@/components/issues/watch-button'
 import { loaderApi, type LoaderContext, type Viewer } from '@/realtime'
 import '@/components/issues/issues.css'
@@ -81,6 +82,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
             </header>
           )}
           <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} onViewers={setViewers} />
+          <TestsSection key={`tests-${issue.id}`} workspace={workspace} issue={issue} />
           {issue.parent ? null : (
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
           )}

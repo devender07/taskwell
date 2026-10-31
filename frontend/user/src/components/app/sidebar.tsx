@@ -81,6 +81,9 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <Link to="/$workspace/settings/labels" params={{ workspace }}>
             Labels
           </Link>
+          <Link to="/$workspace/settings/ai-testing" params={{ workspace }}>
+            AI testing
+          </Link>
         </div>
       ) : null}
     </nav>

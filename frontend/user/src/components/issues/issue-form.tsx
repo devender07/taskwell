@@ -15,13 +15,16 @@ import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from 
 
 type State = { errors?: FieldErrors; error?: string | null }
 
-type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; statuses: Status[]; labels: Label[]; members: Member[] }
+// Quick-create filled in from elsewhere (a failed test's "Create bug"); `blocks` links the new issue as blocking that one.
+export type Prefill = { title: string; description: Doc; blocks?: string }
+
+type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
 
 // Labels are checkboxes here, not the labels popover: a popover can't render above a modal dialog.
-export function CreateIssueForm({ workspace, project, parent, statuses, labels, members }: CreateProps) {
+export function CreateIssueForm({ workspace, project, parent, prefill, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: null, length: 0 })
+  const [title, setTitle] = useState(prefill?.title ?? '')
+  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
   const [statusId, setStatusId] = useState(statuses[0]?.id ?? '')
   const [priority, setPriority] = useState('0')
   const [assigneeId, setAssigneeId] = useState('')
@@ -49,6 +52,12 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
     } catch (e) {
       return toFormErrors(e)
     }
+    if (prefill?.blocks) {
+      const link = new FormData()
+      link.set('type', 'blocks')
+      link.set('issue', prefill.blocks)
+      await api(`${issuePath(workspace, issue.identifier)}/links`, link).catch(() => {})
+    }
     await navigate({ to: '/$workspace/issue/$identifier', params: { workspace: workspace.slug, identifier: issue.identifier } })
     return {}
   }, {})
@@ -66,6 +75,7 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
         label="Description"
         placeholder="Add a description… Type @ to mention someone"
         mentions={mentions}
+        content={prefill?.description}
         onChange={(doc, length) => setDescription({ doc, length })}
         error={errors?.description}
         upload={(file) => uploadFile(workspace.slug, file)}

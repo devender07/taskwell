@@ -2,6 +2,7 @@ import { useLoaderData, useLocation, useMatch } from '@tanstack/react-router'
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { Dialog } from '@tether/shared/dialog'
 import { can } from '@/api'
+import type { Prefill } from '@/components/issues/issue-form'
 import { CommandPalette, type Mode } from './command-palette'
 import './shortcuts.css'
 
@@ -19,14 +20,15 @@ const HELP = [
   ['A', 'Assign (on an issue)'],
   ['P', 'Set priority (on an issue)'],
   ['L', 'Change labels (on an issue)'],
+  ['P / F / S', 'Mark passed, failed or skipped (in a manual test run)'],
   ['Enter', 'Send a message (Shift+Enter for a new line)'],
   ['↑', 'Edit your last message (in an empty composer)'],
   ['?', 'Show keyboard shortcuts'],
   ['Esc', 'Close'],
 ]
 
-type Actions = { openPalette: () => void; openCreate: () => void }
-const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {} })
+type Actions = { openPalette: () => void; openCreate: () => void; createPrefilled: (prefill: Prefill) => void }
+const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {}, createPrefilled() {} })
 export const useShortcuts = () => use(ShortcutsContext)
 
 // Single-key shortcuts (C, /, ?, S, A, P, L) can be turned off in Settings → Profile (WCAG 2.1.4); ⌘K stays.
@@ -53,7 +55,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
   const pageProject = useMatch({ from: '/_app/$workspace/_main/projects/$key', shouldThrow: false })?.loaderData?.project.key
   const pathname = useLocation({ select: (l) => l.pathname })
   const [palette, setPalette] = useState<Mode | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<{ prefill?: Prefill } | null>(null)
   const [help, setHelp] = useState(false)
   const [path, setPath] = useState(pathname)
   const canCreate = can(workspace, 'issues.create')
@@ -61,10 +63,10 @@ export function Shortcuts({ children }: { children: ReactNode }) {
   if (pathname !== path) {
     setPath(pathname)
     setPalette(null)
-    setCreating(false)
+    setCreating(null)
   }
 
-  const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating(true) }), [])
+  const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating({}), createPrefilled: (prefill) => setCreating({ prefill }) }), [])
 
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return
@@ -77,7 +79,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
     }
     if (open || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || !singleKeyShortcuts()) return
     const mode = ISSUE_KEYS[e.key]
-    if (e.key === 'c' && canCreate) setCreating(true)
+    if (e.key === 'c' && canCreate) setCreating({})
     else if (e.key === '/') setPalette('root')
     else if (e.key === '?') setHelp(true)
     else if (mode && issue?.issue.can_edit) setPalette(mode)
@@ -101,16 +103,16 @@ export function Shortcuts({ children }: { children: ReactNode }) {
           canCreate
             ? () => {
                 setPalette(null)
-                setCreating(true)
+                setCreating({})
               }
             : undefined
         }
         onClose={() => setPalette(null)}
       />
       {canCreate ? (
-        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue">
+        <Dialog open={creating !== null} onClose={() => setCreating(null)} title="New issue">
           <Suspense fallback={<p className="text-body-sm text-secondary">Loading…</p>}>
-            <QuickCreate workspace={workspace} projectKey={pageProject ?? issue?.issue.project.key} />
+            <QuickCreate workspace={workspace} projectKey={pageProject ?? issue?.issue.project.key} prefill={creating?.prefill} />
           </Suspense>
         </Dialog>
       ) : null}

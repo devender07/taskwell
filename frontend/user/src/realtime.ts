@@ -316,3 +316,7 @@ export function joinCollab(workspace: string, issue: string, handlers: Handlers)
     },
   }
 }
+
+// Refetches `paths` in this tab as if another tab had changed them: for this tab's own writes that other parts of the
+// page show too (a manual mark updates the run, the history and the cases' last results).
+export const refetchPaths = (paths: string[]) => push(paths)

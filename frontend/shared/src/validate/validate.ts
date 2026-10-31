@@ -159,3 +159,22 @@ export const groupName: Check = (v) => {
 
 export const messageBody = (empty: boolean, length: number) =>
   empty ? 'Write a message.' : length > 10000 ? 'Message must be 10,000 characters or fewer.' : null
+
+// Test cases and AI testing settings; messages match the API's.
+export const testCaseTitle: Check = (v) => (v.trim() ? null : 'Enter a title.')
+export const testCaseSteps = (steps: string[]) => (steps.length ? null : 'Add at least one step.')
+export const testCaseExpected: Check = (v) => (v.trim() ? null : 'Describe the expected result.')
+export const testNote: Check = (v) => (v.length > 2000 ? 'Note must be 2,000 characters or fewer.' : null)
+
+// http:// passes here for dev sites; the API decides whether this server allows it.
+export const testSiteUrl: Check = (v) => {
+  try {
+    const u = new URL(v.trim())
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname ? null : 'Enter a URL starting with https://.'
+  } catch {
+    return 'Enter a URL starting with https://.'
+  }
+}
+export const testAccountLabel: Check = (v) => (v.trim() ? null : 'Enter a label.')
+export const testAccountUsername: Check = (v) => (v.trim() ? null : 'Enter a username.')
+export const testAccountPassword: Check = (v) => (v ? null : 'Enter a password.')

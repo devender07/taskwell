@@ -47,6 +47,13 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
       ) : (
         <>marked {subject ?? 'this'} as {e.data.type === 'blocks' ? 'blocking' : 'blocked by'} {ref(e.data.issue)}</>
       )
+    case 'test_run': {
+      const d = e.data
+      const tally = (['passed', 'failed', 'skipped', 'error'] as const).filter((k) => d[k]).map((k) => `${d[k]} ${k}`).join(', ')
+      return <>ran {d.kind === 'ai' ? 'AI tests' : 'tests manually'}{subject ? <> on{s}</> : null}{tally ? `: ${tally}` : ''}</>
+    }
+    case 'test_cases_regenerated':
+      return <>regenerated the test cases{subject ? <> on{s}</> : null}</>
     default:
       return null
   }
