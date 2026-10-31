@@ -39,7 +39,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
       setOlder(NONE)
       setOlderMore(null)
     } else if (older !== NONE) {
-      // Enough new activity to push items off the newest page: keep them, so there's no gap above the older pages.
+      // Enough new activity to push items off the newest page: keep them, so there's no gap before the older pages.
       const edge = Math.min(...[...timeline.comments, ...timeline.events].map(at))
       setOlder({
         comments: [...older.comments, ...newest.comments.filter((c) => at(c) < edge)],
@@ -56,7 +56,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
       ...timeline.events.map((e) => ({ at: e.created_at, comment: null, event: e })),
       ...older.comments.filter(seen).map((c) => ({ at: c.created_at, comment: c, event: null })),
       ...older.events.filter(seen).map((e) => ({ at: e.created_at, comment: null, event: e })),
-    ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   }, [timeline, older])
 
   // An edit or delete refetches only the newest page; a comment on an older one is patched here.
@@ -67,7 +67,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
   )
 
   const [loadError, loadOlder, loading] = useActionState(async () => {
-    const before = items[0]?.at
+    const before = items.at(-1)?.at
     if (!before) return null
     try {
       const page = await api<TimelineData>(`${issuePath(workspace, issue.identifier)}/timeline?before=${encodeURIComponent(before)}`)
@@ -82,14 +82,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
   return (
     <section className="grid gap-4" aria-labelledby="activity-heading">
       <h2 id="activity-heading" className="text-label">Activity</h2>
-      {(olderMore ?? timeline.has_more) ? (
-        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
-          <Button type="submit" variant="ghost" disabled={loading}>
-            {loading ? 'Loading…' : 'Show older activity'}
-          </Button>
-          <FormError>{loadError}</FormError>
-        </form>
-      ) : null}
+      {can(workspace, 'comments.create') && !project.archived ? <Composer workspace={workspace} issue={issue} mentions={mentions} /> : null}
       <ol className="grid gap-3 m-0 p-0" style={{ listStyle: 'none' }}>
         {items.map(({ comment, event }) =>
           comment ? (
@@ -101,7 +94,14 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
           ) : null,
         )}
       </ol>
-      {can(workspace, 'comments.create') && !project.archived ? <Composer workspace={workspace} issue={issue} mentions={mentions} /> : null}
+      {(olderMore ?? timeline.has_more) ? (
+        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          <Button type="submit" variant="ghost" disabled={loading}>
+            {loading ? 'Loading…' : 'Show older activity'}
+          </Button>
+          <FormError>{loadError}</FormError>
+        </form>
+      ) : null}
     </section>
   )
 }
