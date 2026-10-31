@@ -14,13 +14,15 @@ type FeedRowProps = {
   at: string
   unread?: boolean
   onClick?: () => void
+  // Open the issue in the inbox's preview pane (keeping the inbox filter) instead of on its own page.
+  inbox?: { filter?: 'unread'; selected: boolean }
 }
 
 // One line of who did what to which issue, linking to the issue: the inbox and Home's activity and inbox blocks.
-export function FeedRow({ workspace, identifier, actor, text, excerpt, at, unread, onClick }: FeedRowProps) {
+export function FeedRow({ workspace, identifier, actor, text, excerpt, at, unread, onClick, inbox }: FeedRowProps) {
   const name = actor?.name ?? 'Someone'
-  return (
-    <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier }} className="inbox-link" onClick={onClick}>
+  const body = (
+    <>
       <Avatar name={name} size={24} src={actor && avatarSrc(actor.id)} />
       <span className="grid gap-1 flex-grow" style={{ minWidth: 0 }}>
         <span className="text-caption text-secondary" style={{ overflowWrap: 'anywhere' }}>
@@ -34,6 +36,24 @@ export function FeedRow({ workspace, identifier, actor, text, excerpt, at, unrea
       {unread !== undefined ? (
         <span className="inbox-dot flex-noshrink" data-unread={unread || undefined} aria-label={unread ? 'Unread' : undefined} role={unread ? 'img' : undefined} />
       ) : null}
+    </>
+  )
+  return inbox ? (
+    <Link
+      to="/$workspace/inbox/$identifier"
+      params={{ workspace, identifier }}
+      search={inbox.filter ? { filter: inbox.filter } : {}}
+      className="inbox-link"
+      data-selected={inbox.selected || undefined}
+      aria-current={inbox.selected ? 'true' : undefined}
+      activeProps={{ 'aria-current': inbox.selected ? 'true' : undefined }}
+      onClick={onClick}
+    >
+      {body}
+    </Link>
+  ) : (
+    <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier }} className="inbox-link" onClick={onClick}>
+      {body}
     </Link>
   )
 }

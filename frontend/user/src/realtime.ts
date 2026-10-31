@@ -21,7 +21,7 @@ type Message =
   | { type: 'collab.joined'; issue: string; id: string }
   | { type: 'collab.error'; issue: string }
   | { type: 'presence'; issue: string; viewers: Viewer[] }
-type LoaderContext = { route: { id: string; fullPath: string }; params: Record<string, string>; deps: unknown }
+export type LoaderContext = { route: { id: string; fullPath: string }; params: Record<string, string>; deps: unknown }
 
 // _app's beforeLoad fetches these; any load re-runs it.
 const APP_PATHS = ['/workspaces', '/me']

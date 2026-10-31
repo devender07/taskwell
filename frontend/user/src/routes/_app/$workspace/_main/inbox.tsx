@@ -1,10 +1,11 @@
-import { createFileRoute, useLoaderData, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { Outlet, createFileRoute, useLoaderData, useNavigate, useParams } from '@tanstack/react-router'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { IconButton } from '@tether/shared/icon-button'
 import { Tabs } from '@tether/shared/tabs'
 import { api, toFormErrors, type NotificationPage } from '@/api'
 import { loaderApi } from '@/realtime'
+import { singleKeyShortcuts, typing } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FeedRow, notificationText } from '@/components/inbox/feed-row'
 
@@ -46,6 +47,37 @@ function Inbox() {
   }
 
   const shown = filter === 'unread' ? items.filter((n) => !n.read) : items
+  // The previewed issue comes from the URL; the row is the one last opened, else the newest for that issue.
+  const selected = useParams({ strict: false }).identifier
+  const [openedId, setOpenedId] = useState<string | null>(null)
+  const current = shown.find((n) => n.id === openedId && n.issue.identifier === selected) ?? shown.find((n) => n.issue.identifier === selected)
+
+  function open(n: (typeof items)[number]) {
+    setOpenedId(n.id)
+    if (!n.read) mark(true, [n.id])
+  }
+
+  // J / K (or ↓ / ↑) step through the list, Esc closes the preview.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || document.querySelector('dialog[open]')) return
+    if (e.key === 'Escape' && selected) {
+      navigate({ to: '/$workspace/inbox', search: filter === 'unread' ? { filter: 'unread' } : {} })
+      return
+    }
+    const step = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[e.key]
+    if (!step || ((e.key === 'j' || e.key === 'k') && !singleKeyShortcuts())) return
+    if (e.key.startsWith('Arrow') && !(e.target instanceof HTMLElement && e.target.closest('.inbox-list'))) return
+    const next = shown[current ? shown.indexOf(current) + step : 0]
+    if (!next) return
+    e.preventDefault()
+    open(next)
+    navigate({ to: '/$workspace/inbox/$identifier', params: { workspace: workspace.slug, identifier: next.issue.identifier }, search: filter === 'unread' ? { filter: 'unread' } : {} })
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('.inbox-link[data-selected]')?.focus())
+  })
+  useEffect(() => {
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   async function loadMore() {
     setLoading(true)
@@ -77,7 +109,8 @@ function Inbox() {
   }
 
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start', maxWidth: 960 }}>
+    <main className="inbox-page" data-selected={selected ? '' : undefined}>
+      <div className="inbox-list-pane">
       <header className="flex items-end justify-between gap-4 flex-wrap">
         <h1 className="text-h2">Inbox</h1>
         <Button variant="secondary" disabled={!count && !items.some((n) => !n.read)} onClick={() => mark(true, 'all')}>
@@ -96,7 +129,7 @@ function Inbox() {
         <p className="text-body-sm text-secondary p-6 bg-surface border rounded-lg text-center">You're all caught up.</p>
       ) : (
         <section className="bg-surface border rounded-lg overflow-hidden" aria-label="Notifications">
-          <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
+          <ul className="inbox-list grid m-0 p-0" style={{ listStyle: 'none' }}>
             {shown.map((n) => (
               <li key={n.id} className="inbox-row">
                 <FeedRow
@@ -107,7 +140,8 @@ function Inbox() {
                   excerpt={n.data.excerpt}
                   at={n.created_at}
                   unread={!n.read}
-                  onClick={() => (n.read ? undefined : mark(true, [n.id]))}
+                  inbox={{ filter: filter === 'unread' ? 'unread' : undefined, selected: n === current }}
+                  onClick={() => open(n)}
                 />
                 <IconButton aria-label={n.read ? 'Mark as unread' : 'Mark as read'} style={{ width: 44, height: 44 }} className="flex-noshrink" onClick={() => mark(!n.read, [n.id])}>
                   {n.read ? <UnreadIcon /> : <ReadIcon />}
@@ -124,6 +158,17 @@ function Inbox() {
           ) : null}
         </section>
       )}
+      </div>
+      <section className="inbox-preview" aria-label="Preview">
+        {selected ? (
+          <Outlet />
+        ) : (
+          <div className="grid gap-2 text-center" style={{ placeContent: 'center', height: '100%' }}>
+            <p className="text-body-sm text-secondary m-0">Select a notification to see the issue here.</p>
+            <p className="text-caption text-secondary m-0">J and K move through the list.</p>
+          </div>
+        )}
+      </section>
     </main>
   )
 }

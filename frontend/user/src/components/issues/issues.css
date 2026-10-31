@@ -47,9 +47,10 @@
 .labels-trigger:hover { border-color: rgba(255, 255, 255, 0.1); }
 .labels-trigger:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
+.issue-detail { container-type: inline-size; }
 .issue-layout { display: grid; gap: 32px; align-items: start; }
-@media (min-width: 1024px) {
-  .issue-layout { grid-template-columns: minmax(0, 1fr) 320px; }
+@container (min-width: 720px) {
+  .issue-layout { grid-template-columns: minmax(0, 1fr) clamp(260px, 32%, 320px); }
 }
 
 .issue-group-header {

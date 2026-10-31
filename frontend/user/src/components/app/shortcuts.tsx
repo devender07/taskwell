@@ -19,6 +19,7 @@ const HELP = [
   ['A', 'Assign (on an issue)'],
   ['P', 'Set priority (on an issue)'],
   ['L', 'Change labels (on an issue)'],
+  ['J / K', 'Next or previous notification (in the inbox)'],
   ['?', 'Show keyboard shortcuts'],
   ['Esc', 'Close'],
 ]
@@ -43,11 +44,13 @@ export function setSingleKeyShortcuts(on: boolean) {
   } catch {}
 }
 
-const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || Boolean(t.closest('input, textarea, select')))
+export const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || Boolean(t.closest('input, textarea, select')))
 
 export function Shortcuts({ children }: { children: ReactNode }) {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const issue = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
+  const issuePage = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
+  const inboxIssue = useMatch({ from: '/_app/$workspace/_main/inbox/$identifier', shouldThrow: false })?.loaderData
+  const issue = issuePage ?? inboxIssue
   const pageProject = useMatch({ from: '/_app/$workspace/_main/projects/$key', shouldThrow: false })?.loaderData?.project.key
   const pathname = useLocation({ select: (l) => l.pathname })
   const [palette, setPalette] = useState<Mode | null>(null)

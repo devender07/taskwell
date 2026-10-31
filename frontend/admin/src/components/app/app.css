@@ -43,6 +43,7 @@
     height: auto;
     padding: 8px 16px;
     overflow-x: auto;
+    scrollbar-width: none;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
