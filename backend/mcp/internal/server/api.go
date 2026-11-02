@@ -36,6 +36,11 @@ func (a *api) post(ctx context.Context, path string, form url.Values, out any) e
 	return a.do(ctx, http.MethodPost, path, form, out)
 }
 
+// del sends DELETE path and decodes a JSON answer, if any, into out.
+func (a *api) del(ctx context.Context, path string, out any) error {
+	return a.do(ctx, http.MethodDelete, path, nil, out)
+}
+
 func (a *api) do(ctx context.Context, method, path string, form url.Values, out any) error {
 	var body io.Reader
 	if form != nil {
@@ -94,7 +99,8 @@ func apiError(status int, data []byte) error {
 }
 
 // toolField names the API's form fields as the tools call them.
-var toolField = map[string]string{"status_id": "status", "assignee_id": "assignee", "label_ids": "labels"}
+var toolField = map[string]string{"status_id": "status", "assignee_id": "assignee", "label_ids": "labels",
+	"role_id": "role", "user_id": "member", "issue": "other"}
 
 // ws is the API path of the workspace with the slug, plus the escaped parts after it.
 func ws(slug string, parts ...string) string {

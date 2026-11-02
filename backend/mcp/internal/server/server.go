@@ -62,12 +62,17 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "my_issues", Annotations: readOnly,
 		Description: "List the issues assigned to you in a workspace's active projects."}, t.myIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_issue", Annotations: readOnly,
-		Description: "Read one issue: its fields, description and latest comments."}, t.getIssue)
+		Description: "Read one issue: its fields, links, description and latest comments (with ids for update_comment and delete_comment)."}, t.getIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_issue",
-		Description: "Create an issue in a project. Status, assignee and labels are names from workspace_options."}, t.createIssue)
+		Description: "Create an issue in a project. Status, assignee and labels are names from workspace_options. " +
+			"To file a bug from a failed test result, use the case's title and put the result's summary and reproduction steps in the description."}, t.createIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "update_issue",
-		Description: "Change an issue. Only the fields you give change; an empty assignee or due_date clears it, labels replaces all labels."}, t.updateIssue)
+		Description: "Change an issue. Only the fields you give change; an empty assignee, due_date, parent or cycle clears it, labels replaces all labels."}, t.updateIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "add_comment", Description: "Comment on an issue."}, t.addComment)
+	t.issueTools(s)
+	t.projectTools(s)
+	t.testTools(s)
+	t.chatTools(s)
 	return s
 }
 
@@ -107,6 +112,8 @@ type createIn struct {
 	Priority    *string  `json:"priority,omitempty" jsonschema:"none, urgent, high, medium or low"`
 	DueDate     *string  `json:"due_date,omitempty" jsonschema:"YYYY-MM-DD"`
 	Labels      []string `json:"labels,omitempty" jsonschema:"label names"`
+	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier, making this a sub-issue"`
+	Cycle       *string  `json:"cycle,omitempty" jsonschema:"cycle number in the project, from list_cycles"`
 }
 
 type updateIn struct {
@@ -119,6 +126,8 @@ type updateIn struct {
 	Priority    *string  `json:"priority,omitempty" jsonschema:"none, urgent, high, medium or low"`
 	DueDate     *string  `json:"due_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it"`
 	Labels      []string `json:"labels,omitempty" jsonschema:"label names, replacing the issue's labels; [] removes them all"`
+	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier; empty makes it top-level"`
+	Cycle       *string  `json:"cycle,omitempty" jsonschema:"cycle number in the issue's project, from list_cycles; empty removes it from its cycle"`
 }
 
 type commentIn struct {
@@ -165,14 +174,25 @@ type issue struct {
 		Key  string `json:"key"`
 		Name string `json:"name"`
 	} `json:"project"`
-	Parent *struct {
-		Identifier string `json:"identifier"`
-	} `json:"parent"`
+	Parent *ref `json:"parent"`
+	Cycle  *struct {
+		Number int `json:"number"`
+	} `json:"cycle"`
 	CreatedBy *person `json:"created_by"`
 	CreatedAt string  `json:"created_at"`
+	// Only one issue's answer has these.
+	SubIssues []ref `json:"sub_issues"`
+	Blocks    []ref `json:"blocks"`
+	BlockedBy []ref `json:"blocked_by"`
+	Watching  *bool `json:"watching"`
+}
+
+type ref struct {
+	Identifier string `json:"identifier"`
 }
 
 type comment struct {
+	ID        string          `json:"id"`
 	Author    *person         `json:"author"`
 	Body      json.RawMessage `json:"body"`
 	CreatedAt string          `json:"created_at"`
@@ -191,6 +211,11 @@ type issueOut struct {
 	Labels      []string     `json:"labels,omitempty"`
 	Project     string       `json:"project,omitempty"`
 	Parent      string       `json:"parent,omitempty"`
+	Cycle       int          `json:"cycle,omitempty"`
+	SubIssues   []string     `json:"sub_issues,omitempty"`
+	Blocks      []string     `json:"blocks,omitempty"`
+	BlockedBy   []string     `json:"blocked_by,omitempty"`
+	Watching    *bool        `json:"watching,omitempty"`
 	CreatedBy   string       `json:"created_by,omitempty"`
 	CreatedAt   string       `json:"created_at,omitempty"`
 	URL         string       `json:"url"`
@@ -199,6 +224,7 @@ type issueOut struct {
 }
 
 type commentOut struct {
+	ID        string `json:"id"`
 	Author    string `json:"author"`
 	CreatedAt string `json:"created_at"`
 	Text      string `json:"text"`
@@ -227,6 +253,10 @@ func (t *tools) out(slug string, i issue) issueOut {
 	if i.Parent != nil {
 		o.Parent = i.Parent.Identifier
 	}
+	if i.Cycle != nil {
+		o.Cycle = i.Cycle.Number
+	}
+	o.SubIssues, o.Blocks, o.BlockedBy, o.Watching = idents(i.SubIssues), idents(i.Blocks), idents(i.BlockedBy), i.Watching
 	if i.CreatedBy != nil {
 		o.CreatedBy = i.CreatedBy.Name
 	}
@@ -395,13 +425,14 @@ func (t *tools) getIssue(ctx context.Context, _ *mcp.CallToolRequest, in issueIn
 	}
 	o := t.out(in.Workspace, i)
 	for _, c := range tl.Comments {
-		o.Comments = append(o.Comments, commentOut{Author: name(c.Author), CreatedAt: c.CreatedAt, Text: plainText(c.Body)})
+		o.Comments = append(o.Comments, commentOut{ID: c.ID, Author: name(c.Author), CreatedAt: c.CreatedAt, Text: plainText(c.Body)})
 	}
 	return result(o)
 }
 
 func (t *tools) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in createIn) (*mcp.CallToolResult, any, error) {
-	form, err := t.issueForm(ctx, in.Workspace, fields{&in.Title, in.Description, in.Status, in.Assignee, in.Priority, in.DueDate, in.Labels})
+	form, err := t.issueForm(ctx, in.Workspace, in.Project, fields{title: &in.Title, description: in.Description, status: in.Status,
+		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -416,7 +447,9 @@ func (t *tools) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in crea
 }
 
 func (t *tools) updateIssue(ctx context.Context, _ *mcp.CallToolRequest, in updateIn) (*mcp.CallToolResult, any, error) {
-	form, err := t.issueForm(ctx, in.Workspace, fields{in.Title, in.Description, in.Status, in.Assignee, in.Priority, in.DueDate, in.Labels})
+	key, _, _ := strings.Cut(in.Identifier, "-")
+	form, err := t.issueForm(ctx, in.Workspace, key, fields{title: in.Title, description: in.Description, status: in.Status,
+		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -441,7 +474,7 @@ func (t *tools) addComment(ctx context.Context, _ *mcp.CallToolRequest, in comme
 	return result(struct {
 		commentOut
 		URL string `json:"url"`
-	}{commentOut{Author: name(c.Author), CreatedAt: c.CreatedAt, Text: plainText(c.Body)},
+	}{commentOut{ID: c.ID, Author: name(c.Author), CreatedAt: c.CreatedAt, Text: plainText(c.Body)},
 		t.app + "/" + url.PathEscape(in.Workspace) + "/issue/" + url.PathEscape(in.Identifier)})
 }
 
@@ -449,12 +482,13 @@ func (t *tools) addComment(ctx context.Context, _ *mcp.CallToolRequest, in comme
 
 // fields are an issue's settable fields as tools take them; nil leaves one unchanged.
 type fields struct {
-	title, description, status, assignee, priority, dueDate *string
-	labels                                                  []string
+	title, description, status, assignee, priority, dueDate, parent, cycle *string
+	labels                                                                 []string
 }
 
-// issueForm resolves names to ids and returns the API form for the fields given.
-func (t *tools) issueForm(ctx context.Context, slug string, f fields) (url.Values, error) {
+// issueForm resolves names to ids and returns the API form for the fields given; project is the issue's project key,
+// for its cycles.
+func (t *tools) issueForm(ctx context.Context, slug, project string, f fields) (url.Values, error) {
 	form := url.Values{}
 	if f.title != nil {
 		form.Set("title", strings.TrimSpace(*f.title))
@@ -495,6 +529,19 @@ func (t *tools) issueForm(ctx context.Context, slug string, f fields) (url.Value
 	}
 	if f.dueDate != nil {
 		form.Set("due_date", strings.TrimSpace(*f.dueDate))
+	}
+	if f.parent != nil {
+		form.Set("parent", strings.TrimSpace(*f.parent))
+	}
+	if f.cycle != nil {
+		form.Set("cycle", "")
+		if strings.TrimSpace(*f.cycle) != "" {
+			c, err := t.cycle(ctx, slug, project, *f.cycle)
+			if err != nil {
+				return nil, err
+			}
+			form.Set("cycle", c.ID)
+		}
 	}
 	if f.labels != nil {
 		form["label_ids"] = []string{""} // the field present and empty clears the labels
@@ -578,6 +625,15 @@ func priority(s string) (int, error) {
 		return p, nil
 	}
 	return 0, fmt.Errorf("No priority %q. Choose one of: %s.", s, strings.Join(priorities, ", "))
+}
+
+// idents are the refs' identifiers; nil for none.
+func idents(rs []ref) []string {
+	var ids []string
+	for _, r := range rs {
+		ids = append(ids, r.Identifier)
+	}
+	return ids
 }
 
 func name(p *person) string {

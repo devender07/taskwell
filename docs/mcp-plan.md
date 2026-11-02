@@ -100,3 +100,53 @@ Route `/{workspace}/settings/api-tokens` (`routes/_app/$workspace/_main/settings
 - Backend: `go vet` and `go test` for both modules. User: a test that a bearer token authenticates, and that a revoked token and a suspended user's token don't; curl every token row and message, and an issue create with a bearer token. MCP: one test with an `httptest` fake API and the SDK's in-memory transport, calling `create_issue` with a status name, label names and an assignee email, asserting the form the API receives; plus `curl` an `initialize` and `tools/list` against the running server.
 - Frontend: `npm run build`.
 - Integration (main session): create a token in Settings, add the server to Claude Code (`claude mcp add …`), list projects, create an issue, update its status, comment; see each live in the app. Revoke the token → the next tool call says the token is invalid.
+
+## Phase 2: every feature, AI testing first
+
+Same rules as above: tools call the existing REST API with the caller's token, take names and readable ids, and return compact JSON. No API, schema or frontend changes. A tool for an endpoint the caller lacks permission for just relays the API's 403.
+
+### AI testing (the main ask)
+
+Two ways an AI client tests an issue:
+1. **Tether runs it**: `run_ai_test` starts an AI run (Tether's own Claude drives the sandboxed Chrome, spends the workspace's monthly limit). `get_test_run` with `wait_seconds` polls until it finishes.
+2. **The client runs it**: the client tests with its own tools, then records the outcome as a manual run: `start_manual_test_run` returns one result per case, and `mark_test_result` sets each to passed / failed / skipped with a note.
+
+| Tool | Inputs | Calls |
+|---|---|---|
+| `list_test_cases` | `workspace`, `identifier` | `GET …/issues/{identifier}/test-cases` (with last result, recorded flag) |
+| `create_test_case` | `workspace`, `identifier`, `title`, `steps` ([]string), `expected` | `POST …/issues/{identifier}/test-cases` |
+| `create_test_cases` | `workspace`, `identifier`, `cases` ([]{title, steps, expected}) | one POST per case; stops at the first error and says which were created |
+| `update_test_case` | `workspace`, `case_id`, `title?`, `steps?`, `expected?` | `POST …/test-cases/{id}` (fields left out keep their value: read the case first, send all three) |
+| `delete_test_case` | `workspace`, `case_id` | `DELETE …/test-cases/{id}` |
+| `reorder_test_cases` | `workspace`, `identifier`, `case_ids` ([]string, all of them, in order) | `POST …/test-cases/order` |
+| `run_ai_test` | `workspace`, `identifier`, `case_id?` (one case only), `regenerate?` (bool: Claude rewrites the cases first) | `POST …/test-runs` `kind=ai` |
+| `start_manual_test_run` | `workspace`, `identifier` | `POST …/test-runs` `kind=manual` |
+| `mark_test_result` | `workspace`, `run_id`, `result_id`, `status` (passed/failed/skipped), `note?` | `POST …/test-runs/{id}/results/{result_id}` |
+| `get_test_run` | `workspace`, `run_id`, `wait_seconds?` (0–120: poll every 3 s until the run isn't pending/running) | `GET …/test-runs/{id}`: status, counts, cost, error, each result with summary, reproduction steps and screenshot URLs (absolute, `TETHER_API_URL`-relative paths made app links) |
+| `list_test_runs` | `workspace`, `identifier` | `GET …/issues/{identifier}/test-runs` (first page) |
+| `cancel_test_run` | `workspace`, `run_id` | `POST …/test-runs/{id}/cancel` |
+| `ai_test_usage` | `workspace` | `GET …/ai-usage` |
+| `list_test_sites` / `add_test_site` (`base_url`) / `delete_test_site` (`site_id`) | | `…/test-sites` |
+| `list_test_accounts` / `save_test_account` (`account_id?`, `label`, `username`, `password?`) / `delete_test_account` (`account_id`) | | `…/test-accounts`; passwords are write-only, as in the API |
+
+A failed result becomes a bug with the existing `create_issue` (the tool description says so: title from the case, description from the summary and reproduction steps).
+
+### Everything else
+
+| Area | Tools |
+|---|---|
+| Projects | `create_project` (name, key, description?), `update_project` (key, name?, description?), `archive_project`, `unarchive_project` |
+| Issues | `delete_issue`; `link_issues` (identifier, type as the API names them, other identifier), `unlink_issues`; `watch_issue` (watch bool); `create_issue` / `update_issue` gain `parent` (identifier) and `cycle` (number, empty clears) |
+| Comments | `get_issue` returns comment ids; `update_comment` (comment_id, body), `delete_comment` |
+| Activity | `issue_activity` (identifier, `before?`): the timeline's events and comments; `workspace_activity` (`before?`) |
+| Labels and statuses | `create_label` (name, color?), `delete_label`; `create_status` (name, category) |
+| Cycles | `list_cycles` (project), `get_cycle` (project, number: cycle + its issues), `create_cycle` (project, starts_on, ends_on, name?), `update_cycle`, `delete_cycle`, `rollover_cycle` (project, number, to) |
+| Inbox | `list_notifications`, `mark_notifications_read` (ids? or all, as the API takes) |
+| Chat | `list_chats`, `read_chat` (chat_id, `before?`), `send_message` (chat_id, body, `parent_id?`), `send_direct_message` (member email or name, body) |
+| Members | `invite_member` (email, role name) |
+
+Left out (admin and secrets; add when asked): workspace create/delete/rename, roles, member role changes and removal, Git integrations, notification settings, profile and avatar, file uploads, reactions.
+
+Server: the MCP HTTP client timeout stays 30 s per API call; `get_test_run`'s wait is its own loop with the request's context, so the MCP server's `WriteTimeout` (none set) doesn't cut it.
+
+Verification: `go vet`, `go test` (extend the in-memory test with `create_test_cases` and `get_test_run` waiting on a fake run that finishes on the second poll), then live: create cases on an issue through MCP, record a manual run with mixed results, check the issue's Tests section in the app shows them; start an AI run if a tester and site are configured, else confirm the API's 503/409 message comes through.
