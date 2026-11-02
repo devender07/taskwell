@@ -27,6 +27,9 @@ const (
 	purposeVerify = "email_verify"
 	// purposePasswordSet is the code a signed-in account without a password needs to add one.
 	purposePasswordSet = "password_set"
+	// An email change needs both: a code sent to the current address and one sent to the new address.
+	purposeEmailOld = "email_change_old"
+	purposeEmailNew = "email_change_new"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -420,6 +423,84 @@ func (m *model) useUserCode(ctx context.Context, userID, purpose string, codeHas
 		return nil
 	})
 	return ok, err
+}
+
+// startEmailChange voids the user's pending email change and stores the codes for their current address (oldHash) and
+// for newEmail (newHash), both remembering newEmail.
+func (m *model) startEmailChange(ctx context.Context, userID, newEmail string, oldHash, newHash []byte, minutes int) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now()
+			where user_id = $1 and purpose in ($2, $3) and used_at is null`, userID, purposeEmailOld, purposeEmailNew); err != nil {
+			return fmt.Errorf("void email change: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `insert into auth_tokens (user_id, purpose, token_hash, expires_at, new_email)
+			select $1, p, h, now() + make_interval(mins => $6), $7 from unnest(array[$2, $3], array[$4::bytea, $5::bytea]) as t(p, h)`,
+			userID, purposeEmailOld, purposeEmailNew, oldHash, newHash, minutes, newEmail); err != nil {
+			return fmt.Errorf("store email change: %w", err)
+		}
+		return nil
+	})
+}
+
+// changeEmail checks both codes of the user's pending email change. When both match it uses them, moves the account
+// to the new address (verified: the code proves it), signs out every other session (all refresh tokens but the family
+// of keepTokenHash) and returns the old and new addresses. A wrong code counts an attempt on it and is named in bad
+// (old_code, new_code); no pending change makes both bad. errEmailTaken when the address was taken meanwhile.
+func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash, keepTokenHash []byte) (from, to string, bad []string, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		type code struct {
+			field, purpose, id, email string
+			hash, given               []byte
+		}
+		codes := []*code{{field: "old_code", purpose: purposeEmailOld, given: oldHash}, {field: "new_code", purpose: purposeEmailNew, given: newHash}}
+		for _, c := range codes {
+			err := tx.QueryRow(ctx, `select id::text, token_hash, new_email from auth_tokens
+				where user_id = $1 and purpose = $2 and used_at is null and expires_at > now() and attempts < $3
+				order by created_at desc limit 1 for update`, userID, c.purpose, maxAttempts).Scan(&c.id, &c.hash, &c.email)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("find email code: %w", err)
+			}
+			if c.id == "" || subtle.ConstantTimeCompare(c.hash, c.given) != 1 {
+				bad = append(bad, c.field)
+				if c.id != "" {
+					if _, err := tx.Exec(ctx, `update auth_tokens set attempts = attempts + 1 where id = $1`, c.id); err != nil {
+						return fmt.Errorf("count attempt: %w", err)
+					}
+				}
+			}
+		}
+		if len(bad) > 0 || codes[0].email != codes[1].email {
+			if len(bad) == 0 {
+				bad = []string{"old_code", "new_code"} // from different requests: start over
+			}
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = any($1::uuid[])`,
+			[]string{codes[0].id, codes[1].id}); err != nil {
+			return fmt.Errorf("use email codes: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `update users u set email = $2, email_verified_at = coalesce(email_verified_at, now())
+			from (select email from users where id = $1) old where u.id = $1 returning old.email, u.email`,
+			userID, codes[1].email).Scan(&from, &to); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`delete from refresh_tokens where user_id = $1 and family_id is distinct from
+			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, userID, keepTokenHash); err != nil {
+			return fmt.Errorf("sign out other sessions: %w", err)
+		}
+		if err := realtime.Publish(ctx, tx, realtime.SessionRevoked(userID)); err != nil {
+			return err
+		}
+		return realtime.PublishProfile(ctx, tx, userID)
+	})
+	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return "", "", nil, errEmailTaken
+	}
+	if err != nil {
+		return "", "", nil, fmt.Errorf("change email: %w", err)
+	}
+	return from, to, bad, nil
 }
 
 // resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and

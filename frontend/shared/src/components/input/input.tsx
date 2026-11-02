@@ -1,12 +1,21 @@
-import { useId, type ComponentProps } from 'react'
+import { useEffect, useId, useRef, type ComponentProps } from 'react'
 import { useFieldError } from './field-error'
 import './input.css'
 
 // prefix: fixed text shown inside the field before the value, e.g. "tether.app/".
-type InputProps = Omit<ComponentProps<'input'>, 'prefix'> & { label?: string; error?: string | null; prefix?: string }
+// onDebouncedChange: called with the value once typing pauses for `debounce` ms (default 300), e.g. for a search.
+type InputProps = Omit<ComponentProps<'input'>, 'prefix'> & {
+  label?: string
+  error?: string | null
+  prefix?: string
+  debounce?: number
+  onDebouncedChange?: (value: string) => void
+}
 
-export function Input({ className, type = 'text', label, error: rawError, prefix, id, onChange, ...props }: InputProps) {
+export function Input({ className, type = 'text', label, error: rawError, prefix, id, onChange, debounce = 300, onDebouncedChange, ...props }: InputProps) {
   const [error, onEdit] = useFieldError(rawError, props.value)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
   const autoId = useId()
   const inputId = id ?? autoId
   const errorId = `${inputId}-error`
@@ -21,6 +30,11 @@ export function Input({ className, type = 'text', label, error: rawError, prefix
       onChange={(e) => {
         onEdit()
         onChange?.(e)
+        if (onDebouncedChange) {
+          const value = e.target.value
+          clearTimeout(timer.current)
+          timer.current = setTimeout(() => onDebouncedChange(value), debounce)
+        }
       }}
       {...props}
     />

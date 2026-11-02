@@ -23,6 +23,7 @@ const (
 	errPublicMembers     = "Only private projects have members."
 	errMilestoneNotFound = "Milestone not found."
 	errArchivedProject   = "This project is archived."
+	errNotArchived       = "Archive the project before deleting it."
 )
 
 type Handler struct {
@@ -143,6 +144,26 @@ func (h *Handler) setArchived(w http.ResponseWriter, r *http.Request, userID str
 	}
 	p, err := h.model.setArchived(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, archived, event(ws, userID))
 	return respond(w, p, err)
+}
+
+// remove deletes an archived project and everything in it.
+func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, true)
+	if !ok || err != nil {
+		return err
+	}
+	found, err := h.model.remove(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, event(ws, userID))
+	switch {
+	case errors.Is(err, errActive):
+		web.Err(w, http.StatusConflict, errNotArchived)
+	case err != nil:
+		return err
+	case !found:
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+	return nil
 }
 
 // people lists everyone who can see the project, for assignee and mention pickers.

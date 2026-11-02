@@ -30,6 +30,8 @@ const (
 
 	errCurrentRequired = "Current password is required."
 	errCurrentWrong    = "Current password is incorrect."
+	errSameEmail       = "That's already your email."
+	errEmailInUse      = "That email is already in use."
 )
 
 // dummyHash keeps sign-in timing the same whether or not the email exists.
@@ -450,6 +452,141 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// emailCode starts changing the signed-in user's email: it sends one code to their current address and one to the new
+// address (form field email). changeEmail needs both, so neither a stolen session nor a typo'd address can move the
+// account.
+func (h *Handler) emailCode(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	email := r.FormValue("email")
+	if msg := web.CheckEmail(email); msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"email": msg})
+		return nil
+	}
+	email = web.NormEmail(email)
+	if email == p.Email {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"email": errSameEmail})
+		return nil
+	}
+	if taken, err := h.model.userIDByEmail(ctx, email); err != nil {
+		return err
+	} else if taken != "" {
+		web.Fields(w, http.StatusConflict, map[string]string{"email": errEmailInUse})
+		return nil
+	}
+	if stop, err := limited(w, r, h.lim.send, p.Email); err != nil || stop {
+		return err
+	}
+	if ok, err := h.mail.Configured(ctx); err != nil {
+		return err
+	} else if !ok {
+		web.Err(w, http.StatusServiceUnavailable, errNoMail)
+		return nil
+	}
+	minutes, err := h.cfg.GetInt(ctx, "otp_ttl_minutes")
+	if err != nil {
+		return err
+	}
+	oldCode, err := newCode()
+	if err != nil {
+		return err
+	}
+	newCodeV, err := newCode()
+	if err != nil {
+		return err
+	}
+	if err := h.model.startEmailChange(ctx, p.ID, email, secret.Hash(oldCode), secret.Hash(newCodeV), minutes); err != nil {
+		return err
+	}
+	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Tether code to change your email: "+oldCode,
+		fmt.Sprintf("Someone asked to change your Tether account's email to %s. Your code to allow it is %s\n\n"+
+			"It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your account, "+
+			"so reset your password to sign them out.\n", email, oldCode, minutes)); err != nil {
+		return err
+	}
+	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Tether code to confirm this email: "+newCodeV,
+		fmt.Sprintf("Your code to make this your Tether account's email is %s\n\nIt expires in %d minutes. "+
+			"If you didn't ask for it, you can ignore this email.\n", newCodeV, minutes)); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// changeEmail moves the signed-in user to the address emailCode was given, with both codes (old_code from the current
+// address, new_code from the new one). Other sessions are signed out; this one stays. The old address is told.
+func (h *Handler) changeEmail(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	oldCode, newCodeV := strings.TrimSpace(r.FormValue("old_code")), strings.TrimSpace(r.FormValue("new_code"))
+	if errs := fieldErrors("old_code", checkCode(oldCode), "new_code", checkCode(newCodeV)); errs != nil {
+		web.Fields(w, http.StatusBadRequest, errs)
+		return nil
+	}
+	if locked, err := h.locked(w, r, "code:"+p.Email); err != nil || locked {
+		return err
+	}
+	var keep []byte
+	if c, err := r.Cookie(refreshCookie); err == nil {
+		keep = secret.Hash(c.Value)
+	}
+	from, to, bad, err := h.model.changeEmail(ctx, p.ID, secret.Hash(oldCode), secret.Hash(newCodeV), keep)
+	if errors.Is(err, errEmailTaken) {
+		web.Fields(w, http.StatusConflict, map[string]string{"email": errEmailInUse})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(bad) > 0 {
+		if err := h.model.fail(ctx, "code:"+p.Email); err != nil {
+			return err
+		}
+		errs := map[string]string{}
+		for _, f := range bad {
+			errs[f] = errBadCode
+		}
+		web.Fields(w, http.StatusBadRequest, errs)
+		return nil
+	}
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return err
+	}
+	if err := h.mail.Enqueue(ctx, h.model.db, from, "Your Tether email was changed",
+		fmt.Sprintf("Your Tether account's email was just changed from %s to %s, and other devices were signed out.\n\n"+
+			"If this wasn't you, contact your workspace admin right away.\n\n%s\n", from, to, strings.TrimRight(base, "/"))); err != nil {
+		return err
+	}
+	p.Email = to
+	web.JSON(w, http.StatusOK, p)
+	return nil
+}
+
+// signedIn returns the signed-in user's profile, or writes a 401 and returns nil.
+func (h *Handler) signedIn(w http.ResponseWriter, r *http.Request) (*Profile, error) {
+	userID, err := h.Authenticate(r)
+	if err != nil {
+		return nil, err
+	}
+	var p *Profile
+	if userID != "" {
+		if p, err = h.model.profile(r.Context(), userID); err != nil {
+			return nil, err
+		}
+	}
+	if p == nil {
+		web.Err(w, http.StatusUnauthorized, errSignedOut)
+	}
+	return p, nil
+}
+
 // passwordChangedMail tells the owner a password was added (added) or changed, in case it wasn't them.
 func (h *Handler) passwordChangedMail(ctx context.Context, email string, added bool) error {
 	base, err := h.cfg.Get(ctx, "app_base_url")
@@ -631,7 +768,7 @@ func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error
 	return googleConfig{clientID: id, clientSecret: clientSecret, redirectURI: base + "/api/auth/google/callback"}, base, nil
 }
 
-// updateMe changes the signed-in user's profile. Only the name for now; email changes need re-verification.
+// updateMe changes the signed-in user's name; the email changes through emailCode and changeEmail.
 func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) error {
 	userID, err := h.Authenticate(r)
 	if err != nil {

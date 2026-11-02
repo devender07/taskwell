@@ -110,7 +110,7 @@ function GroupCard({ workspace, group, statuses, types, manage, onMove }: GroupP
         <span className="flex-grow" />
         {manage && group.type ? <TypeMenu workspace={workspace} type={group.type} /> : null}
         {manage ? (
-          <IconButton aria-label={`Add status to ${group.name}`} onClick={() => setAdding(true)}>
+          <IconButton aria-label={`Add status to ${group.name}`} tooltip="Add status" onClick={() => setAdding(true)}>
             <PlusIcon size={18} />
           </IconButton>
         ) : null}
@@ -185,7 +185,7 @@ function Menu({ label, items }: { label: string; items: [string, () => void, boo
       aria-label={label}
       placement="bottom-end"
       trigger={(props) => (
-        <IconButton aria-label={label} {...props}>
+        <IconButton aria-label={label} tooltip="More actions" {...props}>
           <MoreIcon size={18} />
         </IconButton>
       )}
@@ -232,10 +232,10 @@ function StatusRow({ workspace, status, statuses, types, manage, onUp, onDown }:
       <span className="text-body-sm text-primary ellipsis flex-grow" style={{ minWidth: 0 }}>{status.name}</span>
       {manage ? (
         <div className="workflow-actions">
-          <IconButton aria-label={`Move ${status.name} up`} disabled={!onUp} onClick={onUp}>
+          <IconButton aria-label={`Move ${status.name} up`} tooltip="Move up" disabled={!onUp} onClick={onUp}>
             <ChevronUpIcon size={18} />
           </IconButton>
-          <IconButton aria-label={`Move ${status.name} down`} disabled={!onDown} onClick={onDown}>
+          <IconButton aria-label={`Move ${status.name} down`} tooltip="Move down" disabled={!onDown} onClick={onDown}>
             <ChevronDownIcon size={18} />
           </IconButton>
           <Menu label={`${status.name} actions`} items={[['Edit', () => setEditing(true)], ['Delete', () => setDeleting(true), statuses.length < 2]]} />

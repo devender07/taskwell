@@ -12,6 +12,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/cycle"
 	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
@@ -24,6 +25,7 @@ var (
 	errDates       = errors.New("target date before start date")
 	errNoProject   = errors.New("project not found")
 	errArchived    = errors.New("project archived")
+	errActive      = errors.New("project isn't archived")
 	errNoMilestone = errors.New("milestone not found")
 )
 
@@ -150,11 +152,19 @@ func checkMembers(ctx context.Context, tx pgx.Tx, workspaceID string, ids []stri
 	return nil
 }
 
-// addMembers makes the users members of the project, added by the actor.
+// addMembers makes the users members of the project, added by the actor, and notifies the ones who weren't already
+// (except the actor).
 func addMembers(ctx context.Context, tx pgx.Tx, projectID, actorID string, ids []string) error {
-	_, err := tx.Exec(ctx, `insert into project_members (project_id, user_id, added_by)
-		select $1, u, $2 from unnest($3::uuid[]) u on conflict do nothing`, projectID, actorID, ids)
-	return err
+	rows, err := tx.Query(ctx, `insert into project_members (project_id, user_id, added_by)
+		select $1, u, $2 from unnest($3::uuid[]) u on conflict do nothing returning user_id::text`, projectID, actorID, ids)
+	if err != nil {
+		return err
+	}
+	added, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	return notify.RecordProjectAdded(ctx, tx, projectID, actorID, added)
 }
 
 // create adds a project and publishes e; a private one gets the creator and memberIDs (workspace members) as
@@ -275,6 +285,41 @@ func (m *model) setArchived(ctx context.Context, workspaceID, key, actorID strin
 		return changed(ctx, tx, e, p.ID, false, p.Key)
 	})
 	return p, err
+}
+
+// remove deletes the archived project the actor can see, with everything in it (issues, cycles, milestones cascade),
+// and tells the whole workspace to refetch. Returns false when there's no such project, errActive for one that isn't
+// archived.
+func (m *model) remove(ctx context.Context, workspaceID, key, actorID string, e realtime.Event) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var id, current string
+		var archived bool
+		err := tx.QueryRow(ctx, `select id::text, key, archived_at is not null from projects
+			where workspace_id = $1 and `+visible+` and key = canonical_key($1, $3) for update`,
+			workspaceID, actorID, key).Scan(&id, &current, &archived)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		if !archived {
+			return errActive
+		}
+		if _, err := tx.Exec(ctx, `delete from projects where id = $1`, id); err != nil {
+			return err
+		}
+		if err := changed(ctx, tx, e, id, true, current); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if err != nil && !errors.Is(err, errActive) {
+		return found, fmt.Errorf("delete project: %w", err)
+	}
+	return found, err
 }
 
 // people returns the workspace members who can see the project with the key, ordered like the workspace's members;

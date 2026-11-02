@@ -1,5 +1,5 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useActionState, useMemo, useState } from 'react'
+import { useActionState, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
 import { DatePicker } from '@tether/shared/date-picker'
 import { Dialog } from '@tether/shared/dialog'
@@ -11,17 +11,16 @@ import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
 import { api, issuePath, toFormErrors, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
+import { LabelSelect, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
 // Quick-create filled in from elsewhere (a failed test's "Create bug"); `blocks` links the new issue as blocking that one.
 export type Prefill = { title: string; description: Doc; blocks?: string }
 
-type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
+type CreateProps = { workspace: Workspace; project: Project; projectPicker?: ReactNode; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
 
-// Labels are checkboxes here, not the labels popover: a popover can't render above a modal dialog.
-export function CreateIssueForm({ workspace, project, parent, cycle, prefill, statuses, labels, members }: CreateProps) {
+export function CreateIssueForm({ workspace, project, projectPicker, parent, cycle, prefill, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(prefill?.title ?? '')
   const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
@@ -64,30 +63,34 @@ export function CreateIssueForm({ workspace, project, parent, cycle, prefill, st
   }, {})
 
   return (
-    <form action={submit} noValidate className="grid gap-4">
-      {parent ? (
-        <div className="grid gap-1">
-          <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
-          <FormError>{errors?.parent}</FormError>
-        </div>
-      ) : null}
-      {cycle ? (
-        <div className="grid gap-1">
-          <p className="text-body-sm text-secondary m-0">In {cycle.name}</p>
-          <FormError>{errors?.cycle}</FormError>
-        </div>
-      ) : null}
-      <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
-      <RichEditor
-        label="Description"
-        placeholder="Add a description… Type @ to mention someone"
-        mentions={mentions}
-        content={prefill?.description}
-        onChange={(doc, length) => setDescription({ doc, length })}
-        error={errors?.description}
-        upload={(file) => uploadFile(workspace.slug, file)}
-      />
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+    <form action={submit} noValidate className="issue-form">
+      <div className="issue-form-main">
+        {parent ? (
+          <div className="grid gap-1">
+            <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
+            <FormError>{errors?.parent}</FormError>
+          </div>
+        ) : null}
+        {cycle ? (
+          <div className="grid gap-1">
+            <p className="text-body-sm text-secondary m-0">In {cycle.name}</p>
+            <FormError>{errors?.cycle}</FormError>
+          </div>
+        ) : null}
+        <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
+        <RichEditor
+          label="Description"
+          placeholder="Add a description… Type @ to mention someone"
+          mentions={mentions}
+          minHeight={280}
+          content={prefill?.description}
+          onChange={(doc, length) => setDescription({ doc, length })}
+          error={errors?.description}
+          upload={(file) => uploadFile(workspace.slug, file)}
+        />
+      </div>
+      <div className="grid gap-4" style={{ alignContent: 'start' }}>
+        {projectPicker}
         <SmartAutocomplete
           label="Status"
           options={statusOpts}
@@ -111,16 +114,14 @@ export function CreateIssueForm({ workspace, project, parent, cycle, prefill, st
           error={errors?.assignee_id}
         />
         <DatePicker label="Due date" placeholder="No due date" value={due} onChange={setDue} error={errors?.due_date} />
+        <LabelSelect labels={labels} value={labelIds} onChange={setLabelIds} error={errors?.label_ids} />
       </div>
-      <fieldset className="grid gap-3 m-0 p-0" style={{ border: 0 }}>
-        <legend className="text-label text-secondary mb-2 p-0">Labels</legend>
-        <LabelChecklist labels={labels} value={labelIds} onChange={setLabelIds} />
-        <FormError>{errors?.label_ids}</FormError>
-      </fieldset>
-      <FormError>{error}</FormError>
-      <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? 'Creating issue…' : 'Create issue'}
-      </Button>
+      <div className="issue-form-footer">
+        <FormError>{error}</FormError>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Creating issue…' : 'Create issue'}
+        </Button>
+      </div>
     </form>
   )
 }

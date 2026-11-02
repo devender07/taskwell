@@ -41,6 +41,7 @@
   --border: rgba(255, 255, 255, 0.05);
   --accent: #f91880;
   --success: #00ba7c;
+  --danger: #eb5757; /* destructive icon actions; 5.5:1 on --surface */
   /* 4.2:1 on --bg, under 4.5:1 for text: used for focus rings, borders and underlines (3:1 is enough there).
      Link text is --text with a --link underline; mentions use DESIGN's primary link pairing, #fff on --link (4.7:1). */
   --link: #5e6ad2;

@@ -58,6 +58,19 @@ export const UsersIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const UserMinusIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="9" cy="8" r="4" />
+    <path d="M2 21a7 7 0 0 1 14 0M16 11h6" />
+  </Icon>
+)
+
+export const LeaveIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+  </Icon>
+)
+
 export const FolderIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />

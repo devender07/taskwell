@@ -28,7 +28,8 @@ type RichEditorProps = {
   onChange?: (doc: Doc | null, textLength: number) => void
   editable?: boolean
   placeholder?: string
-  mentions?: { id: string; name: string }[]
+  // `@` suggests these people, or the first 8 this search returns for what's typed.
+  mentions?: { id: string; name: string }[] | ((q: string) => Promise<{ id: string; name: string }[]>)
   error?: string | null
   collab?: { doc: Y.Doc; awareness: Awareness; user: { name: string; color: string } }
   minHeight?: number
@@ -115,8 +116,13 @@ function Editable({
   }
 
   const suggestion = (kind: Suggest['kind']) => {
-    const open = (p: { items: Option[]; clientRect?: (() => DOMRect | null) | null; command: (a: { id: string; label: string }) => void }) =>
-      show({ kind, items: p.items, index: 0, rect: p.clientRect?.() ?? null, pick: (o) => p.command({ id: o.value, label: o.hint ?? o.label }) })
+    // `@` allows spaces ("@Dummy 100"), so once a query with a space matches no one it's just prose: hide the list.
+    const open = (p: { query: string; items: Option[]; clientRect?: (() => DOMRect | null) | null; command: (a: { id: string; label: string }) => void }) =>
+      show(
+        !p.items.length && p.query.includes(' ')
+          ? null
+          : { kind, items: p.items, index: 0, rect: p.clientRect?.() ?? null, pick: (o) => p.command({ id: o.value, label: o.hint ?? o.label }) },
+      )
     return {
       onStart: open,
       onUpdate: open,
@@ -150,13 +156,13 @@ function Editable({
           suggestions: [
             {
               char: '@',
-              allow: () => !!latest.current.mentions?.length,
-              items: ({ query }) =>
-                filterOptions(
-                  (latest.current.mentions ?? []).map((m) => ({ value: m.id, label: m.name })),
-                  query,
-                  8,
-                ),
+              allowSpaces: true,
+              allow: () => typeof latest.current.mentions === 'function' || !!latest.current.mentions?.length,
+              items: async ({ query }) => {
+                const m = latest.current.mentions
+                if (typeof m === 'function') return ((await m(query).catch(() => [])) ?? []).slice(0, 8).map((p) => ({ value: p.id, label: p.name }))
+                return filterOptions((m ?? []).map((p) => ({ value: p.id, label: p.name })), query, 8)
+              },
               render: () => suggestion('people'),
             },
             {
@@ -247,7 +253,7 @@ function Editable({
         {editable && editor ? <Toolbar editor={editor} attach={upload ? attach : undefined} /> : null}
         <EditorContent editor={editor} />
         {s && s.rect ? (
-          <div className="autocomplete-panel rich-editor-mentions" style={{ position: 'fixed', top: s.rect.bottom + 4, left: s.rect.left, right: 'auto' }}>
+          <div className="autocomplete-panel rich-editor-mentions" style={{ position: 'fixed', ...suggestionPlace(s.rect), left: s.rect.left, right: 'auto' }}>
             {s.items.length ? (
               <ul className="autocomplete-list" role="listbox" aria-label={s.kind === 'people' ? 'People' : 'Issues'}>
                 {s.items.map((o, i) => (
@@ -309,7 +315,7 @@ function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) 
           key={t.name}
           className="rich-editor-tool"
           aria-label={t.label}
-          title={t.label}
+          tooltip={t.label}
           aria-pressed={active[i]}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => t.run(editor.chain().focus()).run()}
@@ -322,7 +328,7 @@ function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) 
           <IconButton
             className="rich-editor-tool"
             aria-label="Attach file"
-            title="Attach file"
+            tooltip="Attach file"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => picker.current?.click()}
           >
@@ -342,4 +348,10 @@ function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) 
       ) : null}
     </div>
   )
+}
+
+// Below the caret, or above it when there's less room below than the list's 240px max and more above (the chat composer).
+function suggestionPlace(r: DOMRect) {
+  const below = innerHeight - r.bottom - 8
+  return below < 240 && r.top - 8 > below ? { bottom: innerHeight - r.top + 4 } : { top: r.bottom + 4 }
 }

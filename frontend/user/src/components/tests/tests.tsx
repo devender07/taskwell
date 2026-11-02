@@ -198,7 +198,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
                   aria-label="AI test options"
                   placement="bottom-end"
                   trigger={(props) => (
-                    <IconButton aria-label="More AI test options" {...props}>
+                    <IconButton aria-label="More AI test options" tooltip="More options" {...props}>
                       <ChevronDownIcon size={20} />
                     </IconButton>
                   )}

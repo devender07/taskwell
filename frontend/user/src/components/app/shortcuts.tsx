@@ -133,8 +133,8 @@ export function Shortcuts({ children }: { children: ReactNode }) {
         onClose={() => setPalette(null)}
       />
       {canCreate ? (
-        <Dialog open={creating !== null} onClose={() => setCreating(null)} title="New issue">
-          <Suspense fallback={<p className="text-body-sm text-secondary">Loading…</p>}>
+        <Dialog open={creating !== null} onClose={() => setCreating(null)} title="New issue" wide>
+          <Suspense fallback={<p className="text-body-sm text-secondary" style={{ minHeight: 548 }}>Loading…</p>}>
             <QuickCreate workspace={workspace} projectKey={pageProject ?? issue?.issue.project.key} prefill={creating?.prefill} />
           </Suspense>
         </Dialog>

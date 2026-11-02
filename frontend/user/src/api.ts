@@ -153,8 +153,9 @@ export type Notification = {
   read: boolean
   created_at: string
 } & (
-  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null }
-  | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string } }
+  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
+  | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
+  | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
 )
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
@@ -231,13 +232,16 @@ export function createToken(name: string) {
 }
 export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 
+// The /auth/ calls that need a session (they sit under /auth/ for the refresh cookie), so a 401 refreshes like any other.
+const SIGNED_IN_AUTH = ['/auth/password/change', '/auth/email/code', '/auth/email/change']
+
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
-// A 401 outside /auth/* (except password change, which needs a session) refreshes the access token once and retries.
+// A 401 outside /auth/* (except SIGNED_IN_AUTH) refreshes the access token once and retries.
 // A failed refresh in a signed-in tab means the session ended: it goes to sign-in and the call never settles.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
   let res = await send(path, body, method, signal)
-  if (res.status === 401 && (!path.startsWith('/auth/') || path === '/auth/password/change')) {
+  if (res.status === 401 && (!path.startsWith('/auth/') || SIGNED_IN_AUTH.includes(path))) {
     if ((await refreshAccess()).status === 401 && signedIn) {
       sessionEnded()
       return new Promise<never>(() => {})

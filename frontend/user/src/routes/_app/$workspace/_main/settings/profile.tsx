@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { AvatarForm } from '@/components/settings/avatar-form'
+import { EmailForm } from '@/components/settings/email-form'
 import { PasswordForm } from '@/components/settings/password-form'
 import { ProfileForm } from '@/components/settings/profile-form'
 import { ShortcutsSetting } from '@/components/settings/shortcuts-setting'
@@ -21,6 +22,9 @@ function ProfileSettings() {
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <ProfileForm key={user.id} user={user} />
+      </section>
+      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+        <EmailForm key={user.id} user={user} />
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <PasswordForm key={user.id} user={user} />

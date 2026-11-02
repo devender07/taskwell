@@ -35,7 +35,6 @@ export function ProfileForm({ user }: { user: User }) {
         </div>
       </div>
       <Input label="Full name" name="name" autoComplete="name" defaultValue={name} error={errors?.name} />
-      <Input label="Email" type="email" value={user.email} readOnly />
       <FormError>{error}</FormError>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>

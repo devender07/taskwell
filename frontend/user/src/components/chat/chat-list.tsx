@@ -1,18 +1,21 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
+import { LogoMark } from '@tether/shared/logo'
 import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { PlusIcon } from '@tether/shared/icons'
-import { avatarSrc, type Chat, type Member, type User } from '@/api'
+import { avatarSrc, type Chat, type NotificationPage, type User } from '@/api'
+import { notificationText } from '@/components/inbox/feed-row'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { NewGroupDialog, NewMessageDialog, NewMessagePeople } from './chat-dialogs'
 import './chat.css'
 
-type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; members: Member[]; dialog?: 'group' | 'message' }
+type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; bot: NotificationPage; dialog?: 'group' | 'message' }
 
-// The inbox's left column: the workspace chat, Notes, then groups and direct messages.
-export function ChatList({ slug, workspaceName, user, chats, members, dialog }: Props) {
+// The inbox's left column: the workspace chat, Notes, then groups and direct messages, Tether's first.
+export function ChatList({ slug, workspaceName, user, chats, bot, dialog }: Props) {
   const navigate = useNavigate()
   const top = chats.filter((c) => c.kind === 'workspace' || c.kind === 'self')
   const groups = chats.filter((c) => c.kind === 'group')
@@ -29,7 +32,7 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
       <Section
         title="Groups"
         add={
-          <IconButton aria-label="New group" title="New group" className="chat-icon-button" onClick={() => setDialog('group')}>
+          <IconButton aria-label="New group" tooltip="New group" className="chat-icon-button" onClick={() => setDialog('group')}>
             <PlusIcon size={16} />
           </IconButton>
         }
@@ -47,37 +50,38 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
             placement="bottom-end"
             className="chat-people-popover"
             trigger={(props) => (
-              <IconButton aria-label="New message" title="New message" className="chat-icon-button" {...props}>
+              <IconButton aria-label="New message" tooltip="New message" className="chat-icon-button" {...props}>
                 <PlusIcon size={16} />
               </IconButton>
             )}
           >
-            {(close) => <NewMessagePeople slug={slug} me={user.id} members={members} onDone={close} />}
+            {(close) => <NewMessagePeople slug={slug} me={user.id} onDone={close} />}
           </Popover>
         }
-        empty="No messages yet."
+        pinned={<BotRow slug={slug} page={bot} />}
         chats={direct}
         slug={slug}
         me={user}
         workspaceName={workspaceName}
       />
-      <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog()} slug={slug} me={user.id} members={members} />
-      <NewMessageDialog open={dialog === 'message'} onClose={() => setDialog()} slug={slug} me={user.id} members={members} />
+      <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog()} slug={slug} me={user.id} />
+      <NewMessageDialog open={dialog === 'message'} onClose={() => setDialog()} slug={slug} me={user.id} />
     </nav>
   )
 }
 
-type SectionProps = { title: string; add: ReactNode; empty: string; chats: Chat[]; slug: string; me: User; workspaceName: string }
+type SectionProps = { title: string; add: ReactNode; empty?: string; pinned?: ReactNode; chats: Chat[]; slug: string; me: User; workspaceName: string }
 
-function Section({ title, add, empty, chats, slug, me, workspaceName }: SectionProps) {
+function Section({ title, add, empty, pinned, chats, slug, me, workspaceName }: SectionProps) {
   return (
     <section className="grid gap-1" aria-label={title}>
       <div className="chat-list-heading">
         <h2 className="text-label text-secondary m-0">{title}</h2>
         {add}
       </div>
-      {chats.length ? (
+      {chats.length || pinned ? (
         <ul className="chat-rows">
+          {pinned}
           {chats.map((c) => (
             <ChatRow key={c.id} slug={slug} chat={c} me={me} workspaceName={workspaceName} />
           ))}
@@ -97,6 +101,39 @@ export function ChatAvatar({ chat, me, workspaceName, size = 24 }: { chat: Chat;
   }
   if (chat.kind === 'self') return <Avatar name={me.name} size={size} src={me.avatar_url} />
   return <Avatar name={chat.kind === 'workspace' ? workspaceName : chat.name} size={size} />
+}
+
+// Tether's direct message: notifications other than chat ones. It isn't a chat, so it can't be left or deleted.
+function BotRow({ slug, page }: { slug: string; page: NotificationPage }) {
+  const last = page.notifications[0]
+  const unread = page.notifications.filter((n) => !n.read).length
+  return (
+    <li>
+      <Link to="/$workspace/inbox/tether" params={{ workspace: slug }} className="chat-row" aria-label={unread ? `Tether, ${unread} unread` : 'Tether'}>
+        <LogoMark size={24} />
+        <span className="grid flex-grow" style={{ minWidth: 0, gridTemplateColumns: 'minmax(0, 1fr)' }}>
+          <span className="flex items-baseline gap-2">
+            <span className={`chat-row-name ellipsis flex-grow${unread ? ' font-590' : ''}`}>Tether</span>
+            {last ? (
+              <time dateTime={last.created_at} title={fullTime(last.created_at)} className="text-caption text-secondary flex-noshrink">
+                {relativeTime(last.created_at)}
+              </time>
+            ) : null}
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-caption text-secondary ellipsis flex-grow">
+              {last ? <>{last.actor?.name ?? (last.data.via && PROVIDER_NAME[last.data.via.provider]) ?? 'Someone'} {notificationText(last)}</> : 'Notifications show up here'}
+            </span>
+            {unread ? (
+              <span className="chat-pill" data-mentioned aria-hidden>
+                {page.has_more && unread === page.notifications.length ? `${unread}+` : unread}
+              </span>
+            ) : null}
+          </span>
+        </span>
+      </Link>
+    </li>
+  )
 }
 
 function ChatRow({ slug, chat, me, workspaceName }: { slug: string; chat: Chat; me: User; workspaceName: string }) {

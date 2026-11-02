@@ -245,6 +245,32 @@ func (m *model) members(ctx context.Context, workspaceID string) ([]Member, erro
 	return ms, nil
 }
 
+// memberPage returns limit of the workspace's members from offset, in members' order, whose name or email contains q
+// (any case; "" matches everyone), and how many match in all (0 past the end).
+// ponytail: offset paging, so a member joining or leaving mid-scroll shifts the pages by one; keyset on
+// (admin, lower(name), email) if that shows up.
+func (m *model) memberPage(ctx context.Context, workspaceID, q string, offset, limit int) ([]Member, int, error) {
+	rows, err := m.db.Query(ctx,
+		`select `+memberCols+`, count(*) over ()
+		   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
+		  where m.workspace_id = $1 and (strpos(lower(u.name), lower($2)) > 0 or strpos(lower(u.email), lower($2)) > 0)
+		  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email
+		  offset $3 limit $4`, workspaceID, q, offset, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list members: %w", err)
+	}
+	total := 0
+	ms, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) {
+		var mb Member
+		err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name, &total)
+		return mb, err
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list members: %w", err)
+	}
+	return ms, total, nil
+}
+
 // inviteCols selects an Invite from a CTE or table aliased i; a null role_id is the Member role.
 const inviteCols = `select i.id::text, i.email, coalesce(u.name, ''), i.expires_at, r.id::text, r.name
 	from i left join users u on u.id = i.invited_by

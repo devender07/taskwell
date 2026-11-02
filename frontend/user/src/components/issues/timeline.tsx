@@ -175,7 +175,7 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
               aria-label="Comment actions"
               placement="bottom-end"
               trigger={(props) => (
-                <IconButton aria-label="Comment actions" style={{ width: 44, height: 44 }} {...props}>
+                <IconButton aria-label="Comment actions" tooltip="Comment actions" style={{ width: 44, height: 44 }} {...props}>
                   <MoreIcon size={20} />
                 </IconButton>
               )}

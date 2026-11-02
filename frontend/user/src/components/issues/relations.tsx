@@ -75,7 +75,7 @@ export function SubIssues({ workspace, issue, project, create, statuses, labels,
         </ul>
       )}
       {create ? (
-        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue">
+        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue" wide>
           <CreateIssueForm workspace={workspace} project={project} parent={issue} statuses={statuses} labels={labels} members={members} />
         </Dialog>
       ) : null}
@@ -116,7 +116,7 @@ export function Relations({ workspace, issue }: { workspace: Workspace; issue: I
             {g.refs.map((r) => (
               <RefRow key={r.id} workspace={workspace.slug} issue={r}>
                 {issue.can_edit ? (
-                  <IconButton aria-label={`Remove link to ${r.identifier}`} disabled={removing} onClick={() => startTransition(() => remove(r.identifier))}>
+                  <IconButton aria-label={`Remove link to ${r.identifier}`} tooltip="Remove link" disabled={removing} onClick={() => startTransition(() => remove(r.identifier))}>
                     <XIcon size={20} strokeWidth={2} />
                   </IconButton>
                 ) : null}

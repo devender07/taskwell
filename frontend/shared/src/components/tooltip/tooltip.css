@@ -1,0 +1,30 @@
+.tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 997; /* above popovers (996) */
+  max-width: min(240px, calc(100vw - 16px));
+  padding: 4px 8px;
+  color: var(--text);
+  font: 510 12px/16px var(--font);
+  background: #1c1d1f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  box-shadow: rgba(0, 0, 0, 0.4) 0 4px 12px 0;
+  pointer-events: none;
+  animation: tooltip-in 100ms ease;
+}
+/* A rotated square showing two bordered edges outside the box, pointing at the element. */
+.tooltip-arrow {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #1c1d1f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tooltip[data-side='top'] .tooltip-arrow { bottom: -5px; left: var(--arrow); transform: translateX(-50%) rotate(45deg); border-width: 0 1px 1px 0; }
+.tooltip[data-side='bottom'] .tooltip-arrow { top: -5px; left: var(--arrow); transform: translateX(-50%) rotate(45deg); border-width: 1px 0 0 1px; }
+.tooltip[data-side='right'] .tooltip-arrow { left: -5px; top: var(--arrow); transform: translateY(-50%) rotate(45deg); border-width: 0 0 1px 1px; }
+.tooltip[data-side='left'] .tooltip-arrow { right: -5px; top: var(--arrow); transform: translateY(-50%) rotate(45deg); border-width: 1px 1px 0 0; }
+@keyframes tooltip-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tooltip { animation: none; } }

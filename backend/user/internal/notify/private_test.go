@@ -48,7 +48,7 @@ func TestPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := &model{db: pool}
-	ns, _, err := m.list(ctx, otto, wsID, "")
+	ns, _, err := m.list(ctx, otto, wsID, "", false)
 	if err != nil || len(ns) != 1 || string(ns[0].Issue) == "" {
 		t.Fatalf("inbox %+v %v", ns, err)
 	}

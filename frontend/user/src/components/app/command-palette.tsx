@@ -1,5 +1,6 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { filterOptions, type Option } from '@tether/shared/match'
 import { CheckIcon } from '@tether/shared/icons'
 import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
@@ -43,7 +44,7 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
     } else if (!mode && dialog.open) dialog.close()
   }, [mode])
 
-  return (
+  return createPortal(
     <dialog
       ref={ref}
       className="dialog palette"
@@ -55,7 +56,8 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       {mode ? <PaletteBody initial={mode} onClose={onClose} {...rest} /> : null}
-    </dialog>
+    </dialog>,
+    document.body,
   )
 }
 

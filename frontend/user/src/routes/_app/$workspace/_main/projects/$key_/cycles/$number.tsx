@@ -83,7 +83,7 @@ function CyclePage() {
                 aria-label="Cycle actions"
                 placement="bottom-end"
                 trigger={(props) => (
-                  <IconButton aria-label="Cycle actions" title="Cycle actions" {...props}>
+                  <IconButton aria-label="Cycle actions" tooltip="Cycle actions" {...props}>
                     <MoreIcon size={20} />
                   </IconButton>
                 )}
@@ -117,7 +117,7 @@ function CyclePage() {
         <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
       )}
       {create ? (
-        <Dialog open={dialog === 'issue'} onClose={close} title="New issue">
+        <Dialog open={dialog === 'issue'} onClose={close} title="New issue" wide>
           <CreateIssueForm workspace={workspace} project={project} cycle={cycle} statuses={statuses} labels={labels} members={members} />
         </Dialog>
       ) : null}

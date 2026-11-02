@@ -201,14 +201,42 @@ func ForgetMessage(ctx context.Context, tx pgx.Tx, messageID, slug, actorID stri
 	return nil
 }
 
+// RecordProjectAdded writes a project_added notification, in tx, for each user the actor just added to the project
+// (never the actor) and tells their tabs.
+func RecordProjectAdded(ctx context.Context, tx pgx.Tx, projectID, actorID string, userIDs []string) error {
+	rows, err := tx.Query(ctx,
+		`insert into notifications (user_id, workspace_id, project_id, actor_id, kind)
+		 select u, p.workspace_id, p.id, $2, 'project_added' from projects p, unnest($3::uuid[]) u
+		 where p.id = $1 and u <> $2
+		 returning user_id::text, (select slug from workspaces where id = workspace_id)`, projectID, actorID, userIDs)
+	if err != nil {
+		return fmt.Errorf("add project notifications: %w", err)
+	}
+	type added struct{ user, slug string }
+	as, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (added, error) {
+		var a added
+		return a, r.Scan(&a.user, &a.slug)
+	})
+	if err != nil {
+		return fmt.Errorf("add project notifications: %w", err)
+	}
+	for _, a := range as {
+		if err := realtime.Publish(ctx, tx, changed(a.slug, actorID, a.user)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // --- inbox ---
 
 type Notification struct {
 	ID        string          `json:"id"`
 	Kind      string          `json:"kind"`
 	Actor     json.RawMessage `json:"actor"`
-	Issue     json.RawMessage `json:"issue"` // null for chat kinds
-	Chat      json.RawMessage `json:"chat"`  // {id, kind, name}; null for issue kinds
+	Issue     json.RawMessage `json:"issue"`   // null for chat kinds
+	Chat      json.RawMessage `json:"chat"`    // {id, kind, name}; null for issue kinds
+	Project   json.RawMessage `json:"project"` // {key, name}; project_added only
 	Data      json.RawMessage `json:"data"`
 	Read      bool            `json:"read"`
 	CreatedAt time.Time       `json:"created_at"`
@@ -216,30 +244,34 @@ type Notification struct {
 
 const pageSize = 30
 
-// seen is whether the notification n's recipient can see its issue i (left joined); chat ones always.
-const seen = `(n.issue_id is null or can_see_project(i.project_id, n.user_id))`
+// seen is whether the notification n's recipient can see its issue i (left joined) or project; chat ones always.
+const seen = `(n.issue_id is null or can_see_project(i.project_id, n.user_id))
+	and (n.project_id is null or can_see_project(n.project_id, n.user_id))`
 
 type model struct{ db *pgxpool.Pool }
 
 // list returns a page of the user's notifications in the workspace, newest first, older than before unless it's "",
-// and whether there are more. Those about issues the user can't see are left out.
-func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([]Notification, bool, error) {
+// and whether there are more. Those about issues the user can't see are left out, and chat ones when noChat.
+func (m *model) list(ctx context.Context, userID, workspaceID, before string, noChat bool) ([]Notification, bool, error) {
 	rows, err := m.db.Query(ctx,
 		`select n.id::text, n.kind, (select json_build_object('id', a.id, 'name', a.name) from users a where a.id = n.actor_id),
 		        case when i.id is not null then json_build_object('identifier', p.key || '-' || i.number, 'title', i.title,
 		          'status', status_json(s)) end,
 		        case when c.id is not null then json_build_object('id', c.id, 'kind', c.kind, 'name', chat_name(c, n.user_id)) end,
+		        case when pr.id is not null then json_build_object('key', pr.key, 'name', pr.name) end,
 		        n.data, n.read_at is not null, n.created_at
 		 from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
 		 left join statuses s on s.id = i.status_id left join chats c on c.id = n.chat_id
-		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid) and `+seen+`
-		 order by n.id desc limit $4`, userID, workspaceID, before, pageSize+1)
+		 left join projects pr on pr.id = n.project_id
+		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid) and not ($5 and n.chat_id is not null)
+		   and `+seen+`
+		 order by n.id desc limit $4`, userID, workspaceID, before, pageSize+1, noChat)
 	if err != nil {
 		return nil, false, fmt.Errorf("list notifications: %w", err)
 	}
 	ns, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Notification, error) {
 		var n Notification
-		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Chat, &n.Data, &n.Read, &n.CreatedAt)
+		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Chat, &n.Project, &n.Data, &n.Read, &n.CreatedAt)
 		n.CreatedAt = n.CreatedAt.UTC()
 		return n, err
 	})
@@ -367,16 +399,16 @@ const (
 	// message read before its email was due isn't emailed, nor one about an issue i (left joined) they can't see.
 	wanted = `(` + seen + ` and (coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
 		when 'status' then s.status when 'comment' then s.comments when 'chat_mention' then s.mentions and s.chat
-		else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
+		when 'project_added' then s.assignments else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
 	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.
 	settled = `n.created_at < now() - make_interval(secs => case n.kind when 'message' then $2::float8 else $1::float8 end)`
 	msgCols = `n.id::text, n.kind,
 		coalesce(a.name, case n.data #>> '{via,provider}' when 'github' then 'GitHub' when 'gitlab' then 'GitLab' end, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
 		w.name, w.slug, coalesce(n.data #>> '{from,name}', ''), coalesce(n.data #>> '{to,name}', ''),
 		coalesce(n.data ->> 'excerpt', ''), n.data ? 'comment_id', coalesce(c.id::text, ''), coalesce(c.kind, ''),
-		coalesce(chat_name(c, n.user_id), '')`
+		coalesce(chat_name(c, n.user_id), ''), coalesce(pr.key, ''), coalesce(pr.name, '')`
 	msgFrom = ` from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
-		left join chats c on c.id = n.chat_id
+		left join chats c on c.id = n.chat_id left join projects pr on pr.id = n.project_id
 		join workspaces w on w.id = n.workspace_id left join users a on a.id = n.actor_id
 		left join notification_settings s on s.user_id = n.user_id`
 )
@@ -388,7 +420,7 @@ func scanMessage(row pgx.Row, extra ...any) (string, message, error) {
 	var id string
 	var m message
 	err := row.Scan(append([]any{&id, &m.kind, &m.actor, &m.identifier, &m.title, &m.workspace, &m.slug, &m.from, &m.to,
-		&m.excerpt, &m.onComment, &m.chatID, &m.chatKind, &m.chatName}, extra...)...)
+		&m.excerpt, &m.onComment, &m.chatID, &m.chatKind, &m.chatName, &m.projectKey, &m.projectName}, extra...)...)
 	return id, m, err
 }
 

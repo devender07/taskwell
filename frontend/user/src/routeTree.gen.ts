@@ -25,6 +25,7 @@ import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$wor
 import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$workspace/_main/roadmap'
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
+import { Route as AppWorkspaceMainInboxTetherRouteImport } from './routes/_app/$workspace/_main/inbox/tether'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
 import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
@@ -124,6 +125,12 @@ const AppWorkspaceMainInboxIndexRoute =
   AppWorkspaceMainInboxIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => AppWorkspaceMainInboxRoute,
+  } as any)
+const AppWorkspaceMainInboxTetherRoute =
+  AppWorkspaceMainInboxTetherRouteImport.update({
+    id: '/tether',
+    path: '/tether',
     getParentRoute: () => AppWorkspaceMainInboxRoute,
   } as any)
 const AppWorkspaceMainIssueIdentifierRoute =
@@ -255,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
+  '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
@@ -287,6 +295,7 @@ export interface FileRoutesByTo {
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
+  '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
@@ -325,6 +334,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
+  '/_app/$workspace/_main/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
@@ -362,6 +372,7 @@ export interface FileRouteTypes {
     | '/$workspace/roadmap'
     | '/$workspace/settings'
     | '/$workspace/'
+    | '/$workspace/inbox/tether'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/live/$workspace/$run'
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
+    | '/$workspace/inbox/tether'
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
@@ -431,6 +443,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/roadmap'
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/'
+    | '/_app/$workspace/_main/inbox/tether'
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
@@ -577,6 +590,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainInboxIndexRouteImport
       parentRoute: typeof AppWorkspaceMainInboxRoute
     }
+    '/_app/$workspace/_main/inbox/tether': {
+      id: '/_app/$workspace/_main/inbox/tether'
+      path: '/tether'
+      fullPath: '/$workspace/inbox/tether'
+      preLoaderRoute: typeof AppWorkspaceMainInboxTetherRouteImport
+      parentRoute: typeof AppWorkspaceMainInboxRoute
+    }
     '/_app/$workspace/_main/issue/$identifier': {
       id: '/_app/$workspace/_main/issue/$identifier'
       path: '/issue/$identifier'
@@ -714,11 +734,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppWorkspaceMainInboxRouteChildren {
+  AppWorkspaceMainInboxTetherRoute: typeof AppWorkspaceMainInboxTetherRoute
   AppWorkspaceMainInboxIndexRoute: typeof AppWorkspaceMainInboxIndexRoute
   AppWorkspaceMainInboxCChatIdRoute: typeof AppWorkspaceMainInboxCChatIdRoute
 }
 
 const AppWorkspaceMainInboxRouteChildren: AppWorkspaceMainInboxRouteChildren = {
+  AppWorkspaceMainInboxTetherRoute: AppWorkspaceMainInboxTetherRoute,
   AppWorkspaceMainInboxIndexRoute: AppWorkspaceMainInboxIndexRoute,
   AppWorkspaceMainInboxCChatIdRoute: AppWorkspaceMainInboxCChatIdRoute,
 }

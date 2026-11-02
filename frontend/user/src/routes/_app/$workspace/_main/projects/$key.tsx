@@ -11,7 +11,7 @@ import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch, type ViewSearch } from '@/components/issues/view-search'
 import { ProjectMilestones } from '@/components/projects/milestones'
-import { ArchiveProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
+import { ArchiveProject, DeleteProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
@@ -98,6 +98,7 @@ function ProjectPage() {
                 </Button>
                 {project.private ? <ProjectMembers workspace={workspace} project={project} /> : null}
                 <ArchiveProject workspace={workspace} project={project} />
+                {project.archived ? <DeleteProject workspace={workspace} project={project} /> : null}
               </>
             ) : (
               <Button variant="ghost" onClick={() => setEditing(true)}>
@@ -127,9 +128,13 @@ function ProjectPage() {
         )}
       </section>
       {manage ? (
-        <Dialog open={editing} onClose={stopEditing} title="Edit project">
-          <ProjectForm workspace={workspace} project={project} onDone={stopEditing} />
-          <ProjectMilestones workspace={workspace} project={project} manage={!project.archived} />
+        <Dialog open={editing} onClose={stopEditing} title="Edit project" wide>
+          <ProjectForm
+            workspace={workspace}
+            project={project}
+            onDone={stopEditing}
+            aside={<ProjectMilestones workspace={workspace} project={project} manage={!project.archived} />}
+          />
         </Dialog>
       ) : (
         <Dialog open={editing} onClose={stopEditing} title="Milestones">

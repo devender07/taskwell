@@ -24,6 +24,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/password/forgot", h.wrap(h.limitIP(h.forgot)))
 	mux.HandleFunc("POST /api/auth/password/reset", h.wrap(h.limitIP(h.reset)))
 	mux.HandleFunc("POST /api/auth/password/change", h.wrap(h.limitIP(h.changePassword)))
+	// Under /api/auth so the refresh cookie comes along: changing the email keeps this session and ends the others.
+	mux.HandleFunc("POST /api/auth/email/code", h.wrap(h.limitIP(h.emailCode)))
+	mux.HandleFunc("POST /api/auth/email/change", h.wrap(h.limitIP(h.changeEmail)))
 	mux.HandleFunc("POST /api/auth/refresh", h.wrap(h.refresh))
 	mux.HandleFunc("POST /api/auth/signout", h.wrap(h.signout))
 	mux.HandleFunc("GET /api/auth/google", h.wrap(h.googleStart))

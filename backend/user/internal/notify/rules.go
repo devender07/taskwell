@@ -85,6 +85,7 @@ type message struct {
 	excerpt                        string
 	onComment                      bool
 	chatID, chatKind, chatName     string // chat kinds only
+	projectKey, projectName        string // project_added only
 }
 
 // instantEmail returns the subject and body of the email for one notification; base is app_base_url.
@@ -100,6 +101,9 @@ func instantEmail(m message, base string) (subject, body string) {
 	case "message":
 		return m.actor + " sent you a message", m.actor + " sent you a message\n\n" + quote(m.excerpt) + "\n\n" +
 			chatURL(base, m) + footer(base, m.slug)
+	case "project_added":
+		return m.actor + " added you to " + m.projectName, m.actor + " added you to the project " + m.projectName + " in " +
+			m.workspace + "\n\n" + projectURL(base, m) + footer(base, m.slug)
 	}
 	what := m.identifier + ": " + m.title
 	switch m.kind {
@@ -147,6 +151,11 @@ func digestEmail(ms []message, base string) (subject, body string) {
 			b.WriteString("- " + m.actor + ": " + m.excerpt + "\n")
 			continue
 		}
+		if m.projectKey != "" {
+			last = m
+			b.WriteString("- " + m.actor + " added you to " + m.projectName + ": " + projectURL(base, m) + "\n")
+			continue
+		}
 		if m.slug != last.slug || m.identifier != last.identifier {
 			fmt.Fprintf(&b, "\n%s: %s\n%s\n", m.identifier, m.title, issueURL(base, m))
 		}
@@ -169,6 +178,10 @@ func digestEmail(ms []message, base string) (subject, body string) {
 
 func issueURL(base string, m message) string {
 	return strings.TrimRight(base, "/") + "/" + m.slug + "/issue/" + m.identifier
+}
+
+func projectURL(base string, m message) string {
+	return strings.TrimRight(base, "/") + "/" + m.slug + "/projects/" + m.projectKey
 }
 
 func chatURL(base string, m message) string {

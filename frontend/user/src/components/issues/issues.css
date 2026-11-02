@@ -137,3 +137,27 @@
   pointer-events: none;
   cursor: grabbing;
 }
+
+.issue-form { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px 32px; }
+.issue-form-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+@media (max-width: 760px) { .issue-form { grid-template-columns: minmax(0, 1fr); } }
+.issue-form-main { display: flex; flex-direction: column; gap: 16px; }
+.issue-form-main > :last-child { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor > :not(.rich-editor-toolbar):not(.autocomplete-panel) { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor-content { flex: 1; }
+.label-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -6px;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.label-chip-remove:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.label-chip-remove:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }

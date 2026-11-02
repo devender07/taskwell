@@ -3,11 +3,14 @@ import { startTransition, useActionState, useOptimistic, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
+import { IconButton } from '@tether/shared/icon-button'
+import { LeaveIcon, UserMinusIcon } from '@tether/shared/icons'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { email as checkEmail } from '@tether/shared/validate'
 import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
+import { type MemberPage, useMemberPages } from './member-pages'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
 
@@ -69,14 +72,23 @@ export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?:
   )
 }
 
-export function MemberList({ workspace, roles, members, userId }: { workspace: Workspace; roles: Role[]; members: Member[]; userId: string }) {
+// Searchable by name or email; `page` is page one (the loader's for `query`), the rest load as you scroll.
+export function MemberList({ workspace, roles, page, userId, query, onQuery }: { workspace: Workspace; roles: Role[]; page: MemberPage; userId: string; query: string; onQuery: (q: string) => void }) {
+  const { members, hasMore, end, error } = useMemberPages(workspace.slug, query.trim(), page)
   return (
-    <section className="grid bg-surface border rounded-lg" aria-label="Members">
-      <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
-        {members.map((m) => (
-          <MemberRow key={m.id} workspace={workspace} roles={roles} member={m} self={m.id === userId} />
-        ))}
-      </ul>
+    <section className="grid gap-3" aria-label="Members">
+      <Input type="search" aria-label="Search members" placeholder="Search by name or email" defaultValue={query} onDebouncedChange={onQuery} />
+      {members.length ? (
+        <ul className="grid m-0 p-0 bg-surface border rounded-lg" style={{ listStyle: 'none' }}>
+          {members.map((m) => (
+            <MemberRow key={m.id} workspace={workspace} roles={roles} member={m} self={m.id === userId} />
+          ))}
+        </ul>
+      ) : (
+        <p className="text-body-sm text-secondary m-0">No one matches “{query.trim()}”.</p>
+      )}
+      <FormError>{error}</FormError>
+      {hasMore ? <div ref={end} className="text-caption text-secondary text-center py-2">Loading more…</div> : null}
     </section>
   )
 }
@@ -144,9 +156,14 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
           <span className="text-caption text-secondary flex-noshrink">{member.role.name}</span>
         )}
         {self || manage ? (
-          <Button variant="ghost" className="flex-noshrink" onClick={() => setConfirming(true)}>
-            {self ? 'Leave workspace' : 'Remove'}
-          </Button>
+          <IconButton
+            className="icon-button-danger flex-noshrink"
+            aria-label={self ? 'Leave workspace' : `Remove ${member.name}`}
+            tooltip={self ? 'Leave workspace' : 'Remove member'}
+            onClick={() => setConfirming(true)}
+          >
+            {self ? <LeaveIcon size={20} /> : <UserMinusIcon size={20} />}
+          </IconButton>
         ) : null}
       </div>
       <FormError>{roleError}</FormError>

@@ -45,7 +45,7 @@ export function NewTokenButton() {
 
   return (
     <>
-      <Button variant="danger" style={{ justifySelf: 'start' }} onClick={start}>
+      <Button variant="secondary" style={{ justifySelf: 'start' }} onClick={start}>
         New token
       </Button>
       <Dialog open={open} onClose={close} title="New token">
@@ -77,7 +77,7 @@ export function NewTokenButton() {
           <form action={() => submit(false)} noValidate className="grid gap-4">
             <Input label="Name" placeholder="Claude Code on my laptop" autoComplete="off" autoFocus value={name} onChange={(e) => setName(e.target.value)} error={state.errors?.name} />
             <FormError>{state.error}</FormError>
-            <Button type="submit" variant="danger" className="w-full" disabled={pending}>
+            <Button type="submit" className="w-full" disabled={pending}>
               {pending ? 'Creating…' : 'Create token'}
             </Button>
           </form>

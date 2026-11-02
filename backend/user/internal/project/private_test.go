@@ -77,6 +77,18 @@ func TestPrivate(t *testing.T) {
 		t.Fatalf("created %+v", p)
 	}
 	do(ann, "POST", "/projects", url.Values{"name": {"Web"}, "key": {"WEB"}}, 201)
+	added := func(user string) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `select count(*) from notifications where user_id = $1 and kind = 'project_added'
+			and project_id = $2`, user, p.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if added(mia) != 1 || added(ann) != 0 {
+		t.Errorf("created: mia %d ann %d project_added", added(mia), added(ann))
+	}
 
 	for _, u := range []string{ann, mia} {
 		if got := names(do(u, "GET", "/projects", nil, 200)); got != "LEADLeadership WEBWeb" {
@@ -117,6 +129,10 @@ func TestPrivate(t *testing.T) {
 		t.Errorf("added %+v", p)
 	}
 	do(otto, "GET", "/projects/LEAD", nil, 200)
+	do(mia, "POST", "/projects/LEAD/members", url.Values{"user_ids": {otto}}, 200) // already in: no second notification
+	if added(otto) != 1 {
+		t.Errorf("otto has %d project_added", added(otto))
+	}
 	do(mia, "DELETE", "/projects/LEAD/members/"+otto, nil, 200)
 	do(otto, "GET", "/projects/LEAD", nil, 404)
 

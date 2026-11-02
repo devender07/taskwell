@@ -19,7 +19,7 @@ const modes: { value: NotificationSettings['email']; label: string }[] = [
 ]
 const kinds: { value: Kind; label: string }[] = [
   { value: 'mentions', label: 'Mentions' },
-  { value: 'assignments', label: 'Assigned to me' },
+  { value: 'assignments', label: 'Assigned to me or added to a project' },
   { value: 'status', label: 'Status changes on issues I watch' },
   { value: 'comments', label: 'Comments on issues I watch' },
   { value: 'chat', label: 'Direct messages and chat mentions' },

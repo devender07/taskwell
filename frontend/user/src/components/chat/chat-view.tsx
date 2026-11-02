@@ -9,14 +9,15 @@ import { RichText, type Doc } from '@tether/shared/rich-text'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { messageBody } from '@tether/shared/validate'
 import { MessageIcon, MoreIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
-import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Member, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
+import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { useUnread } from '@/components/app/unread'
 import { RichEditor } from '@/components/issues/rich-editor'
 import { onTyping, reloadRoutes, sendTyping, subscribePaths } from '@/realtime'
 import { firstName, firstUnread, groupMessages, typingText } from './chat'
-import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog, PeopleDialog, RenameDialog, chatsPath } from './chat-dialogs'
+import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog, PeoplePanel, RenameDialog, chatsPath } from './chat-dialogs'
 import { ChatAvatar } from './chat-list'
+import { searchMembers } from '@/components/workspace/member-pages'
 import './chat.css'
 
 const EMOJI = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅']
@@ -26,7 +27,7 @@ type Ctx = {
   slug: string
   chat: Chat
   me: User
-  mentions: { id: string; name: string }[]
+  mentions: { id: string; name: string }[] | ((q: string) => Promise<{ id: string; name: string }[]>)
   issues: (q: string) => Promise<{ id: string; label: string; title: string }[]>
   upload: (file: File) => ReturnType<typeof uploadFile>
   issueHref: (identifier: string) => string
@@ -38,7 +39,7 @@ type Ctx = {
 }
 const ChatContext = createContext<Ctx>(null!)
 
-type Props = { slug: string; workspaceName: string; me: User; chat: Chat; page: MessagePage; members: Member[]; thread?: string; message?: string }
+type Props = { slug: string; workspaceName: string; me: User; chat: Chat; page: MessagePage; thread?: string; message?: string; people?: boolean }
 
 const messagePath = (slug: string, id: string) => `${workspacePath(slug)}/messages/${encodeURIComponent(id)}`
 // ProseMirror marks every Esc and some arrow keys handled, so "was this key for an open @ or # list" is asked of the DOM.
@@ -48,7 +49,7 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hou
 
 // One chat: header, messages (newest at the bottom, older pages load on scroll up), typing line and composer, and the
 // thread panel when `thread` is set. Keyed by chat id.
-export function ChatView({ slug, workspaceName, me, chat, page, members, thread, message }: Props) {
+export function ChatView({ slug, workspaceName, me, chat, page, thread, message, people }: Props) {
   const router = useRouter()
   const navigate = useNavigate({ from: FROM })
   const { refresh: refreshUnread } = useUnread()
@@ -84,7 +85,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, members, thread,
     slug,
     chat,
     me,
-    mentions: chat.kind === 'workspace' ? members : chat.kind === 'self' ? [] : chat.members,
+    mentions: chat.kind === 'workspace' ? (q) => searchMembers(slug, q) : chat.kind === 'self' ? [] : chat.members,
     issues: async (q) => {
       const refs = await api<IssueRef[]>(`${workspacePath(slug)}/issues?${new URLSearchParams({ q })}`)
       return refs.map((r) => ({ id: r.identifier, label: r.identifier, title: r.title }))
@@ -227,38 +228,47 @@ export function ChatView({ slug, workspaceName, me, chat, page, members, thread,
   return (
     <ChatContext value={ctx}>
       <div className="chat-view" data-thread={thread ? '' : undefined}>
-        <section className="chat-main" aria-label={chat.name}>
-          <ChatHeader workspaceName={workspaceName} members={members} />
-          <div className="chat-scroll-wrap">
-            <div ref={scroller} className="chat-scroll" onScroll={onScroll} onClick={followIssueLink(navigate)}>
-              <div ref={top} aria-hidden style={{ height: 1 }} />
-              {hasMore ? <p className="text-caption text-secondary text-center m-0 py-2">{olderError ?? 'Loading older messages…'}</p> : <ChatStart workspaceName={workspaceName} />}
-              <ol className="chat-messages" aria-label="Messages">
-                {rows.map(({ msg, day, compact }) => (
-                  <li key={msg.id}>
-                    {day ? <Divider label={day} /> : null}
-                    {msg.id === newId ? <Divider label="New" accent /> : null}
-                    <MessageItem msg={msg} compact={compact && msg.id !== newId} highlight={msg.id === message} />
-                  </li>
-                ))}
-              </ol>
+        {people && (chat.kind === 'group' || chat.kind === 'workspace') ? (
+          <PeoplePanel
+            slug={slug}
+            chat={chat}
+            me={me.id}
+            onClose={() => navigate({ search: (prev) => ({ ...prev, people: undefined }) })}
+          />
+        ) : (
+          <section className="chat-main" aria-label={chat.name}>
+            <ChatHeader workspaceName={workspaceName} />
+            <div className="chat-scroll-wrap">
+              <div ref={scroller} className="chat-scroll" onScroll={onScroll} onClick={followIssueLink(navigate)}>
+                <div ref={top} aria-hidden style={{ height: 1 }} />
+                {hasMore ? <p className="text-caption text-secondary text-center m-0 py-2">{olderError ?? 'Loading older messages…'}</p> : <ChatStart workspaceName={workspaceName} />}
+                <ol className="chat-messages" aria-label="Messages">
+                  {rows.map(({ msg, day, compact }) => (
+                    <li key={msg.id}>
+                      {day ? <Divider label={day} /> : null}
+                      {msg.id === newId ? <Divider label="New" accent /> : null}
+                      <MessageItem msg={msg} compact={compact && msg.id !== newId} highlight={msg.id === message} />
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              {pill ? (
+                <button
+                  type="button"
+                  className="chat-new-pill"
+                  onClick={() => {
+                    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
+                    setPill(false)
+                  }}
+                >
+                  New messages ↓
+                </button>
+              ) : null}
             </div>
-            {pill ? (
-              <button
-                type="button"
-                className="chat-new-pill"
-                onClick={() => {
-                  scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
-                  setPill(false)
-                }}
-              >
-                New messages ↓
-              </button>
-            ) : null}
-          </div>
-          <Composer thread={null} placeholder={placeholder} editable={items} />
-        </section>
-        {thread ? <ThreadPanel key={thread} rootId={thread} /> : null}
+            <Composer thread={null} placeholder={placeholder} editable={items} />
+          </section>
+        )}
+        {thread && !people ? <ThreadPanel key={thread} rootId={thread} /> : null}
       </div>
     </ChatContext>
   )
@@ -297,10 +307,12 @@ function Divider({ label, accent }: { label: string; accent?: boolean }) {
   )
 }
 
-function ChatHeader({ workspaceName, members }: { workspaceName: string; members: Member[] }) {
+function ChatHeader({ workspaceName }: { workspaceName: string }) {
   const { slug, chat, me } = use(ChatContext)
-  const [dialog, setDialog] = useState<'rename' | 'add' | 'people' | 'leave' | 'delete' | null>(null)
+  const navigate = useNavigate({ from: FROM })
+  const [dialog, setDialog] = useState<'rename' | 'add' | 'leave' | 'delete' | null>(null)
   const close = () => setDialog(null)
+  const showPeople = () => navigate({ search: (prev) => ({ ...prev, people: true, thread: undefined }) })
   const group = chat.kind === 'group'
   // The workspace chat can't be deleted; a group only by its creator.
   const actions: (readonly ['rename' | 'add' | 'people' | 'leave' | 'delete', string])[] = group
@@ -309,7 +321,7 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
       ? [['delete', 'Delete chat']]
       : chat.kind === 'self'
         ? [['delete', 'Delete notes']]
-        : []
+        : [['people', 'Members']]
   const subtitle =
     chat.kind === 'self' ? 'Only you can see this' : chat.kind === 'workspace' ? `Everyone in ${workspaceName}` : group ? `${chat.members.length} people` : null
   const faces = chat.members.slice(0, 5)
@@ -325,7 +337,7 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
         {subtitle ? <p className="text-caption text-secondary m-0 ellipsis">{subtitle}</p> : null}
       </div>
       {group ? (
-        <button type="button" className="chat-faces" aria-label={`People in ${chat.name}: ${chat.members.length}`} onClick={() => setDialog('people')}>
+        <button type="button" className="chat-faces" aria-label={`People in ${chat.name}: ${chat.members.length}`} onClick={showPeople}>
           {faces.map((p) => (
             <Avatar key={p.id} name={p.name} size={24} src={avatarSrc(p.id)} />
           ))}
@@ -337,7 +349,7 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
           aria-label="Chat actions"
           placement="bottom-end"
           trigger={(props) => (
-            <IconButton aria-label="Chat actions" className="chat-icon-button" {...props}>
+            <IconButton aria-label="Chat actions" tooltip="Chat actions" className="chat-icon-button" {...props}>
               <MoreIcon />
             </IconButton>
           )}
@@ -351,7 +363,8 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
                   className="popover-item"
                   onClick={() => {
                     closeMenu()
-                    setDialog(key)
+                    if (key === 'people') showPeople()
+                    else setDialog(key)
                   }}
                 >
                   {label}
@@ -364,8 +377,7 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
       {group ? (
         <>
           <RenameDialog open={dialog === 'rename'} onClose={close} slug={slug} chat={chat} />
-          <AddPeopleDialog open={dialog === 'add'} onClose={close} slug={slug} chat={chat} members={members} />
-          <PeopleDialog open={dialog === 'people'} onClose={close} slug={slug} chat={chat} me={me.id} />
+          <AddPeopleDialog open={dialog === 'add'} onClose={close} slug={slug} chat={chat} />
           <LeaveDialog open={dialog === 'leave'} onClose={close} slug={slug} chat={chat} me={me.id} />
         </>
       ) : null}
@@ -474,7 +486,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
             aria-label="Add reaction"
             placement="bottom-end"
             trigger={(props) => (
-              <IconButton aria-label="Add reaction" title="Add reaction" className="chat-tool chat-hover-only" {...props}>
+              <IconButton aria-label="Add reaction" tooltip="Add reaction" className="chat-tool chat-hover-only" {...props}>
                 <SmileIcon />
               </IconButton>
             )}
@@ -482,7 +494,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
             {(close) => <EmojiPicker onPick={(e) => (close(), react(e, msg.reactions.some((r) => r.emoji === e && r.mine)))} />}
           </Popover>
           {inThread ? null : (
-            <IconButton aria-label="Reply in thread" title="Reply in thread" className="chat-tool chat-hover-only" onClick={openThread}>
+            <IconButton aria-label="Reply in thread" tooltip="Reply in thread" className="chat-tool chat-hover-only" onClick={openThread}>
               <MessageIcon />
             </IconButton>
           )}
@@ -490,7 +502,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
             aria-label="More actions"
             placement="bottom-end"
             trigger={(props) => (
-              <IconButton aria-label="More actions" title="More actions" className="chat-tool" {...props}>
+              <IconButton aria-label="More actions" tooltip="More actions" className="chat-tool" {...props}>
                 <MoreIcon />
               </IconButton>
             )}
@@ -736,7 +748,7 @@ function Composer({ thread, placeholder, editable }: { thread: string | null; pl
             onSubmit={send}
           />
         </div>
-        <IconButton aria-label={thread ? 'Send reply' : 'Send message'} title="Send" className="chat-send" disabled={state.pending || !draft.doc} onClick={send}>
+        <IconButton aria-label={thread ? 'Send reply' : 'Send message'} tooltip="Send" className="chat-send" disabled={state.pending || !draft.doc} onClick={send}>
           <SendIcon />
         </IconButton>
       </div>
@@ -804,7 +816,7 @@ function ThreadPanel({ rootId }: { rootId: string }) {
         <h2 id="chat-thread-title" ref={heading} tabIndex={-1} className="chat-title flex-grow">
           Thread
         </h2>
-        <IconButton aria-label="Close thread" title="Close" className="chat-icon-button" onClick={close}>
+        <IconButton aria-label="Close thread" className="chat-icon-button" onClick={close}>
           <CloseIcon />
         </IconButton>
       </header>

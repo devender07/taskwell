@@ -1,11 +1,13 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/devender07/tether/backend/user/internal/secret"
@@ -22,15 +24,12 @@ const (
 	errInviteLimit    = "Too many invites were sent today. Try again tomorrow."
 )
 
-// members lists the workspace's members; people who can invite also get its invites.
+// members lists the workspace's members; people who can invite also get its invites. With ?limit= (1 to 100) it's
+// one page instead: those matching ?q= by name or email from ?offset=, with has_more and the matching total.
 func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
-		return err
-	}
-	ms, err := h.model.members(ctx, ws.ID)
-	if err != nil {
 		return err
 	}
 	invs := []Invite{}
@@ -38,6 +37,25 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string)
 		if invs, err = h.model.invites(ctx, ws.ID); err != nil {
 			return err
 		}
+	}
+	query := r.URL.Query()
+	if query.Has("limit") {
+		limit, err1 := strconv.Atoi(query.Get("limit"))
+		offset, err2 := strconv.Atoi(cmp.Or(query.Get("offset"), "0"))
+		if err1 != nil || err2 != nil || limit < 1 || limit > 100 || offset < 0 {
+			web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
+			return nil
+		}
+		ms, total, err := h.model.memberPage(ctx, ws.ID, strings.TrimSpace(query.Get("q")), offset, limit)
+		if err != nil {
+			return err
+		}
+		web.JSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs, "total": total, "has_more": offset+len(ms) < total})
+		return nil
+	}
+	ms, err := h.model.members(ctx, ws.ID)
+	if err != nil {
+		return err
 	}
 	web.JSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs})
 	return nil

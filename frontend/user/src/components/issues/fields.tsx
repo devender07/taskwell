@@ -1,7 +1,7 @@
 import { Checkbox } from '@tether/shared/checkbox'
-import { CategoryGlyph, StatusTypeIcon } from '@tether/shared/icons'
+import { CategoryGlyph, StatusTypeIcon, XIcon } from '@tether/shared/icons'
 import { Popover } from '@tether/shared/popover'
-import type { Option } from '@tether/shared/smart-autocomplete'
+import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import type { Label, Member, Status, StatusCategory } from '@/api'
 import './issues.css'
 
@@ -78,6 +78,39 @@ export function LabelChecklist({ labels, value, onChange, disabled }: { labels: 
           }
         />
       ))}
+    </div>
+  )
+}
+
+// Picks labels by typing; the chosen ones show as removable chips. Remounted per pick so the field clears.
+export function LabelSelect({ labels, value, onChange, error }: { labels: Label[]; value: string[]; onChange: (ids: string[]) => void; error?: string | null }) {
+  const chosen = labels.filter((l) => value.includes(l.id))
+  const options = labels.filter((l) => !value.includes(l.id)).map((l) => ({ value: l.id, label: l.name, icon: <LabelDot color={l.color} /> }))
+  return (
+    <div className="grid gap-2">
+      <SmartAutocomplete
+        key={value.length}
+        label="Labels"
+        placeholder={labels.length ? 'Add labels' : 'No labels yet'}
+        disabled={options.length === 0}
+        options={options}
+        value={null}
+        onChange={(o) => o && onChange([...value, o.value])}
+        error={error}
+      />
+      {chosen.length ? (
+        <span className="flex flex-wrap gap-2">
+          {chosen.map((l) => (
+            <span key={l.id} className="label-chip">
+              <LabelDot color={l.color} />
+              {l.name}
+              <button type="button" className="label-chip-remove" aria-label={`Remove ${l.name}`} onClick={() => onChange(value.filter((id) => id !== l.id))}>
+                <XIcon size={12} />
+              </button>
+            </span>
+          ))}
+        </span>
+      ) : null}
     </div>
   )
 }

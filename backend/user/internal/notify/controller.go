@@ -40,7 +40,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
 		return nil
 	}
-	ns, more, err := h.model.list(r.Context(), userID, ws.ID, before)
+	ns, more, err := h.model.list(r.Context(), userID, ws.ID, before, r.URL.Query().Get("exclude") == "chat")
 	if err != nil {
 		return err
 	}

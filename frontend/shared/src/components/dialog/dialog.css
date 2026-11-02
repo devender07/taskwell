@@ -12,6 +12,7 @@
   transform: none;
   transition: opacity 120ms ease, transform 120ms ease;
 }
+.dialog-wide { width: min(880px, calc(100vw - 32px)); }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.6); opacity: 1; transition: opacity 120ms ease; }
 @starting-style {
   .dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); }

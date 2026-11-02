@@ -1,6 +1,7 @@
 import { useActionState, useEffect, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { DatePicker } from '@tether/shared/date-picker'
+import { PlusIcon } from '@tether/shared/icons'
 import { Input } from '@tether/shared/input'
 import { milestoneName } from '@tether/shared/validate'
 import { deleteMilestone, listMilestones, milestonesPath, saveMilestone, toFormErrors, type FieldErrors, type Milestone, type Project, type Workspace } from '@/api'
@@ -18,6 +19,7 @@ export function ProjectMilestones({ workspace, project, manage, titled = true }:
   const [version, setVersion] = useState(0)
   const [editing, setEditing] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
   const reload = () => setVersion((v) => v + 1)
 
   useEffect(() => {
@@ -33,12 +35,23 @@ export function ProjectMilestones({ workspace, project, manage, titled = true }:
   useEffect(() => subscribePaths([milestonesPath(workspace.slug, project.key)], () => setVersion((v) => v + 1)), [workspace.slug, project.key])
 
   return (
-    <section className={titled ? 'grid gap-3 pt-5' : 'grid gap-3'} style={titled ? { borderTop: '1px solid var(--border)' } : undefined} aria-label="Milestones">
-      {titled ? <h3 className="text-label">Milestones</h3> : null}
+    <section className={titled ? 'milestones-titled grid gap-3' : 'grid gap-3'} style={{ alignContent: 'start' }} aria-label="Milestones">
+      {titled || manage ? (
+        <div className="flex items-center justify-between gap-3">
+          {titled ? <h3 className="text-label">Milestones</h3> : <span />}
+          {manage && !adding ? (
+            <Button variant="ghost" onClick={() => setAdding(true)}>
+              <PlusIcon size={16} /> Add milestone
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {milestones === null ? (
         loadError ? <FormError>{loadError}</FormError> : <p className="text-body-sm text-secondary m-0">Loading…</p>
       ) : milestones.length === 0 ? (
-        <p className="text-body-sm text-secondary m-0">No milestones yet.</p>
+        adding ? null : (
+          <p className="text-body-sm text-secondary m-0">No milestones yet.</p>
+        )
       ) : (
         <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
           {milestones.map((m) =>
@@ -64,7 +77,17 @@ export function ProjectMilestones({ workspace, project, manage, titled = true }:
           )}
         </ul>
       )}
-      {manage ? <MilestoneForm workspace={workspace} project={project} onDone={reload} /> : null}
+      {manage && adding ? (
+        <MilestoneForm
+          workspace={workspace}
+          project={project}
+          onDone={() => {
+            setAdding(false)
+            reload()
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      ) : null}
     </section>
   )
 }
@@ -98,13 +121,13 @@ function MilestoneForm({ workspace, project, milestone, onDone, onCancel }: Form
   return (
     <form action={submit} noValidate className="grid gap-3" aria-label={milestone ? `Edit ${milestone.name}` : 'Add milestone'}>
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        <Input label="Name" placeholder="Beta" autoComplete="off" autoFocus={Boolean(milestone)} value={name} onChange={(e) => setName(e.target.value)} error={errors?.name} />
+        <Input label="Name" placeholder="Beta" autoComplete="off" autoFocus value={name} onChange={(e) => setName(e.target.value)} error={errors?.name} />
         <DatePicker label="Date" value={date} onChange={setDate} error={errors?.date} />
       </div>
       <FormError>{error}</FormError>
       <div className="flex justify-end gap-2">
         {onCancel ? <Button variant="ghost" onClick={onCancel}>Cancel</Button> : null}
-        <Button type="submit" variant={milestone ? 'primary' : 'secondary'} disabled={pending}>
+        <Button type="submit" disabled={pending}>
           {milestone ? (pending ? 'Saving…' : 'Save') : pending ? 'Adding…' : 'Add milestone'}
         </Button>
       </div>
