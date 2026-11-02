@@ -39,6 +39,8 @@ func main() {
 	if err != nil || browsers < 1 {
 		fatal("AI_TEST_BROWSERS must be a number of at least 1")
 	}
+	// Dev only: local test sites (127.0.0.1, the LAN) may be visited, and their self-signed or local-CA certificates
+	// are accepted, since the Chrome container doesn't trust the host's development CA.
 	allowPrivate := !prod && os.Getenv("AI_TEST_ALLOW_PRIVATE") == "true"
 
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -68,7 +70,7 @@ func main() {
 	host, _ := os.Hostname() // in compose, the container's hostname is its id, which the network resolves
 	_, port, _ := net.SplitHostPort(liveSrv.Addr)
 	o := aitest.RunnerOptions{Live: live, LiveURL: env("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, UploadDir: env("UPLOAD_DIR", "./uploads"), ChromeURL: env("CHROME_URL", "http://chrome:9222"),
-		ProxyURL: env("PROXY_URL", "http://tester:3128"), Browsers: browsers, Proxy: proxy}
+		ProxyURL: env("PROXY_URL", "http://tester:3128"), Browsers: browsers, Proxy: proxy, IgnoreCertErrors: allowPrivate}
 	if apiKey != "" {
 		o.Send = aitest.NewSender(apiKey)
 	}

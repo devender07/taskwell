@@ -38,10 +38,12 @@ type RunnerOptions struct {
 	UploadDir string
 	ChromeURL string // the browser's DevTools endpoint, http://chrome:9222
 	ProxyURL  string // how Chrome reaches Proxy, http://tester:3128
-	Browsers  int    // runs at once
-	Proxy     *Proxy
-	Live      *Live  // fans the page's screencast out to viewers
-	LiveURL   string // how the user API reaches Live, stored on each claimed run
+	// IgnoreCertErrors lets pages load sites with self-signed or local-CA certificates; development only.
+	IgnoreCertErrors bool
+	Browsers         int // runs at once
+	Proxy            *Proxy
+	Live             *Live  // fans the page's screencast out to viewers
+	LiveURL          string // how the user API reaches Live, stored on each claimed run
 }
 
 // Runner claims queued AI runs and runs them: Claude writes the cases when the issue needs them, then drives a
@@ -314,7 +316,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result, logged int
 	if err != nil {
 		return "", "", nil, err
 	}
-	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, func(f []byte) { r.o.Live.publish(j.runID, f) })
+	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, r.o.IgnoreCertErrors, func(f []byte) { r.o.Live.publish(j.runID, f) })
 	if err != nil {
 		return "", "", nil, err
 	}

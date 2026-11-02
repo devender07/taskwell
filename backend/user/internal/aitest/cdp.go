@@ -180,7 +180,7 @@ const viewportW, viewportH = 1280, 800
 
 // newPage opens a tab in a fresh browser context whose requests go through proxyURL, answering the proxy's
 // challenge with the run's id and token, and passes each screencast frame (JPEG) to frame.
-func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, frame func([]byte)) (*page, error) {
+func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecure bool, frame func([]byte)) (*page, error) {
 	p := &page{c: c, requested: map[string]bool{}, frame: frame}
 	if err := c.call(ctx, "", "Target.createBrowserContext", map[string]any{
 		"disposeOnDetach": true, "proxyServer": proxyURL, "proxyBypassList": "<-loopback>",
@@ -206,7 +206,7 @@ func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, frame 
 	c.mu.Lock()
 	c.sessions[p.session] = func(method string, params json.RawMessage) { p.event(runID, token, method, params) }
 	c.mu.Unlock()
-	for _, s := range []struct {
+	steps := []struct {
 		method string
 		params any
 	}{
@@ -215,7 +215,14 @@ func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, frame 
 		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": viewportW, "height": viewportH, "deviceScaleFactor": 1, "mobile": false}},
 		{"Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": p.contextID}},
 		{"Page.startScreencast", map[string]any{"format": "jpeg", "quality": 50, "maxWidth": viewportW, "maxHeight": viewportH}},
-	} {
+	}
+	if insecure {
+		steps = append(steps, struct {
+			method string
+			params any
+		}{"Security.setIgnoreCertificateErrors", map[string]any{"ignore": true}})
+	}
+	for _, s := range steps {
 		session := p.session
 		if s.method == "Browser.setDownloadBehavior" {
 			session = ""
