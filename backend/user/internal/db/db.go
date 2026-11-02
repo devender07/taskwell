@@ -89,6 +89,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return fmt.Errorf("prepare schema_migrations: %w", err)
 	}
+	// ponytail: a database migrated before 001-043 were squashed into 001_init already has that schema; drop this once
+	// every database has started on this version.
+	if _, err := conn.Exec(ctx, `insert into schema_migrations (version) select '001_init.sql'
+		where exists (select 1 from schema_migrations where version = '043_status_types.sql') on conflict do nothing`); err != nil {
+		return fmt.Errorf("baseline squashed migrations: %w", err)
+	}
 	lockTimeout := env.Get("MIGRATE_LOCK_TIMEOUT", "10s")
 	for _, name := range names {
 		version := path.Base(name)

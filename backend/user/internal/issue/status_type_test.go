@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -85,49 +84,4 @@ func TestStatusTypes(t *testing.T) {
 	do("built-in", 200, "GET", "/statuses", nil, `"name":"Code review","category":"completed","position":`, `"icon":null,"color":null,"type":null`)
 	do("deleted", 404, "DELETE", "/status-types/"+typ.ID, nil)
 	do("built-in issue", 200, "GET", "/issues/ENG-1", nil, `"icon":null,"color":null`)
-}
-
-// TestStatusTypeBackfill re-runs 043's backfill on a status with a free-text type, in a rolled-back transaction.
-func TestStatusTypeBackfill(t *testing.T) {
-	pool := dbtest.Pool(t)
-	ctx := context.Background()
-	src, err := os.ReadFile("../db/migrations/043_status_types.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	backfill := string(src)
-	backfill = backfill[strings.Index(backfill, "-- backfill"):strings.Index(backfill, "-- end backfill")]
-	ann := dbtest.User(t, pool, "Ann")
-	var wsID string
-	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
-			return err
-		}
-		return tx.QueryRow(ctx, `select id::text from workspaces where created_by = $1`, ann).Scan(&wsID)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rolled back on purpose
-	var name, category, icon string
-	if _, err := tx.Exec(ctx, `alter table statuses add column type text`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `update statuses set type = 'Reopen' where workspace_id = $1 and category = 'unstarted'`, wsID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, backfill); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `select t.name, t.category, t.icon from statuses s join status_types t on t.id = s.type_id
-		where s.workspace_id = $1 and s.category = 'unstarted'`, wsID).Scan(&name, &category, &icon); err != nil {
-		t.Fatal(err)
-	}
-	if name != "Reopen" || category != "unstarted" || icon != "refresh" {
-		t.Fatalf("backfilled %s %s %s", name, category, icon)
-	}
 }

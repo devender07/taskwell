@@ -166,7 +166,7 @@ func main() {
 
 // schemaVersion is the newest migration this service's queries need. The user service applies migrations; bump
 // this when admin starts depending on a newer one.
-const schemaVersion = "025_shared_limits.sql"
+const schemaVersion = "001_init.sql"
 
 // checkSchema fails unless the user service has applied schemaVersion.
 func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
