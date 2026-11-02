@@ -53,12 +53,12 @@ type input struct {
 	startsOn, endsOn *time.Time
 }
 
-// today is the current UTC date; stateSQL matches the issue package's cycleJSON.
+// today is the current UTC date; StateSQL (the roadmap's too) matches the issue package's cycleJSON.
 const (
 	today    = `(now() at time zone 'utc')::date`
-	stateSQL = `case when c.starts_on > ` + today + ` then 'upcoming' when c.ends_on < ` + today + ` then 'past' else 'current' end`
+	StateSQL = `case when c.starts_on > ` + today + ` then 'upcoming' when c.ends_on < ` + today + ` then 'past' else 'current' end`
 	cols     = `c.id::text, c.number, coalesce(c.name, 'Cycle ' || c.number), c.name, to_char(c.starts_on, 'YYYY-MM-DD'),
-		to_char(c.ends_on, 'YYYY-MM-DD'), ` + stateSQL + `, count(i.id), count(*) filter (where s.category = 'started'),
+		to_char(c.ends_on, 'YYYY-MM-DD'), ` + StateSQL + `, count(i.id), count(*) filter (where s.category = 'started'),
 		count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled')
 		from cycles c left join issues i on i.cycle_id = c.id left join statuses s on s.id = i.status_id`
 )
@@ -345,11 +345,12 @@ func identifiers(ctx context.Context, tx pgx.Tx, cycleID string) ([]string, erro
 }
 
 // publish tells the workspace the project's cycles changed: the cycle list, the numbered cycles' pages, the project
-// page and issue list, and the issues with the identifiers (their pages and rows show their cycle).
+// page and issue list, the roadmap, and the issues with the identifiers (their pages and rows show their cycle).
 func publish(ctx context.Context, tx pgx.Tx, e realtime.Event, p *project, numbers []int, issues []string) error {
 	e.Kind, e.Project = "cycle.changed", p.id
 	key := p.key
-	e.Paths = []string{realtime.Project(e.Workspace, key), realtime.ProjectIssues(e.Workspace, key), realtime.Cycles(e.Workspace, key)}
+	e.Paths = []string{realtime.Project(e.Workspace, key), realtime.ProjectIssues(e.Workspace, key), realtime.Cycles(e.Workspace, key),
+		realtime.Roadmap(e.Workspace)}
 	for _, n := range numbers {
 		e.Paths = append(e.Paths, realtime.Cycle(e.Workspace, key, n))
 	}

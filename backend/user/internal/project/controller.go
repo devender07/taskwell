@@ -15,12 +15,14 @@ import (
 )
 
 const (
-	errNotFound        = "Workspace not found."
-	errProjectNotFound = "Project not found."
-	errForbidden       = "You don't have permission to do that."
-	errKeyTaken        = "That key is taken."
-	errPickedOutsider  = "Someone you picked isn't in this workspace."
-	errPublicMembers   = "Only private projects have members."
+	errNotFound          = "Workspace not found."
+	errProjectNotFound   = "Project not found."
+	errForbidden         = "You don't have permission to do that."
+	errKeyTaken          = "That key is taken."
+	errPickedOutsider    = "Someone you picked isn't in this workspace."
+	errPublicMembers     = "Only private projects have members."
+	errMilestoneNotFound = "Milestone not found."
+	errArchivedProject   = "This project is archived."
 )
 
 type Handler struct {
@@ -66,12 +68,16 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	name, key, desc, ok := readForm(w, r)
+	in, ok := readForm(w, r)
 	if !ok {
 		return nil
 	}
-	p, err := h.model.create(r.Context(), ws.ID, userID, name, key, desc, r.PostForm.Get("private") == "true", ids(r, "member_ids"),
+	p, err := h.model.create(r.Context(), ws.ID, userID, in, r.PostForm.Get("private") == "true", ids(r, "member_ids"),
 		event(ws, userID))
+	if errors.Is(err, errDates) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"target_date": errDateOrder})
+		return nil
+	}
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
@@ -101,7 +107,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	name, key, desc, ok := readForm(w, r)
+	in, ok := readForm(w, r)
 	if !ok {
 		return nil
 	}
@@ -110,7 +116,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 		b := v[0] == "true"
 		private = &b
 	}
-	p, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, name, key, desc, private, event(ws, userID))
+	p, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, in, private, event(ws, userID))
+	if errors.Is(err, errDates) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"target_date": errDateOrder})
+		return nil
+	}
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
@@ -206,20 +216,29 @@ func event(ws *workspace.Workspace, userID string) realtime.Event {
 	return realtime.Event{Workspace: ws.Slug, Actor: userID, Audience: realtime.ToWorkspace(ws.ID)}
 }
 
-// readForm returns the normalized name, key and description, or writes a 400 with field errors and returns ok=false.
-func readForm(w http.ResponseWriter, r *http.Request) (name, key, desc string, ok bool) {
-	name, key, desc = strings.TrimSpace(r.FormValue("name")), normKey(r.FormValue("key")), r.FormValue("description")
-	errs := map[string]string{}
-	for field, msg := range map[string]string{"name": checkName(name), "key": checkKey(key), "description": checkDescription(desc)} {
-		if msg != "" {
-			errs[field] = msg
-		}
+// readForm returns the normalized name, key, description and dates (nil when the field isn't sent), or writes a 400
+// with field errors and returns ok=false.
+func readForm(w http.ResponseWriter, r *http.Request) (input, bool) {
+	in := input{name: strings.TrimSpace(r.FormValue("name")), key: normKey(r.FormValue("key")), description: r.FormValue("description"),
+		start: date(r, "start_date"), target: date(r, "target_date")}
+	errs := map[string]string{"name": checkName(in.name), "key": checkKey(in.key), "description": checkDescription(in.description)}
+	if in.start != nil && *in.start != "" {
+		errs["start_date"] = checkDate(*in.start)
 	}
-	if len(errs) > 0 {
-		web.Fields(w, http.StatusBadRequest, errs)
-		return "", "", "", false
+	if in.target != nil && *in.target != "" {
+		errs["target_date"] = checkDate(*in.target)
 	}
-	return name, key, desc, true
+	return in, web.Check(w, errs)
+}
+
+// date returns the trimmed form field, or nil when it isn't sent.
+func date(r *http.Request, field string) *string {
+	v, ok := r.PostForm[field]
+	if !ok {
+		return nil
+	}
+	s := strings.TrimSpace(v[0])
+	return &s
 }
 
 // respond writes the project, or a 404 when it's nil.
@@ -232,6 +251,112 @@ func respond(w http.ResponseWriter, p *Project, err error) error {
 		return nil
 	}
 	web.JSON(w, http.StatusOK, p)
+	return nil
+}
+
+func (h *Handler) roadmap(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, false)
+	if !ok || err != nil {
+		return err
+	}
+	ps, err := h.model.roadmap(r.Context(), ws.ID, userID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, ps)
+	return nil
+}
+
+// --- milestones ---
+
+func (h *Handler) milestones(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, false)
+	if !ok || err != nil {
+		return err
+	}
+	ms, err := h.model.milestones(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	if err != nil {
+		return err
+	}
+	if ms == nil {
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+		return nil
+	}
+	web.JSON(w, http.StatusOK, ms)
+	return nil
+}
+
+func (h *Handler) createMilestone(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, true)
+	if !ok || err != nil {
+		return err
+	}
+	name, date, ok := readMilestone(w, r)
+	if !ok {
+		return nil
+	}
+	ms, err := h.model.createMilestone(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, name, date, event(ws, userID))
+	return answerMilestone(w, http.StatusCreated, ms, err)
+}
+
+func (h *Handler) updateMilestone(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, id, ok, err := h.milestone(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	name, date, ok := readMilestone(w, r)
+	if !ok {
+		return nil
+	}
+	ms, err := h.model.updateMilestone(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, id, name, date, event(ws, userID))
+	return answerMilestone(w, http.StatusOK, ms, err)
+}
+
+func (h *Handler) deleteMilestone(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, id, ok, err := h.milestone(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	err = h.model.deleteMilestone(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, id, event(ws, userID))
+	return answerMilestone(w, http.StatusNoContent, nil, err)
+}
+
+// milestone is access for a write to the path's milestone; it writes a 404 when its id isn't a UUID.
+func (h *Handler) milestone(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, string, bool, error) {
+	ws, ok, err := h.access(w, r, userID, true)
+	if !ok || err != nil {
+		return nil, "", false, err
+	}
+	id := r.PathValue("id")
+	if !web.IsUUID(id) {
+		web.Err(w, http.StatusNotFound, errMilestoneNotFound)
+		return nil, "", false, nil
+	}
+	return ws, id, true, nil
+}
+
+// readMilestone returns the trimmed name and the date, or writes a 400 with field errors and returns ok=false.
+func readMilestone(w http.ResponseWriter, r *http.Request) (name, date string, ok bool) {
+	name, date = strings.TrimSpace(r.FormValue("name")), strings.TrimSpace(r.FormValue("date"))
+	return name, date, web.Check(w, map[string]string{"name": checkMilestoneName(name), "date": checkDate(date)})
+}
+
+// answerMilestone writes the milestone with the status (nothing for a 204), or the error a write returned.
+func answerMilestone(w http.ResponseWriter, status int, ms *Milestone, err error) error {
+	switch {
+	case errors.Is(err, errNoProject):
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+	case errors.Is(err, errNoMilestone):
+		web.Err(w, http.StatusNotFound, errMilestoneNotFound)
+	case errors.Is(err, errArchived):
+		web.Err(w, http.StatusConflict, errArchivedProject)
+	case err != nil:
+		return err
+	case status == http.StatusNoContent:
+		w.WriteHeader(status)
+	default:
+		web.JSON(w, status, ms)
+	}
 	return nil
 }
 

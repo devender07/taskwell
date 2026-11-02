@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/cycle"
 	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/web"
@@ -17,9 +18,13 @@ import (
 )
 
 var (
-	errTaken     = errors.New("project key taken")
-	errNotMember = errors.New("not a workspace member")
-	errPublic    = errors.New("project is public")
+	errTaken       = errors.New("project key taken")
+	errNotMember   = errors.New("not a workspace member")
+	errPublic      = errors.New("project is public")
+	errDates       = errors.New("target date before start date")
+	errNoProject   = errors.New("project not found")
+	errArchived    = errors.New("project archived")
+	errNoMilestone = errors.New("milestone not found")
 )
 
 type Person struct {
@@ -35,20 +40,29 @@ type Project struct {
 	Archived    bool      `json:"archived"`
 	Private     bool      `json:"private"`
 	Members     []Person  `json:"members"` // a private project's explicit members by name; [] for a public one
+	StartDate   *string   `json:"start_date"`
+	TargetDate  *string   `json:"target_date"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+// input is a create or update form. A nil date is unchanged on update (unset on create); "" clears it.
+type input struct {
+	name, key, description string
+	start, target          *string
 }
 
 // cols selects a Project from projects (not aliased).
 const cols = `id::text, name, key, description, archived_at is not null, private,
 	coalesce((select json_agg(json_build_object('id', u.id, 'name', u.name) order by lower(u.name), u.id)
-	  from project_members pm join users u on u.id = pm.user_id where pm.project_id = projects.id), '[]'), created_at`
+	  from project_members pm join users u on u.id = pm.user_id where pm.project_id = projects.id), '[]'),
+	to_char(start_date, 'YYYY-MM-DD'), to_char(target_date, 'YYYY-MM-DD'), created_at`
 
 // visible is the condition that the viewer ($2 unless placed otherwise) can see the project.
 const visible = `can_see_project(id, $2)`
 
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.StartDate, &p.TargetDate, &p.CreatedAt)
 	p.CreatedAt = p.CreatedAt.UTC()
 	return p, err
 }
@@ -108,7 +122,7 @@ func (m *model) stats(ctx context.Context, workspaceID, viewerID string) ([]Stat
 func changed(ctx context.Context, tx pgx.Tx, e realtime.Event, projectID string, everyone bool, keys ...string) error {
 	e.Kind = "project.changed"
 	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.MyIssues(e.Workspace),
-		realtime.ProjectStats(e.Workspace), realtime.Activity(e.Workspace)} // archiving hides its issues from the feed
+		realtime.ProjectStats(e.Workspace), realtime.Roadmap(e.Workspace), realtime.Activity(e.Workspace)} // archiving hides its issues from the feed
 	for _, k := range keys {
 		e.Paths = append(e.Paths, realtime.Project(e.Workspace, k), realtime.ProjectIssues(e.Workspace, k))
 	}
@@ -144,8 +158,9 @@ func addMembers(ctx context.Context, tx pgx.Tx, projectID, actorID string, ids [
 }
 
 // create adds a project and publishes e; a private one gets the creator and memberIDs (workspace members) as
-// members. Returns errTaken when the key is in use in the workspace, errNotMember for a member id that isn't one.
-func (m *model) create(ctx context.Context, workspaceID, userID, name, key, description string, private bool, memberIDs []string,
+// members. Returns errTaken when the key is in use in the workspace, errNotMember for a member id that isn't one,
+// errDates when the target date is before the start date.
+func (m *model) create(ctx context.Context, workspaceID, userID string, in input, private bool, memberIDs []string,
 	e realtime.Event) (Project, error) {
 	var p Project
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -154,8 +169,9 @@ func (m *model) create(ctx context.Context, workspaceID, userID, name, key, desc
 		}
 		var id string
 		if err := tx.QueryRow(ctx,
-			`insert into projects (workspace_id, created_by, name, key, description, private) values ($1, $2, $3, $4, $5, $6)
-			 returning id::text`, workspaceID, userID, name, key, description, private).Scan(&id); err != nil {
+			`insert into projects (workspace_id, created_by, name, key, description, private, start_date, target_date)
+			 values ($1, $2, $3, $4, $5, $6, nullif($7, '')::date, nullif($8, '')::date)
+			 returning id::text`, workspaceID, userID, in.name, in.key, in.description, private, in.start, in.target).Scan(&id); err != nil {
 			return err
 		}
 		if private {
@@ -174,6 +190,9 @@ func (m *model) create(ctx context.Context, workspaceID, userID, name, key, desc
 	})
 	if db.IsUniqueViolation(err) {
 		return p, errTaken
+	}
+	if db.IsCheckViolation(err, "projects_dates") {
+		return p, errDates
 	}
 	if errors.Is(err, errNotMember) {
 		return p, err
@@ -200,10 +219,10 @@ func find(ctx context.Context, tx pgx.Tx, workspaceID, key, viewerID string) (id
 	return id, current, private, err
 }
 
-// update changes the project's name, key, description and, unless nil, privacy, and publishes e; nil when the
-// actor can't see a project with the key. Going private makes the actor a member; going public drops the members.
-// Returns errTaken when the new key belongs to another project.
-func (m *model) update(ctx context.Context, workspaceID, key, actorID, name, newKey, description string, private *bool,
+// update changes the project's name, key, description and, unless nil, dates and privacy, and publishes e; nil when
+// the actor can't see a project with the key. Going private makes the actor a member; going public drops the members.
+// Returns errTaken when the new key belongs to another project, errDates when the target date ends up before the start.
+func (m *model) update(ctx context.Context, workspaceID, key, actorID string, in input, private *bool,
 	e realtime.Event) (*Project, error) {
 	var p *Project
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -211,8 +230,10 @@ func (m *model) update(ctx context.Context, workspaceID, key, actorID, name, new
 		if err != nil || id == "" {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `update projects set name = $2, key = $3, description = $4, private = coalesce($5, private) where id = $1`,
-			id, name, newKey, description, private); err != nil {
+		if _, err := tx.Exec(ctx, `update projects set name = $2, key = $3, description = $4, private = coalesce($5, private),
+			start_date = case when $6::text is null then start_date else nullif($6, '')::date end,
+			target_date = case when $7::text is null then target_date else nullif($7, '')::date end where id = $1`,
+			id, in.name, in.key, in.description, private, in.start, in.target); err != nil {
 			return err
 		}
 		flipped := private != nil && *private != wasPrivate
@@ -232,6 +253,9 @@ func (m *model) update(ctx context.Context, workspaceID, key, actorID, name, new
 	})
 	if db.IsUniqueViolation(err) {
 		return nil, errTaken
+	}
+	if db.IsCheckViolation(err, "projects_dates") {
+		return nil, errDates
 	}
 	return p, err
 }
@@ -345,4 +369,187 @@ func one(row pgx.Row) (*Project, error) {
 		return nil, fmt.Errorf("project: %w", err)
 	}
 	return &p, nil
+}
+
+// --- milestones ---
+
+type Milestone struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Date string `json:"date"`
+}
+
+const (
+	milestoneCols  = `id::text, name, to_char(date, 'YYYY-MM-DD')`
+	milestoneOrder = `order by date, lower(name), id`
+)
+
+// milestones returns the milestones of the project with the key by date, then name; nil when the viewer can't see it.
+func (m *model) milestones(ctx context.Context, workspaceID, key, viewerID string) ([]Milestone, error) {
+	var id string
+	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and `+visible+`
+		and key = canonical_key($1, $3)`, workspaceID, viewerID, key).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("milestones: %w", err)
+	}
+	rows, err := m.db.Query(ctx, `select `+milestoneCols+` from project_milestones where project_id = $1 `+milestoneOrder, id)
+	if err != nil {
+		return nil, fmt.Errorf("milestones: %w", err)
+	}
+	ms, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Milestone])
+	if err != nil {
+		return nil, fmt.Errorf("milestones: %w", err)
+	}
+	return ms, nil
+}
+
+// writeMilestone locks the project with the key the actor can see, runs fn with its id and publishes e:
+// errNoProject when there's no such project, errArchived when it's archived.
+func (m *model) writeMilestone(ctx context.Context, workspaceID, key, actorID string, e realtime.Event,
+	fn func(tx pgx.Tx, projectID string) error) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var id, current string
+		var archived bool
+		err := tx.QueryRow(ctx, `select id::text, key, archived_at is not null from projects where workspace_id = $1 and `+visible+`
+			and key = canonical_key($1, $3) for update`, workspaceID, actorID, key).Scan(&id, &current, &archived)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return errNoProject
+		case err != nil:
+			return err
+		case archived:
+			return errArchived
+		}
+		if err := fn(tx, id); err != nil {
+			return err
+		}
+		e.Kind, e.Project = "milestone.changed", id
+		e.Paths = []string{realtime.Roadmap(e.Workspace), realtime.Milestones(e.Workspace, current), realtime.Project(e.Workspace, current)}
+		return realtime.Publish(ctx, tx, e)
+	})
+	if err == nil || errors.Is(err, errNoProject) || errors.Is(err, errArchived) || errors.Is(err, errNoMilestone) {
+		return err
+	}
+	return fmt.Errorf("write milestone: %w", err)
+}
+
+func (m *model) createMilestone(ctx context.Context, workspaceID, key, actorID, name, date string, e realtime.Event) (*Milestone, error) {
+	var ms Milestone
+	err := m.writeMilestone(ctx, workspaceID, key, actorID, e, func(tx pgx.Tx, projectID string) error {
+		return tx.QueryRow(ctx, `insert into project_milestones (project_id, name, date, created_by) values ($1, $2, $3::date, $4)
+			returning `+milestoneCols, projectID, name, date, actorID).Scan(&ms.ID, &ms.Name, &ms.Date)
+	})
+	return &ms, err
+}
+
+// updateMilestone renames and redates the project's milestone with the id (a UUID); errNoMilestone when there's none.
+func (m *model) updateMilestone(ctx context.Context, workspaceID, key, actorID, id, name, date string, e realtime.Event) (*Milestone, error) {
+	var ms Milestone
+	err := m.writeMilestone(ctx, workspaceID, key, actorID, e, func(tx pgx.Tx, projectID string) error {
+		err := tx.QueryRow(ctx, `update project_milestones set name = $3, date = $4::date where id = $1 and project_id = $2
+			returning `+milestoneCols, id, projectID, name, date).Scan(&ms.ID, &ms.Name, &ms.Date)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNoMilestone
+		}
+		return err
+	})
+	return &ms, err
+}
+
+// deleteMilestone removes the project's milestone with the id (a UUID); errNoMilestone when there's none.
+func (m *model) deleteMilestone(ctx context.Context, workspaceID, key, actorID, id string, e realtime.Event) error {
+	return m.writeMilestone(ctx, workspaceID, key, actorID, e, func(tx pgx.Tx, projectID string) error {
+		tag, err := tx.Exec(ctx, `delete from project_milestones where id = $1 and project_id = $2`, id, projectID)
+		if err == nil && tag.RowsAffected() == 0 {
+			return errNoMilestone
+		}
+		return err
+	})
+}
+
+// --- roadmap ---
+
+type RoadmapProject struct {
+	id         string
+	Key        string  `json:"key"`
+	Name       string  `json:"name"`
+	Private    bool    `json:"private"`
+	StartDate  *string `json:"start_date"`
+	TargetDate *string `json:"target_date"`
+	Progress   struct {
+		Total     int `json:"total"`
+		Completed int `json:"completed"`
+		Canceled  int `json:"canceled"`
+	} `json:"progress"`
+	Milestones []Milestone    `json:"milestones"`
+	Cycles     []RoadmapCycle `json:"cycles"`
+}
+
+// RoadmapCycle is a cycle as the roadmap shows it; State is as in the cycle package.
+type RoadmapCycle struct {
+	Number   int    `json:"number"`
+	Name     string `json:"name"`
+	StartsOn string `json:"starts_on"`
+	EndsOn   string `json:"ends_on"`
+	State    string `json:"state"`
+}
+
+// roadmap returns the workspace's active projects the viewer can see, by start date (or target date when there's
+// none, undated last) then name, with their issue counts, milestones and cycles.
+func (m *model) roadmap(ctx context.Context, workspaceID, viewerID string) ([]RoadmapProject, error) {
+	rows, err := m.db.Query(ctx,
+		`select p.id::text, p.key, p.name, p.private, to_char(p.start_date, 'YYYY-MM-DD'), to_char(p.target_date, 'YYYY-MM-DD'),
+		        count(i.id), count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled')
+		 from projects p left join issues i on i.project_id = p.id left join statuses s on s.id = i.status_id
+		 where p.workspace_id = $1 and p.archived_at is null and can_see_project(p.id, $2)
+		 group by p.id order by coalesce(p.start_date, p.target_date) nulls last, lower(p.name), p.key`, workspaceID, viewerID)
+	if err != nil {
+		return nil, fmt.Errorf("roadmap: %w", err)
+	}
+	ps, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RoadmapProject, error) {
+		p := RoadmapProject{Milestones: []Milestone{}, Cycles: []RoadmapCycle{}}
+		err := row.Scan(&p.id, &p.Key, &p.Name, &p.Private, &p.StartDate, &p.TargetDate,
+			&p.Progress.Total, &p.Progress.Completed, &p.Progress.Canceled)
+		return p, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("roadmap: %w", err)
+	}
+	at := make(map[string]*RoadmapProject, len(ps))
+	ids := make([]string, len(ps))
+	for i := range ps {
+		at[ps[i].id], ids[i] = &ps[i], ps[i].id
+	}
+
+	var projectID string
+	var ms Milestone
+	rows, err = m.db.Query(ctx, `select project_id::text, `+milestoneCols+` from project_milestones
+		where project_id = any($1::uuid[]) `+milestoneOrder, ids)
+	if err != nil {
+		return nil, fmt.Errorf("roadmap milestones: %w", err)
+	}
+	if _, err := pgx.ForEachRow(rows, []any{&projectID, &ms.ID, &ms.Name, &ms.Date}, func() error {
+		at[projectID].Milestones = append(at[projectID].Milestones, ms)
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("roadmap milestones: %w", err)
+	}
+
+	var c RoadmapCycle
+	rows, err = m.db.Query(ctx, `select c.project_id::text, c.number, coalesce(c.name, 'Cycle ' || c.number),
+		to_char(c.starts_on, 'YYYY-MM-DD'), to_char(c.ends_on, 'YYYY-MM-DD'), `+cycle.StateSQL+`
+		from cycles c where c.project_id = any($1::uuid[]) order by c.starts_on, c.number`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("roadmap cycles: %w", err)
+	}
+	if _, err := pgx.ForEachRow(rows, []any{&projectID, &c.Number, &c.Name, &c.StartsOn, &c.EndsOn, &c.State}, func() error {
+		at[projectID].Cycles = append(at[projectID].Cycles, c)
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("roadmap cycles: %w", err)
+	}
+	return ps, nil
 }

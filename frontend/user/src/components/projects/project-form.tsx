@@ -3,6 +3,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
+import { DatePicker } from '@tether/shared/date-picker'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { Textarea } from '@tether/shared/textarea'
@@ -41,6 +42,8 @@ export function ProjectForm({ workspace, project, onDone }: { workspace: Workspa
   const [editedKey, setEditedKey] = useState(project?.key ?? null)
   const [description, setDescription] = useState(project?.description ?? '')
   const [secret, setSecret] = useState(project?.private ?? false)
+  const [startDate, setStartDate] = useState(project?.start_date ?? '')
+  const [targetDate, setTargetDate] = useState(project?.target_date ?? '')
   const [memberIds, setMemberIds] = useState<string[]>([])
   const { user } = useRouteContext({ from: '/_app' })
   const members = useWorkspaceMembers(workspace, secret && !project)
@@ -51,11 +54,14 @@ export function ProjectForm({ workspace, project, onDone }: { workspace: Workspa
     form.set('key', key.trim().toUpperCase())
     form.set('description', description)
     form.set('private', String(secret))
+    form.set('start_date', startDate)
+    form.set('target_date', targetDate)
     if (secret && !project) for (const id of memberIds) form.append('member_ids', id)
     const errors = {
       name: projectName(name),
       key: projectKeyFormat(key),
       description: projectDescription(description),
+      target_date: startDate && targetDate && targetDate < startDate ? 'Target date must be on or after the start date.' : null,
     }
     if (Object.values(errors).some(Boolean)) return { errors }
     let saved: Project
@@ -92,6 +98,10 @@ export function ProjectForm({ workspace, project, onDone }: { workspace: Workspa
         onChange={(e) => setDescription(e.target.value)}
         error={errors?.description}
       />
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+        <DatePicker label="Start date" placeholder="No start date" value={startDate} onChange={setStartDate} error={errors?.start_date} />
+        <DatePicker label="Target date" placeholder="No target date" value={targetDate} onChange={setTargetDate} error={errors?.target_date} />
+      </div>
       <div className="grid gap-1">
         <Checkbox label="Private" checked={secret} onChange={(e) => setSecret(e.target.checked)} />
         <p className="text-caption text-secondary m-0">Only members and admins can see it</p>

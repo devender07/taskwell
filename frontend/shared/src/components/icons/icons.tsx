@@ -64,6 +64,12 @@ export const FolderIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const RoadmapIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 6h9M8 12h12M6 18h8" strokeWidth={3} />
+  </Icon>
+)
+
 export const SettingsIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="3" />

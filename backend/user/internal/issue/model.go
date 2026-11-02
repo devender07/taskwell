@@ -506,7 +506,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		}
 		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
 			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
-				realtime.Activity(n.slug), realtime.ProjectStats(n.slug)})...)); err != nil {
+				realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)})...)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))

@@ -106,7 +106,7 @@ Plan: `docs/mcp-plan.md`.
 ## Later
 
 - Slack
-- Roadmap view
+- [x] Roadmap view: project start/target dates, milestones, timeline with cycles (docs/roadmap-plan.md)
 - Customer feedback intake
 - Public API and webhooks
 - Billing (Stripe, per seat)

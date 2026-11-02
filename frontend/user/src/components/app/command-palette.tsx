@@ -178,6 +178,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     if (onCreate) actions.push({ value: 'create', label: 'Create issue', hint: 'C', run: onCreate })
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
+    actions.push({ value: 'roadmap', label: 'Go to Roadmap', run: () => go('roadmap') })
     const current = cycles?.key === projectKey ? cycles?.list.find((c) => c.state === 'current') : undefined
     if (current) {
       actions.push({

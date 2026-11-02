@@ -93,6 +93,13 @@ export const projectKeyFormat: Check = (v) => {
   return null
 }
 
+export const milestoneName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Milestone name is required.'
+  if (s.length > 60) return 'Milestone name must be 60 characters or fewer.'
+  return null
+}
+
 export const projectDescription: Check = (v) => (v.trim().length > 10000 ? 'Description must be 10,000 characters or fewer.' : null)
 
 // A key suggestion from the name: "Mobile app" → "MA", "Engineering" → "ENG". '' when nothing usable.

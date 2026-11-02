@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { FolderIcon, HomeIcon, InboxIcon, SearchIcon, SettingsIcon, UserIcon } from '@tether/shared/icons'
+import { FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon } from '@tether/shared/icons'
 import { useState } from 'react'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
@@ -40,6 +40,10 @@ export function AppSidebar({ workspace }: { workspace: string }) {
       <Link to="/$workspace/projects" params={{ workspace }} aria-current={current('projects')}>
         <FolderIcon />
         Projects
+      </Link>
+      <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
+        <RoadmapIcon />
+        Roadmap
       </Link>
       <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
         <SettingsIcon />

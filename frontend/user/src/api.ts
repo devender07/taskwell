@@ -11,7 +11,8 @@ export type Member = { id: string; name: string; email: string; role: RoleRef }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
+export type Milestone = { id: string; name: string; date: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
 // icon/color: its custom type's look (null = the category's icon). type: the custom type, only on /statuses.
@@ -28,6 +29,11 @@ export type StatusType = { id: string; name: string; category: StatusCategory; i
 export type Label = { id: string; name: string; color: string }
 export type CycleState = 'upcoming' | 'current' | 'past'
 export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
+export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date'> & {
+  progress: { total: number; completed: number; canceled: number }
+  milestones: Milestone[]
+  cycles: Omit<CycleRef, 'id'>[]
+}
 export type Cycle = CycleRef & { custom_name: string | null; progress: { total: number; started: number; completed: number; canceled: number } }
 export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
 export type SearchIssue = IssueRef & { project: { key: string; name: string }; match: 'title' | 'description' | 'identifier' | null }
@@ -182,6 +188,14 @@ export function addProjectMembers(workspace: string, project: string, ids: strin
 }
 export const removeProjectMember = (workspace: string, project: string, userId: string) =>
   api<Project>(`${projectPath(workspace, project)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export const roadmapPath = (workspace: string) => `${workspacePath(workspace)}/roadmap`
+export const milestonesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/milestones`
+const milestonePath = (workspace: string, project: string, id: string) => `${milestonesPath(workspace, project)}/${encodeURIComponent(id)}`
+export const listMilestones = (workspace: string, project: string) => api<Milestone[]>(milestonesPath(workspace, project))
+export const saveMilestone = (workspace: string, project: string, form: FormData, id?: string) =>
+  api<Milestone>(id ? milestonePath(workspace, project, id) : milestonesPath(workspace, project), form)
+export const deleteMilestone = (workspace: string, project: string, id: string) => api(milestonePath(workspace, project, id), undefined, 'DELETE')
 
 export const cyclesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/cycles`
 const cyclePath = (workspace: string, project: string, number: number) => `${cyclesPath(workspace, project)}/${number}`

@@ -3,6 +3,7 @@ package project
 import (
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
 )
@@ -38,5 +39,28 @@ func checkDescription(s string) string {
 	}
 	return ""
 }
+
+func checkMilestoneName(s string) string {
+	if s == "" {
+		return "Milestone name is required."
+	}
+	if doc.Len(s) > 60 {
+		return "Milestone name must be 60 characters or fewer."
+	}
+	return ""
+}
+
+// checkDate takes a YYYY-MM-DD date.
+func checkDate(s string) string {
+	if t, err := time.Parse(time.DateOnly, s); err != nil || t.Year() < 1 {
+		return errDate
+	}
+	return ""
+}
+
+const (
+	errDate      = "Enter a valid date."
+	errDateOrder = "Target date must be on or after the start date."
+)
 
 func normKey(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }

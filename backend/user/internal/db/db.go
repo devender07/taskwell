@@ -170,3 +170,9 @@ func IsUniqueViolation(err error) bool {
 	pgErr := (*pgconn.PgError)(nil)
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
+
+// IsCheckViolation reports whether err is a violation of the named check constraint.
+func IsCheckViolation(err error, constraint string) bool {
+	pgErr := (*pgconn.PgError)(nil)
+	return errors.As(err, &pgErr) && pgErr.Code == "23514" && pgErr.ConstraintName == constraint
+}

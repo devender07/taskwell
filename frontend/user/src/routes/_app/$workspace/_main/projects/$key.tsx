@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
+import { Link, createFileRoute, notFound, redirect, useLoaderData, useNavigate } from '@tanstack/react-router'
 import { BackLink } from '@tether/shared/back-link'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
@@ -9,13 +9,15 @@ import { loaderApi, trackPath } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
-import { validateViewSearch } from '@/components/issues/view-search'
+import { validateViewSearch, type ViewSearch } from '@/components/issues/view-search'
+import { ProjectMilestones } from '@/components/projects/milestones'
 import { ArchiveProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
-  validateSearch: validateViewSearch,
+  // edit: opens the edit dialog (the roadmap's "Set dates").
+  validateSearch: (search): ViewSearch & { edit?: true } => ({ ...validateViewSearch(search), ...(search.edit === true ? { edit: true as const } : {}) }),
   loader: async (ctx) => {
     const { params } = ctx
     const path = `${workspacePath(params.workspace)}`
@@ -45,11 +47,17 @@ function ProjectPage() {
   const { project, issues, cycles, statuses, labels, members } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
-  const [editing, setEditing] = useState(false)
+  const navigate = useNavigate({ from: Route.fullPath })
+  const [editing, setEditing] = useState(Boolean(search.edit))
   const { openCreate } = useShortcuts()
   const manage = can(workspace, 'projects.manage')
   const create = can(workspace, 'issues.create') && !project.archived
   const current = cycles.find((c) => c.state === 'current')
+
+  function stopEditing() {
+    setEditing(false)
+    if (search.edit) void navigate({ search: ({ edit: _, ...rest }) => rest, replace: true })
+  }
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
@@ -91,7 +99,11 @@ function ProjectPage() {
                 {project.private ? <ProjectMembers workspace={workspace} project={project} /> : null}
                 <ArchiveProject workspace={workspace} project={project} />
               </>
-            ) : null}
+            ) : (
+              <Button variant="ghost" onClick={() => setEditing(true)}>
+                Milestones
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -115,10 +127,15 @@ function ProjectPage() {
         )}
       </section>
       {manage ? (
-        <Dialog open={editing} onClose={() => setEditing(false)} title="Edit project">
-          <ProjectForm workspace={workspace} project={project} onDone={() => setEditing(false)} />
+        <Dialog open={editing} onClose={stopEditing} title="Edit project">
+          <ProjectForm workspace={workspace} project={project} onDone={stopEditing} />
+          <ProjectMilestones workspace={workspace} project={project} manage={!project.archived} />
         </Dialog>
-      ) : null}
+      ) : (
+        <Dialog open={editing} onClose={stopEditing} title="Milestones">
+          <ProjectMilestones workspace={workspace} project={project} manage={false} titled={false} />
+        </Dialog>
+      )}
     </main>
   )
 }

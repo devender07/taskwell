@@ -1,6 +1,6 @@
 // Package project implements the user service's project API: list, create, open, update, archive and unarchive,
-// a private project's members, plus each active project's issue counts for Home. A private project is seen only by
-// its members and workspace admins (the can_see_project SQL function).
+// a private project's members, milestones, each active project's issue counts for Home, and the roadmap. A private
+// project is seen only by its members and workspace admins (the can_see_project SQL function).
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query.
@@ -27,6 +27,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/people", h.wrap(h.people))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/members", h.wrap(h.addMembers))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/projects/{key}/members/{userId}", h.wrap(h.removeMember))
+	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/milestones", h.wrap(h.milestones))
+	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/milestones", h.wrap(h.createMilestone))
+	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/milestones/{id}", h.wrap(h.updateMilestone))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/projects/{key}/milestones/{id}", h.wrap(h.deleteMilestone))
+	mux.HandleFunc("GET /api/workspaces/{slug}/roadmap", h.wrap(h.roadmap))
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

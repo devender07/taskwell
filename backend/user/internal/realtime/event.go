@@ -82,6 +82,12 @@ func Project(slug, key string) string { return Workspace(slug) + "/projects/" + 
 
 func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issues" }
 
+// Milestones is the project's milestone list.
+func Milestones(slug, key string) string { return Project(slug, key) + "/milestones" }
+
+// Roadmap is the workspace's roadmap: active projects with their dates, progress, cycles and milestones.
+func Roadmap(slug string) string { return Workspace(slug) + "/roadmap" }
+
 // Cycles is the project's cycle list.
 func Cycles(slug, key string) string { return Project(slug, key) + "/cycles" }
 
@@ -97,11 +103,11 @@ func Activity(slug string) string { return Workspace(slug) + "/activity" }
 // ProjectStats is the per-project issue counts on Home.
 func ProjectStats(slug string) string { return Workspace(slug) + "/project-stats" }
 
-// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues, and
-// Home's activity and project counts.
+// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues,
+// Home's activity and project counts, and the roadmap's progress.
 func IssuePaths(slug, identifier, key string) []string {
 	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug),
-		Activity(slug), ProjectStats(slug)}
+		Activity(slug), ProjectStats(slug), Roadmap(slug)}
 }
 
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it
