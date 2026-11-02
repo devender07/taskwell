@@ -181,6 +181,9 @@ const viewportW, viewportH = 1920, 1080
 
 const liveFPS = 5
 
+// shotTimeout bounds a screenshot: Chrome may never answer one, and a step waiting on it would hang the run.
+const shotTimeout = 10 * time.Second
+
 // newPage opens a tab in a fresh browser context whose requests go through proxyURL, answering the proxy's
 // challenge with the run's id and token, and shows it on live while someone watches the run (nil: no live view).
 func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecure bool, live *Live) (*page, error) {
@@ -259,9 +262,11 @@ func (p *page) stream(ctx context.Context, live *Live, runID string) {
 		var r struct {
 			Data []byte `json:"data"`
 		}
+		shotCtx, cancel := context.WithTimeout(ctx, shotTimeout)
 		p.shot.Lock()
-		err := p.c.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 90}, &r)
+		err := p.c.call(shotCtx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 90}, &r)
 		p.shot.Unlock()
+		cancel()
 		if err == nil {
 			live.publish(runID, r.Data)
 		}
@@ -507,6 +512,8 @@ func (p *page) screenshot(ctx context.Context) ([]byte, error) {
 	var r struct {
 		Data string `json:"data"`
 	}
+	ctx, cancel := context.WithTimeout(ctx, shotTimeout)
+	defer cancel()
 	p.shot.Lock()
 	defer p.shot.Unlock()
 	if err := p.c.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 60,
