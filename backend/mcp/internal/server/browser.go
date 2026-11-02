@@ -17,7 +17,8 @@ const browserGuide = "Open Tether's sandboxed test browser on an issue to record
 	"Flow: sign in with browser_fill_password and an account label from list_test_accounts (never ask the user for a password), " +
 	"follow the case's steps, add browser_assert_text / browser_assert_no_text for the expected result (negative checks catch " +
 	"most edge cases: a draft must not show in the other inbox), then browser_save to the case from list_test_cases and " +
-	"run_recorded_tests to prove it passes. A failed action records nothing. The session ends after 10 idle minutes, 30 in all, " +
+	"run_recorded_tests to prove it passes. For a known bug, record the expected result with failing: true, so the case fails " +
+	"until the bug is fixed. A failed action records nothing. The session ends after 10 idle minutes, 30 in all, " +
 	"on browser_save or browser_close. When playwright-cli is available you can record with it and save_test_script instead."
 
 // browserTools registers the browser session tools.
@@ -37,9 +38,9 @@ func (t *tools) browserTools(s *mcp.Server) {
 		"with the ref. Tether types it; you never see it. The account must be allowed on this page's site (list_test_accounts)."},
 		browserAct[browserPasswordIn](t, "fill_password"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_assert_text", Description: "Check the text is on the page (waits up to 5 s). " +
-		"Recorded only when it holds now."}, browserAct[browserTextIn](t, "assert_text"))
+		"Recorded only when it holds now, unless failing is true."}, browserAct[browserTextIn](t, "assert_text"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_assert_no_text", Description: "Check the text is not on the page (waits up to 5 s for it " +
-		"to go). Recorded only when it holds now."}, browserAct[browserTextIn](t, "assert_no_text"))
+		"to go). Recorded only when it holds now, unless failing is true."}, browserAct[browserTextIn](t, "assert_no_text"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_snapshot", Annotations: readOnly, Description: "Read the page again; records nothing."},
 		browserAct[browserIn](t, "snapshot"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_screenshot", Annotations: readOnly, Description: "See the page as an image."}, t.browserScreenshot)
@@ -93,7 +94,8 @@ type browserPasswordIn struct {
 
 type browserTextIn struct {
 	browserIn
-	Text string `json:"text" jsonschema:"up to 200 characters"`
+	Text    string `json:"text" jsonschema:"up to 200 characters"`
+	Failing bool   `json:"failing,omitempty" jsonschema:"true records the check even though it fails now, for a known bug: replays fail here until the bug is fixed"`
 }
 
 type browserOpenIn struct {
@@ -130,7 +132,9 @@ func (b browserWaitIn) form() url.Values  { return url.Values{"seconds": {strcon
 func (b browserPasswordIn) form() url.Values {
 	return url.Values{"ref": {strconv.Itoa(b.Ref)}, "account": {b.Account}}
 }
-func (b browserTextIn) form() url.Values { return url.Values{"text": {b.Text}} }
+func (b browserTextIn) form() url.Values {
+	return url.Values{"text": {b.Text}, "failing": {strconv.FormatBool(b.Failing)}}
+}
 
 // --- API shapes ---
 

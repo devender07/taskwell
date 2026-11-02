@@ -230,6 +230,7 @@ func TestRunner(t *testing.T) {
 	const password = "s3cret-pw"
 	var mu sync.Mutex
 	var gotPassword string
+	var views int // the button's name counts sign-in page views, so a replay sees a different number than the recording
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/login":
@@ -242,8 +243,12 @@ func TestRunner(t *testing.T) {
 					return
 				}
 			}
-			fmt.Fprint(w, `<title>Sign in</title><form method=post action=/login><input name=email aria-label=Email>
-				<input name=password type=password aria-label=Password><button>Sign in</button></form>`)
+			mu.Lock()
+			views++
+			n := views
+			mu.Unlock()
+			fmt.Fprintf(w, `<title>Sign in</title><form method=post action=/login><input name=email aria-label=Email>
+				<input name=password type=password aria-label=Password><button>Sign in %d</button></form>`, n)
 		case "/home":
 			fmt.Fprint(w, `<title>Home</title><p>Welcome Ann</p>`)
 		case "/evil":
@@ -422,6 +427,9 @@ func TestRunner(t *testing.T) {
 	sc, err := m.script(ctx, cs[0].ID)
 	if err != nil || sc == nil {
 		t.Fatalf("script %v %v", sc, err)
+	}
+	if last := sc.Steps[len(sc.Steps)-1]; last.Target == nil || last.Target.Name != "Sign in {n}" {
+		t.Errorf("recorded the count: %+v", last.Target)
 	}
 	for _, c := range []struct{ tool, status string }{{"assert_text", "passed"}, {"assert_no_text", "failed"}} {
 		withAssert := *sc

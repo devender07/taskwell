@@ -119,10 +119,14 @@ func locatorJS(l *locator) string {
 	if l.CSS != "" {
 		return "page.locator(" + js(l.CSS) + ")"
 	}
-	if role := roles[l.Tag]; role != "" {
-		return "page.getByRole(" + js(role) + ", { name: " + js(l.Name) + ", exact: true })"
+	name := js(l.Name) + ", exact: true"
+	if strings.Contains(l.Name, "{n}") { // a recorded count: any number
+		name = "new RegExp(" + js("^"+strings.ReplaceAll(regexp.QuoteMeta(l.Name), regexp.QuoteMeta("{n}"), `\d+`)+"$") + ")"
 	}
-	return "page.locator(" + js(l.Tag) + ", { hasText: " + js(l.Name) + " }).first()"
+	if role := roles[l.Tag]; role != "" {
+		return "page.getByRole(" + js(role) + ", { name: " + name + " })"
+	}
+	return "page.locator(" + js(l.Tag) + ", { hasText: " + strings.TrimSuffix(name, ", exact: true") + " }).first()"
 }
 
 // passwordEnv is the env var holding the account's password: TETHER_PASSWORD_ and the label as a constant.

@@ -732,7 +732,8 @@ func (h *Handler) sessionAction(w http.ResponseWriter, r *http.Request, userID s
 	seconds, _ := strconv.Atoi(r.FormValue("seconds"))
 	data, ok, err := h.toTester(w, r, s, http.MethodPost, "/actions", map[string]any{"action": action, "ref": ref,
 		"text": r.FormValue("text"), "url": strings.TrimSpace(r.FormValue("url")), "value": r.FormValue("value"),
-		"key": r.FormValue("key"), "seconds": seconds, "account": r.FormValue("account")})
+		"key": r.FormValue("key"), "seconds": seconds, "account": r.FormValue("account"),
+		"failing": r.FormValue("failing") == "true"})
 	if !ok || err != nil {
 		return err
 	}

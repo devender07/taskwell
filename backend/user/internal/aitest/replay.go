@@ -47,7 +47,13 @@ func locateJS(ref int) string {
   for (const a of ['data-testid', 'data-test', 'name', 'aria-label', 'placeholder']) {
     const v = el.getAttribute(a); if (!css && v) css = only(tag + '[' + a + '=' + JSON.stringify(v) + ']');
   }
-  return {css, tag, name: nameOf(el)};
+  if (!css && !nameOf(el)) { // nothing to find it by but where it is: its path from the nearest stable id
+    const path = []; let e = el;
+    for (; e && e !== document.body && !(e.id && !/\d{3,}/.test(e.id)); e = e.parentElement)
+      path.unshift(e.tagName.toLowerCase() + ':nth-child(' + ([...e.parentElement.children].indexOf(e) + 1) + ')');
+    css = only((e && e !== document.body ? '#' + CSS.escape(e.id) : 'body') + ' > ' + path.join(' > '));
+  }
+  return {css, tag, name: nameOf(el).replace(/\d+/g, '{n}')}; // counts change ("Drafts 14"): never record them
 })()`
 }
 
@@ -63,7 +69,9 @@ func resolveJS(l *locator) string {
   document.querySelectorAll('[data-tether-ref="` + strconv.Itoa(replayRef) + `"]').forEach(e => e.removeAttribute('data-tether-ref'));
   let found = null;
   if (L.css) { const m = [...document.querySelectorAll(L.css)].filter(visible); if (m.length === 1) found = m[0]; }
-  if (!found) found = [...document.querySelectorAll(sel)].find(el => visible(el) && el.tagName.toLowerCase() === L.tag && nameOf(el) === L.name) || null;
+  // ponytail: first match wins, so "Page 1" and "Page 2" both resolve to the first; record a css target if that bites
+  const bare = s => s.replace(/\d+/g, '{n}');
+  if (!found) found = [...document.querySelectorAll(sel)].find(el => visible(el) && el.tagName.toLowerCase() === L.tag && bare(nameOf(el)) === bare(L.name)) || null;
   if (!found) return false;
   found.setAttribute('data-tether-ref', '` + strconv.Itoa(replayRef) + `'); return true;
 })()`

@@ -44,7 +44,10 @@ func TestSession(t *testing.T) {
 			fmt.Fprint(w, `<title>Sign in</title><form method=post action=/login><input name=email aria-label=Email>
 				<input name=password type=password aria-label=Password><button>Sign in</button></form>`)
 		case r.URL.Path == "/home":
-			fmt.Fprint(w, `<title>Home</title><p>Welcome Ann</p>`)
+			// Fields apps build without a plain input: a plaintext-only editable, and a placeholder that turns into an
+			// input when focused.
+			fmt.Fprint(w, `<title>Home</title><p>Welcome Ann</p><div contenteditable=plaintext-only aria-label=Subject></div>
+				<div tabindex=0 onfocus="const i = document.createElement('input'); i.ariaLabel = 'To'; this.replaceWith(i); i.focus()">Email ID</div><div contenteditable></div>`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -107,6 +110,23 @@ func TestSession(t *testing.T) {
 	a := act(map[string]any{"action": "assert_no_text", "text": "Sign in"}, "")
 	if len(a.Steps) != 6 || !strings.Contains(a.Page.Elements, "Welcome Ann") {
 		t.Fatalf("after sign-in %+v", a)
+	}
+	if !strings.Contains(a.Page.Elements, `[1] div "Subject"`) || !strings.Contains(a.Page.Elements, `[2] div "Email ID"`) {
+		t.Fatalf("custom fields not listed: %s", a.Page.Elements)
+	}
+	act(map[string]any{"action": "type", "ref": 1, "text": "Hello"}, "")
+	a = act(map[string]any{"action": "type", "ref": 2, "text": "bo@acme.test"}, "")
+	if !strings.Contains(a.Page.Elements, `input type=text "To" value="bo@acme.test"`) || !strings.Contains(a.Page.Elements, "Hello") {
+		t.Fatalf("typing into custom fields %+v", a)
+	}
+	a = act(map[string]any{"action": "type", "ref": 3, "text": "Body"}, "") // no name: found by its path
+	if !strings.Contains(a.Page.Elements, `div "Body"`) {
+		t.Fatalf("typing into an unnamed field %+v", a)
+	}
+	n := len(a.Steps)
+	a = act(map[string]any{"action": "assert_no_text", "text": "Welcome Ann", "failing": true}, "")
+	if len(a.Steps) != n+1 || !strings.HasPrefix(a.Page.Elements, "Recorded as currently failing") {
+		t.Fatalf("failing assertion %+v", a)
 	}
 	if gotPassword != password {
 		t.Errorf("site got password %q", gotPassword)

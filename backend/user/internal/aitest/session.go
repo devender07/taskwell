@@ -47,7 +47,8 @@ type session struct {
 
 // sessionAction is a request to POST /sessions/{id}/actions.
 type sessionAction struct {
-	Action string `json:"action"`
+	Action  string `json:"action"`
+	Failing bool   `json:"failing"` // an assertion that's expected to fail until a bug is fixed: recorded anyway
 	toolInput
 }
 
@@ -236,6 +237,7 @@ func (r *Runner) failed(w http.ResponseWriter, status int, id string, err error)
 // that fails answers its error and records nothing; err is a broken browser.
 func (r *Runner) step(ctx context.Context, s *session, a sessionAction) (sessionAnswer, error) {
 	var ans sessionAnswer
+	var notes []string
 	switch a.Action {
 	case "snapshot":
 	case "assert_text", "assert_no_text":
@@ -252,12 +254,15 @@ func (r *Runner) step(ctx context.Context, s *session, a sessionAction) (session
 		switch {
 		case err != nil:
 			return ans, err
-		case !found:
+		case !found && !a.Failing:
 			ans.Error = msg
 		case len(s.steps) >= maxScriptSteps:
 			ans.Error = "A case records up to 60 steps. Save it."
 		default:
 			s.steps = append(s.steps, scriptStep{Tool: a.Action, Text: text})
+			if !found {
+				notes = append(notes, "Recorded as currently failing: "+msg+" Replays fail here until it holds.")
+			}
 		}
 	default:
 		if len(s.steps) >= maxScriptSteps {
@@ -284,12 +289,11 @@ func (r *Runner) step(ctx context.Context, s *session, a sessionAction) (session
 			s.steps = append(s.steps, step)
 		}
 	}
-	var blocked []string
 	seen := map[string]bool{}
 	for _, host := range r.o.Proxy.takeBlocked(s.id) {
 		if !seen[host] && s.pg.asked(host) {
 			seen[host] = true
-			blocked = append(blocked, "Blocked: "+host+" isn't a registered test site.")
+			notes = append(notes, "Blocked: "+host+" isn't a registered test site.")
 		}
 	}
 	st, err := s.pg.state(ctx)
@@ -300,7 +304,7 @@ func (r *Runner) step(ctx context.Context, s *session, a sessionAction) (session
 	if t := []rune(st.Text); len(t) > maxPageText {
 		st.Text = string(t[:maxPageText])
 	}
-	ans.Page = sessionPage{URL: st.URL, Title: st.Title, Elements: stateText(strings.Join(blocked, "\n"), st)}
+	ans.Page = sessionPage{URL: st.URL, Title: st.Title, Elements: stateText(strings.Join(notes, "\n"), st)}
 	ans.Steps = s.steps
 	return ans, nil
 }

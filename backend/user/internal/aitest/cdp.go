@@ -498,7 +498,7 @@ type pageState struct {
 // elementsJS declares what stateJS, locateJS and resolveJS share: which elements are interactive, whether one is
 // visible, and its accessible-ish name.
 const elementsJS = `
-  const sel = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[contenteditable=""],[contenteditable=true],[onclick]';
+  const sel = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[contenteditable]:not([contenteditable=false]),[tabindex]:not([tabindex="-1"]),[onclick]';
   const clean = s => String(s || '').trim().replace(/\s+/g, ' ').slice(0, 80);
   const visible = el => { const r = el.getBoundingClientRect(), st = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none' && el.type !== 'hidden'; };
