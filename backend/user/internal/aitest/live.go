@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Live fans each run's screencast frames (JPEG) out to viewers as an MJPEG stream, which an <img> plays natively.
+// Live fans each run's frames (JPEG) out to viewers as an MJPEG stream, which an <img> plays natively.
 // The tester serves it on an internal port; the user API checks membership and proxies to it.
 type Live struct {
 	mu   sync.Mutex
@@ -31,7 +31,8 @@ func (l *Live) feed(runID string) *feed {
 	return f
 }
 
-// publish sends a frame to the run's viewers; a viewer still busy with the previous frame skips this one.
+// publish sends a frame to the run's viewers; a viewer still busy with the previous frame gets this one instead of
+// the one waiting, so a slow viewer skips ahead rather than stopping on an old frame.
 func (l *Live) publish(runID string, frame []byte) {
 	if l == nil {
 		return
@@ -42,10 +43,22 @@ func (l *Live) publish(runID string, frame []byte) {
 	f.last = frame
 	for ch := range f.viewers {
 		select {
-		case ch <- frame:
+		case <-ch:
 		default:
 		}
+		ch <- frame // never blocks: publish is the only sender, under l.mu, and the buffer is empty
 	}
+}
+
+// watched reports whether anyone is viewing the run, so frames are only taken for someone.
+func (l *Live) watched(runID string) bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	f := l.runs[runID]
+	return f != nil && len(f.viewers) > 0
 }
 
 // end closes the run's streams.

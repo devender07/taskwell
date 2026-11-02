@@ -123,7 +123,7 @@ func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logge
 	if err != nil {
 		return "", nil, err
 	}
-	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, r.o.IgnoreCertErrors, func(f []byte) { r.o.Live.publish(j.runID, f) })
+	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, r.o.IgnoreCertErrors, r.o.Live)
 	if err != nil {
 		return "", nil, err
 	}

@@ -118,7 +118,7 @@ func (r *Runner) openSession(w http.ResponseWriter, req *http.Request) {
 	r.o.Proxy.open(s.id, j.token, hosts)
 	c, err := r.browser(ctx)
 	if err == nil {
-		s.pg, err = c.newPage(ctx, r.o.ProxyURL, s.id, j.token, r.o.IgnoreCertErrors, func([]byte) {})
+		s.pg, err = c.newPage(ctx, r.o.ProxyURL, s.id, j.token, r.o.IgnoreCertErrors, nil)
 	}
 	if err != nil {
 		r.o.Proxy.close(s.id)

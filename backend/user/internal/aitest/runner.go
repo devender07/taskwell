@@ -42,7 +42,7 @@ type RunnerOptions struct {
 	IgnoreCertErrors bool
 	Browsers         int // runs at once
 	Proxy            *Proxy
-	Live             *Live  // fans the page's screencast out to viewers
+	Live             *Live  // shows the run's page to viewers
 	LiveURL          string // how the user API reaches Live and browser sessions: stored on each claimed run and the heartbeat
 }
 
@@ -337,7 +337,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result, logged int
 	if err != nil {
 		return "", "", nil, err
 	}
-	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, r.o.IgnoreCertErrors, func(f []byte) { r.o.Live.publish(j.runID, f) })
+	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, r.o.IgnoreCertErrors, r.o.Live)
 	if err != nil {
 		return "", "", nil, err
 	}

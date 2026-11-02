@@ -170,18 +170,21 @@ type page struct {
 	c                            *cdp
 	contextID, targetID, session string
 
-	frame func([]byte)
+	stop context.CancelFunc // ends the live view
+	shot sync.Mutex         // one capture at a time: a step's screenshot scales the page while it's taken
 
 	mu        sync.Mutex
 	requested map[string]bool // hosts the page asked for, so the browser's own traffic stays out of the step log
 }
 
-const viewportW, viewportH = 1280, 800
+const viewportW, viewportH = 1920, 1080
+
+const liveFPS = 5
 
 // newPage opens a tab in a fresh browser context whose requests go through proxyURL, answering the proxy's
-// challenge with the run's id and token, and passes each screencast frame (JPEG) to frame.
-func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecure bool, frame func([]byte)) (*page, error) {
-	p := &page{c: c, requested: map[string]bool{}, frame: frame}
+// challenge with the run's id and token, and shows it on live while someone watches the run (nil: no live view).
+func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecure bool, live *Live) (*page, error) {
+	p := &page{c: c, requested: map[string]bool{}, stop: func() {}}
 	if err := c.call(ctx, "", "Target.createBrowserContext", map[string]any{
 		"disposeOnDetach": true, "proxyServer": proxyURL, "proxyBypassList": "<-loopback>",
 	}, &struct {
@@ -214,7 +217,6 @@ func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecu
 		{"Page.enable", nil},
 		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": viewportW, "height": viewportH, "deviceScaleFactor": 1, "mobile": false}},
 		{"Browser.setDownloadBehavior", map[string]any{"behavior": "deny", "browserContextId": p.contextID}},
-		{"Page.startScreencast", map[string]any{"format": "jpeg", "quality": 50, "maxWidth": viewportW, "maxHeight": viewportH}},
 	}
 	if insecure {
 		steps = append(steps, struct {
@@ -232,7 +234,38 @@ func (c *cdp) newPage(ctx context.Context, proxyURL, runID, token string, insecu
 			return nil, err
 		}
 	}
+	if live != nil {
+		var watch context.Context
+		watch, p.stop = context.WithCancel(context.Background())
+		go p.stream(watch, live, runID)
+	}
 	return p, nil
+}
+
+// stream shows the page on live a few times a second while the run has a viewer. Chrome's own screencast
+// captures every repaint and took several cores on a busy page; a screenshot now and then takes a fraction of one.
+func (p *page) stream(ctx context.Context, live *Live, runID string) {
+	t := time.NewTicker(time.Second / liveFPS)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !live.watched(runID) {
+			continue
+		}
+		var r struct {
+			Data []byte `json:"data"`
+		}
+		p.shot.Lock()
+		err := p.c.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 90}, &r)
+		p.shot.Unlock()
+		if err == nil {
+			live.publish(runID, r.Data)
+		}
+	}
 }
 
 // event answers the page's paused requests, the proxy's auth challenge and JavaScript dialogs.
@@ -245,8 +278,6 @@ func (p *page) event(runID, token, method string, params json.RawMessage) {
 		AuthChallenge struct {
 			Source string `json:"source"`
 		} `json:"authChallenge"`
-		Data      []byte `json:"data"` // screencast frame, base64 in the JSON
-		SessionID int    `json:"sessionId"`
 	}
 	_ = json.Unmarshal(params, &e)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -265,9 +296,6 @@ func (p *page) event(runID, token, method string, params json.RawMessage) {
 			resp = map[string]any{"response": "ProvideCredentials", "username": runID, "password": token}
 		}
 		_ = p.c.call(ctx, p.session, "Fetch.continueWithAuth", map[string]any{"requestId": e.RequestID, "authChallengeResponse": resp}, nil)
-	case "Page.screencastFrame":
-		p.frame(e.Data)
-		_ = p.c.call(ctx, p.session, "Page.screencastFrameAck", map[string]any{"sessionId": e.SessionID}, nil)
 	case "Page.javascriptDialogOpening":
 		_ = p.c.call(ctx, p.session, "Page.handleJavaScriptDialog", map[string]any{"accept": true}, nil)
 	}
@@ -282,6 +310,7 @@ func (p *page) asked(host string) bool {
 
 // close disposes of the page's browser context (cookies, storage and all).
 func (p *page) close() {
+	p.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p.c.mu.Lock()
@@ -478,7 +507,11 @@ func (p *page) screenshot(ctx context.Context) ([]byte, error) {
 	var r struct {
 		Data string `json:"data"`
 	}
-	if err := p.c.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 60}, &r); err != nil {
+	p.shot.Lock()
+	defer p.shot.Unlock()
+	if err := p.c.call(ctx, p.session, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 60,
+		// at 1280 wide, as before the live view went 1080p: Claude reads each one, so a bigger image costs every step
+		"clip": map[string]any{"x": 0, "y": 0, "width": viewportW, "height": viewportH, "scale": 1280.0 / viewportW}}, &r); err != nil {
 		return nil, err
 	}
 	b, err := base64.StdEncoding.DecodeString(r.Data)
