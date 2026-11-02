@@ -92,6 +92,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] Personal API tokens (Settings → API tokens): create (shown once, with the `claude mcp add` command), list with last used, revoke; `Authorization: Bearer tth_…` signs any `/api` request in as that user, except auth, password and token endpoints
 - [x] MCP server (`backend/mcp`, `/mcp`, streamable HTTP, stateless): list workspaces / projects / options, search, list (filters), my issues, get, create, update, comment; names instead of ids; forwards the caller's token to the API
 - [x] MCP tools for every feature: AI testing (test cases, AI runs with wait, manual runs marked by the client, sites, accounts, usage), projects, cycles, issue links/watch/delete, comments, activity, labels, statuses, chat, inbox, invites
+- [x] Tests view (MCP Apps) for `get_test_run` and `list_test_cases` in Claude Desktop / claude.ai: results, notes, reproduction steps, screenshots on demand, open in Tether
 
 ## Admin app (alongside, as each phase needs it)
 

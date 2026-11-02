@@ -150,3 +150,12 @@ Left out (admin and secrets; add when asked): workspace create/delete/rename, ro
 Server: the MCP HTTP client timeout stays 30 s per API call; `get_test_run`'s wait is its own loop with the request's context, so the MCP server's `WriteTimeout` (none set) doesn't cut it.
 
 Verification: `go vet`, `go test` (extend the in-memory test with `create_test_cases` and `get_test_run` waiting on a fake run that finishes on the second poll), then live: create cases on an issue through MCP, record a manual run with mixed results, check the issue's Tests section in the app shows them; start an AI run if a tester and site are configured, else confirm the API's 503/409 message comes through.
+
+## Phase 3: tests view (MCP Apps)
+
+`get_test_run` and `list_test_cases` carry `_meta.ui.resourceUri = ui://tether/tests.html`, so hosts that support MCP Apps (Claude Desktop, claude.ai) render the run or the cases inline; their JSON text stays for text-only clients, and the same JSON goes in `structuredContent` for the view.
+
+- `backend/mcp/internal/server/tests.html`, embedded with `go:embed`: no build step. It imports the ext-apps `App` client from unpkg (pinned `@2.0.4/app-with-deps`; the resource declares `csp.resourceDomains: ["https://unpkg.com"]`). `ponytail:` CDN; bundle it into the file if a host blocks unpkg.
+- Run view: status, counts, cost, error; per result its summary or note, reproduction steps (open for failures), the case's steps and expected result, and "Show screenshots". "Refresh" on an unfinished run calls `get_test_run` with a 30 s wait. Cases view: each case with its steps and last result. "Open in Tether" asks the host to open the issue.
+- Screenshots need the caller's Tether sign-in, which the view's iframe doesn't have: the app-only tool `get_test_screenshot` (`visibility: ["app"]`, hidden from the model) fetches an `/api/files/` path with the token and returns it as image content. Any other URL is refused.
+- Theme: host CSS variables first, DESIGN.md tokens as the fallback for dark and light.

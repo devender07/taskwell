@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -186,5 +189,58 @@ func TestGetTestRun(t *testing.T) {
 	if polls != 2 || out.Status != "failed" || out.URL != "https://app.test/acme/issue/ENG-1" || len(out.Results) != 1 ||
 		!slices.Equal(out.Results[0].Screenshots, []string{"https://app.test/api/files/f1/shot.jpg"}) || out.Results[0].Summary != "No button" {
 		t.Errorf("polls=%d result %s", polls, text)
+	}
+}
+
+// TestTestsView checks the MCP Apps wiring: the view resource, the tools linked to it, and the screenshot loader
+// fetching only Tether files, with the caller's token.
+func TestTestsView(t *testing.T) {
+	png := []byte("\x89PNG fake")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/files/f1/step.png" || r.Header.Get("Authorization") != "Bearer tth_x" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	defer srv.Close()
+	cs := connect(t, srv, "Bearer tth_x")
+	ctx := context.Background()
+
+	res, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: testsViewURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := res.Contents[0]; c.MIMEType != appMIMEType || !strings.Contains(c.Text, "ext-apps@") {
+		t.Errorf("view resource = %q, %d bytes", c.MIMEType, len(c.Text))
+	}
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := map[string]string{}
+	for _, tl := range tools.Tools {
+		if ui, ok := tl.Meta["ui"].(map[string]any); ok {
+			linked[tl.Name] = fmt.Sprint(ui["resourceUri"], ui["visibility"])
+		}
+	}
+	want := map[string]string{"get_test_run": testsViewURI + "<nil>", "list_test_cases": testsViewURI + "<nil>",
+		"get_test_screenshot": testsViewURI + "[app]"}
+	if !maps.Equal(linked, want) {
+		t.Errorf("linked tools = %v, want %v", linked, want)
+	}
+
+	shot, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_test_screenshot", Arguments: map[string]any{"url": "https://app.test/api/files/f1/step.png"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img, ok := shot.Content[0].(*mcp.ImageContent); !ok || img.MIMEType != "image/png" || !bytes.Equal(img.Data, png) {
+		t.Errorf("screenshot = %#v", shot.Content[0])
+	}
+	for _, u := range []string{"https://evil.test/api/files/f1/step.png", "https://app.test/api/me", "https://app.test/api/files/../me"} {
+		if text, isErr := call(t, cs, "get_test_screenshot", map[string]any{"url": u}); !isErr {
+			t.Errorf("get_test_screenshot(%s) = %s, want an error", u, text)
+		}
 	}
 }

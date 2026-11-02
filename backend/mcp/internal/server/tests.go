@@ -25,7 +25,7 @@ const testingHow = " Two ways to test an issue: (1) run_ai_test has Tether's AI 
 
 // testTools registers the AI testing tools: test cases, runs, sites, accounts and usage.
 func (t *tools) testTools(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "list_test_cases", Annotations: readOnly,
+	mcp.AddTool(s, &mcp.Tool{Name: "list_test_cases", Annotations: readOnly, Meta: viewMeta(false),
 		Description: "List an issue's test cases with their ids, steps, expected result and last result. " +
 			"recorded means a passed AI run's steps are saved and replay without the AI." + testingHow}, t.listTestCases)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_test_case",
@@ -49,7 +49,7 @@ func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "mark_test_result",
 		Description: "Record a manual run's result: passed, failed or skipped, with a note saying what you saw (always for a failure). " +
 			"AI runs are marked by Tether.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, t.markTestResult)
-	mcp.AddTool(s, &mcp.Tool{Name: "get_test_run", Annotations: readOnly,
+	mcp.AddTool(s, &mcp.Tool{Name: "get_test_run", Annotations: readOnly, Meta: viewMeta(false),
 		Description: "Read a test run: status, counts, cost, error, and each result with its summary, reproduction steps and screenshots. " +
 			"wait_seconds (up to 120) waits for a running run to finish, checking every 3 seconds; call again if it is still running."},
 		t.getTestRun)
@@ -278,7 +278,11 @@ func (t *tools) listTestCases(ctx context.Context, _ *mcp.CallToolRequest, in is
 	if err != nil {
 		return nil, nil, err
 	}
-	return result(cs)
+	return viewResult(struct {
+		Issue string     `json:"issue"`
+		URL   string     `json:"url"`
+		Cases []testCase `json:"cases"`
+	}{in.Identifier, t.issueURL(in.Workspace, in.Identifier), cs})
 }
 
 func caseForm(c caseIn) url.Values {
@@ -401,7 +405,7 @@ func (t *tools) getTestRun(ctx context.Context, _ *mcp.CallToolRequest, in runIn
 		}
 		left := time.Until(deadline)
 		if slices.Contains(finished, r.Status) || left <= 0 {
-			return result(t.runOut(in.Workspace, r))
+			return viewResult(t.runOut(in.Workspace, r))
 		}
 		select {
 		case <-ctx.Done():

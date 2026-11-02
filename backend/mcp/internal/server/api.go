@@ -42,13 +42,30 @@ func (a *api) del(ctx context.Context, path string, out any) error {
 }
 
 func (a *api) do(ctx context.Context, method, path string, form url.Values, out any) error {
+	data, _, err := a.send(ctx, method, path, form, 8<<20)
+	if err != nil || out == nil || len(data) == 0 {
+		return err
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("decode tether api: %w", err)
+	}
+	return nil
+}
+
+// file returns the body and Content-Type of GET path, up to limit bytes.
+func (a *api) file(ctx context.Context, path string, limit int64) ([]byte, string, error) {
+	return a.send(ctx, http.MethodGet, path, nil, limit)
+}
+
+// send makes the request and returns the answer's body and Content-Type, or the API's error.
+func (a *api) send(ctx context.Context, method, path string, form url.Values, limit int64) ([]byte, string, error) {
 	var body io.Reader
 	if form != nil {
 		body = strings.NewReader(form.Encode())
 	}
 	req, err := http.NewRequestWithContext(ctx, method, a.base+path, body)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return nil, "", fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", a.auth)
 	if form != nil {
@@ -56,26 +73,20 @@ func (a *api) do(ctx context.Context, method, path string, form url.Values, out 
 	}
 	res, err := a.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("call tether api: %w", err)
+		return nil, "", fmt.Errorf("call tether api: %w", err)
 	}
 	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
+	data, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	if err != nil {
-		return fmt.Errorf("read tether api: %w", err)
+		return nil, "", fmt.Errorf("read tether api: %w", err)
 	}
 	if res.StatusCode == http.StatusUnauthorized {
-		return errors.New(errBadToken)
+		return nil, "", errors.New(errBadToken)
 	}
 	if res.StatusCode >= 400 {
-		return apiError(res.StatusCode, data)
+		return nil, "", apiError(res.StatusCode, data)
 	}
-	if out == nil || len(data) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("decode tether api: %w", err)
-	}
-	return nil
+	return data, res.Header.Get("Content-Type"), nil
 }
 
 // apiError is the API's message: "error", or each of "errors" as "field: message".
