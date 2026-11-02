@@ -135,7 +135,7 @@ func TestRecordedRuns(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `update system_config set value = $1 where key = 'ai_test_monthly_limit_usd'`, limit)
 	})
-	if err := m.heartbeat(ctx); err != nil {
+	if err := m.heartbeat(ctx, "http://tester.test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,15 +220,7 @@ func TestRecordedRuns(t *testing.T) {
 // metadata address that's blocked and fails, then a run of just the sign-in case that replays it without Claude. Needs CHROME_URL (e.g. google-chrome --headless=new --remote-debugging-port=9333),
 // or CHROME_URL=http://127.0.0.1:9222 CHROME_IN_DOCKER=1 with the dev compose chrome.
 func TestRunner(t *testing.T) {
-	chromeURL := os.Getenv("CHROME_URL")
-	if chromeURL == "" {
-		t.Skip("CHROME_URL not set")
-	}
-	if resp, err := http.Get(chromeURL + "/json/version"); err != nil {
-		t.Skipf("chrome not reachable: %v", err)
-	} else {
-		resp.Body.Close()
-	}
+	chromeURL, proxy, proxyURL := testBrowser(t)
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
 	ann, wsID, issueID := testIssue(t, pool)
@@ -332,22 +324,6 @@ func TestRunner(t *testing.T) {
 	if err := pool.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, started_by, proxy_token) values ($1, $2, 'ai', $3, 'tok')
 		returning id::text`, wsID, issueID, ann).Scan(&runID); err != nil {
 		t.Fatal(err)
-	}
-	proxy := NewProxy(true) // the site is on 127.0.0.1
-	psrv := httptest.NewUnstartedServer(proxy)
-	docker := os.Getenv("CHROME_IN_DOCKER") != "" // the dev compose chrome: it reaches the proxy on the host
-	if docker {
-		l, err := net.Listen("tcp", "0.0.0.0:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		psrv.Listener = l
-	}
-	psrv.Start()
-	defer psrv.Close()
-	proxyURL := psrv.URL
-	if docker {
-		proxyURL = "http://host.docker.internal:" + strconv.Itoa(psrv.Listener.Addr().(*net.TCPAddr).Port)
 	}
 	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, UploadDir: t.TempDir(), ChromeURL: chromeURL,
 		ProxyURL: proxyURL, Browsers: 1, Proxy: proxy})
@@ -481,6 +457,38 @@ func TestRunner(t *testing.T) {
 			}
 		}
 	}
+}
+
+// testBrowser returns CHROME_URL and an egress proxy (private sites allowed: test sites are on 127.0.0.1) with the
+// URL Chrome reaches it at, or skips the test without a reachable Chrome.
+func testBrowser(t *testing.T) (chromeURL string, proxy *Proxy, proxyURL string) {
+	t.Helper()
+	chromeURL = os.Getenv("CHROME_URL")
+	if chromeURL == "" {
+		t.Skip("CHROME_URL not set")
+	}
+	if resp, err := http.Get(chromeURL + "/json/version"); err != nil {
+		t.Skipf("chrome not reachable: %v", err)
+	} else {
+		resp.Body.Close()
+	}
+	proxy = NewProxy(true)
+	psrv := httptest.NewUnstartedServer(proxy)
+	docker := os.Getenv("CHROME_IN_DOCKER") != "" // the dev compose chrome: it reaches the proxy on the host
+	if docker {
+		l, err := net.Listen("tcp", "0.0.0.0:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		psrv.Listener = l
+	}
+	psrv.Start()
+	t.Cleanup(psrv.Close)
+	proxyURL = psrv.URL
+	if docker {
+		proxyURL = "http://host.docker.internal:" + strconv.Itoa(psrv.Listener.Addr().(*net.TCPAddr).Port)
+	}
+	return chromeURL, proxy, proxyURL
 }
 
 // message is a Claude response with one content block (JSON) and the stop reason.

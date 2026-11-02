@@ -21,7 +21,8 @@ var finished = []string{"passed", "failed", "error", "cancelled", "limit_reached
 
 const testingHow = " Three ways to test an issue: (1) run_ai_test has Tether's AI drive a browser against the workspace's test site, " +
 	"then get_test_run with wait_seconds until it finishes; (2) test it yourself with your own tools, recording the outcome with " +
-	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps with save_test_script, then " +
+	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps by driving Tether's test " +
+	"browser with browser_open (nothing to install, no AI spend) or with your own tools and save_test_script, then " +
 	"run_recorded_tests replays them with no AI spend. A failed result becomes a bug through create_issue: the case's " +
 	"title as the title, the result's summary and reproduction steps as the description."
 
@@ -90,7 +91,8 @@ func (t *tools) testTools(s *mcp.Server) {
 }
 
 const recordingGuide = "Record a test case's browser steps so Tether replays it without AI (run_recorded_tests) and exports it to Playwright. " +
-	"Explore the site with your own browser tools first; Tether spends no AI here. " +
+	"Explore the site with your own browser tools first; Tether spends no AI here. Without browser tools of your own, " +
+	"use browser_open: Tether's test browser records the steps as you go and browser_save stores them. " +
 	"steps start with navigate (a URL on one of the workspace's test sites, from list_test_sites); tools: navigate {url}, " +
 	"click {target}, type {target, text}, select {target, value}, press {key}, wait {seconds 1-5}, fill_password {target, account}, " +
 	"assert_text {text} and assert_no_text {text} (wait up to 5 s for the text to appear / disappear). " +
@@ -210,10 +212,10 @@ type siteIDIn struct {
 }
 
 type accountIn struct {
-	Workspace string `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
-	AccountID string `json:"account_id,omitempty" jsonschema:"the account to change, from list_test_accounts; leave out to add one"`
-	Label     string `json:"label" jsonschema:"such as Admin user"`
-	Username  string `json:"username"`
+	Workspace string  `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
+	AccountID string  `json:"account_id,omitempty" jsonschema:"the account to change, from list_test_accounts; leave out to add one"`
+	Label     string  `json:"label" jsonschema:"such as Admin user"`
+	Username  string  `json:"username"`
 	Password  string  `json:"password,omitempty" jsonschema:"required for a new account; leave out to keep the saved one"`
 	Site      *string `json:"site,omitempty" jsonschema:"the test site's base URL or host from list_test_sites; empty for any site; leave out to keep it"`
 }

@@ -5,7 +5,8 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond) and model.go owns every SQL
 // query. validate.go checks input, seal.go seals test account passwords, playwright.go exports recorded cases as a
-// Playwright spec. The tester's side: runner.go (claim loop, case loop), replay.go (recorded scripts), claude.go
+// Playwright spec. The tester's side: runner.go (claim loop, case loop), replay.go (recorded scripts), session.go
+// (browser sessions MCP clients drive step by step), claude.go
 // (requests, tools, prompts), cdp.go (Chrome over the DevTools protocol), proxy.go (the egress proxy Chrome goes
 // through) and pricing.go.
 package aitest
@@ -33,6 +34,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/results/{result_id}", h.wrap(h.markResult))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-runs/{id}/live", h.wrap(h.live))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/cancel", h.wrap(h.cancelRun))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/browser-sessions", h.wrap(h.createSession))
+	mux.HandleFunc("POST /api/workspaces/{slug}/browser-sessions/{id}/actions", h.wrap(h.sessionAction))
+	mux.HandleFunc("GET /api/workspaces/{slug}/browser-sessions/{id}/screenshot", h.wrap(h.sessionScreenshot))
+	mux.HandleFunc("POST /api/workspaces/{slug}/browser-sessions/{id}/save", h.wrap(h.saveSession))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/browser-sessions/{id}", h.wrap(h.deleteSession))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-sites", h.wrap(h.listSites))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-sites", h.wrap(h.createSite))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/test-sites/{id}", h.wrap(h.deleteSite))

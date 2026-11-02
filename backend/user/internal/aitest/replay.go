@@ -120,10 +120,7 @@ func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logge
 		return "", nil, err
 	}
 	defer pg.close()
-	hosts := make([]string, len(j.sites))
-	for i, s := range j.sites {
-		hosts[i] = s.Host
-	}
+	hosts := siteHosts(j.sites)
 	fail := func(why string, done int) (string, []string, error) {
 		for _, s := range sc.Steps[:done] {
 			repro = append(repro, s.describe())
@@ -167,7 +164,7 @@ func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logge
 		case "fill_password":
 			var pw string
 			if pw, err = r.accountPassword(ctx, j, pg, s.Account); err == nil {
-				err = pg.typeText(ctx, replayRef, pw)
+				err = pg.fillPassword(ctx, replayRef, pw)
 			}
 		case "assert_text", "assert_no_text":
 			js, msg := hasTextJS(s.Text), "Expected \""+s.Text+"\" on the page."

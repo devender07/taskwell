@@ -43,7 +43,7 @@ type RunnerOptions struct {
 	Browsers         int // runs at once
 	Proxy            *Proxy
 	Live             *Live  // fans the page's screencast out to viewers
-	LiveURL          string // how the user API reaches Live, stored on each claimed run
+	LiveURL          string // how the user API reaches Live and browser sessions: stored on each claimed run and the heartbeat
 }
 
 // Runner claims queued AI runs and runs them: Claude writes the cases when the issue needs them, then drives a
@@ -55,13 +55,20 @@ type Runner struct {
 
 	mu     sync.Mutex
 	chrome *cdp
+
+	slots chan struct{} // a browser each, shared by runs and browser sessions
+
+	sessMu   sync.Mutex
+	sessions map[string]*session
+	stopping bool // no new sessions
 }
 
 func NewRunner(db *pgxpool.Pool, cfg *sysconfig.Store, o RunnerOptions) *Runner {
-	return &Runner{model: &model{db: db}, cfg: cfg, o: o}
+	return &Runner{model: &model{db: db}, cfg: cfg, o: o, slots: make(chan struct{}, max(o.Browsers, 1)), sessions: map[string]*session{}}
 }
 
-// Run takes runs until stop ends, then lets each running one finish its current step and end it as restarted.
+// Run takes runs and ends idle browser sessions until stop ends, then ends the sessions and lets each running run
+// finish its current step and end it as restarted.
 func (r *Runner) Run(stop context.Context) {
 	if r.o.Send == nil {
 		slog.Warn("ANTHROPIC_API_KEY isn't set: the tester won't check in or take AI runs")
@@ -69,7 +76,6 @@ func (r *Runner) Run(stop context.Context) {
 		return
 	}
 	var wg sync.WaitGroup
-	slots := make(chan struct{}, max(r.o.Browsers, 1))
 	beat, poll := time.NewTicker(30*time.Second), time.NewTicker(2*time.Second)
 	defer beat.Stop()
 	defer poll.Stop()
@@ -77,6 +83,7 @@ func (r *Runner) Run(stop context.Context) {
 	for {
 		select {
 		case <-stop.Done():
+			r.endSessions()
 			wg.Wait()
 			r.mu.Lock()
 			if r.chrome != nil {
@@ -87,31 +94,48 @@ func (r *Runner) Run(stop context.Context) {
 		case <-beat.C:
 			r.beat(stop)
 		case <-poll.C:
+			r.sweep(time.Now())
 		}
-		for len(slots) < cap(slots) {
-			limit, err := r.cfg.GetInt(stop, "ai_test_workspace_concurrency")
-			if err != nil || limit < 1 {
-				limit = 2
-			}
-			id, err := r.model.claim(stop, limit, r.o.LiveURL)
+		for r.takeSlot() {
+			id, err := r.model.claim(stop, r.workspaceCap(stop), r.o.LiveURL)
 			if err != nil && stop.Err() == nil {
 				slog.Error("claim failed", "err", err)
 			}
 			if id == "" {
+				<-r.slots
 				break
 			}
-			slots <- struct{}{}
 			wg.Go(func() {
-				defer func() { <-slots }()
+				defer func() { <-r.slots }()
 				r.execute(stop, id)
 			})
 		}
 	}
 }
 
-// beat checks in (the API takes AI runs only while a tester has) and ends runs a crashed tester left behind.
+// takeSlot takes a free browser slot, or reports there's none.
+func (r *Runner) takeSlot() bool {
+	select {
+	case r.slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// workspaceCap is ai_test_workspace_concurrency: runs and browser sessions one workspace may have at once.
+func (r *Runner) workspaceCap(ctx context.Context) int {
+	limit, err := r.cfg.GetInt(ctx, "ai_test_workspace_concurrency")
+	if err != nil || limit < 1 {
+		return 2
+	}
+	return limit
+}
+
+// beat checks in with the tester's URL (the API takes AI runs and opens browser sessions only while a tester has)
+// and ends runs a crashed tester left behind.
 func (r *Runner) beat(ctx context.Context) {
-	if err := r.model.heartbeat(ctx); err != nil && ctx.Err() == nil {
+	if err := r.model.heartbeat(ctx, r.o.LiveURL); err != nil && ctx.Err() == nil {
 		slog.Error("heartbeat failed", "err", err)
 	}
 	if err := r.model.failStale(ctx); err != nil && ctx.Err() == nil {
@@ -158,10 +182,7 @@ func (r *Runner) runJob(ctx, stop context.Context, runID string) (status, msg st
 		slog.Error("ai run", "run", runID, "err", err)
 		return "error", "Something went wrong. Run it again."
 	}
-	hosts := make([]string, len(j.sites))
-	for i, s := range j.sites {
-		hosts[i] = s.Host
-	}
+	hosts := siteHosts(j.sites)
 	r.o.Proxy.open(runID, j.token, hosts)
 	defer r.o.Proxy.close(runID)
 	results, err := r.model.pending(db, runID)
@@ -433,10 +454,7 @@ func (r *Runner) act(ctx context.Context, pg *page, j *job, tool string, in tool
 	case "navigate":
 		action = "navigate " + in.URL
 		u, perr := url.Parse(in.URL)
-		hosts := make([]string, len(j.sites))
-		for i, s := range j.sites {
-			hosts[i] = s.Host
-		}
+		hosts := siteHosts(j.sites)
 		if perr != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedHost(u.Hostname(), hosts) {
 			return blockedMsg + ".", action, nil
 		}
@@ -461,7 +479,7 @@ func (r *Runner) act(ctx context.Context, pg *page, j *job, tool string, in tool
 		action = fmt.Sprintf("fill the password of %q into %s", in.Account, el)
 		var pw string
 		if pw, err = r.accountPassword(ctx, j, pg, in.Account); err == nil {
-			err = pg.typeText(ctx, in.Ref, pw)
+			err = pg.fillPassword(ctx, in.Ref, pw)
 		}
 	default:
 		return "Unknown tool.", tool, nil

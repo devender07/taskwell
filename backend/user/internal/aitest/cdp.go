@@ -410,6 +410,20 @@ func (p *page) typeText(ctx context.Context, ref int, text string) error {
 	return p.c.call(ctx, p.session, "Input.insertText", map[string]any{"text": text}, nil)
 }
 
+// fillPassword types pw into the element with the ref, which must be a password field: in any other field the
+// password would show in the page state.
+func (p *page) fillPassword(ctx context.Context, ref int, pw string) error {
+	var ok bool
+	if err := p.eval(ctx, `(() => { const el = document.querySelector('[data-tether-ref="`+strconv.Itoa(ref)+`"]');
+		return !!el && el.tagName === 'INPUT' && el.type === 'password'; })()`, &ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pageError("Passwords go only into password fields.")
+	}
+	return p.typeText(ctx, ref, pw)
+}
+
 func (p *page) selectOption(ctx context.Context, ref int, value string) error {
 	v, _ := json.Marshal(value)
 	var ok bool

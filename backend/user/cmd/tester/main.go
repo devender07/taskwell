@@ -62,11 +62,6 @@ func main() {
 	liveMux := http.NewServeMux()
 	liveMux.Handle("GET /live/{run}", live)
 	liveSrv := &http.Server{Addr: env("LIVE_ADDR", ":3129"), Handler: liveMux, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		if err := liveSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			fatal("live", "err", err)
-		}
-	}()
 	host, _ := os.Hostname() // in compose, the container's hostname is its id, which the network resolves
 	_, port, _ := net.SplitHostPort(liveSrv.Addr)
 	o := aitest.RunnerOptions{Live: live, LiveURL: env("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, UploadDir: env("UPLOAD_DIR", "./uploads"), ChromeURL: env("CHROME_URL", "http://chrome:9222"),
@@ -77,7 +72,14 @@ func main() {
 	slog.Info("tester running", "app_env", map[bool]string{true: "production", false: "development"}[prod], "proxy_addr", proxySrv.Addr,
 		"proxy_url", o.ProxyURL, "chrome_url", o.ChromeURL, "browsers", browsers, "live_url", o.LiveURL, "upload_dir", o.UploadDir,
 		"anthropic_api_key", apiKey != "", "allow_private_sites", allowPrivate)
-	aitest.NewRunner(pool, sysconfig.New(pool), o).Run(stop) // returns once running runs end their current step
+	runner := aitest.NewRunner(pool, sysconfig.New(pool), o)
+	runner.RegisterSessions(liveMux) // browser sessions share the internal port with the live view
+	go func() {
+		if err := liveSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			fatal("live", "err", err)
+		}
+	}()
+	runner.Run(stop) // returns once browser sessions are closed and running runs end their current step
 	ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	_ = proxySrv.Shutdown(ctx)

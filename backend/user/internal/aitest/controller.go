@@ -1,13 +1,18 @@
 package aitest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +41,7 @@ type Handler struct {
 	opts         Options
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	tester       *http.Client // browser sessions
 }
 
 // Options are the API's settings for test sites and accounts.
@@ -48,7 +54,8 @@ type Options struct {
 // New takes the auth handler's Authenticate and the workspace handler's Member.
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, opts Options, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
-	return &Handler{model: &model{db: db}, cfg: cfg, opts: opts, authenticate: authenticate, member: member}
+	return &Handler{model: &model{db: db}, cfg: cfg, opts: opts, authenticate: authenticate, member: member,
+		tester: &http.Client{Timeout: 2 * actionTimeout}}
 }
 
 // --- cases ---
@@ -179,20 +186,9 @@ func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID stri
 		writeFields(w, http.StatusBadRequest, map[string]string{"script": "Send the script as JSON."})
 		return nil
 	}
-	sites, err := h.model.sites(r.Context(), ws.ID)
+	hosts, labels, err := h.scriptScope(r.Context(), ws.ID)
 	if err != nil {
 		return err
-	}
-	accounts, err := h.model.accounts(r.Context(), ws.ID)
-	if err != nil {
-		return err
-	}
-	hosts, labels := make([]string, len(sites)), make([]string, len(accounts))
-	for i, s := range sites {
-		hosts[i] = s.Host
-	}
-	for i, a := range accounts {
-		labels[i] = a.Label
 	}
 	sc, msg := checkScript(sc, hosts, labels)
 	_, setCode := r.PostForm["playwright"]
@@ -209,6 +205,23 @@ func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	return h.respondCase(w, r, http.StatusOK, ws.ID, id)
+}
+
+// scriptScope is what a script may use: the workspace's site hosts and account labels.
+func (h *Handler) scriptScope(ctx context.Context, wsID string) (hosts, labels []string, err error) {
+	sites, err := h.model.sites(ctx, wsID)
+	if err != nil {
+		return nil, nil, err
+	}
+	accounts, err := h.model.accounts(ctx, wsID)
+	if err != nil {
+		return nil, nil, err
+	}
+	labels = make([]string, len(accounts))
+	for i, a := range accounts {
+		labels[i] = a.Label
+	}
+	return siteHosts(sites), labels, nil
 }
 
 func (h *Handler) clearScript(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -536,11 +549,11 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 	if !ok || err != nil {
 		return err
 	}
-	alive, err := h.model.testerAlive(r.Context())
+	tester, err := h.model.testerURL(r.Context())
 	if err != nil {
 		return err
 	}
-	if !alive {
+	if tester == "" {
 		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
@@ -577,11 +590,11 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 	if !ok || err != nil {
 		return err
 	}
-	alive, err := h.model.testerAlive(r.Context())
+	tester, err := h.model.testerURL(r.Context())
 	if err != nil {
 		return err
 	}
-	if !alive {
+	if tester == "" {
 		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
@@ -630,6 +643,272 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 	writeJSON(w, http.StatusOK, map[string]any{"spent_usd": float64(n) / 1e6, "limit_usd": limit,
 		"resets_at": monthStart(time.Now()).AddDate(0, 1, 0)})
 	return nil
+}
+
+// --- browser sessions ---
+
+var sessionActions = []string{"navigate", "click", "type", "select", "press", "wait", "fill_password", "assert_text", "assert_no_text", "snapshot"}
+
+// browserSession is an open session in the tester at its URL; token is the tester's X-Tether-Session-Token.
+type browserSession struct{ id, tester, token string }
+
+// createSession opens a browser on the tester for the issue's test cases, at url or the first test site.
+func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	tester, err := h.model.testerURL(r.Context())
+	if err != nil {
+		return err
+	}
+	if tester == "" {
+		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
+		return nil
+	}
+	sites, err := h.model.sites(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	if len(sites) == 0 {
+		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
+		return nil
+	}
+	start := strings.TrimSpace(r.FormValue("url"))
+	if start == "" {
+		start = sites[0].BaseURL
+	}
+	if u, err := url.Parse(start); err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedHost(u.Hostname(), siteHosts(sites)) {
+		writeFields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
+		return nil
+	}
+	code, data, err := h.callTester(r.Context(), http.MethodPost, tester+"/sessions", "", map[string]string{"workspace_id": ws.ID, "url": start})
+	if err != nil {
+		return err
+	}
+	switch code {
+	case http.StatusCreated:
+	case http.StatusConflict:
+		writeErr(w, http.StatusConflict, msgBrowserBusy)
+		return nil
+	case http.StatusBadRequest:
+		writeFields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
+		return nil
+	default:
+		return fmt.Errorf("open browser session: tester answered %d", code)
+	}
+	var a struct {
+		ID    string          `json:"id"`
+		Token string          `json:"token"`
+		Page  json.RawMessage `json:"page"`
+		Error string          `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("open browser session: %w", err)
+	}
+	if err := h.model.createSession(r.Context(), a.ID, ws.ID, i.id, userID, tester, a.Token); err != nil {
+		_ = h.endSession(context.WithoutCancel(r.Context()), browserSession{a.ID, tester, a.Token}) // logged inside
+		return err
+	}
+	writeJSON(w, http.StatusCreated, struct {
+		ID    string          `json:"id"`
+		Page  json.RawMessage `json:"page"`
+		Error string          `json:"error,omitempty"`
+	}{a.ID, a.Page, a.Error})
+	return nil
+}
+
+func (h *Handler) sessionAction(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, s, ok, err := h.session(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	action := r.FormValue("action")
+	if !slices.Contains(sessionActions, action) {
+		writeFields(w, http.StatusBadRequest, map[string]string{"action": "Choose an action."})
+		return nil
+	}
+	ref, _ := strconv.Atoi(r.FormValue("ref")) // not a number: no element has it, and the tester says so
+	seconds, _ := strconv.Atoi(r.FormValue("seconds"))
+	data, ok, err := h.toTester(w, r, s, http.MethodPost, "/actions", map[string]any{"action": action, "ref": ref,
+		"text": r.FormValue("text"), "url": strings.TrimSpace(r.FormValue("url")), "value": r.FormValue("value"),
+		"key": r.FormValue("key"), "seconds": seconds, "account": r.FormValue("account")})
+	if !ok || err != nil {
+		return err
+	}
+	var a struct {
+		Page  json.RawMessage   `json:"page"`
+		Error string            `json:"error,omitempty"`
+		Steps []json.RawMessage `json:"steps"`
+	}
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("browser session action: %w", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"page": a.Page, "error": a.Error, "steps": len(a.Steps)})
+	return nil
+}
+
+func (h *Handler) sessionScreenshot(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, s, ok, err := h.session(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	data, ok, err := h.toTester(w, r, s, http.MethodGet, "/screenshot", nil)
+	if !ok || err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+	return nil
+}
+
+// saveSession stores the session's steps as the case's script, checked like a script an MCP client sends, and
+// closes the session. A step or check that doesn't pass keeps the session open, so the client can fix it.
+func (h *Handler) saveSession(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, s, ok, err := h.session(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	caseID, check := r.FormValue("case_id"), strings.TrimSpace(r.FormValue("check"))
+	if !isUUID(caseID) {
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	msg := ""
+	switch {
+	case check == "":
+		msg = "Add a check: text that's on the page only when the expected result is met."
+	case doc.Len(check) > maxCheckLen:
+		msg = "Check must be 200 characters or fewer."
+	}
+	if !checkFields(w, map[string]string{"check": msg}) {
+		return nil
+	}
+	data, ok, err := h.toTester(w, r, s, http.MethodPost, "/actions", map[string]string{"action": "snapshot"})
+	if !ok || err != nil {
+		return err
+	}
+	var a struct {
+		Steps []scriptStep `json:"steps"`
+	}
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("browser session steps: %w", err)
+	}
+	hosts, labels, err := h.scriptScope(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	sc, msg := checkScript(script{Steps: a.Steps, Check: check}, hosts, labels)
+	if !checkFields(w, map[string]string{"script": msg}) {
+		return nil
+	}
+	err = h.model.setScript(r.Context(), ws.ID, caseID, userID, &sc, true, "") // the export generates code from the steps
+	if errors.Is(err, errNotFound) {
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := h.endSession(r.Context(), s); err != nil {
+		return err
+	}
+	return h.respondCase(w, r, http.StatusOK, ws.ID, caseID)
+}
+
+func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, s, ok, err := h.session(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if err := h.endSession(r.Context(), s); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// session returns the path's session when it's the caller's and open. It writes a 403 without tests.manage, or a
+// 404, and returns ok=false.
+func (h *Handler) session(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, browserSession, bool, error) {
+	s := browserSession{id: r.PathValue("id")}
+	ws, ok, err := h.access(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return nil, s, false, err
+	}
+	err = errNotFound
+	if isUUID(s.id) {
+		s.tester, s.token, err = h.model.session(r.Context(), ws.ID, s.id, userID)
+	}
+	if errors.Is(err, errNotFound) {
+		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		return nil, s, false, nil
+	}
+	return ws, s, err == nil, err
+}
+
+// toTester sends the request for the session to its tester and returns the 200 answer's body. When the tester
+// doesn't have the session any more (idle, over time, restarted) or can't be reached, the session is closed here
+// too and a 404 written, with ok=false.
+func (h *Handler) toTester(w http.ResponseWriter, r *http.Request, s browserSession, method, path string, body any) ([]byte, bool, error) {
+	code, data, err := h.callTester(r.Context(), method, s.tester+"/sessions/"+s.id+path, s.token, body)
+	switch {
+	case err == nil && code == http.StatusOK:
+		return data, true, nil
+	case err == nil && code != http.StatusNotFound:
+		return nil, false, fmt.Errorf("browser session: tester answered %d", code)
+	case err != nil && r.Context().Err() != nil: // the request ran out of time; the session may be fine
+		return nil, false, err
+	case err != nil:
+		slog.WarnContext(r.Context(), "browser session: tester unreachable", "session", s.id, "err", err)
+	}
+	if err := h.model.closeSession(r.Context(), s.id); err != nil {
+		return nil, false, err
+	}
+	writeErr(w, http.StatusNotFound, msgSessionEnded)
+	return nil, false, nil
+}
+
+// endSession closes the session on its tester (already gone is fine) and here.
+func (h *Handler) endSession(ctx context.Context, s browserSession) error {
+	code, _, err := h.callTester(ctx, http.MethodPost, s.tester+"/sessions/"+s.id+"/close", s.token, nil)
+	if err != nil || (code != http.StatusOK && code != http.StatusNotFound) {
+		slog.WarnContext(ctx, "browser session: close on the tester", "session", s.id, "status", code, "err", err)
+	}
+	return h.model.closeSession(ctx, s.id)
+}
+
+// callTester sends body as JSON (when not nil) with the session token (when set) and returns the answer.
+func (h *Handler) callTester(ctx context.Context, method, target, token string, body any) (int, []byte, error) {
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, fmt.Errorf("encode tester request: %w", err)
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, rd)
+	if err != nil {
+		return 0, nil, fmt.Errorf("tester request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set(sessionHeader, token)
+	}
+	res, err := h.tester.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("call tester: %w", err)
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
+	if err != nil {
+		return 0, nil, fmt.Errorf("read tester answer: %w", err)
+	}
+	return res.StatusCode, data, nil
 }
 
 // --- sites ---

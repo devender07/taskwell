@@ -680,9 +680,9 @@ type Site struct {
 }
 
 type Account struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Username    string `json:"username"`
+	ID          string  `json:"id"`
+	Label       string  `json:"label"`
+	Username    string  `json:"username"`
 	PasswordSet bool    `json:"password_set"`
 	SiteID      *string `json:"site_id"` // nil: any of the workspace's sites
 }
@@ -863,15 +863,15 @@ func spent(ctx context.Context, q querier, wsID string) (int64, error) {
 	return n, nil
 }
 
-// testerAlive reports whether a tester checked in within heartbeatFresh.
-func (m *model) testerAlive(ctx context.Context) (bool, error) {
-	var ok bool
-	err := m.db.QueryRow(ctx, `select coalesce(value <> '' and value::timestamptz > now() - make_interval(secs => $2), false)
-		from system_config where key = $1`, heartbeatKey, heartbeatFresh.Seconds()).Scan(&ok)
+// testerURL is the internal URL of the tester that checked in within heartbeatFresh; "" when none did.
+func (m *model) testerURL(ctx context.Context) (string, error) {
+	var u string
+	err := m.db.QueryRow(ctx, `select value from system_config where key = $1 and updated_at > now() - make_interval(secs => $2)`,
+		heartbeatKey, heartbeatFresh.Seconds()).Scan(&u)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return false, fmt.Errorf("read tester heartbeat: %w", err)
+		return "", fmt.Errorf("read tester heartbeat: %w", err)
 	}
-	return ok, nil
+	return u, nil
 }
 
 // createAI queues an AI run and returns its id: errNoSites, errLimit (spend >= limitMicros) or errRunActive when
@@ -962,10 +962,11 @@ func (m *model) createReplay(ctx context.Context, wsID, issueID, userID string) 
 
 // --- tester ---
 
-// heartbeat records that a tester is up.
-func (m *model) heartbeat(ctx context.Context) error {
-	_, err := m.db.Exec(ctx, `insert into system_config (key, value) values ($1, now()::text)
-		on conflict (key) do update set value = excluded.value, updated_at = now()`, heartbeatKey)
+// heartbeat records that the tester at testerURL is up; the API sends new browser sessions there.
+// ponytail: the last tester to beat gets every new session; spread them by load if there are several testers.
+func (m *model) heartbeat(ctx context.Context, testerURL string) error {
+	_, err := m.db.Exec(ctx, `insert into system_config (key, value) values ($1, $2)
+		on conflict (key) do update set value = excluded.value, updated_at = now()`, heartbeatKey, testerURL)
 	if err != nil {
 		return fmt.Errorf("tester heartbeat: %w", err)
 	}
@@ -1002,7 +1003,8 @@ func (m *model) failStale(ctx context.Context) error {
 // ponytail: one global advisory lock per claim; per-workspace locks if claims ever queue behind it.
 const claimLock = 0x7465737472756e // "testrun"
 
-// claim takes the oldest queued AI or replay run whose workspace has fewer than workspaceCap of them running, marks
+// claim takes the oldest queued AI or replay run whose workspace has fewer than workspaceCap of them running (open
+// browser sessions count too), marks
 // it generating (an AI run that needs cases) or running, and returns its id; "" when there's none.
 func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (string, error) {
 	var id string
@@ -1014,8 +1016,10 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 		err := tx.QueryRow(ctx, `select r.id::text, r.issue_id::text from test_runs r
 			where r.kind in ('ai', 'replay') and r.status = 'queued'
 			  and (select count(*) from test_runs o where o.workspace_id = r.workspace_id and o.kind in ('ai', 'replay')
-			       and o.status in ('generating', 'running')) < $1
-			order by r.created_at, r.id limit 1 for update skip locked`, workspaceCap).Scan(&id, &issueID)
+			       and o.status in ('generating', 'running'))
+			    + (select count(*) from browser_sessions b where b.workspace_id = r.workspace_id and b.closed_at is null
+			       and b.created_at > now() - make_interval(secs => $2)) < $1
+			order by r.created_at, r.id limit 1 for update skip locked`, workspaceCap, sessionMax.Seconds()).Scan(&id, &issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -1076,19 +1080,27 @@ func (m *model) job(ctx context.Context, runID string) (*job, error) {
 	if j.sites, err = m.sites(ctx, j.wsID); err != nil {
 		return nil, err
 	}
+	if j.accounts, err = m.accountRefs(ctx, j.wsID); err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+// accountRefs lists the workspace's test accounts with the host each may be typed on.
+func (m *model) accountRefs(ctx context.Context, wsID string) ([]accountRef, error) {
 	rows, err := m.db.Query(ctx, `select a.id::text, a.label, a.username, coalesce(s.host, '') from test_accounts a
-		left join test_sites s on s.id = a.site_id where a.workspace_id = $1 order by lower(a.label), a.id`, j.wsID)
+		left join test_sites s on s.id = a.site_id where a.workspace_id = $1 order by lower(a.label), a.id`, wsID)
 	if err != nil {
 		return nil, fmt.Errorf("read test accounts: %w", err)
 	}
-	j.accounts, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (accountRef, error) {
+	as, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (accountRef, error) {
 		var a accountRef
 		return a, row.Scan(&a.id, &a.label, &a.username, &a.host)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read test accounts: %w", err)
 	}
-	return &j, nil
+	return as, nil
 }
 
 const (
@@ -1304,4 +1316,51 @@ func (m *model) aiOutcome(ctx context.Context, runID string) (status, msg string
 		return "error", "Some test cases couldn't finish.", nil
 	}
 	return "passed", "", nil
+}
+
+// --- browser sessions ---
+
+// sessionRoom reports whether the workspace has fewer than workspaceCap AI or replay runs running and browser
+// sessions open together.
+// ponytail: soft cap, two sessions opened at the same moment may both pass; lock like claim if it matters.
+func (m *model) sessionRoom(ctx context.Context, wsID string, workspaceCap int) (bool, error) {
+	var ok bool
+	err := m.db.QueryRow(ctx, `select (select count(*) from test_runs where workspace_id = $1 and kind in ('ai', 'replay')
+		  and status in ('generating', 'running'))
+		+ (select count(*) from browser_sessions where workspace_id = $1 and closed_at is null
+		  and created_at > now() - make_interval(secs => $3)) < $2`, wsID, workspaceCap, sessionMax.Seconds()).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("count open browsers: %w", err)
+	}
+	return ok, nil
+}
+
+func (m *model) createSession(ctx context.Context, id, wsID, issueID, userID, testerURL, token string) error {
+	if _, err := m.db.Exec(ctx, `insert into browser_sessions (id, workspace_id, issue_id, started_by, tester_url, token)
+		values ($1, $2, $3, $4, $5, $6)`, id, wsID, issueID, userID, testerURL, token); err != nil {
+		return fmt.Errorf("save browser session: %w", err)
+	}
+	return nil
+}
+
+// session returns the tester URL and token of the user's open session in the workspace; errNotFound when there's
+// none (another user's, closed, or over its time limit).
+func (m *model) session(ctx context.Context, wsID, id, userID string) (testerURL, token string, err error) {
+	err = m.db.QueryRow(ctx, `select tester_url, token from browser_sessions where id = $1 and workspace_id = $2
+		and started_by = $3 and closed_at is null and created_at > now() - make_interval(secs => $4)`,
+		id, wsID, userID, sessionMax.Seconds()).Scan(&testerURL, &token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", errNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("read browser session: %w", err)
+	}
+	return testerURL, token, nil
+}
+
+func (m *model) closeSession(ctx context.Context, id string) error {
+	if _, err := m.db.Exec(ctx, `update browser_sessions set closed_at = now() where id = $1 and closed_at is null`, id); err != nil {
+		return fmt.Errorf("close browser session: %w", err)
+	}
+	return nil
 }

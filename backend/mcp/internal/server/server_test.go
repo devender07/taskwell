@@ -289,3 +289,40 @@ func TestSaveTestScript(t *testing.T) {
 		t.Errorf("spec: %v %q", isErr, text)
 	}
 }
+
+// TestBrowserSession checks that browser_fill_password posts the action with its ref and account and answers the
+// page as text, and that browser_save posts the case and check.
+func TestBrowserSession(t *testing.T) {
+	forms := map[string]url.Values{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		forms[r.Method+" "+r.URL.Path] = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/workspaces/acme/browser-sessions/s1/actions":
+			_, _ = w.Write([]byte(`{"page":{"url":"https://app.test/login","title":"Sign in","elements":"URL: https://app.test/login\n[2] input type=password \"Password\""},"steps":2}`))
+		case "POST /api/workspaces/acme/browser-sessions/s1/save":
+			_, _ = w.Write([]byte(`{"id":"c1","title":"Sign in","steps":["Open"],"expected":"Home","recorded":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	cs := connect(t, srv, "Bearer tth_test")
+
+	text, isErr := call(t, cs, "browser_fill_password", map[string]any{"workspace": "acme", "session_id": "s1", "ref": 2, "account": "QA"})
+	if isErr || !strings.Contains(text, "Recorded steps: 2\n") || !strings.Contains(text, `[2] input type=password "Password"`) {
+		t.Fatalf("fill_password: %v %s", isErr, text)
+	}
+	got := forms["POST /api/workspaces/acme/browser-sessions/s1/actions"]
+	if want := (url.Values{"action": {"fill_password"}, "ref": {"2"}, "account": {"QA"}}); !maps.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("action form %v, want %v", got, want)
+	}
+	text, isErr = call(t, cs, "browser_save", map[string]any{"workspace": "acme", "session_id": "s1", "case_id": "c1", "check": "Welcome"})
+	if isErr || !strings.Contains(text, `"recorded":true`) {
+		t.Fatalf("save: %v %s", isErr, text)
+	}
+	if got := forms["POST /api/workspaces/acme/browser-sessions/s1/save"]; got.Get("case_id") != "c1" || got.Get("check") != "Welcome" {
+		t.Errorf("save form %v", got)
+	}
+}
