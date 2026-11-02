@@ -142,3 +142,20 @@ func TestManualRun(t *testing.T) {
 	do(ann, "POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"manual"}}, 409, nil)
 	do(ann, "POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"x"}}, 400, nil)
 }
+
+// TestDeleteIssueWithResults checks that an issue whose cases have run results can be deleted.
+func TestDeleteIssueWithResults(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, wsID, issueID := testIssue(t, pool)
+	m := &model{db: pool}
+	if _, err := m.createCase(ctx, issueID, ann, caseFields{Title: "Sign in", Steps: []string{"Open"}, Expected: "Home"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.createManual(ctx, wsID, issueID, ann); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `delete from issues where id = $1`, issueID); err != nil {
+		t.Fatalf("delete issue with test results: %v", err)
+	}
+}
