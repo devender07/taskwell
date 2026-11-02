@@ -15,7 +15,7 @@ const ABOUT: Record<Provider, string> = {
   gitlab: 'Link merge requests that mention an issue ID, and move the issue when they open and merge.',
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
+export function CopyButton({ text, label }: { text: string; label: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
   return (
     <Button

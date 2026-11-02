@@ -178,3 +178,10 @@ export const testSiteUrl: Check = (v) => {
 export const testAccountLabel: Check = (v) => (v.trim() ? null : 'Enter a label.')
 export const testAccountUsername: Check = (v) => (v.trim() ? null : 'Enter a username.')
 export const testAccountPassword: Check = (v) => (v ? null : 'Enter a password.')
+
+export const tokenName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Name the token.'
+  if (s.length > 60) return 'Use 60 characters or fewer.'
+  return null
+}

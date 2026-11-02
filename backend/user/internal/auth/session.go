@@ -28,8 +28,16 @@ func remember(r *http.Request) bool {
 
 // Authenticate returns the user ID from a valid access token cookie, or "" when there is none or its sign-in has
 // ended (signed out, password reset or changed elsewhere, user suspended). The sign-in's state is cached for
-// aliveTTL; Forget clears it when a revocation is published.
+// aliveTTL; Forget clears it when a revocation is published. A request with a Bearer header is signed in by that
+// personal API token alone, never the cookie.
 func (h *Handler) Authenticate(r *http.Request) (string, error) {
+	if tok, ok := bearer(r); ok {
+		if !strings.HasPrefix(tok, apiTokenPrefix) {
+			return "", nil
+		}
+		// ponytail: one indexed lookup per bearer request; cache like alive if MCP traffic shows up in DB load.
+		return h.model.apiTokenUser(r.Context(), hash(tok))
+	}
 	c, err := h.access(r)
 	if c == nil || c.SID == "" { // tokens from before sid existed: the client refreshes and gets one
 		return "", err
@@ -58,6 +66,12 @@ func (h *Handler) live(ctx context.Context, userID, sid string) (bool, error) {
 // calls it for every session.revoked event, from any instance.
 func (h *Handler) Forget(userID string) { h.alive.forget(userID, time.Now()) }
 
+// bearer returns the request's Authorization: Bearer credential; ok is false when there is no Bearer header.
+func bearer(r *http.Request) (tok string, ok bool) {
+	scheme, tok, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	return strings.TrimSpace(tok), strings.EqualFold(scheme, "Bearer")
+}
+
 // access returns the claims of a valid access token cookie, or nil when there is none.
 func (h *Handler) access(r *http.Request) (*claims, error) {
 	c, err := r.Cookie(accessCookie)
@@ -77,7 +91,7 @@ func (h *Handler) access(r *http.Request) (*claims, error) {
 
 // Session is Authenticate for the realtime socket, which outlives single requests: the access token must name a
 // sign-in that is still live (not signed out, reset or suspended), and the socket ends when the token expires.
-// The zero Session means not signed in.
+// The zero Session means not signed in. Cookie only: personal API tokens can't open it.
 func (h *Handler) Session(r *http.Request) (realtime.Session, error) {
 	c, err := h.access(r)
 	if c == nil || c.SID == "" { // tokens from before sid existed: the client refreshes and gets one

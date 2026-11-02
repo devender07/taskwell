@@ -85,6 +85,13 @@ Plan: `docs/pr-linking-plan.md`.
 
 - [x] GitHub / GitLab webhooks (Settings → Integrations, `integrations.manage`): PRs mentioning an issue ID link to it; opening and merging move the issue to the chosen statuses; PR list on the issue page; "Copy branch name" (`⌘⇧.`)
 
+## MCP server
+
+Plan: `docs/mcp-plan.md`.
+
+- [x] Personal API tokens (Settings → API tokens): create (shown once, with the `claude mcp add` command), list with last used, revoke; `Authorization: Bearer tth_…` signs any `/api` request in as that user, except auth, password and token endpoints
+- [x] MCP server (`backend/mcp`, `/mcp`, streamable HTTP, stateless): list workspaces / projects / options, search, list (filters), my issues, get, create, update, comment; names instead of ids; forwards the caller's token to the API
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
@@ -107,3 +114,4 @@ Time tracking, gantt, resource planning, custom fields, permission matrices, SSO
 ## Next up
 
 Phases 1–6 and the admin app are built. Next: pick from Later (cycles, PR linking, Slack, roadmap) once real users ask.
+

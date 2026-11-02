@@ -71,3 +71,19 @@ func fieldErrors(kv ...string) map[string]string {
 	}
 	return errs
 }
+
+func checkTokenName(v string) string {
+	s := strings.TrimSpace(v)
+	if s == "" {
+		return "Name the token."
+	}
+	if jsLen(s) > 60 {
+		return "Use 60 characters or fewer."
+	}
+	return ""
+}
+
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
+func isUUID(s string) bool { return uuidRe.MatchString(s) }

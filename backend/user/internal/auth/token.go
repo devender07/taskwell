@@ -15,6 +15,10 @@ func newToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// apiTokenPrefix starts every personal API token, so leaked ones are easy to spot and Authenticate can tell them
+// from other bearer credentials.
+const apiTokenPrefix = "tth_"
+
 // newCode returns a uniformly random 6-digit sign-in code.
 func newCode() (string, error) {
 	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))

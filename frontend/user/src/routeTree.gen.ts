@@ -28,6 +28,7 @@ import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
+import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
 import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
@@ -142,6 +143,12 @@ const AppWorkspaceMainSettingsAiTestingRoute =
     path: '/settings/ai-testing',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainSettingsApiTokensRoute =
+  AppWorkspaceMainSettingsApiTokensRouteImport.update({
+    id: '/settings/api-tokens',
+    path: '/settings/api-tokens',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainSettingsIntegrationsRoute =
   AppWorkspaceMainSettingsIntegrationsRouteImport.update({
     id: '/settings/integrations',
@@ -236,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -266,6 +274,7 @@ export interface FileRoutesByTo {
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -301,6 +310,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
+  '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -335,6 +345,7 @@ export interface FileRouteTypes {
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
+    | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/$workspace/issue/$identifier'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
+    | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
@@ -399,6 +411,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
+    | '/_app/$workspace/_main/settings/api-tokens'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
     | '/_app/$workspace/_main/settings/members'
@@ -562,6 +575,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsAiTestingRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/settings/api-tokens': {
+      id: '/_app/$workspace/_main/settings/api-tokens'
+      path: '/settings/api-tokens'
+      fullPath: '/$workspace/settings/api-tokens'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsApiTokensRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/settings/integrations': {
       id: '/_app/$workspace/_main/settings/integrations'
       path: '/settings/integrations'
@@ -678,6 +698,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
+  AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
   AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
@@ -702,6 +723,8 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,
   AppWorkspaceMainSettingsAiTestingRoute:
     AppWorkspaceMainSettingsAiTestingRoute,
+  AppWorkspaceMainSettingsApiTokensRoute:
+    AppWorkspaceMainSettingsApiTokensRoute,
   AppWorkspaceMainSettingsIntegrationsRoute:
     AppWorkspaceMainSettingsIntegrationsRoute,
   AppWorkspaceMainSettingsLabelsRoute: AppWorkspaceMainSettingsLabelsRoute,

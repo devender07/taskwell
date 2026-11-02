@@ -534,3 +534,86 @@ func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
 	}
 	return nil
 }
+
+// --- personal API tokens ---
+
+const maxAPITokens = 25
+
+var errTooManyTokens = errors.New("api token limit reached")
+
+// APIToken is a personal API token as the token endpoints return it; the secret itself is never stored.
+type APIToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+}
+
+// apiTokenUser returns the user ID of the token with the hash, or "" when it is unknown, revoked or its user is
+// suspended. It marks the token used, at most once a minute.
+func (m *model) apiTokenUser(ctx context.Context, tokenHash []byte) (string, error) {
+	var userID string
+	err := m.db.QueryRow(ctx, `
+		with t as (select a.id, a.user_id from api_tokens a join users u on u.id = a.user_id
+		           where a.token_hash = $1 and u.suspended_at is null),
+		     touch as (update api_tokens set last_used_at = now()
+		               where id = (select id from t) and (last_used_at is null or last_used_at < now() - interval '1 minute'))
+		select user_id::text from t`, tokenHash).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find api token: %w", err)
+	}
+	return userID, nil
+}
+
+// apiTokens returns the user's tokens, newest first.
+func (m *model) apiTokens(ctx context.Context, userID string) ([]APIToken, error) {
+	rows, err := m.db.Query(ctx, `
+		select id::text, name, created_at, last_used_at from api_tokens where user_id = $1 order by created_at desc, id desc`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens: %w", err)
+	}
+	tokens, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (APIToken, error) {
+		var t APIToken
+		err := row.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.LastUsedAt)
+		t.CreatedAt = t.CreatedAt.UTC()
+		if t.LastUsedAt != nil {
+			u := t.LastUsedAt.UTC()
+			t.LastUsedAt = &u
+		}
+		return t, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+// insertAPIToken stores a token's hash; errTooManyTokens when the user already has maxAPITokens.
+// ponytail: two concurrent creates can both pass the count; lock the user row if the cap ever has to be exact.
+func (m *model) insertAPIToken(ctx context.Context, userID, name string, tokenHash []byte) (*APIToken, error) {
+	t := APIToken{Name: name}
+	err := m.db.QueryRow(ctx, `
+		insert into api_tokens (user_id, name, token_hash)
+		select $1, $2, $3 where (select count(*) from api_tokens where user_id = $1) < $4
+		returning id::text, created_at`, userID, name, tokenHash, maxAPITokens).Scan(&t.ID, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, errTooManyTokens
+	}
+	if err != nil {
+		return nil, fmt.Errorf("insert api token: %w", err)
+	}
+	t.CreatedAt = t.CreatedAt.UTC()
+	return &t, nil
+}
+
+// deleteAPIToken revokes the user's token; false when they have no token with the id.
+func (m *model) deleteAPIToken(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := m.db.Exec(ctx, `delete from api_tokens where id = $1 and user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("delete api token: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}

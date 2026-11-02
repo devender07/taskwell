@@ -66,6 +66,7 @@ export type Integration = {
   merge_status: Status | null
   last_delivery_at: string | null
 }
+export type ApiToken = { id: string; name: string; created_at: string; last_used_at: string | null }
 export type Comment = {
   id: string
   author: PersonRef | null
@@ -181,6 +182,15 @@ export const connectIntegration = (workspace: string, provider: Provider) =>
   api<{ integration: Integration; secret: string }>(integrationPath(workspace, provider), new FormData())
 export const updateIntegration = (workspace: string, provider: Provider, form: FormData) => api<Integration>(`${integrationPath(workspace, provider)}/settings`, form)
 export const disconnectIntegration = (workspace: string, provider: Provider) => api(integrationPath(workspace, provider), undefined, 'DELETE')
+
+export const tokensPath = '/me/tokens'
+export const listTokens = () => api<ApiToken[]>(tokensPath)
+export function createToken(name: string) {
+  const form = new FormData()
+  form.set('name', name)
+  return api<{ token: ApiToken; secret: string }>(tokensPath, form)
+}
+export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 
 const FALLBACK = 'Something went wrong. Try again.'
 const OFFLINE = "You're offline. Reconnect and try again."

@@ -1,4 +1,4 @@
-# APP_HOST serves the user SPA and proxies /api to the user service; ADMIN_HOST does the same for admin.
+# APP_HOST serves the user SPA and proxies /api to the user service and /mcp to the MCP server; ADMIN_HOST does the same for admin.
 # Hosts that are real domain names get automatic HTTPS.
 
 (spa) {
@@ -38,6 +38,12 @@
 }
 
 {$APP_HOST:localhost} {
+	# The MCP server for AI tools; it calls the user API with the caller's token.
+	handle /mcp {
+		reverse_proxy mcp:8095 {
+			flush_interval -1
+		}
+	}
 	import spa user:8090 /srv/user
 }
 

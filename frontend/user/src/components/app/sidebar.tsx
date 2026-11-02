@@ -68,6 +68,9 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <Link to="/$workspace/settings/notifications" params={{ workspace }}>
             Notifications
           </Link>
+          <Link to="/$workspace/settings/api-tokens" params={{ workspace }}>
+            API tokens
+          </Link>
           <Link to="/$workspace/settings/workspace" params={{ workspace }}>
             Workspace
           </Link>

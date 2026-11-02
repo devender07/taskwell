@@ -655,6 +655,74 @@ func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// listTokens returns the signed-in user's personal API tokens, newest first.
+func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request) error {
+	userID, err := h.Authenticate(r)
+	if err != nil || userID == "" {
+		return h.unauthorized(w, err)
+	}
+	tokens, err := h.model.apiTokens(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, tokens)
+	return nil
+}
+
+// createToken makes a personal API token and returns its secret, the only time it is shown.
+func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) error {
+	userID, err := h.Authenticate(r)
+	if err != nil || userID == "" {
+		return h.unauthorized(w, err)
+	}
+	name := r.FormValue("name")
+	if msg := checkTokenName(name); msg != "" {
+		writeFields(w, http.StatusBadRequest, map[string]string{"name": msg})
+		return nil
+	}
+	secret := apiTokenPrefix + newToken()
+	t, err := h.model.insertAPIToken(r.Context(), userID, strings.TrimSpace(name), hash(secret))
+	if errors.Is(err, errTooManyTokens) {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("You have %d tokens. Revoke one first.", maxAPITokens))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"token": t, "secret": secret})
+	return nil
+}
+
+// deleteToken revokes one of the signed-in user's tokens; another user's id is not found.
+func (h *Handler) deleteToken(w http.ResponseWriter, r *http.Request) error {
+	userID, err := h.Authenticate(r)
+	if err != nil || userID == "" {
+		return h.unauthorized(w, err)
+	}
+	id := r.PathValue("id")
+	ok := isUUID(id)
+	if ok {
+		if ok, err = h.model.deleteAPIToken(r.Context(), userID, id); err != nil {
+			return err
+		}
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "Token not found.")
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// unauthorized answers 401, or returns err when authenticating failed.
+func (h *Handler) unauthorized(w http.ResponseWriter, err error) error {
+	if err != nil {
+		return err
+	}
+	writeErr(w, http.StatusUnauthorized, errSignedOut)
+	return nil
+}
+
 func (h *Handler) signedOut(w http.ResponseWriter, r *http.Request) error {
 	if err := h.clearCookies(r.Context(), w); err != nil {
 		return err

@@ -28,7 +28,7 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
   priority: ['Set priority…', 'P'],
   labels: ['Change labels…', 'L'],
 }
-const SETTINGS = ['Profile', 'Notifications', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
+const SETTINGS = ['Profile', 'Notifications', 'API tokens', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -189,7 +189,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
     actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
-    for (const name of can(workspace, 'integrations.manage') ? [...SETTINGS, 'Integrations'] : SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
+    for (const name of can(workspace, 'integrations.manage') ? [...SETTINGS, 'Integrations'] : SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase().replaceAll(' ', '-')}`) })
     if (ctx) {
       if (ctx.issue.can_edit) {
         for (const m of ['status', 'assignee', 'priority', 'labels'] as const) {

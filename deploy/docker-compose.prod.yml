@@ -95,6 +95,18 @@ services:
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY}
       ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-}
 
+  # MCP endpoint for AI tools (Caddy routes APP_HOST/mcp here): no database, it calls the user API as the caller.
+  mcp:
+    build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: mcp } }
+    image: tether-mcp
+    restart: unless-stopped
+    depends_on: { user: { condition: service_healthy } }
+    environment:
+      PORT: "8095"
+      APP_ENV: ${APP_ENV:-production}
+      TETHER_API_URL: http://user:8090
+      APP_URL: https://${APP_HOST:?set APP_HOST}
+
   # AI test runs (docker compose --profile ai ...): the tester claims runs, calls Claude and drives Chrome through
   # its egress proxy. Chrome sits alone with it on the internal browser network: no route to Postgres, the APIs or
   # the internet except through the proxy, which only lets out the workspace's test sites.
@@ -150,6 +162,7 @@ services:
     depends_on:
       user: { condition: service_healthy }
       admin: { condition: service_healthy }
+      mcp: { condition: service_started }
     environment:
       APP_HOST: ${APP_HOST:?set APP_HOST}
       ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST}
