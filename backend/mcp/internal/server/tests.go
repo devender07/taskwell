@@ -80,10 +80,11 @@ func (t *tools) testTools(s *mcp.Server) {
 		Description: "Allow AI test runs to visit a site (an https:// base URL). The first site is where runs start."}, t.addTestSite)
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_test_site", Annotations: destructive, Description: "Remove a test site."}, t.deleteTestSite)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_test_accounts", Annotations: readOnly,
-		Description: "List the accounts AI test runs can sign in with. Passwords are never shown."}, t.listTestAccounts)
+		Description: "List the accounts test runs can sign in with, and the site each is for (none: any site). Passwords are never shown."}, t.listTestAccounts)
 	mcp.AddTool(s, &mcp.Tool{Name: "save_test_account",
 		Description: "Add a sign-in account for AI test runs, or change one (account_id). " +
-			"A new account needs a password; leave it out when changing one to keep it."}, t.saveTestAccount)
+			"A new account needs a password; leave it out when changing one to keep it. site ties the account to one test site: " +
+			"its password is then typed only on that site's pages."}, t.saveTestAccount)
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_test_account", Annotations: destructive,
 		Description: "Remove a test account."}, t.deleteTestAccount)
 }
@@ -213,7 +214,8 @@ type accountIn struct {
 	AccountID string `json:"account_id,omitempty" jsonschema:"the account to change, from list_test_accounts; leave out to add one"`
 	Label     string `json:"label" jsonschema:"such as Admin user"`
 	Username  string `json:"username"`
-	Password  string `json:"password,omitempty" jsonschema:"required for a new account; leave out to keep the saved one"`
+	Password  string  `json:"password,omitempty" jsonschema:"required for a new account; leave out to keep the saved one"`
+	Site      *string `json:"site,omitempty" jsonschema:"the test site's base URL or host from list_test_sites; empty for any site; leave out to keep it"`
 }
 
 type accountIDIn struct {
@@ -580,18 +582,57 @@ func (t *tools) deleteTestSite(ctx context.Context, _ *mcp.CallToolRequest, in s
 }
 
 type account struct {
+	ID          string  `json:"id"`
+	Label       string  `json:"label"`
+	Username    string  `json:"username"`
+	PasswordSet bool    `json:"password_set"`
+	SiteID      *string `json:"site_id"`
+}
+
+type accountOut struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Username    string `json:"username"`
 	PasswordSet bool   `json:"password_set"`
+	Site        string `json:"site"` // base URL, or "any"
+}
+
+func (t *tools) testSites(ctx context.Context, slug string) ([]site, error) {
+	var ss []site
+	return ss, t.api.get(ctx, ws(slug, "test-sites"), nil, &ss)
+}
+
+func (t *tools) testAccounts(ctx context.Context, slug string) ([]account, error) {
+	var as []account
+	return as, t.api.get(ctx, ws(slug, "test-accounts"), nil, &as)
+}
+
+// accountOuts names each account's site by its base URL.
+func accountOuts(as []account, ss []site) []accountOut {
+	o := make([]accountOut, len(as))
+	for i, a := range as {
+		o[i] = accountOut{ID: a.ID, Label: a.Label, Username: a.Username, PasswordSet: a.PasswordSet, Site: "any"}
+		if a.SiteID != nil {
+			for _, s := range ss {
+				if s.ID == *a.SiteID {
+					o[i].Site = s.BaseURL
+				}
+			}
+		}
+	}
+	return o
 }
 
 func (t *tools) listTestAccounts(ctx context.Context, _ *mcp.CallToolRequest, in wsIn) (*mcp.CallToolResult, any, error) {
-	var as []account
-	if err := t.api.get(ctx, ws(in.Workspace, "test-accounts"), nil, &as); err != nil {
+	as, err := t.testAccounts(ctx, in.Workspace)
+	if err != nil {
 		return nil, nil, err
 	}
-	return result(as)
+	ss, err := t.testSites(ctx, in.Workspace)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result(accountOuts(as, ss))
 }
 
 func (t *tools) saveTestAccount(ctx context.Context, _ *mcp.CallToolRequest, in accountIn) (*mcp.CallToolResult, any, error) {
@@ -599,12 +640,40 @@ func (t *tools) saveTestAccount(ctx context.Context, _ *mcp.CallToolRequest, in 
 	if id := strings.TrimSpace(in.AccountID); id != "" {
 		path = ws(in.Workspace, "test-accounts", id)
 	}
+	ss, err := t.testSites(ctx, in.Workspace)
+	if err != nil {
+		return nil, nil, err
+	}
+	siteID := ""
+	switch {
+	case in.Site != nil && strings.TrimSpace(*in.Site) != "":
+		want := strings.TrimRight(strings.TrimSpace(*in.Site), "/")
+		s, err := find("test site", want, ss, func(s site) []string {
+			u, _ := url.Parse(s.BaseURL)
+			return []string{s.ID, strings.TrimRight(s.BaseURL, "/"), u.Host}
+		}, func(s site) string { return s.BaseURL })
+		if err != nil {
+			return nil, nil, err
+		}
+		siteID = s.ID
+	case in.Site == nil && strings.TrimSpace(in.AccountID) != "":
+		// The API replaces the site on every save, so keep the account's current one.
+		as, err := t.testAccounts(ctx, in.Workspace)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, a := range as {
+			if a.ID == strings.TrimSpace(in.AccountID) && a.SiteID != nil {
+				siteID = *a.SiteID
+			}
+		}
+	}
 	var a account
-	form := url.Values{"label": {in.Label}, "username": {in.Username}, "password": {in.Password}}
+	form := url.Values{"label": {in.Label}, "username": {in.Username}, "password": {in.Password}, "site_id": {siteID}}
 	if err := t.api.post(ctx, path, form, &a); err != nil {
 		return nil, nil, err
 	}
-	return result(a)
+	return result(accountOuts([]account{a}, ss)[0])
 }
 
 func (t *tools) deleteTestAccount(ctx context.Context, _ *mcp.CallToolRequest, in accountIDIn) (*mcp.CallToolResult, any, error) {

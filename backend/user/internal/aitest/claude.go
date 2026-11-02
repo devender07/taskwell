@@ -70,7 +70,11 @@ func (j *job) context() string {
 	} else {
 		b.WriteString("Test accounts (type the username yourself; use fill_password with the label for the password):\n")
 		for _, a := range j.accounts {
-			fmt.Fprintf(&b, "- %q: username %q\n", a.label, a.username)
+			if a.host != "" {
+				fmt.Fprintf(&b, "- %q: username %q, only on %s\n", a.label, a.username, a.host)
+			} else {
+				fmt.Fprintf(&b, "- %q: username %q\n", a.label, a.username)
+			}
 		}
 	}
 	return b.String()

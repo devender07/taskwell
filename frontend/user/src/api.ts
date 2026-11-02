@@ -364,7 +364,7 @@ export type TestRun = {
 // The contract doesn't spell the summary out: the run without results, with per-status counts when the API sends them.
 export type TestRunSummary = Omit<TestRun, 'results' | 'latest_screenshot_url'> & { counts?: Partial<Record<TestStatus, number>> }
 export type TestSite = { id: string; base_url: string; host: string }
-export type TestAccount = { id: string; label: string; username: string; password_set: boolean }
+export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
 export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
 
 export const workspacePath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}`

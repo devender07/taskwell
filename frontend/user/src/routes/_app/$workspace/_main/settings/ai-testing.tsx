@@ -28,7 +28,7 @@ function AiTestingSettings() {
       </header>
       <Usage usage={usage} />
       <Sites workspace={workspace} sites={sites} manage={manage} />
-      <Accounts workspace={workspace} accounts={accounts} manage={manage} />
+      <Accounts workspace={workspace} accounts={accounts} sites={sites} manage={manage} />
       {manage ? null : <p className="text-caption text-secondary">You don't have permission to change AI testing settings.</p>}
     </main>
   )

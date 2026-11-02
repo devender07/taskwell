@@ -111,7 +111,7 @@ func apiError(status int, data []byte) error {
 
 // toolField names the API's form fields as the tools call them.
 var toolField = map[string]string{"status_id": "status", "assignee_id": "assignee", "label_ids": "labels",
-	"role_id": "role", "user_id": "member", "issue": "other"}
+	"role_id": "role", "user_id": "member", "issue": "other", "site_id": "site"}
 
 // ws is the API path of the workspace with the slug, plus the escaped parts after it.
 func ws(slug string, parts ...string) string {

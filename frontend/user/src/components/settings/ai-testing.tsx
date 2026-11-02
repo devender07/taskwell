@@ -2,6 +2,7 @@ import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
+import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { testAccountLabel, testAccountPassword, testAccountUsername, testSiteUrl } from '@tether/shared/validate'
 import { api, testAccountsPath, testSitesPath, toFormErrors, type AiUsage, type FieldErrors, type TestAccount, type TestSite, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
@@ -89,7 +90,7 @@ export function Sites({ workspace, sites, manage }: { workspace: Workspace; site
                 <ConfirmButton
                   label="Remove"
                   title={`Remove ${s.host}?`}
-                  description="AI tests can't open it after this."
+                  description="AI tests can't open it after this, and its test accounts are removed too."
                   confirm="Remove site"
                   pending="Removing…"
                   onConfirm={async () => {
@@ -106,8 +107,16 @@ export function Sites({ workspace, sites, manage }: { workspace: Workspace; site
   )
 }
 
-function AccountForm({ workspace, account, onDone }: { workspace: Workspace; account?: TestAccount; onDone?: () => void }) {
+const anySite: Option = { value: '', label: 'Any site' }
+
+const siteOptions = (sites: TestSite[]): Option[] => [anySite, ...sites.map((s) => ({ value: s.id, label: s.base_url }))]
+
+const siteName = (sites: TestSite[], id: string | null) => (id ? (sites.find((s) => s.id === id)?.base_url ?? 'Removed site') : 'Any site')
+
+function AccountForm({ workspace, sites, account, onDone }: { workspace: Workspace; sites: TestSite[]; account?: TestAccount; onDone?: () => void }) {
   const router = useRouter()
+  const options = siteOptions(sites)
+  const [site, setSite] = useState<Option | null>(options.find((o) => o.value === (account?.site_id ?? '')) ?? anySite)
   const [label, setLabel] = useState(account?.label ?? '')
   const [username, setUsername] = useState(account?.username ?? '')
   const [password, setPassword] = useState('')
@@ -119,6 +128,7 @@ function AccountForm({ workspace, account, onDone }: { workspace: Workspace; acc
     form.set('label', label.trim())
     form.set('username', username.trim())
     form.set('password', password)
+    form.set('site_id', site?.value ?? '')
     try {
       await api<TestAccount>(account ? `${testAccountsPath(workspace)}/${encodeURIComponent(account.id)}` : testAccountsPath(workspace), form)
     } catch (e) {
@@ -129,6 +139,7 @@ function AccountForm({ workspace, account, onDone }: { workspace: Workspace; acc
     if (!account) {
       setLabel('')
       setUsername('')
+      setSite(anySite)
     }
     onDone?.()
     return {}
@@ -148,6 +159,7 @@ function AccountForm({ workspace, account, onDone }: { workspace: Workspace; acc
           onChange={(e) => setPassword(e.target.value)}
           error={errors?.password}
         />
+        <SmartAutocomplete label="Site" options={options} value={site} onChange={(o) => setSite(o ?? anySite)} error={errors?.site_id} />
       </div>
       <FormError>{error}</FormError>
       <div className="flex items-center gap-3">
@@ -164,13 +176,13 @@ function AccountForm({ workspace, account, onDone }: { workspace: Workspace; acc
   )
 }
 
-function AccountRow({ workspace, account, manage }: { workspace: Workspace; account: TestAccount; manage: boolean }) {
+function AccountRow({ workspace, sites, account, manage }: { workspace: Workspace; sites: TestSite[]; account: TestAccount; manage: boolean }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   if (editing) {
     return (
       <li className="px-6 py-4">
-        <AccountForm workspace={workspace} account={account} onDone={() => setEditing(false)} />
+        <AccountForm workspace={workspace} sites={sites} account={account} onDone={() => setEditing(false)} />
       </li>
     )
   }
@@ -178,7 +190,9 @@ function AccountRow({ workspace, account, manage }: { workspace: Workspace; acco
     <li className="flex flex-wrap items-center gap-3 px-6 py-2" style={{ minHeight: 56 }}>
       <div className="grid flex-grow" style={{ minWidth: 0 }}>
         <span className="text-label text-primary ellipsis">{account.label}</span>
-        <span className="text-caption text-secondary ellipsis">{account.username}</span>
+        <span className="text-caption text-secondary ellipsis">
+          {account.username} · {siteName(sites, account.site_id)}
+        </span>
       </div>
       {manage ? (
         <>
@@ -202,16 +216,18 @@ function AccountRow({ workspace, account, manage }: { workspace: Workspace; acco
   )
 }
 
-export function Accounts({ workspace, accounts, manage }: { workspace: Workspace; accounts: TestAccount[]; manage: boolean }) {
+export function Accounts({ workspace, accounts, sites, manage }: { workspace: Workspace; accounts: TestAccount[]; sites: TestSite[]; manage: boolean }) {
   return (
     <section className="grid gap-4" aria-labelledby="test-accounts-heading">
       <div className="grid gap-1">
         <h2 id="test-accounts-heading" className="text-label">Test accounts</h2>
-        <p className="text-caption text-secondary m-0">Claude sees the label and username. The password is typed by the test runner and never shown again.</p>
+        <p className="text-caption text-secondary m-0">
+          Claude sees the label and username. The password is typed by the test runner and never shown again, and only on the account's site when it has one.
+        </p>
       </div>
       {manage ? (
         <div className="p-6 bg-surface border rounded-lg">
-          <AccountForm workspace={workspace} />
+          <AccountForm workspace={workspace} sites={sites} />
         </div>
       ) : null}
       {accounts.length === 0 ? (
@@ -219,7 +235,7 @@ export function Accounts({ workspace, accounts, manage }: { workspace: Workspace
       ) : (
         <ul className="grid m-0 p-0 bg-surface border rounded-lg" style={{ listStyle: 'none' }} aria-label="Test accounts">
           {accounts.map((a) => (
-            <AccountRow key={a.id} workspace={workspace} account={a} manage={manage} />
+            <AccountRow key={a.id} workspace={workspace} sites={sites} account={a} manage={manage} />
           ))}
         </ul>
       )}

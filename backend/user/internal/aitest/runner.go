@@ -458,7 +458,7 @@ func (r *Runner) act(ctx context.Context, pg *page, j *job, tool string, in tool
 	case "fill_password":
 		action = fmt.Sprintf("fill the password of %q into %s", in.Account, el)
 		var pw string
-		if pw, err = r.accountPassword(ctx, j, in.Account); err == nil {
+		if pw, err = r.accountPassword(ctx, j, pg, in.Account); err == nil {
 			err = pg.typeText(ctx, in.Ref, pw)
 		}
 	default:
@@ -471,24 +471,39 @@ func (r *Runner) act(ctx context.Context, pg *page, j *job, tool string, in tool
 	return "", action, err
 }
 
-// accountPassword opens the password of the run's workspace's account with the label.
-func (r *Runner) accountPassword(ctx context.Context, j *job, label string) (string, error) {
-	for _, a := range j.accounts {
+// accountPassword opens the password of the run's workspace's account with the label, for the page it is typed on.
+func (r *Runner) accountPassword(ctx context.Context, j *job, pg *page, label string) (string, error) {
+	var host string
+	_ = pg.eval(ctx, `location.hostname`, &host)
+	a, err := accountFor(j.accounts, label, host)
+	if err != nil {
+		return "", err
+	}
+	sealed, err := r.model.password(context.WithoutCancel(ctx), j.wsID, a.id)
+	if err != nil {
+		return "", err
+	}
+	pw, err := unseal(r.o.Key, j.wsID, a.id, sealed)
+	if err != nil {
+		slog.Error("test account password", "run", j.runID, "account", a.id, "err", err)
+		return "", pageError("That account's password can't be read. Ask an admin to save it again.")
+	}
+	return pw, nil
+}
+
+// accountFor is the account with the label when its password may be typed on host: an account tied to a site only
+// on that site's host and its subdomains, so one site never receives another's password.
+func accountFor(accounts []accountRef, label, host string) (accountRef, error) {
+	for _, a := range accounts {
 		if a.label != label {
 			continue
 		}
-		sealed, err := r.model.password(context.WithoutCancel(ctx), j.wsID, a.id)
-		if err != nil {
-			return "", err
+		if a.host != "" && !allowedHost(host, []string{a.host}) {
+			return a, pageError(fmt.Sprintf("The account %q is for %s, not %s.", label, a.host, host))
 		}
-		pw, err := unseal(r.o.Key, j.wsID, a.id, sealed)
-		if err != nil {
-			slog.Error("test account password", "run", j.runID, "account", a.id, "err", err)
-			return "", pageError("That account's password can't be read. Ask an admin to save it again.")
-		}
-		return pw, nil
+		return a, nil
 	}
-	return "", pageError("No test account with that label.")
+	return accountRef{}, pageError("No test account with that label.")
 }
 
 // describe is the element's line from the page state, or just its ref.

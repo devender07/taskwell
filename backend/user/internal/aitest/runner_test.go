@@ -264,7 +264,7 @@ func TestRunner(t *testing.T) {
 	if _, err := m.createSite(ctx, wsID, "x", ann, site.URL, "127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.saveAccount(ctx, key, wsID, "x", ann, "", "Admin", "ann@acme.test", password); err != nil {
+	if _, err := m.saveAccount(ctx, key, wsID, "x", ann, "", "Admin", "ann@acme.test", password, ""); err != nil {
 		t.Fatal(err)
 	}
 

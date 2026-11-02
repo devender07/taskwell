@@ -111,3 +111,27 @@ func TestProxyRefuses(t *testing.T) {
 		t.Errorf("blocked %v", b)
 	}
 }
+
+// TestAccountFor checks that an account tied to a site gives its password only to that site's host and subdomains.
+func TestAccountFor(t *testing.T) {
+	accounts := []accountRef{{id: "1", label: "Any"}, {id: "2", label: "Shop", host: "shop.test"}}
+	for _, c := range []struct {
+		label, host, want string
+	}{
+		{"Any", "other.test", "1"},
+		{"Shop", "shop.test", "2"},
+		{"Shop", "app.shop.test", "2"},
+		{"Shop", "evil-shop.test", ""},
+		{"Shop", "other.test", ""},
+		{"Missing", "shop.test", ""},
+	} {
+		a, err := accountFor(accounts, c.label, c.host)
+		got := ""
+		if err == nil {
+			got = a.id
+		}
+		if got != c.want {
+			t.Errorf("accountFor(%q, %q) = %q, %v; want %q", c.label, c.host, got, err, c.want)
+		}
+	}
+}

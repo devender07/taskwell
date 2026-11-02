@@ -660,10 +660,11 @@ func utc(t *time.Time) *time.Time {
 // --- AI testing: sites, accounts, usage and the tester ---
 
 var (
-	errTaken    = errors.New("already exists")
-	errNoSites  = errors.New("no test sites")
-	errNoScript = errors.New("no recorded test cases")
-	errLimit    = errors.New("monthly limit reached")
+	errTaken        = errors.New("already exists")
+	errNoSites      = errors.New("no test sites")
+	errNoScript     = errors.New("no recorded test cases")
+	errLimit        = errors.New("monthly limit reached")
+	errSiteNotFound = errors.New("test site not found")
 )
 
 const (
@@ -682,7 +683,8 @@ type Account struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Username    string `json:"username"`
-	PasswordSet bool   `json:"password_set"`
+	PasswordSet bool    `json:"password_set"`
+	SiteID      *string `json:"site_id"` // nil: any of the workspace's sites
 }
 
 func isUnique(err error) bool {
@@ -755,7 +757,7 @@ func (m *model) deleteRow(ctx context.Context, sql, wsID, slug, actorID, id, kin
 // --- accounts ---
 
 func (m *model) accounts(ctx context.Context, wsID string) ([]Account, error) {
-	rows, err := m.db.Query(ctx, `select id::text, label, username, true from test_accounts where workspace_id = $1
+	rows, err := m.db.Query(ctx, `select id::text, label, username, true, site_id::text from test_accounts where workspace_id = $1
 		order by lower(label), id`, wsID)
 	if err != nil {
 		return nil, fmt.Errorf("list test accounts: %w", err)
@@ -768,10 +770,23 @@ func (m *model) accounts(ctx context.Context, wsID string) ([]Account, error) {
 }
 
 // saveAccount creates the account (id "") or updates the workspace's account with the id, sealing a non-empty
-// password (empty keeps the stored one). errTaken for a duplicate label, errNotFound for a missing account.
-func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID, id, label, username, password string) (Account, error) {
+// password (empty keeps the stored one) and tying it to the site with siteID ("" for any site). errTaken for a
+// duplicate label, errNotFound for a missing account, errSiteNotFound for a site not in the workspace.
+func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID, id, label, username, password, siteID string) (Account, error) {
 	a := Account{ID: id, Label: label, Username: username, PasswordSet: true}
+	if siteID != "" {
+		a.SiteID = &siteID
+	}
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if siteID != "" {
+			var ok bool
+			if err := tx.QueryRow(ctx, `select exists(select 1 from test_sites where id = $1 and workspace_id = $2)`, siteID, wsID).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return errSiteNotFound
+			}
+		}
 		if id == "" {
 			if err := tx.QueryRow(ctx, `select uuidv7()::text`).Scan(&a.ID); err != nil {
 				return err
@@ -788,11 +803,11 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 		var tag pgconn.CommandTag
 		var err error
 		if id == "" {
-			tag, err = tx.Exec(ctx, `insert into test_accounts (id, workspace_id, label, username, password) values ($1, $2, $3, $4, $5)`,
-				a.ID, wsID, label, username, sealed)
+			tag, err = tx.Exec(ctx, `insert into test_accounts (id, workspace_id, label, username, password, site_id) values ($1, $2, $3, $4, $5, $6)`,
+				a.ID, wsID, label, username, sealed, a.SiteID)
 		} else {
-			tag, err = tx.Exec(ctx, `update test_accounts set label = $3, username = $4, password = coalesce($5, password)
-				where id = $1 and workspace_id = $2`, a.ID, wsID, label, username, sealed)
+			tag, err = tx.Exec(ctx, `update test_accounts set label = $3, username = $4, password = coalesce($5, password), site_id = $6
+				where id = $1 and workspace_id = $2`, a.ID, wsID, label, username, sealed, a.SiteID)
 		}
 		if err != nil {
 			return err
@@ -805,7 +820,7 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 	switch {
 	case isUnique(err):
 		return a, errTaken
-	case err != nil && !errors.Is(err, errNotFound):
+	case err != nil && !errors.Is(err, errNotFound) && !errors.Is(err, errSiteNotFound):
 		return a, fmt.Errorf("save test account: %w", err)
 	}
 	return a, err
@@ -1032,7 +1047,7 @@ func (m *model) liveTester(ctx context.Context, workspaceID, id string) (string,
 	return u, err
 }
 
-type accountRef struct{ id, label, username string }
+type accountRef struct{ id, label, username, host string } // host "": any of the workspace's sites
 
 // job is what the tester needs to run a claimed run.
 type job struct {
@@ -1061,13 +1076,14 @@ func (m *model) job(ctx context.Context, runID string) (*job, error) {
 	if j.sites, err = m.sites(ctx, j.wsID); err != nil {
 		return nil, err
 	}
-	rows, err := m.db.Query(ctx, `select id::text, label, username from test_accounts where workspace_id = $1 order by lower(label), id`, j.wsID)
+	rows, err := m.db.Query(ctx, `select a.id::text, a.label, a.username, coalesce(s.host, '') from test_accounts a
+		left join test_sites s on s.id = a.site_id where a.workspace_id = $1 order by lower(a.label), a.id`, j.wsID)
 	if err != nil {
 		return nil, fmt.Errorf("read test accounts: %w", err)
 	}
 	j.accounts, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (accountRef, error) {
 		var a accountRef
-		return a, row.Scan(&a.id, &a.label, &a.username)
+		return a, row.Scan(&a.id, &a.label, &a.username, &a.host)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read test accounts: %w", err)

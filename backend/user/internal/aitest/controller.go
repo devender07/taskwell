@@ -695,6 +695,8 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
+const errChooseSite = "Choose one of this workspace's test sites."
+
 // saveAccount creates an account (POST /test-accounts) or updates one (POST /test-accounts/{id}).
 func (h *Handler) saveAccount(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, workspace.PermAITestsManage)
@@ -707,11 +709,18 @@ func (h *Handler) saveAccount(w http.ResponseWriter, r *http.Request, userID str
 		return nil
 	}
 	label, username, password := strings.TrimSpace(r.FormValue("label")), strings.TrimSpace(r.FormValue("username")), r.FormValue("password")
-	if !checkFields(w, checkAccount(label, username, password, id == "")) {
+	siteID := strings.TrimSpace(r.FormValue("site_id"))
+	errs := checkAccount(label, username, password, id == "")
+	if siteID != "" && !isUUID(siteID) {
+		errs["site_id"] = errChooseSite
+	}
+	if !checkFields(w, errs) {
 		return nil
 	}
-	a, err := h.model.saveAccount(r.Context(), h.opts.Key, ws.ID, ws.Slug, userID, id, label, username, password)
+	a, err := h.model.saveAccount(r.Context(), h.opts.Key, ws.ID, ws.Slug, userID, id, label, username, password, siteID)
 	switch {
+	case errors.Is(err, errSiteNotFound):
+		writeFields(w, http.StatusBadRequest, map[string]string{"site_id": errChooseSite})
 	case errors.Is(err, errTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"label": "An account with this label already exists."})
 	case errors.Is(err, errNotFound):

@@ -166,7 +166,7 @@ func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logge
 			sleep(ctx, time.Duration(min(max(s.Seconds, 1), 5))*time.Second)
 		case "fill_password":
 			var pw string
-			if pw, err = r.accountPassword(ctx, j, s.Account); err == nil {
+			if pw, err = r.accountPassword(ctx, j, pg, s.Account); err == nil {
 				err = pg.typeText(ctx, replayRef, pw)
 			}
 		case "assert_text", "assert_no_text":
