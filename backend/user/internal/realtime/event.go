@@ -37,8 +37,6 @@ func ToWorkspace(id string) string { return "ws:" + id }
 // ToUser is every connection of the user with the id.
 func ToUser(id string) string { return "user:" + id }
 
-func toIssue(id string) string { return "issue:" + id }
-
 // maxPayload keeps a NOTIFY payload under Postgres's 8000-byte limit.
 const maxPayload = 7900
 

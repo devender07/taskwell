@@ -31,7 +31,7 @@ func testIssue(t *testing.T, pool *pgxpool.Pool) (userID, wsID, issueID string) 
 	ctx := context.Background()
 	userID = dbtest.User(t, pool, "Ann")
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, userID, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, userID, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `with w as (select id from workspaces where created_by = $1),

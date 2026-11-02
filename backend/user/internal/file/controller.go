@@ -3,7 +3,6 @@ package file
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -56,7 +56,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if ws == nil {
-		writeErr(w, http.StatusNotFound, "Workspace not found.")
+		web.Err(w, http.StatusNotFound, "Workspace not found.")
 		return nil
 	}
 	mb, err := h.cfg.GetInt(r.Context(), "upload_max_mb")
@@ -78,35 +78,35 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) 
 			"your administrator for more space.", quota)
 	}
 	if limit <= 0 {
-		writeErr(w, http.StatusRequestEntityTooLarge, tooLarge)
+		web.Err(w, http.StatusRequestEntityTooLarge, tooLarge)
 		return nil
 	}
 	f, ok, err := h.save(w, r, &ws.ID, userID, limit, tooLarge, false)
 	if !ok || err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, f)
+	web.JSON(w, http.StatusCreated, f)
 	return nil
 }
 
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request, userID string) error {
 	id := r.PathValue("id")
 	var f *File
-	if uuidRe.MatchString(id) {
+	if web.IsUUID(id) {
 		var err error
 		if f, err = h.model.find(r.Context(), id, userID); err != nil {
 			return err
 		}
 	}
 	if f == nil {
-		writeErr(w, http.StatusNotFound, errFileNotFound)
+		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return nil
 	}
 	// f.ID is a validated uuid that matched a row, so the path can't leave h.dir.
 	file, err := os.Open(filepath.Join(h.dir, f.ID))
 	if errors.Is(err, os.ErrNotExist) {
 		slog.Warn("file missing on disk", "id", f.ID)
-		writeErr(w, http.StatusNotFound, errFileNotFound)
+		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return nil
 	}
 	if err != nil {
@@ -150,7 +150,7 @@ func (h *Handler) replaceAvatar(w http.ResponseWriter, r *http.Request, userID s
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, u)
+	web.JSON(w, http.StatusOK, u)
 	return nil
 }
 
@@ -158,14 +158,14 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request, _ string) error
 	w.Header().Set("Cache-Control", avatarCache)
 	id := r.PathValue("id")
 	fileID := ""
-	if uuidRe.MatchString(id) {
+	if web.IsUUID(id) {
 		var err error
 		if fileID, err = h.model.avatar(r.Context(), id); err != nil {
 			return err
 		}
 	}
 	if fileID == "" {
-		writeErr(w, http.StatusNotFound, errFileNotFound)
+		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return nil
 	}
 	http.Redirect(w, r, fileURL(fileID, "avatar"), http.StatusFound)
@@ -178,7 +178,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 	tooLarge string, imageOnly bool) (*File, bool, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, limit+formOverhead)
 	fail := func(status int, msg string) (*File, bool, error) {
-		writeFields(w, status, map[string]string{"file": msg})
+		web.Fields(w, status, map[string]string{"file": msg})
 		return nil, false, nil
 	}
 	mr, err := r.MultipartReader()
@@ -253,17 +253,3 @@ func tooBig(err error) bool {
 }
 
 // --- responses ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
-}

@@ -7,8 +7,9 @@
 package issue
 
 import (
-	"log/slog"
 	"net/http"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // maxBody fits a 50,000-character description even when URL-encoded.
@@ -49,20 +50,4 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.
-func (h *Handler) wrap(fn func(w http.ResponseWriter, r *http.Request, userID string) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-		userID, err := h.authenticate(r)
-		if err == nil && userID == "" {
-			writeErr(w, http.StatusUnauthorized, "Not signed in.")
-			return
-		}
-		if err == nil {
-			err = fn(w, r, userID)
-		}
-		if err != nil {
-			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
-		}
-	}
-}
+func (h *Handler) wrap(fn web.Handler) http.HandlerFunc { return web.Wrap(h.authenticate, maxBody, fn) }

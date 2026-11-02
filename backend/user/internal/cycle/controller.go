@@ -2,7 +2,6 @@ package cycle
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -48,7 +48,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, cs)
+	web.JSON(w, http.StatusOK, cs)
 	return nil
 }
 
@@ -64,14 +64,14 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 		}
 	}
 	if c == nil {
-		writeErr(w, http.StatusNotFound, errCycleNotFound)
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
 		return nil
 	}
 	is, err := h.issues(r.Context(), c.ID, userID, ws.Permissions)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"cycle": c, "issues": is})
+	web.JSON(w, http.StatusOK, map[string]any{"cycle": c, "issues": is})
 	return nil
 }
 
@@ -88,7 +88,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return answer(w, err)
 	}
-	writeJSON(w, http.StatusCreated, c)
+	web.JSON(w, http.StatusCreated, c)
 	return nil
 }
 
@@ -105,7 +105,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return answer(w, err)
 	}
-	writeJSON(w, http.StatusOK, c)
+	web.JSON(w, http.StatusOK, c)
 	return nil
 }
 
@@ -135,14 +135,14 @@ func (h *Handler) rollover(w http.ResponseWriter, r *http.Request, userID string
 		toErr = errCycleNotFound
 	}
 	if toErr != "" {
-		writeFields(w, http.StatusBadRequest, map[string]string{"to": toErr})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"to": toErr})
 		return nil
 	}
 	moved, c, err := h.model.rollover(r.Context(), ws.ID, normKey(r.PathValue("key")), n, to, userID, event(ws, userID))
 	if err != nil {
 		return answer(w, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"moved": moved, "cycle": c})
+	web.JSON(w, http.StatusOK, map[string]any{"moved": moved, "cycle": c})
 	return nil
 }
 
@@ -152,13 +152,13 @@ func answer(w http.ResponseWriter, err error) error {
 	var fe fieldErrors
 	switch {
 	case errors.Is(err, errNoProject):
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 	case errors.Is(err, errNoCycle):
-		writeErr(w, http.StatusNotFound, errCycleNotFound)
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
 	case errors.Is(err, errArchived):
-		writeErr(w, http.StatusConflict, errArchivedProject)
+		web.Err(w, http.StatusConflict, errArchivedProject)
 	case errors.As(err, &fe):
-		writeFields(w, http.StatusBadRequest, fe)
+		web.Fields(w, http.StatusBadRequest, fe)
 	default:
 		return err
 	}
@@ -173,7 +173,7 @@ func (h *Handler) cycle(w http.ResponseWriter, r *http.Request, userID string) (
 	}
 	n, ok := number(r)
 	if !ok {
-		writeErr(w, http.StatusNotFound, errCycleNotFound)
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
 		return nil, 0, false, nil
 	}
 	return ws, n, true, nil
@@ -190,7 +190,7 @@ func (h *Handler) project(w http.ResponseWriter, r *http.Request, userID string)
 		return nil, nil, false, err
 	}
 	if p == nil {
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil, nil, false, nil
 	}
 	return ws, p, true, nil
@@ -204,10 +204,10 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string, 
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
 	case manage && !workspace.Has(ws.Permissions, workspace.PermCyclesManage):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
@@ -240,7 +240,7 @@ func readForm(w http.ResponseWriter, r *http.Request, create bool) (input, bool)
 	in.startsOn, in.endsOn = date("starts_on", "Choose a start date."), date("ends_on", "Choose an end date.")
 	maps.DeleteFunc(errs, func(_, msg string) bool { return msg == "" })
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return in, false
 	}
 	return in, true
@@ -260,17 +260,3 @@ func event(ws *workspace.Workspace, userID string) realtime.Event {
 func normKey(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
 
 // --- responses ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
-}

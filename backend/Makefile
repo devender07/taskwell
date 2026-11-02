@@ -4,6 +4,7 @@
 
 COMPOSE := docker compose -f ../docker-compose.yml
 PKGS    := github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/... \
+           github.com/devender07/tether/backend/shared/... \
            github.com/devender07/tether/backend/mcp/...
 # Loads .env into a recipe's environment when it exists.
 ENV     := set -a; [ -f .env ] && . ./.env; set +a;

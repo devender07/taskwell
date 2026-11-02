@@ -6,7 +6,7 @@ import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { email as checkEmail } from '@tether/shared/validate'
-import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace } from '@/api'
+import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
@@ -22,7 +22,7 @@ export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?:
     form.set('email', email)
     let invite: Invite
     try {
-      invite = await api<Invite>(`/workspaces/${encodeURIComponent(slug)}/invites`, form)
+      invite = await api<Invite>(`${workspacePath(slug)}/invites`, form)
     } catch (e) {
       return { email, ...toFormErrors(e) }
     }
@@ -86,7 +86,7 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
   const navigate = useNavigate()
   const current = roles.find((r) => r.id === member.role.id)
   const manage = can(workspace, 'members.manage') && (self || (current !== undefined && grantable(workspace, current)))
-  const path = `/workspaces/${encodeURIComponent(workspace.slug)}/members/${encodeURIComponent(member.id)}`
+  const path = `${workspacePath(workspace.slug)}/members/${encodeURIComponent(member.id)}`
   const options = roleOptions(workspace, roles)
   const [roleId, setRoleId] = useOptimistic(member.role.id)
   const [confirming, setConfirming] = useState(false)
@@ -195,7 +195,7 @@ export function PendingInvites({ slug, invites }: { slug: string; invites: Invit
 
 function PendingInvite({ slug, invite }: { slug: string; invite: Invite }) {
   const router = useRouter()
-  const path = `/workspaces/${encodeURIComponent(slug)}/invites/${encodeURIComponent(invite.id)}`
+  const path = `${workspacePath(slug)}/invites/${encodeURIComponent(invite.id)}`
 
   const [resent, resend, resending] = useActionState(async () => {
     try {

@@ -3,7 +3,8 @@ package project
 import (
 	"regexp"
 	"strings"
-	"unicode/utf16"
+
+	"github.com/devender07/tether/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
@@ -11,17 +12,11 @@ import (
 
 var keyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,4}$`)
 
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-func isUUID(s string) bool { return uuidRe.MatchString(s) }
-
-func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
-
 func checkName(s string) string {
 	if s == "" {
 		return "Project name is required."
 	}
-	if jsLen(s) > 60 {
+	if doc.Len(s) > 60 {
 		return "Project name must be 60 characters or fewer."
 	}
 	return ""
@@ -38,7 +33,7 @@ func checkKey(s string) string {
 }
 
 func checkDescription(s string) string {
-	if jsLen(s) > 10000 {
+	if doc.Len(s) > 10000 {
 		return "Description must be 10,000 characters or fewer."
 	}
 	return ""

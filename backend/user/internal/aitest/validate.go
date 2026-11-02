@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -15,10 +14,7 @@ import (
 
 // Lengths count UTF-16 units to match JS String.length.
 
-var (
-	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
-	uuidRe       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-)
+var ()
 
 const (
 	maxTitleLen    = 200
@@ -27,21 +23,6 @@ const (
 	maxExpectedLen = 2000
 	maxNoteLen     = 2000
 )
-
-// parseIdentifier splits "eng-142" into "ENG" and 142; ok=false when it isn't an identifier.
-func parseIdentifier(s string) (key string, number int, ok bool) {
-	m := identifierRe.FindStringSubmatch(s)
-	if m == nil {
-		return "", 0, false
-	}
-	n, err := strconv.ParseInt(m[2], 10, 32)
-	if err != nil {
-		return "", 0, false
-	}
-	return strings.ToUpper(m[1]), int(n), true
-}
-
-func isUUID(s string) bool { return uuidRe.MatchString(s) }
 
 // cleanCase trims the fields and drops blank steps.
 func cleanCase(f caseFields) caseFields {

@@ -6,7 +6,8 @@ import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { ApiError, can, cyclesPath, projectPeoplePath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { MoreIcon } from '@tether/shared/icons'
+import { ApiError, can, cyclesPath, projectPeoplePath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components/cycles/cycles'
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
   loader: async (ctx) => {
     const { params } = ctx
     if (!/^\d+$/.test(params.number)) throw notFound()
-    const path = `/workspaces/${encodeURIComponent(params.workspace)}`
+    const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const list = cyclesPath(params.workspace, params.key)
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
@@ -83,11 +84,7 @@ function CyclePage() {
                 placement="bottom-end"
                 trigger={(props) => (
                   <IconButton aria-label="Cycle actions" title="Cycle actions" {...props}>
-                    <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                      <circle cx={5} cy={12} r={1.75} />
-                      <circle cx={12} cy={12} r={1.75} />
-                      <circle cx={19} cy={12} r={1.75} />
-                    </svg>
+                    <MoreIcon size={20} />
                   </IconButton>
                 )}
               >

@@ -241,3 +241,137 @@ export const ChevronDownIcon = (props: IconProps) => (
     <path d="m6 9 6 6 6-6" />
   </Icon>
 )
+
+export const XIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M18 6 6 18M6 6l12 12" />
+  </Icon>
+)
+
+export const CheckIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M20 6 9 17l-5-5" />
+  </Icon>
+)
+
+export const PlusIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+)
+
+export const MoreIcon = (props: IconProps) => (
+  <Icon fill="currentColor" stroke="none" {...props}>
+    <circle cx={5} cy={12} r={1.75} />
+    <circle cx={12} cy={12} r={1.75} />
+    <circle cx={19} cy={12} r={1.75} />
+  </Icon>
+)
+
+export const GripIcon = (props: IconProps) => (
+  <Icon fill="currentColor" stroke="none" {...props}>
+    {[6, 12, 18].map((y) => (
+      <g key={y}>
+        <circle cx={9} cy={y} r={1.9} />
+        <circle cx={15} cy={y} r={1.9} />
+      </g>
+    ))}
+  </Icon>
+)
+
+export const SmileIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" />
+  </Icon>
+)
+
+export const MessageIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </Icon>
+)
+
+export const SendIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m22 2-7 20-4-9-9-4z" />
+    <path d="M22 2 11 13" />
+  </Icon>
+)
+
+// filled: the pupil is solid, for "watching".
+export const EyeIcon = ({ filled, ...props }: IconProps & { filled?: boolean }) => (
+  <Icon {...props}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" fill={filled ? 'currentColor' : 'none'} />
+  </Icon>
+)
+
+type GlyphProps = { color: string; label?: string; size?: number }
+const glyphA11y = (label?: string) => (label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true as const })
+
+// A built-in status category's mark: dashed (backlog), empty (unstarted), half (started), check (completed), cross
+// (canceled).
+export function CategoryGlyph({ category, color, label, size = 14 }: GlyphProps & { category: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth={1.5} className="flex-noshrink" {...glyphA11y(label)}>
+      {label ? <title>{label}</title> : null}
+      {category === 'backlog' ? <circle cx={7} cy={7} r={6} strokeDasharray="2 2" /> : null}
+      {category === 'unstarted' ? <circle cx={7} cy={7} r={6} /> : null}
+      {category === 'started' ? (
+        <>
+          <circle cx={7} cy={7} r={6} />
+          <path d="M7 3a4 4 0 0 1 0 8z" fill={color} stroke="none" />
+        </>
+      ) : null}
+      {category === 'completed' || category === 'canceled' ? (
+        <>
+          <circle cx={7} cy={7} r={6.5} fill={color} stroke="none" />
+          <path d={category === 'completed' ? 'm4.5 7 1.75 1.75L9.5 5.5' : 'm5 5 4 4M9 5 5 9'} stroke="var(--bg)" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      ) : null}
+    </svg>
+  )
+}
+
+// A test result's mark: dashed (never run), empty (not run), check, cross, dash (skipped), alert (error), half
+// (running).
+export function ResultGlyph({ status, color, label, size = 16 }: GlyphProps & { status: 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error' | null }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" className="flex-noshrink" {...glyphA11y(label)}>
+      {label ? <title>{label}</title> : null}
+      <circle cx={8} cy={8} r={7} strokeDasharray={status ? undefined : '2 2'} />
+      {status === 'passed' ? <path d="m5 8 2 2 4-4" /> : null}
+      {status === 'failed' ? <path d="m5.5 5.5 5 5m0-5-5 5" /> : null}
+      {status === 'skipped' ? <path d="M5 8h6" /> : null}
+      {status === 'error' ? <path d="M8 4.5v4m0 3h.01" /> : null}
+      {status === 'running' ? <path d="M8 1a7 7 0 0 1 0 14z" fill={color} stroke="none" /> : null}
+    </svg>
+  )
+}
+
+export const CalendarIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="5" width="18" height="16" rx="2" />
+    <path d="M16 3v4M8 3v4M3 10h18" />
+  </Icon>
+)
+
+export const ChevronLeftIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m15 6-6 6 6 6" />
+  </Icon>
+)
+
+export const ChevronRightIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m9 6 6 6-6 6" />
+  </Icon>
+)
+
+// One path drawn as an icon, for sets kept as path data (the editor toolbar).
+export const PathIcon = ({ d, ...props }: IconProps & { d: string }) => (
+  <Icon {...props}>
+    <path d={d} />
+  </Icon>
+)

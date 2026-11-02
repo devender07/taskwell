@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { TestRun } from '@/api'
 import { RunStatusPill, formatCost, runFinished, useLive } from '@/components/tests/tests'
 import { useRealtime } from '@/realtime'
+import { workspacePath } from '@/api'
 
 // Outside _app so the popup has no navbar or sidebar; the API answers 401 when signed out.
 export const Route = createFileRoute('/live/$workspace/$run')({
@@ -12,7 +13,7 @@ export const Route = createFileRoute('/live/$workspace/$run')({
 function LiveView() {
   const { workspace, run: runId } = Route.useParams()
   useRealtime(workspace)
-  const path = `/workspaces/${encodeURIComponent(workspace)}/test-runs/${encodeURIComponent(runId)}`
+  const path = `${workspacePath(workspace)}/test-runs/${encodeURIComponent(runId)}`
   const { data: run, error } = useLive<TestRun>(path)
   const [attempt, setAttempt] = useState(0)
   const [broken, setBroken] = useState(false)

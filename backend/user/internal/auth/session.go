@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/secret"
 )
 
 const (
@@ -36,7 +37,7 @@ func (h *Handler) Authenticate(r *http.Request) (string, error) {
 			return "", nil
 		}
 		// ponytail: one indexed lookup per bearer request; cache like alive if MCP traffic shows up in DB load.
-		return h.model.apiTokenUser(r.Context(), hash(tok))
+		return h.model.apiTokenUser(r.Context(), secret.Hash(tok))
 	}
 	c, err := h.access(r)
 	if c == nil || c.SID == "" { // tokens from before sid existed: the client refreshes and gets one
@@ -78,11 +79,11 @@ func (h *Handler) access(r *http.Request) (*claims, error) {
 	if err != nil {
 		return nil, nil
 	}
-	secret, err := h.jwtSecret(r.Context())
+	key, err := h.jwtSecret(r.Context())
 	if err != nil {
 		return nil, err
 	}
-	cl, err := parseAccess(secret, c.Value)
+	cl, err := parseAccess(key, c.Value)
 	if err != nil {
 		return nil, nil // expired or forged: the client refreshes or signs in again
 	}
@@ -140,7 +141,7 @@ func (h *Handler) setTokens(ctx context.Context, w http.ResponseWriter, userID s
 	if err != nil {
 		return err
 	}
-	secret, err := h.jwtSecret(ctx)
+	key, err := h.jwtSecret(ctx)
 	if err != nil {
 		return err
 	}
@@ -148,13 +149,13 @@ func (h *Handler) setTokens(ctx context.Context, w http.ResponseWriter, userID s
 	if err != nil {
 		return err
 	}
-	refresh := newToken()
-	sid, err := h.model.insertRefresh(ctx, hash(refresh), userID, f)
+	refresh := secret.NewToken()
+	sid, err := h.model.insertRefresh(ctx, secret.Hash(refresh), userID, f)
 	if err != nil {
 		return err
 	}
 	accessTTL := time.Duration(accessMinutes) * time.Minute
-	access, err := signAccess(secret, userID, sid, accessTTL)
+	access, err := signAccess(key, userID, sid, accessTTL)
 	if err != nil {
 		return err
 	}

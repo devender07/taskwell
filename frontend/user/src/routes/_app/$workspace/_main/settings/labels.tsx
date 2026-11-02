@@ -1,10 +1,10 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, type Label } from '@/api'
+import { can, type Label, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { AddLabel, LabelList } from '@/components/workflow/labels'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/labels')({
-  loader: (ctx) => loaderApi<Label[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/labels`),
+  loader: (ctx) => loaderApi<Label[]>(ctx, `${workspacePath(ctx.params.workspace)}/labels`),
   component: LabelsSettings,
 })
 

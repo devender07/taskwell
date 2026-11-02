@@ -5,7 +5,8 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { XIcon } from '@tether/shared/icons'
+import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { StatusIcon } from './fields'
@@ -15,7 +16,7 @@ export const refOption = (r: IssueRef): Option => ({ value: r.identifier, label:
 
 // Reloads an open issue picker when issues in the workspace change.
 export const subscribeIssues = (workspace: Workspace) => (reload: () => void) => {
-  const ws = `/workspaces/${encodeURIComponent(workspace.slug)}`
+  const ws = `${workspacePath(workspace.slug)}`
   return subscribePaths([`${ws}/issues/`, `${ws}/projects/`], reload)
 }
 
@@ -24,7 +25,7 @@ export function searchIssues(workspace: Workspace, exclude: string, project?: st
   return async (q: string, signal: AbortSignal) => {
     const params = new URLSearchParams({ q })
     if (project) params.set('project', project)
-    const refs = await api<IssueRef[]>(`/workspaces/${encodeURIComponent(workspace.slug)}/issues?${params}`, undefined, 'GET', signal)
+    const refs = await api<IssueRef[]>(`${workspacePath(workspace.slug)}/issues?${params}`, undefined, 'GET', signal)
     return refs.filter((r) => r.identifier !== exclude)
   }
 }
@@ -116,9 +117,7 @@ export function Relations({ workspace, issue }: { workspace: Workspace; issue: I
               <RefRow key={r.id} workspace={workspace.slug} issue={r}>
                 {issue.can_edit ? (
                   <IconButton aria-label={`Remove link to ${r.identifier}`} disabled={removing} onClick={() => startTransition(() => remove(r.identifier))}>
-                    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
+                    <XIcon size={20} strokeWidth={2} />
                   </IconButton>
                 ) : null}
               </RefRow>

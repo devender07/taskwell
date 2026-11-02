@@ -2,13 +2,13 @@ package chat
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -35,7 +35,7 @@ func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
 
 // Audience returns who sees the chat as realtime audiences, or nil when the user can't open it; for typing frames.
 func (h *Handler) Audience(ctx context.Context, userID, chatID string) ([]string, error) {
-	if !isUUID(chatID) {
+	if !web.IsUUID(chatID) {
 		return nil, nil
 	}
 	return h.model.chatAudience(ctx, userID, chatID)
@@ -50,7 +50,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, cs)
+	web.JSON(w, http.StatusOK, cs)
 	return nil
 }
 
@@ -63,7 +63,7 @@ func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request, userID str
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"count": n})
+	web.JSON(w, http.StatusOK, map[string]int{"count": n})
 	return nil
 }
 
@@ -96,12 +96,12 @@ func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request, userID str
 		errs["member_ids"] = errTooManyPpl
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return nil
 	}
 	id, err := h.model.createGroup(r.Context(), sc, name, ids)
 	if errors.Is(err, errNotMember) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"member_ids": errPeople})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"member_ids": errPeople})
 		return nil
 	}
 	if err != nil {
@@ -117,10 +117,10 @@ func (h *Handler) direct(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	other := strings.TrimSpace(r.FormValue("user_id"))
 	bad := func() error {
-		writeFields(w, http.StatusBadRequest, map[string]string{"user_id": "Choose someone in this workspace."})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"user_id": "Choose someone in this workspace."})
 		return nil
 	}
-	if !isUUID(other) || other == userID {
+	if !web.IsUUID(other) || other == userID {
 		return bad()
 	}
 	id, err := h.model.direct(r.Context(), sc, other)
@@ -139,12 +139,12 @@ func (h *Handler) rename(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if c.kind != "group" {
-		writeErr(w, http.StatusForbidden, "Only groups can be renamed.")
+		web.Err(w, http.StatusForbidden, "Only groups can be renamed.")
 		return nil
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if msg := checkName(name); msg != "" {
-		writeFields(w, http.StatusBadRequest, map[string]string{"name": msg})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"name": msg})
 		return nil
 	}
 	if err := h.model.rename(r.Context(), sc, c.id, name); err != nil {
@@ -159,13 +159,13 @@ func (h *Handler) addMembers(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	if c.kind != "group" {
-		writeErr(w, http.StatusForbidden, "Only groups can have people added.")
+		web.Err(w, http.StatusForbidden, "Only groups can have people added.")
 		return nil
 	}
 	_ = r.ParseMultipartForm(maxBody)
 	ids, valid := people(r.PostForm["user_ids"], userID)
 	fail := func(msg string) error {
-		writeFields(w, http.StatusBadRequest, map[string]string{"user_ids": msg})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"user_ids": msg})
 		return nil
 	}
 	switch {
@@ -194,13 +194,13 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	target := r.PathValue("userId")
 	switch {
 	case c.kind != "group":
-		writeErr(w, http.StatusForbidden, "Only groups can have people removed.")
+		web.Err(w, http.StatusForbidden, "Only groups can have people removed.")
 		return nil
 	case target != userID && c.createdBy != userID:
-		writeErr(w, http.StatusForbidden, "Only the group's creator can remove people.")
+		web.Err(w, http.StatusForbidden, "Only the group's creator can remove people.")
 		return nil
 	}
-	if isUUID(target) {
+	if web.IsUUID(target) {
 		if err := h.model.removeMember(r.Context(), sc, c.id, target); err != nil {
 			return err
 		}
@@ -218,10 +218,10 @@ func (h *Handler) deleteChat(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	switch {
 	case c.kind == "workspace":
-		writeErr(w, http.StatusForbidden, "The workspace chat can't be deleted.")
+		web.Err(w, http.StatusForbidden, "The workspace chat can't be deleted.")
 		return nil
 	case c.kind == "group" && c.createdBy != userID:
-		writeErr(w, http.StatusForbidden, "Only the group's creator can delete it.")
+		web.Err(w, http.StatusForbidden, "Only the group's creator can delete it.")
 		return nil
 	}
 	if err := h.model.deleteChat(r.Context(), sc, c.id); err != nil {
@@ -244,7 +244,7 @@ func (h *Handler) messages(w http.ResponseWriter, r *http.Request, userID string
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": ms, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"messages": ms, "has_more": more})
 	return nil
 }
 
@@ -261,16 +261,16 @@ func (h *Handler) createMessage(w http.ResponseWriter, r *http.Request, userID s
 		errs["body"] = msg
 	}
 	const errParent = "You can only reply to a message in this chat."
-	if parent != "" && !isUUID(parent) {
+	if parent != "" && !web.IsUUID(parent) {
 		errs["parent_id"] = errParent
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return nil
 	}
 	id, err := h.model.createMessage(r.Context(), sc, *c, parent, body)
 	if errors.Is(err, errBadParent) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"parent_id": errParent})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"parent_id": errParent})
 		return nil
 	}
 	if err != nil {
@@ -285,7 +285,7 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request, userID string) er
 		return err
 	}
 	id := strings.TrimSpace(r.FormValue("message_id"))
-	if id == "" || isUUID(id) {
+	if id == "" || web.IsUUID(id) {
 		if err := h.model.read(r.Context(), sc, c.id, id); err != nil {
 			return err
 		}
@@ -300,7 +300,7 @@ func (h *Handler) replies(w http.ResponseWriter, r *http.Request, userID string)
 		return err
 	}
 	if m.parentID != "" {
-		writeErr(w, http.StatusNotFound, errNoMessage)
+		web.Err(w, http.StatusNotFound, errNoMessage)
 		return nil
 	}
 	before, ok := cursor(w, r)
@@ -315,7 +315,7 @@ func (h *Handler) replies(w http.ResponseWriter, r *http.Request, userID string)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"root": root, "replies": rs, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"root": root, "replies": rs, "has_more": more})
 	return nil
 }
 
@@ -326,7 +326,7 @@ func (h *Handler) editMessage(w http.ResponseWriter, r *http.Request, userID str
 	}
 	body, msg := checkBody(r.FormValue("body"))
 	if msg != "" {
-		writeFields(w, http.StatusBadRequest, map[string]string{"body": msg})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"body": msg})
 		return nil
 	}
 	if err := h.model.editMessage(r.Context(), sc, *m, body); err != nil {
@@ -362,12 +362,12 @@ func (h *Handler) reaction(w http.ResponseWriter, r *http.Request, userID, emoji
 		return err
 	}
 	if m.deleted {
-		writeErr(w, http.StatusNotFound, errNoMessage)
+		web.Err(w, http.StatusNotFound, errNoMessage)
 		return nil
 	}
 	msg := checkEmoji(emoji)
 	if msg != "" && add {
-		writeFields(w, http.StatusBadRequest, map[string]string{"emoji": msg})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"emoji": msg})
 		return nil
 	}
 	if msg == "" {
@@ -387,7 +387,7 @@ func (h *Handler) scope(w http.ResponseWriter, r *http.Request, userID string) (
 		return scope{}, false, err
 	}
 	if ws == nil {
-		writeErr(w, http.StatusNotFound, errNoWorkspace)
+		web.Err(w, http.StatusNotFound, errNoWorkspace)
 		return scope{}, false, nil
 	}
 	return scope{userID: userID, wsID: ws.ID, slug: ws.Slug}, true, nil
@@ -400,13 +400,13 @@ func (h *Handler) chat(w http.ResponseWriter, r *http.Request, userID string) (s
 		return sc, nil, err
 	}
 	var c *ref
-	if id := r.PathValue("id"); isUUID(id) {
+	if id := r.PathValue("id"); web.IsUUID(id) {
 		if c, err = h.model.chat(r.Context(), userID, sc.wsID, id); err != nil {
 			return sc, nil, err
 		}
 	}
 	if c == nil {
-		writeErr(w, http.StatusNotFound, errNoChat)
+		web.Err(w, http.StatusNotFound, errNoChat)
 	}
 	return sc, c, nil
 }
@@ -418,13 +418,13 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID string)
 		return sc, nil, err
 	}
 	var m *msgRef
-	if id := r.PathValue("id"); isUUID(id) {
+	if id := r.PathValue("id"); web.IsUUID(id) {
 		if m, err = h.model.messageRef(r.Context(), userID, sc.wsID, id); err != nil {
 			return sc, nil, err
 		}
 	}
 	if m == nil {
-		writeErr(w, http.StatusNotFound, errNoMessage)
+		web.Err(w, http.StatusNotFound, errNoMessage)
 	}
 	return sc, m, nil
 }
@@ -436,10 +436,10 @@ func (h *Handler) own(w http.ResponseWriter, r *http.Request, userID, forbidden 
 	case m == nil || err != nil:
 		return sc, nil, err
 	case !m.mine:
-		writeErr(w, http.StatusForbidden, forbidden)
+		web.Err(w, http.StatusForbidden, forbidden)
 		return sc, nil, nil
 	case m.deleted:
-		writeErr(w, http.StatusNotFound, errNoMessage)
+		web.Err(w, http.StatusNotFound, errNoMessage)
 		return sc, nil, nil
 	}
 	return sc, m, nil
@@ -448,8 +448,8 @@ func (h *Handler) own(w http.ResponseWriter, r *http.Request, userID, forbidden 
 // cursor reads ?before=, or writes a 400 and returns ok=false when it isn't a message id.
 func cursor(w http.ResponseWriter, r *http.Request) (string, bool) {
 	before := r.URL.Query().Get("before")
-	if before != "" && !isUUID(before) {
-		writeErr(w, http.StatusBadRequest, "Invalid cursor.")
+	if before != "" && !web.IsUUID(before) {
+		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
 		return "", false
 	}
 	return before, true
@@ -464,10 +464,10 @@ func (h *Handler) respondChat(w http.ResponseWriter, r *http.Request, sc scope, 
 		return err
 	}
 	if c == nil {
-		writeErr(w, http.StatusNotFound, errNoChat)
+		web.Err(w, http.StatusNotFound, errNoChat)
 		return nil
 	}
-	writeJSON(w, status, c)
+	web.JSON(w, status, c)
 	return nil
 }
 
@@ -476,20 +476,6 @@ func (h *Handler) respondMessage(w http.ResponseWriter, r *http.Request, userID,
 	if err != nil {
 		return err
 	}
-	writeJSON(w, status, m)
+	web.JSON(w, status, m)
 	return nil
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
 }

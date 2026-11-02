@@ -8,6 +8,7 @@ import { Popover } from '@tether/shared/popover'
 import { Textarea } from '@tether/shared/textarea'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { testCaseExpected, testCaseSteps, testCaseTitle } from '@tether/shared/validate'
+import { ChevronDownIcon, GripIcon, ResultGlyph } from '@tether/shared/icons'
 import {
   api,
   can,
@@ -70,17 +71,7 @@ const RESULT_LABELS: Record<TestStatus, string> = {
 export function ResultIcon({ status }: { status: TestStatus | null }) {
   const label = status ? RESULT_LABELS[status] : 'Never run'
   const color = status === 'passed' ? 'var(--success)' : status === 'failed' || status === 'error' ? 'var(--accent)' : 'var(--text-2)'
-  return (
-    <svg role="img" aria-label={label} width={16} height={16} viewBox="0 0 16 16" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" className="flex-noshrink">
-      <title>{label}</title>
-      <circle cx={8} cy={8} r={7} strokeDasharray={status ? undefined : '2 2'} />
-      {status === 'passed' ? <path d="m5 8 2 2 4-4" /> : null}
-      {status === 'failed' ? <path d="m5.5 5.5 5 5m0-5-5 5" /> : null}
-      {status === 'skipped' ? <path d="M5 8h6" /> : null}
-      {status === 'error' ? <path d="M8 4.5v4m0 3h.01" /> : null}
-      {status === 'running' ? <path d="M8 1a7 7 0 0 1 0 14z" fill={color} stroke="none" /> : null}
-    </svg>
-  )
+  return <ResultGlyph status={status} color={color} label={label} />
 }
 
 const RUN_LABELS: Record<RunStatus, string> = {
@@ -208,9 +199,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
                   placement="bottom-end"
                   trigger={(props) => (
                     <IconButton aria-label="More AI test options" {...props}>
-                      <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
+                      <ChevronDownIcon size={20} />
                     </IconButton>
                   )}
                 >
@@ -364,14 +353,7 @@ function CaseList({ workspace, issue, cases, manage, onChange, onRun }: ListProp
                       move(i, i + (e.key === 'ArrowUp' ? -1 : 1))
                     }}
                   >
-                    <svg width={16} height={16} viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                      {[4, 8, 12].map((y) => (
-                        <g key={y}>
-                          <circle cx={6} cy={y} r={1.25} />
-                          <circle cx={10} cy={y} r={1.25} />
-                        </g>
-                      ))}
-                    </svg>
+                    <GripIcon size={16} aria-hidden />
                   </button>
                 ) : null
               }

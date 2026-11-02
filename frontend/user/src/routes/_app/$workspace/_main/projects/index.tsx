@@ -4,7 +4,7 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { LockIcon } from '@tether/shared/icons'
 import { Tabs } from '@tether/shared/tabs'
-import { can, type Project } from '@/api'
+import { can, type Project, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ProjectForm } from '@/components/projects/project-form'
 import '@/components/projects/projects.css'
@@ -15,7 +15,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/')({
   validateSearch: (search): { archived?: true } => (search.archived === true ? { archived: true } : {}),
   loaderDeps: ({ search }) => ({ archived: search.archived }),
   loader: (ctx) =>
-    loaderApi<Project[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/projects${ctx.deps.archived ? '?archived=true' : ''}`),
+    loaderApi<Project[]>(ctx, `${workspacePath(ctx.params.workspace)}/projects${ctx.deps.archived ? '?archived=true' : ''}`),
   component: Projects,
 })
 

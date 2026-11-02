@@ -2,7 +2,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -44,7 +44,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ps)
+	web.JSON(w, http.StatusOK, ps)
 	return nil
 }
 
@@ -57,7 +57,7 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ss)
+	web.JSON(w, http.StatusOK, ss)
 	return nil
 }
 
@@ -73,17 +73,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	p, err := h.model.create(r.Context(), ws.ID, userID, name, key, desc, r.PostForm.Get("private") == "true", ids(r, "member_ids"),
 		event(ws, userID))
 	if errors.Is(err, errTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
 	}
 	if errors.Is(err, errNotMember) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"member_ids": errPickedOutsider})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"member_ids": errPickedOutsider})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, p)
+	web.JSON(w, http.StatusCreated, p)
 	return nil
 }
 
@@ -112,7 +112,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	p, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, name, key, desc, private, event(ws, userID))
 	if errors.Is(err, errTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"key": errKeyTaken})
 		return nil
 	}
 	return respond(w, p, err)
@@ -146,10 +146,10 @@ func (h *Handler) people(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if ms == nil {
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, ms)
+	web.JSON(w, http.StatusOK, ms)
 	return nil
 }
 
@@ -170,10 +170,10 @@ func (h *Handler) setMembers(w http.ResponseWriter, r *http.Request, userID stri
 	p, err := h.model.setMembers(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, ids, add, event(ws, userID))
 	switch {
 	case errors.Is(err, errNotMember):
-		writeFields(w, http.StatusBadRequest, map[string]string{"user_ids": errPickedOutsider})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"user_ids": errPickedOutsider})
 		return nil
 	case errors.Is(err, errPublic):
-		writeErr(w, http.StatusConflict, errPublicMembers)
+		web.Err(w, http.StatusConflict, errPublicMembers)
 		return nil
 	}
 	return respond(w, p, err)
@@ -192,10 +192,10 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string, 
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
 	case manage && !workspace.Has(ws.Permissions, workspace.PermProjectsManage):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
@@ -216,7 +216,7 @@ func readForm(w http.ResponseWriter, r *http.Request) (name, key, desc string, o
 		}
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return "", "", "", false
 	}
 	return name, key, desc, true
@@ -228,25 +228,11 @@ func respond(w http.ResponseWriter, p *Project, err error) error {
 		return err
 	}
 	if p == nil {
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, p)
+	web.JSON(w, http.StatusOK, p)
 	return nil
 }
 
 // --- responses ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
-}

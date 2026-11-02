@@ -29,7 +29,7 @@ func TestWebhooks(t *testing.T) {
 	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
 	var wsID, slug string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `with w as (select id, slug from workspaces where created_by = $1),

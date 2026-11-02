@@ -22,10 +22,11 @@ import (
 	"github.com/devender07/tether/backend/admin/internal/auth"
 	"github.com/devender07/tether/backend/admin/internal/config"
 	"github.com/devender07/tether/backend/admin/internal/directory"
-	"github.com/devender07/tether/backend/admin/internal/obs"
 	"github.com/devender07/tether/backend/admin/internal/realtime"
 	"github.com/devender07/tether/backend/admin/internal/stats"
 	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/tether/backend/shared/env"
+	"github.com/devender07/tether/backend/shared/obs"
 )
 
 func main() {
@@ -36,29 +37,29 @@ func main() {
 
 	prod := os.Getenv("APP_ENV") == "production"
 	obs.Setup(prod)
-	metricsAddr := env("METRICS_ADDR", "127.0.0.1:9091")
+	metricsAddr := env.Get("METRICS_ADDR", "127.0.0.1:9091")
 	if *healthcheck {
 		os.Exit(obs.Healthcheck(metricsAddr))
 	}
-	dbURL := env("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
-	addr := ":" + env("PORT", "8080")
+	dbURL := env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
+	addr := ":" + env.Get("PORT", "8080")
 	secret := []byte(os.Getenv("ADMIN_JWT_SECRET"))
 	if prod && os.Getenv("DATABASE_URL") == "" {
-		fatal("APP_ENV=production requires DATABASE_URL")
+		obs.Fatal("APP_ENV=production requires DATABASE_URL")
 	}
 	if prod && (len(secret) < 32 || string(secret) == os.Getenv("JWT_SECRET")) {
-		fatal("APP_ENV=production requires ADMIN_JWT_SECRET of at least 32 bytes, different from JWT_SECRET")
+		obs.Fatal("APP_ENV=production requires ADMIN_JWT_SECRET of at least 32 bytes, different from JWT_SECRET")
 	}
 	if len(secret) == 0 {
 		secret = nil // dev: system_config's jwt_secret
 	}
 	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY")
 	if prod && len(mfaSecret) < 32 {
-		fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
+		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
 	}
 	allowed, err := web.ParseAllowlist(os.Getenv("ADMIN_ALLOWED_IPS"))
 	if err != nil {
-		fatal("ADMIN_ALLOWED_IPS", "err", err)
+		obs.Fatal("ADMIN_ALLOWED_IPS", "err", err)
 	}
 	if allowed != nil {
 		slog.Info("admin allowlist", "ranges", len(allowed))
@@ -69,21 +70,21 @@ func main() {
 	// The user service owns the schema and runs migrations; this service only connects.
 	pool, err := openPool(context.Background(), dbURL)
 	if err != nil {
-		fatal("database", "err", err)
+		obs.Fatal("database", "err", err)
 	}
 	defer pool.Close()
 	if err := checkSchema(context.Background(), pool); err != nil {
 		pool.Close()
-		fatal("schema", "err", err)
+		obs.Fatal("schema", "err", err)
 	}
 	mfaKey, err := loadMFAKey(context.Background(), pool, mfaSecret)
 	if err != nil {
 		pool.Close()
-		fatal("mfa key", "err", err)
+		obs.Fatal("mfa key", "err", err)
 	}
 	if n, err := auth.EncryptSecrets(context.Background(), pool, mfaKey); err != nil {
 		pool.Close()
-		fatal("mfa secrets", "err", err)
+		obs.Fatal("mfa secrets", "err", err)
 	} else if n > 0 {
 		slog.Info("encrypted plaintext mfa secrets", "count", n)
 	}
@@ -92,7 +93,7 @@ func main() {
 		u, e, err := auth.Promote(context.Background(), pool, mfaKey, *promote)
 		if err != nil {
 			pool.Close()
-			fatal("promote", "err", err)
+			obs.Fatal("promote", "err", err)
 		}
 		if u == nil {
 			fmt.Fprintf(os.Stderr, "no user with the verified email %s\n", *promote)
@@ -112,7 +113,7 @@ func main() {
 		u, e, err := auth.ResetMFA(context.Background(), pool, mfaKey, *resetMFA)
 		if err != nil || u == nil {
 			pool.Close()
-			fatal("reset-mfa: no platform admin with that email, or the reset failed", "email", *resetMFA, "err", err)
+			obs.Fatal("reset-mfa: no platform admin with that email, or the reset failed", "email", *resetMFA, "err", err)
 		}
 		fmt.Printf("New MFA factor for %s <%s>; their admin sign-ins have ended.\n", u.Name, u.Email)
 		printEnrolment(e)
@@ -211,13 +212,13 @@ func openPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
-	maxConns, err := strconv.ParseInt(env("DB_MAX_CONNS", "5"), 10, 32)
+	maxConns, err := strconv.ParseInt(env.Get("DB_MAX_CONNS", "5"), 10, 32)
 	if err != nil || maxConns < 2 {
 		return nil, fmt.Errorf("DB_MAX_CONNS must be a number of at least 2") // the listener holds one
 	}
 	cfg.MaxConns = int32(maxConns)
-	cfg.ConnConfig.RuntimeParams["statement_timeout"] = env("DB_STATEMENT_TIMEOUT", "30s")
-	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = env("DB_IDLE_TX_TIMEOUT", "2min")
+	cfg.ConnConfig.RuntimeParams["statement_timeout"] = env.Get("DB_STATEMENT_TIMEOUT", "30s")
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = env.Get("DB_IDLE_TX_TIMEOUT", "2min")
 	return pgxpool.NewWithConfig(ctx, cfg)
 }
 
@@ -233,9 +234,9 @@ func serve(srv, metrics *http.Server, stop func()) {
 	slog.Info("admin listening", "addr", srv.Addr, "metrics_addr", metrics.Addr)
 	select {
 	case err := <-errc:
-		fatal("server", "err", err)
+		obs.Fatal("server", "err", err)
 	case err := <-merrc:
-		fatal("metrics server", "err", err)
+		obs.Fatal("metrics server", "err", err)
 	case <-ctx.Done():
 	}
 	slog.Info("shutting down")
@@ -269,11 +270,6 @@ func withTimeouts(h http.Handler) http.Handler {
 	})
 }
 
-func fatal(msg string, args ...any) {
-	slog.Error(msg, args...)
-	os.Exit(1)
-}
-
 // logConfig logs the effective settings, without secrets.
 func logConfig(prod bool, addr, dbURL string, envSecret bool) {
 	db := "invalid DATABASE_URL"
@@ -289,11 +285,4 @@ func logConfig(prod bool, addr, dbURL string, envSecret bool) {
 		appEnv = "production"
 	}
 	slog.Info("config", "app_env", appEnv, "addr", addr, "database", db, "jwt_secret", jwtSource)
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

@@ -1,7 +1,8 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { filterOptions, type Option } from '@tether/shared/match'
-import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { CheckIcon } from '@tether/shared/icons'
+import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
@@ -78,7 +79,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
 
   useEffect(() => {
     if (mode !== 'root') return
-    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    const ws = `${workspacePath(slug)}`
     return subscribePaths([`${ws}/search`, `${ws}/issues/`, `${ws}/projects`, `${ws}/projects/`], () => setVersion((v) => v + 1))
   }, [mode, slug])
 
@@ -86,7 +87,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     if (mode !== 'root') return
     const ctrl = new AbortController()
     const t = setTimeout(() => {
-      api<SearchResult>(`/workspaces/${encodeURIComponent(slug)}/search?q=${encodeURIComponent(q)}`, undefined, 'GET', ctrl.signal).then(
+      api<SearchResult>(`${workspacePath(slug)}/search?q=${encodeURIComponent(q)}`, undefined, 'GET', ctrl.signal).then(
         (data) => setFound({ q, data }),
         () => !ctrl.signal.aborted && setFound({ q, data: { issues: [], projects: [] } }),
       )
@@ -100,7 +101,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   useEffect(() => {
     if (mode !== 'root') return
     const ctrl = new AbortController()
-    api<Chat[]>(`/workspaces/${encodeURIComponent(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
+    api<Chat[]>(`${workspacePath(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
     return () => ctrl.abort()
   }, [mode, slug])
 
@@ -118,7 +119,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     for (const v of values) form.append(field, v)
     setError(null)
     try {
-      await api<Issue>(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}`, form)
+      await api<Issue>(`${workspacePath(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}`, form)
     } catch (e) {
       const { errors, error } = toFormErrors(e)
       setError(Object.values(errors).find(Boolean) ?? error)
@@ -201,7 +202,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         value: 'watch',
         label: watching ? 'Unwatch issue' : 'Watch issue',
         run: () =>
-          api(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
+          api(`${workspacePath(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
             () => {
               onClose()
               reloadPage(router)
@@ -375,7 +376,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
                       {item.label}
                     </span>
                     {item.hint ? <span className="palette-hint">{item.hint}</span> : null}
-                    {item.checked ? <CheckIcon /> : null}
+                    {item.checked ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
                   </div>
                 )
               })}
@@ -387,10 +388,3 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   )
 }
 
-function CheckIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-noshrink">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  )
-}

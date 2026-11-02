@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -114,21 +116,21 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	s, err := h.authenticate(r)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	}
 	userID := s.UserID
 	if userID == "" {
-		writeErr(w, http.StatusUnauthorized, "Not signed in.")
+		web.Err(w, http.StatusUnauthorized, "Not signed in.")
 		return
 	}
 	connID := rand.Text()
 	if ok, err := h.model.claim(r.Context(), connID, userID, instance, MaxConnsPerUser); err != nil {
 		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-		writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	} else if !ok {
-		writeErr(w, http.StatusTooManyRequests, "Too many open tabs. Close some and try again.")
+		web.Err(w, http.StatusTooManyRequests, "Too many open tabs. Close some and try again.")
 		return
 	}
 	defer h.release(r.Context(), connID)
@@ -352,10 +354,4 @@ func (c *Conn) write(ctx context.Context, ws *websocket.Conn) {
 // uuidString formats 16 raw bytes as a uuid.
 func uuidString(b []byte) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

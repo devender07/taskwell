@@ -80,9 +80,9 @@ func TestTakeInviteSend(t *testing.T) {
 	}
 }
 
-// TestCreateDefaultJoinsInvites: a new user someone invited joins that workspace and gets none of their own; anyone
+// TestCreateFirstJoinsInvites: a new user someone invited joins that workspace and gets none of their own; anyone
 // else gets their default workspace.
-func TestCreateDefaultJoinsInvites(t *testing.T) {
+func TestCreateFirstJoinsInvites(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set")
@@ -130,7 +130,7 @@ func TestCreateDefaultJoinsInvites(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, u := range []struct{ id, name string }{{cara, "Cara"}, {dev, "Dev"}} {
-		tx(func(tx pgx.Tx) error { return CreateDefault(ctx, tx, u.id, u.name) })
+		tx(func(tx pgx.Tx) error { return CreateFirst(ctx, tx, u.id, u.name, "") })
 	}
 	workspaces := func(user string) []string {
 		t.Helper()

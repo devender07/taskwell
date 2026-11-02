@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@tether/shared/button'
 import { Pagination } from '@tether/shared/pagination'
-import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace } from '@/api'
+import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
@@ -132,7 +132,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
   const [cleared, setCleared] = useState<NotificationPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const unread = cleared === page ? [] : page.notifications.filter((n) => !n.read).slice(0, 5)
-  const path = `/workspaces/${encodeURIComponent(workspace)}/notifications/read`
+  const path = `${workspacePath(workspace)}/notifications/read`
 
   async function markAll() {
     setCleared(page)
@@ -260,7 +260,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
     if (p > current && items.length < p * perPage && more && before) {
       setLoading(true)
       try {
-        const next = await api<ActivityPage>(`/workspaces/${encodeURIComponent(workspace)}/activity?before=${encodeURIComponent(before)}`)
+        const next = await api<ActivityPage>(`${workspacePath(workspace)}/activity?before=${encodeURIComponent(before)}`)
         setOlder((o) => [...o, ...next.items])
         setOlderMore(next.has_more)
       } catch (e) {

@@ -4,6 +4,7 @@ import { Avatar } from '@tether/shared/avatar'
 import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
 import { fullTime, relativeTime } from '@tether/shared/time'
+import { PlusIcon } from '@tether/shared/icons'
 import { avatarSrc, type Chat, type Member, type User } from '@/api'
 import { NewGroupDialog, NewMessageDialog, NewMessagePeople } from './chat-dialogs'
 import './chat.css'
@@ -29,7 +30,7 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
         title="Groups"
         add={
           <IconButton aria-label="New group" title="New group" className="chat-icon-button" onClick={() => setDialog('group')}>
-            <PlusIcon />
+            <PlusIcon size={16} />
           </IconButton>
         }
         empty="No groups yet."
@@ -47,7 +48,7 @@ export function ChatList({ slug, workspaceName, user, chats, members, dialog }: 
             className="chat-people-popover"
             trigger={(props) => (
               <IconButton aria-label="New message" title="New message" className="chat-icon-button" {...props}>
-                <PlusIcon />
+                <PlusIcon size={16} />
               </IconButton>
             )}
           >
@@ -131,12 +132,3 @@ function ChatRow({ slug, chat, me, workspaceName }: { slug: string; chat: Chat; 
   )
 }
 
-const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
-
-function PlusIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  )
-}

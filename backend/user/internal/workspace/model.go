@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // roleAdmin is the Admin role's workspace_roles.builtin.
@@ -78,12 +79,12 @@ func (m *model) create(ctx context.Context, userID, name, slug string) (Workspac
 	return create(ctx, m.db, userID, name, slug)
 }
 
-// create runs in its own transaction on db, or a savepoint when db is a pgx.Tx (so errTaken leaves the caller's tx usable).
-func create(ctx context.Context, db interface {
+// create runs in its own transaction on conn, or a savepoint when conn is a pgx.Tx (so errTaken leaves the caller's tx usable).
+func create(ctx context.Context, conn interface {
 	Begin(context.Context) (pgx.Tx, error)
 }, userID, name, slug string) (Workspace, error) {
 	ws := Workspace{Name: name, Slug: slug, Role: RoleRef{Name: "Admin"}, Permissions: allPermissions()}
-	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx,
 			`insert into workspaces (name, slug, created_by) values ($1, $2, $3) returning id::text`,
 			name, slug, userID).Scan(&ws.ID); err != nil {
@@ -102,7 +103,7 @@ func create(ctx context.Context, db interface {
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(userID))
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return Workspace{}, errTaken
 	}
 	if err != nil {
@@ -161,18 +162,13 @@ func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug s
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return errTaken
 	}
 	if err != nil {
 		return fmt.Errorf("update workspace: %w", err)
 	}
 	return nil
-}
-
-func isUniqueViolation(err error) bool {
-	pgErr := (*pgconn.PgError)(nil)
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // delete removes the workspace, by the actor; members, roles and invites go with it (on delete cascade).
@@ -350,7 +346,7 @@ func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, rol
 
 // renew gives the workspace's invite a new token and expiry, by the actor; nil when there's no such invite.
 func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, tokenHash []byte, days int) (*Invite, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	var inv Invite
@@ -377,7 +373,7 @@ func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, to
 
 // cancelInvite deletes the workspace's invite, by the actor; false when there's no such invite.
 func (m *model) cancelInvite(ctx context.Context, ws *Workspace, actorID, id string) (bool, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return false, nil
 	}
 	deleted := false
@@ -505,7 +501,7 @@ func (m *model) roles(ctx context.Context, workspaceID string) ([]Role, error) {
 func (m *model) role(ctx context.Context, workspaceID, id string) (*Role, error) {
 	var roleID any // nil: the Member role
 	if id != "" {
-		if !isUUID(id) {
+		if !web.IsUUID(id) {
 			return nil, nil
 		}
 		roleID = id
@@ -524,7 +520,7 @@ func (m *model) role(ctx context.Context, workspaceID, id string) (*Role, error)
 
 // memberRole returns the member's role; nil when they aren't a member.
 func (m *model) memberRole(ctx context.Context, workspaceID, userID string) (*Role, error) {
-	if !isUUID(userID) {
+	if !web.IsUUID(userID) {
 		return nil, nil
 	}
 	r, err := scanRole(m.db.QueryRow(ctx,
@@ -588,7 +584,7 @@ func (m *model) createRole(ctx context.Context, ws *Workspace, actorID, name str
 		}
 		return rolesChanged(ctx, tx, ws, actorID, "")
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return Role{}, errNameTaken
 	}
 	if err != nil {
@@ -600,7 +596,7 @@ func (m *model) createRole(ctx context.Context, ws *Workspace, actorID, name str
 // updateRole renames the role and replaces its permissions, by the actor; nil when there's no such role.
 // Returns errNameTaken like createRole.
 func (m *model) updateRole(ctx context.Context, ws *Workspace, actorID, id, name string, perms []string) (*Role, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	var r Role
@@ -617,7 +613,7 @@ func (m *model) updateRole(ctx context.Context, ws *Workspace, actorID, id, name
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return nil, errNameTaken
 	}
 	if err != nil {
@@ -629,7 +625,7 @@ func (m *model) updateRole(ctx context.Context, ws *Workspace, actorID, id, name
 // deleteRole deletes a custom role, by the actor, moving its members and invites to the Member role; false when
 // there's no such role.
 func (m *model) deleteRole(ctx context.Context, ws *Workspace, actorID, id string) (bool, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return false, nil
 	}
 	workspaceID := ws.ID
@@ -666,7 +662,7 @@ func (m *model) deleteRole(ctx context.Context, ws *Workspace, actorID, id strin
 // setMemberRole changes a member's role, by the actor; nil when they aren't a member. Returns errLastAdmin when it
 // would leave no admin.
 func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userID, roleID string) (*Member, error) {
-	if !isUUID(userID) {
+	if !web.IsUUID(userID) {
 		return nil, nil
 	}
 	var mb *Member
@@ -699,7 +695,7 @@ func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userI
 // removeMember takes the user out of the workspace and its private projects and unassigns their issues there, by the
 // actor (the user when they leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
 func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID string) (bool, error) {
-	if !isUUID(userID) {
+	if !web.IsUUID(userID) {
 		return false, nil
 	}
 	removed := false

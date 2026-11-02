@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { XIcon } from '../icons/icons'
 import './dialog.css'
 
 type DialogProps = {
@@ -62,9 +63,7 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
           {children}
           {dismissible ? (
             <button type="button" className="dialog-close" aria-label="Close" onClick={onClose}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
+              <XIcon size={16} strokeWidth={2} />
             </button>
           ) : null}
         </div>

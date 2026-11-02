@@ -8,7 +8,8 @@ import { Popover } from '@tether/shared/popover'
 import { RichText, type Doc } from '@tether/shared/rich-text'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { messageBody } from '@tether/shared/validate'
-import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Member, type Message, type MessagePage, type Replies, type User } from '@/api'
+import { MessageIcon, MoreIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
+import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Member, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { useUnread } from '@/components/app/unread'
 import { RichEditor } from '@/components/issues/rich-editor'
@@ -39,7 +40,7 @@ const ChatContext = createContext<Ctx>(null!)
 
 type Props = { slug: string; workspaceName: string; me: User; chat: Chat; page: MessagePage; members: Member[]; thread?: string; message?: string }
 
-const messagePath = (slug: string, id: string) => `/workspaces/${encodeURIComponent(slug)}/messages/${encodeURIComponent(id)}`
+const messagePath = (slug: string, id: string) => `${workspacePath(slug)}/messages/${encodeURIComponent(id)}`
 // ProseMirror marks every Esc and some arrow keys handled, so "was this key for an open @ or # list" is asked of the DOM.
 const suggesting = () => !!document.querySelector('.rich-editor-mentions')
 const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40
@@ -85,7 +86,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, members, thread,
     me,
     mentions: chat.kind === 'workspace' ? members : chat.kind === 'self' ? [] : chat.members,
     issues: async (q) => {
-      const refs = await api<IssueRef[]>(`/workspaces/${encodeURIComponent(slug)}/issues?${new URLSearchParams({ q })}`)
+      const refs = await api<IssueRef[]>(`${workspacePath(slug)}/issues?${new URLSearchParams({ q })}`)
       return refs.map((r) => ({ id: r.identifier, label: r.identifier, title: r.title }))
     },
     upload: (file) => uploadFile(slug, file),
@@ -337,7 +338,7 @@ function ChatHeader({ workspaceName, members }: { workspaceName: string; members
           placement="bottom-end"
           trigger={(props) => (
             <IconButton aria-label="Chat actions" className="chat-icon-button" {...props}>
-              <DotsIcon />
+              <MoreIcon />
             </IconButton>
           )}
         >
@@ -482,7 +483,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
           </Popover>
           {inThread ? null : (
             <IconButton aria-label="Reply in thread" title="Reply in thread" className="chat-tool chat-hover-only" onClick={openThread}>
-              <ReplyIcon />
+              <MessageIcon />
             </IconButton>
           )}
           <Popover
@@ -490,7 +491,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
             placement="bottom-end"
             trigger={(props) => (
               <IconButton aria-label="More actions" title="More actions" className="chat-tool" {...props}>
-                <DotsIcon />
+                <MoreIcon />
               </IconButton>
             )}
           >
@@ -838,40 +839,3 @@ function ThreadPanel({ rootId }: { rootId: string }) {
   )
 }
 
-const iconProps = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
-
-function DotsIcon() {
-  return (
-    <svg {...iconProps} fill="currentColor" stroke="none">
-      <circle cx={5} cy={12} r={1.75} />
-      <circle cx={12} cy={12} r={1.75} />
-      <circle cx={19} cy={12} r={1.75} />
-    </svg>
-  )
-}
-
-function SmileIcon() {
-  return (
-    <svg {...iconProps}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" />
-    </svg>
-  )
-}
-
-function ReplyIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  )
-}
-
-function SendIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="m22 2-7 20-4-9-9-4z" />
-      <path d="M22 2 11 13" />
-    </svg>
-  )
-}

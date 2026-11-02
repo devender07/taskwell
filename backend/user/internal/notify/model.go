@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // Record writes the change's notifications and new watchers in tx, the change's own transaction, and tells the
@@ -21,7 +22,7 @@ import (
 // actor, emailed again) instead of adding another.
 func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	// Mention ids come from documents users write; one that isn't a uuid can't be a member.
-	c.Mentioned = slices.DeleteFunc(slices.Clone(c.Mentioned), func(id string) bool { return !uuidRe.MatchString(id) })
+	c.Mentioned = slices.DeleteFunc(slices.Clone(c.Mentioned), func(id string) bool { return !web.IsUUID(id) })
 	var watchers []string
 	if c.Status != nil || c.NewComment {
 		rows, err := tx.Query(ctx, `select user_id::text from issue_watchers where issue_id = $1`, c.IssueID)

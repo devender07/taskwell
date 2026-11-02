@@ -3,7 +3,7 @@ import { BackLink } from '@tether/shared/back-link'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { ApiError, can, cyclesPath, type Cycle, type Project } from '@/api'
+import { ApiError, can, cyclesPath, type Cycle, type Project, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { CycleForm, CycleProgress } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
@@ -12,7 +12,7 @@ import '@/components/projects/projects.css'
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/')({
   loader: async (ctx) => {
     const { params } = ctx
-    const projectPath = `/workspaces/${encodeURIComponent(params.workspace)}/projects/${encodeURIComponent(params.key)}`
+    const projectPath = `${workspacePath(params.workspace)}/projects/${encodeURIComponent(params.key)}`
     trackPath(ctx, `${projectPath}/issues`) // progress follows status changes
     const [project, cycles] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),

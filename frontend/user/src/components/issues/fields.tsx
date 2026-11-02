@@ -1,5 +1,5 @@
 import { Checkbox } from '@tether/shared/checkbox'
-import { StatusTypeIcon } from '@tether/shared/icons'
+import { CategoryGlyph, StatusTypeIcon } from '@tether/shared/icons'
 import { Popover } from '@tether/shared/popover'
 import type { Option } from '@tether/shared/smart-autocomplete'
 import type { Label, Member, Status, StatusCategory } from '@/api'
@@ -22,7 +22,6 @@ export const CATEGORIES: { value: StatusCategory; label: string }[] = [
 ]
 
 export const priorityOptions: Option[] = PRIORITIES.map((p) => ({ value: String(p.value), label: p.label }))
-export const categoryOptions: Option[] = CATEGORIES
 export const statusOptions = (statuses: Status[]): Option[] => statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> }))
 export const assigneeOptions = (members: Member[]): Option[] => [
   { value: '', label: 'No assignee' },
@@ -53,25 +52,7 @@ export function StatusIcon({ status, label }: { status: StatusLook; label?: stri
   const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
   const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
   if (icon) return <StatusTypeIcon icon={icon} color={status.color ?? color} title={label} {...a11y} />
-  return (
-    <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth={1.5} className="flex-noshrink" {...a11y}>
-      {label ? <title>{label}</title> : null}
-      {category === 'backlog' ? <circle cx={7} cy={7} r={6} strokeDasharray="2 2" /> : null}
-      {category === 'unstarted' ? <circle cx={7} cy={7} r={6} /> : null}
-      {category === 'started' ? (
-        <>
-          <circle cx={7} cy={7} r={6} />
-          <path d="M7 3a4 4 0 0 1 0 8z" fill={color} stroke="none" />
-        </>
-      ) : null}
-      {category === 'completed' || category === 'canceled' ? (
-        <>
-          <circle cx={7} cy={7} r={6.5} fill={color} stroke="none" />
-          <path d={category === 'completed' ? 'm4.5 7 1.75 1.75L9.5 5.5' : 'm5 5 4 4M9 5 5 9'} stroke="var(--bg)" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      ) : null}
-    </svg>
-  )
+  return <CategoryGlyph category={category} color={color} label={label} />
 }
 
 export function LabelDot({ color }: { color: string }) {

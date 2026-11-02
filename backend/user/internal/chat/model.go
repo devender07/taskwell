@@ -15,6 +15,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/doc"
 	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // model owns every SQL query for chats and messages.
@@ -562,7 +563,7 @@ func messageChanged(ctx context.Context, tx pgx.Tx, sc scope, c ref, root string
 
 // visible returns the mentioned people who can see the chat, keeping the doc's other person mentions as plain text.
 func visible(ctx context.Context, tx pgx.Tx, wsID string, c ref, body json.RawMessage) ([]string, json.RawMessage, error) {
-	ids := slices.DeleteFunc(doc.Mentions(body), func(id string) bool { return !isUUID(id) })
+	ids := slices.DeleteFunc(doc.Mentions(body), func(id string) bool { return !web.IsUUID(id) })
 	rows, err := tx.Query(ctx,
 		`select u::text from unnest($1::uuid[]) u
 		 where exists (select 1 from workspace_members wm where wm.workspace_id = $2 and wm.user_id = u)

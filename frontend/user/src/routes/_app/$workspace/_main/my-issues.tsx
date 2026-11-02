@@ -3,12 +3,13 @@ import type { Issue, Label, Member, Status } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
+import { workspacePath } from '@/api'
 
 export const Route = createFileRoute('/_app/$workspace/_main/my-issues')({
   validateSearch: validateViewSearch,
   loader: async (ctx) => {
     const { params } = ctx
-    const path = `/workspaces/${encodeURIComponent(params.workspace)}`
+    const path = `${workspacePath(params.workspace)}`
     const [issues, statuses, labels, { members }] = await Promise.all([
       loaderApi<Issue[]>(ctx, `${path}/my-issues`),
       loaderApi<Status[]>(ctx, `${path}/statuses`),

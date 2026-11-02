@@ -13,6 +13,7 @@ import { useFieldError } from '../input/field-error'
 import { filterOptions, type Option } from '../smart-autocomplete/match'
 import { FILE_URL, imageSrc, isAllowedHref, measure, type Doc } from './doc'
 import { RichText } from './rich-text'
+import { PathIcon } from '../icons/icons'
 import '../input/input.css'
 import '../smart-autocomplete/smart-autocomplete.css'
 import './rich-editor.css'
@@ -298,14 +299,6 @@ const TOOLS: { name: string; label: string; d: string; run: (c: ChainedCommands)
 
 const PAPERCLIP = 'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'
 
-function ToolIcon({ d }: { d: string }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  )
-}
-
 function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) => void }) {
   const active = useEditorState({ editor, selector: ({ editor }) => TOOLS.map((t) => editor.isActive(t.name)) })
   const picker = useRef<HTMLInputElement>(null)
@@ -321,7 +314,7 @@ function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) 
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => t.run(editor.chain().focus()).run()}
         >
-          <ToolIcon d={t.d} />
+          <PathIcon d={t.d} />
         </IconButton>
       ))}
       {attach ? (
@@ -333,7 +326,7 @@ function Toolbar({ editor, attach }: { editor: Editor; attach?: (files: File[]) 
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => picker.current?.click()}
           >
-            <ToolIcon d={PAPERCLIP} />
+            <PathIcon d={PAPERCLIP} />
           </IconButton>
           <input
             ref={picker}

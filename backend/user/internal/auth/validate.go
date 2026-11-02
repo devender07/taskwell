@@ -3,30 +3,16 @@ package auth
 import (
 	"regexp"
 	"strings"
-	"unicode/utf16"
+
+	"github.com/devender07/tether/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
 // Lengths count UTF-16 units to match JS String.length.
 
-var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-
-func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
-
-func checkEmail(v string) string {
-	s := strings.TrimSpace(v)
-	if s == "" {
-		return "Email is required."
-	}
-	if jsLen(s) > 254 || !emailRe.MatchString(s) {
-		return "Enter a valid email address."
-	}
-	return ""
-}
-
 // checkWorkspaceName is the sign-up's optional workspace name; the same limit as naming a workspace.
 func checkWorkspaceName(s string) string {
-	if jsLen(s) > 50 {
+	if doc.Len(s) > 50 {
 		return "Workspace name must be 50 characters or fewer."
 	}
 	return ""
@@ -37,7 +23,7 @@ func checkName(v string) string {
 	if s == "" {
 		return "Name is required."
 	}
-	if jsLen(s) > 100 {
+	if doc.Len(s) > 100 {
 		return "Name must be 100 characters or fewer."
 	}
 	return ""
@@ -48,7 +34,7 @@ func checkPassword(v string) string {
 	if v == "" {
 		return "Password is required."
 	}
-	if jsLen(v) < 8 {
+	if doc.Len(v) < 8 {
 		return "Password must be at least 8 characters."
 	}
 	if len(v) > 72 {
@@ -85,13 +71,8 @@ func checkTokenName(v string) string {
 	if s == "" {
 		return "Name the token."
 	}
-	if jsLen(s) > 60 {
+	if doc.Len(s) > 60 {
 		return "Use 60 characters or fewer."
 	}
 	return ""
 }
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
-func isUUID(s string) bool { return uuidRe.MatchString(s) }

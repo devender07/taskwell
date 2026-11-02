@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
-import { ApiError, type Chat, type MessagePage } from '@/api'
+import { ApiError, type Chat, type MessagePage, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ChatView } from '@/components/chat/chat-view'
 
@@ -14,7 +14,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/inbox/c/$chatId')({
     return out
   },
   loader: async (ctx) => {
-    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}/chats/${encodeURIComponent(ctx.params.chatId)}`
+    const path = `${workspacePath(ctx.params.workspace)}/chats/${encodeURIComponent(ctx.params.chatId)}`
     try {
       const [chat, page] = await Promise.all([loaderApi<Chat>(ctx, path), loaderApi<MessagePage>(ctx, `${path}/messages`)])
       return { chat, page }

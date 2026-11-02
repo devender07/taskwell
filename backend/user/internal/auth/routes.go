@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const maxBody = 64 << 10
@@ -46,13 +48,13 @@ func cookieOnly(path string) bool {
 func (h *Handler) wrap(fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := bearer(r); ok && cookieOnly(r.URL.Path) {
-			writeErr(w, http.StatusForbidden, "Use the Tether app for this.")
+			web.Err(w, http.StatusForbidden, "Use the Tether app for this.")
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		if err := fn(w, r); err != nil {
 			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+			web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 		}
 	}
 }

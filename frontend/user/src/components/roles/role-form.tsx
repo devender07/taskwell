@@ -5,7 +5,7 @@ import { Checkbox } from '@tether/shared/checkbox'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { roleName } from '@tether/shared/validate'
-import { api, can, toFormErrors, type FieldErrors, type Permission, type Role, type Workspace } from '@/api'
+import { api, can, toFormErrors, type FieldErrors, type Permission, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type State = { name: string; permissions: string[]; errors?: FieldErrors; error?: string | null }
@@ -14,7 +14,7 @@ type State = { name: string; permissions: string[]; errors?: FieldErrors; error?
 export function RoleForm({ workspace, catalog, role }: { workspace: Workspace; catalog: Permission[]; role?: Role }) {
   const navigate = useNavigate()
   const readOnly = !can(workspace, 'roles.manage') || role?.builtin === 'admin'
-  const base = `/workspaces/${encodeURIComponent(workspace.slug)}/roles`
+  const base = `${workspacePath(workspace.slug)}/roles`
 
   const [{ name, permissions, errors, error }, submit, pending] = useActionState(async (_prev: State, form: FormData): Promise<State> => {
     const name = String(form.get('name') ?? '').trim()
@@ -96,7 +96,7 @@ export function DeleteRole({ workspace, role }: { workspace: Workspace; role: Ro
 
   const [error, remove, pending] = useActionState(async () => {
     try {
-      await api(`/workspaces/${encodeURIComponent(workspace.slug)}/roles/${encodeURIComponent(role.id)}`, undefined, 'DELETE')
+      await api(`${workspacePath(workspace.slug)}/roles/${encodeURIComponent(role.id)}`, undefined, 'DELETE')
     } catch (e) {
       return toFormErrors(e).error
     }

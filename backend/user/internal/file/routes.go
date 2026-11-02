@@ -5,8 +5,9 @@
 package file
 
 import (
-	"log/slog"
 	"net/http"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // formOverhead is what a multipart body may add around the file itself.
@@ -22,19 +23,4 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 // wrap answers 401 when signed out and turns a returned error into a logged 500. Handlers cap their own body size.
-func (h *Handler) wrap(fn func(w http.ResponseWriter, r *http.Request, userID string) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, err := h.authenticate(r)
-		if err == nil && userID == "" {
-			writeErr(w, http.StatusUnauthorized, "Not signed in.")
-			return
-		}
-		if err == nil {
-			err = fn(w, r, userID)
-		}
-		if err != nil {
-			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
-		}
-	}
-}
+func (h *Handler) wrap(fn web.Handler) http.HandlerFunc { return web.Wrap(h.authenticate, 0, fn) }

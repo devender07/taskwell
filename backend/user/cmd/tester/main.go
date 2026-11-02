@@ -15,9 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devender07/tether/backend/shared/env"
+	"github.com/devender07/tether/backend/shared/obs"
 	"github.com/devender07/tether/backend/user/internal/aitest"
 	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/obs"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 )
 
@@ -27,17 +28,17 @@ func main() {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	switch {
 	case prod && os.Getenv("DATABASE_URL") == "":
-		fatal("APP_ENV=production requires DATABASE_URL")
+		obs.Fatal("APP_ENV=production requires DATABASE_URL")
 	case prod && apiKey == "":
-		fatal("APP_ENV=production requires ANTHROPIC_API_KEY")
+		obs.Fatal("APP_ENV=production requires ANTHROPIC_API_KEY")
 	}
 	key, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
-		fatal(err.Error())
+		obs.Fatal(err.Error())
 	}
-	browsers, err := strconv.Atoi(env("AI_TEST_BROWSERS", "2"))
+	browsers, err := strconv.Atoi(env.Get("AI_TEST_BROWSERS", "2"))
 	if err != nil || browsers < 1 {
-		fatal("AI_TEST_BROWSERS must be a number of at least 1")
+		obs.Fatal("AI_TEST_BROWSERS must be a number of at least 1")
 	}
 	// Dev only: local test sites (127.0.0.1, the LAN) may be visited, and their self-signed or local-CA certificates
 	// are accepted, since the Chrome container doesn't trust the host's development CA.
@@ -45,27 +46,27 @@ func main() {
 
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	pool, err := db.Open(context.Background(), env("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable"))
+	pool, err := db.Open(context.Background(), env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable"))
 	if err != nil {
-		fatal("database", "err", err)
+		obs.Fatal("database", "err", err)
 	}
 	defer pool.Close()
 
 	proxy := aitest.NewProxy(allowPrivate)
-	proxySrv := &http.Server{Addr: env("PROXY_ADDR", ":3128"), Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
+	proxySrv := &http.Server{Addr: env.Get("PROXY_ADDR", ":3128"), Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := proxySrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			fatal("proxy", "err", err)
+			obs.Fatal("proxy", "err", err)
 		}
 	}()
 	live := aitest.NewLive()
 	liveMux := http.NewServeMux()
 	liveMux.Handle("GET /live/{run}", live)
-	liveSrv := &http.Server{Addr: env("LIVE_ADDR", ":3129"), Handler: liveMux, ReadHeaderTimeout: 10 * time.Second}
+	liveSrv := &http.Server{Addr: env.Get("LIVE_ADDR", ":3129"), Handler: liveMux, ReadHeaderTimeout: 10 * time.Second}
 	host, _ := os.Hostname() // in compose, the container's hostname is its id, which the network resolves
 	_, port, _ := net.SplitHostPort(liveSrv.Addr)
-	o := aitest.RunnerOptions{Live: live, LiveURL: env("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, UploadDir: env("UPLOAD_DIR", "./uploads"), ChromeURL: env("CHROME_URL", "http://chrome:9222"),
-		ProxyURL: env("PROXY_URL", "http://tester:3128"), Browsers: browsers, Proxy: proxy, IgnoreCertErrors: allowPrivate}
+	o := aitest.RunnerOptions{Live: live, LiveURL: env.Get("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, UploadDir: env.Get("UPLOAD_DIR", "./uploads"), ChromeURL: env.Get("CHROME_URL", "http://chrome:9222"),
+		ProxyURL: env.Get("PROXY_URL", "http://tester:3128"), Browsers: browsers, Proxy: proxy, IgnoreCertErrors: allowPrivate}
 	if apiKey != "" {
 		o.Send = aitest.NewSender(apiKey)
 	}
@@ -76,7 +77,7 @@ func main() {
 	runner.RegisterSessions(liveMux) // browser sessions share the internal port with the live view
 	go func() {
 		if err := liveSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			fatal("live", "err", err)
+			obs.Fatal("live", "err", err)
 		}
 	}()
 	runner.Run(stop) // returns once browser sessions are closed and running runs end their current step
@@ -85,16 +86,4 @@ func main() {
 	_ = proxySrv.Shutdown(ctx)
 	_ = liveSrv.Shutdown(ctx)
 	slog.Info("stopped")
-}
-
-func fatal(msg string, args ...any) {
-	slog.Error(msg, args...)
-	os.Exit(1)
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

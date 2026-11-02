@@ -1,5 +1,8 @@
 import { redirect } from '@tanstack/react-router'
 import type { Doc } from '@tether/shared/rich-editor'
+import { ApiError, FALLBACK } from '@tether/shared/api-errors'
+
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
 export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null }
 export type RoleRef = { id: string; name: string }
@@ -162,15 +165,14 @@ export type NotificationSettings = {
   chat: boolean
   timezone: string | null // null until chosen
 }
-export type FieldErrors = Record<string, string | null | undefined>
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
-  `/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
+  `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
-export const projectPath = (workspace: string, project: string) => `/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}`
+export const projectPath = (workspace: string, project: string) => `${workspacePath(workspace)}/projects/${encodeURIComponent(project)}`
 // Everyone who can see the project, for its assignee and mention pickers: the whole workspace for a public project.
 export const projectPeoplePath = (workspace: string, project: string) => `${projectPath(workspace, project)}/people`
 export function addProjectMembers(workspace: string, project: string, ids: string[]) {
@@ -194,12 +196,12 @@ export function rolloverCycle(workspace: string, project: string, number: number
   return api<{ moved: number; cycle: Cycle }>(`${cyclePath(workspace, project, number)}/rollover`, form)
 }
 
-export const statusTypesPath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}/status-types`
+export const statusTypesPath = (workspace: string) => `${workspacePath(workspace)}/status-types`
 const statusTypePath = (workspace: string, id: string) => `${statusTypesPath(workspace)}/${encodeURIComponent(id)}`
 export const saveStatusType = (workspace: string, form: FormData, id?: string) => api<StatusType>(id ? statusTypePath(workspace, id) : statusTypesPath(workspace), form)
 export const deleteStatusType = (workspace: string, id: string) => api(statusTypePath(workspace, id), undefined, 'DELETE')
 
-export const integrationsPath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}/integrations`
+export const integrationsPath = (workspace: string) => `${workspacePath(workspace)}/integrations`
 const integrationPath = (workspace: string, provider: Provider) => `${integrationsPath(workspace)}/${provider}`
 
 export const connectIntegration = (workspace: string, provider: Provider) =>
@@ -208,33 +210,12 @@ export const updateIntegration = (workspace: string, provider: Provider, form: F
 export const disconnectIntegration = (workspace: string, provider: Provider) => api(integrationPath(workspace, provider), undefined, 'DELETE')
 
 export const tokensPath = '/me/tokens'
-export const listTokens = () => api<ApiToken[]>(tokensPath)
 export function createToken(name: string) {
   const form = new FormData()
   form.set('name', name)
   return api<{ token: ApiToken; secret: string }>(tokensPath, form)
 }
 export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURIComponent(id)}`, undefined, 'DELETE')
-
-const FALLBACK = 'Something went wrong. Try again.'
-const OFFLINE = "You're offline. Reconnect and try again."
-const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
-
-export class ApiError extends Error {
-  status: number
-  errors: FieldErrors
-  error: string | null
-
-  constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
-    // Field errors stand on their own; no response at all (status 0) says offline or unreachable; anything else
-    // (no body, proxy 500) gets the generic message.
-    const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
-    super(error ?? `HTTP ${status}`)
-    this.status = status
-    this.errors = body?.errors ?? {}
-    this.error = error
-  }
-}
 
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
@@ -280,7 +261,7 @@ export async function uploadFile(workspace: string, file: File) {
   const form = new FormData()
   form.set('file', file)
   try {
-    return await api<UploadedFile>(`/workspaces/${encodeURIComponent(workspace)}/files`, form)
+    return await api<UploadedFile>(`${workspacePath(workspace)}/files`, form)
   } catch (e) {
     throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
   }
@@ -328,20 +309,9 @@ export async function getMe(): Promise<User | null> {
   }
 }
 
-// An in-app path to return to after signing in. Anything else (another origin, "//x", "/\x", control characters
-// that browsers strip, such as "/\t/x") is dropped.
-export function safeRedirect(v: unknown): string | undefined {
-  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !/[\\\x00-\x1f\x7f]/.test(v) ? v : undefined
-}
-
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.
 export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
   if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
-}
-
-// Any thrown value → { errors, error } for a form's state.
-export function toFormErrors(e: unknown): { errors: FieldErrors; error: string | null } {
-  return e instanceof ApiError ? { errors: e.errors, error: e.error } : { errors: {}, error: FALLBACK }
 }
 
 export type RunKind = 'ai' | 'manual' | 'replay'
@@ -391,7 +361,7 @@ export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
 export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
 
-export const workspacePath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}`
+export const workspacePath = (workspace: Workspace | string) => `/workspaces/${encodeURIComponent(typeof workspace === 'string' ? workspace : workspace.slug)}`
 export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`
 export const testRunsPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-runs`
 export const testRunPath = (workspace: Workspace, id: string) => `${workspacePath(workspace)}/test-runs/${encodeURIComponent(id)}`
@@ -424,8 +394,6 @@ export function startTestRun(workspace: Workspace, identifier: string, kind: Run
   if (caseId) form.set('case_id', caseId)
   return api<TestRun>(testRunsPath(workspace, identifier), form)
 }
-
-export const startRecordedRun = (workspace: Workspace, identifier: string) => startTestRun(workspace, identifier, 'replay')
 
 export function markTestResult(workspace: Workspace, run: string, result: string, status: 'passed' | 'failed' | 'skipped', note: string) {
   const form = new FormData()

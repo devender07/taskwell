@@ -4,10 +4,10 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path"
 	"sort"
 	"strconv"
@@ -15,7 +15,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/shared/env"
 )
 
 //go:embed migrations/*.sql
@@ -29,25 +32,18 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
-	maxConns, err := strconv.ParseInt(env("DB_MAX_CONNS", "20"), 10, 32)
+	maxConns, err := strconv.ParseInt(env.Get("DB_MAX_CONNS", "20"), 10, 32)
 	if err != nil || maxConns < 4 {
 		return nil, fmt.Errorf("DB_MAX_CONNS must be a number of at least 4") // two listeners hold one each
 	}
 	cfg.MaxConns = int32(maxConns)
-	cfg.ConnConfig.RuntimeParams["statement_timeout"] = env("DB_STATEMENT_TIMEOUT", "30s")
-	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = env("DB_IDLE_TX_TIMEOUT", "2min")
+	cfg.ConnConfig.RuntimeParams["statement_timeout"] = env.Get("DB_STATEMENT_TIMEOUT", "30s")
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = env.Get("DB_IDLE_TX_TIMEOUT", "2min")
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open pool: %w", err)
 	}
 	return pool, nil
-}
-
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // migrateLock is the session advisory lock that serializes concurrent migration runs.
@@ -93,7 +89,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return fmt.Errorf("prepare schema_migrations: %w", err)
 	}
-	lockTimeout := env("MIGRATE_LOCK_TIMEOUT", "10s")
+	lockTimeout := env.Get("MIGRATE_LOCK_TIMEOUT", "10s")
 	for _, name := range names {
 		version := path.Base(name)
 		var done bool
@@ -161,4 +157,10 @@ func statements(sql string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// IsUniqueViolation reports whether err is Postgres refusing a duplicate (unique_violation).
+func IsUniqueViolation(err error) bool {
+	pgErr := (*pgconn.PgError)(nil)
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

@@ -73,13 +73,12 @@ statuses refetches as it does for status changes today).
 
 - Icons: `StatusTypeIcon({ icon, color, size })` and the key list in the shared icon library.
 - `StatusIcon` takes a status (or `{category, icon, color}`) and draws the custom icon when set; update its callers.
-- Settings → Workflow:
-  - **Types** section: the five built-ins (read-only, their icons, "Built in"), then custom types with Edit and
-    Delete, and an "Add type" button. The add/edit dialog: Name, Icon (a grid of the icon set, keyboard reachable),
-    Color (`@tether/shared/color-picker`), "Counts as" (the five categories, radio-style, with their icons).
-    Delete asks to confirm ("Statuses of this type become …").
-  - **Statuses**: the form is Name + Type (one picker of built-in and custom types, each with its icon). No "works
-    like", no free-text type. Rows show the status's icon and its type's name.
+- Settings → Workflow: one card per type (Backlog, Unstarted, Started, the custom types, Completed, Canceled), each
+  listing its statuses. A card's "+" adds a status inline to that type; a custom type's "⋯" edits or deletes it.
+  A status row's hover actions move it up or down within its type, and "⋯" edits it (name and type, inline) or
+  deletes it. Reordering saves every status in the shown order. "Add type" (page header) opens the dialog: a live
+  preview, Name, Icon (a grid of the icon set), Color (`@tether/shared/color-picker`). No "Counts as": a type is its
+  own identity; new types are saved with category `started` (open, in-flight work) and keep that category.
 
 ## Agents
 

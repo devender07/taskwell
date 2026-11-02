@@ -18,14 +18,11 @@ var (
 	colorRe      = regexp.MustCompile(`^#[0-9a-f]{6}([0-9a-f]{2})?$`) // #rrggbb, or #rrggbbaa with opacity
 	dateRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
-	uuidRe       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
 	// typeIcons are the status type icon keys, as @tether/shared/icons draws them.
 	typeIcons = []string{"circle", "circle-dashed", "circle-half", "circle-check", "circle-x", "eye", "refresh", "pause",
 		"clock", "flag", "star", "bug", "rocket", "alert", "lock", "message"}
 )
-
-func jsLen(s string) int { return doc.Len(s) }
 
 const (
 	maxDescriptionLen = 50000
@@ -52,7 +49,7 @@ func checkTitle(s string) string {
 	if s == "" {
 		return "Title is required."
 	}
-	if jsLen(s) > 200 {
+	if doc.Len(s) > 200 {
 		return "Title must be 200 characters or fewer."
 	}
 	return ""
@@ -86,7 +83,7 @@ func checkStatusName(s string) string {
 	if s == "" {
 		return "Status name is required."
 	}
-	if jsLen(s) > 30 {
+	if doc.Len(s) > 30 {
 		return "Status name must be 30 characters or fewer."
 	}
 	return ""
@@ -96,7 +93,7 @@ func checkTypeName(s string) string {
 	if s == "" {
 		return "Type name is required."
 	}
-	if jsLen(s) > 30 {
+	if doc.Len(s) > 30 {
 		return "Type name must be 30 characters or fewer."
 	}
 	return ""
@@ -120,7 +117,7 @@ func checkLabelName(s string) string {
 	if s == "" {
 		return "Label name is required."
 	}
-	if jsLen(s) > 30 {
+	if doc.Len(s) > 30 {
 		return "Label name must be 30 characters or fewer."
 	}
 	return ""
@@ -137,7 +134,7 @@ func checkColor(s string) string {
 func normColor(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // parseIdentifier splits "eng-142" into "ENG" and 142; ok=false when it isn't an identifier.
-func parseIdentifier(s string) (key string, number int, ok bool) {
+func ParseIdentifier(s string) (key string, number int, ok bool) {
 	m := identifierRe.FindStringSubmatch(s)
 	if m == nil {
 		return "", 0, false
@@ -148,6 +145,3 @@ func parseIdentifier(s string) (key string, number int, ok bool) {
 	}
 	return strings.ToUpper(m[1]), int(n), true
 }
-
-// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
-func isUUID(s string) bool { return uuidRe.MatchString(s) }

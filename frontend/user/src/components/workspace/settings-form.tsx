@@ -3,7 +3,7 @@ import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
 import { workspaceName, workspaceSlug } from '@tether/shared/validate'
-import { api, can, toFormErrors, type FieldErrors, type Workspace } from '@/api'
+import { api, can, toFormErrors, type FieldErrors, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type Values = { name: string; slug: string }
@@ -22,7 +22,7 @@ export function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
     form.set('slug', values.slug)
     let updated: Workspace
     try {
-      updated = await api<Workspace>(`/workspaces/${encodeURIComponent(workspace.slug)}`, form)
+      updated = await api<Workspace>(`${workspacePath(workspace.slug)}`, form)
     } catch (e) {
       return { values, ...toFormErrors(e) }
     }

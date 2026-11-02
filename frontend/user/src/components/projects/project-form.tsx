@@ -7,14 +7,14 @@ import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import { Textarea } from '@tether/shared/textarea'
 import { projectDescription, projectKey, projectKeyFormat, projectName } from '@tether/shared/validate'
-import { addProjectMembers, api, avatarSrc, removeProjectMember, toFormErrors, type FieldErrors, type Member, type PersonRef, type Project, type Workspace } from '@/api'
+import { addProjectMembers, api, avatarSrc, removeProjectMember, toFormErrors, type FieldErrors, type Member, type PersonRef, type Project, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { PeoplePicker } from '@/components/chat/chat-dialogs'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
-const projectsPath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}/projects`
+const projectsPath = (workspace: Workspace) => `${workspacePath(workspace.slug)}/projects`
 
 // The whole workspace, for picking a private project's members; fetched only while a picker is shown.
 function useWorkspaceMembers(workspace: Workspace, enabled: boolean) {
@@ -22,7 +22,7 @@ function useWorkspaceMembers(workspace: Workspace, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
     let live = true
-    api<{ members: Member[] }>(`/workspaces/${encodeURIComponent(workspace.slug)}/members`).then(
+    api<{ members: Member[] }>(`${workspacePath(workspace.slug)}/members`).then(
       (r) => live && setMembers(r.members),
       () => {},
     )

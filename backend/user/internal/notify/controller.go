@@ -2,10 +2,8 @@ package notify
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
 	"slices"
 	"time"
 
@@ -13,10 +11,9 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 type Handler struct {
 	model        *model
@@ -39,8 +36,8 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		return err
 	}
 	before := r.URL.Query().Get("before")
-	if before != "" && !uuidRe.MatchString(before) {
-		writeErr(w, http.StatusBadRequest, "That page doesn't exist.")
+	if before != "" && !web.IsUUID(before) {
+		web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
 		return nil
 	}
 	ns, more, err := h.model.list(r.Context(), userID, ws.ID, before)
@@ -50,7 +47,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if ns == nil {
 		ns = []Notification{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"notifications": ns, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"notifications": ns, "has_more": more})
 	return nil
 }
 
@@ -63,7 +60,7 @@ func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request, userID str
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"count": n})
+	web.JSON(w, http.StatusOK, map[string]int{"count": n})
 	return nil
 }
 
@@ -82,10 +79,10 @@ func (h *Handler) mark(w http.ResponseWriter, r *http.Request, userID string, re
 		return err
 	}
 	_ = r.ParseMultipartForm(maxBody)
-	ids := slices.DeleteFunc(slices.Clone(r.PostForm["ids"]), func(s string) bool { return !uuidRe.MatchString(s) })
+	ids := slices.DeleteFunc(slices.Clone(r.PostForm["ids"]), func(s string) bool { return !web.IsUUID(s) })
 	all := read && r.PostForm.Get("all") == "true"
 	if !all && len(ids) == 0 {
-		writeErr(w, http.StatusBadRequest, "Choose notifications.")
+		web.Err(w, http.StatusBadRequest, "Choose notifications.")
 		return nil
 	}
 	if err := h.model.setRead(r.Context(), userID, ws.ID, ws.Slug, ids, all, read); err != nil {
@@ -100,7 +97,7 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request, userID string
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, s)
+	web.JSON(w, http.StatusOK, s)
 	return nil
 }
 
@@ -137,18 +134,18 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID 
 		}
 	}
 	if len(errs) > 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": errs})
+		web.JSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": errs})
 		return nil
 	}
 	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments, chat, timezone)
 	if errors.Is(err, errBadTimezone) {
-		writeJSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": {"timezone": errTimezone}})
+		web.JSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": {"timezone": errTimezone}})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, s)
+	web.JSON(w, http.StatusOK, s)
 	return nil
 }
 
@@ -168,17 +165,7 @@ func validTimezone(tz string) bool {
 func (h *Handler) workspace(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, error) {
 	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
 	if err == nil && ws == nil {
-		writeErr(w, http.StatusNotFound, "Workspace not found.")
+		web.Err(w, http.StatusNotFound, "Workspace not found.")
 	}
 	return ws, err
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ApiError, integrationsPath, type Integration, type Status } from '@/api'
+import { ApiError, integrationsPath, type Integration, type Status, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IntegrationCard } from '@/components/settings/integrations'
 
@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/integratio
         if (e instanceof ApiError && e.status === 403) return null
         throw e
       }),
-      loaderApi<Status[]>(ctx, `/workspaces/${encodeURIComponent(workspace)}/statuses`),
+      loaderApi<Status[]>(ctx, `${workspacePath(workspace)}/statuses`),
     ])
     return { integrations, statuses }
   },

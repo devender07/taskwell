@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -36,7 +39,7 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string)
 			return err
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs})
+	web.JSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs})
 	return nil
 }
 
@@ -47,19 +50,19 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	email := r.FormValue("email")
-	if msg := checkEmail(email); msg != "" {
-		writeFields(w, http.StatusBadRequest, map[string]string{"email": msg})
+	if msg := web.CheckEmail(email); msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
 	role, ok, err := h.assignable(w, r, ws, r.FormValue("role_id"))
 	if !ok || err != nil {
 		return err
 	}
-	email = normEmail(email)
+	email = web.NormEmail(email)
 	if in, err := h.model.isMember(ctx, ws.ID, email); err != nil {
 		return err
 	} else if in {
-		writeFields(w, http.StatusConflict, map[string]string{"email": "They're already in this workspace."})
+		web.Fields(w, http.StatusConflict, map[string]string{"email": "They're already in this workspace."})
 		return nil
 	}
 	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {
@@ -69,15 +72,15 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if err != nil {
 		return err
 	}
-	token := newToken()
-	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, hash(token), days)
+	token := secret.NewToken()
+	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, secret.Hash(token), days)
 	if err != nil {
 		return err
 	}
 	if err := h.sendInvite(ctx, ws.Name, inv, token, days); err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, inv)
+	web.JSON(w, http.StatusCreated, inv)
 	return nil
 }
 
@@ -94,19 +97,19 @@ func (h *Handler) resendInvite(w http.ResponseWriter, r *http.Request, userID st
 	if err != nil {
 		return err
 	}
-	token := newToken()
-	inv, err := h.model.renew(ctx, ws, userID, r.PathValue("id"), hash(token), days)
+	token := secret.NewToken()
+	inv, err := h.model.renew(ctx, ws, userID, r.PathValue("id"), secret.Hash(token), days)
 	if err != nil {
 		return err
 	}
 	if inv == nil {
-		writeErr(w, http.StatusNotFound, errInviteNotFound)
+		web.Err(w, http.StatusNotFound, errInviteNotFound)
 		return nil
 	}
 	if err := h.sendInvite(ctx, ws.Name, *inv, token, days); err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, inv)
+	web.JSON(w, http.StatusOK, inv)
 	return nil
 }
 
@@ -120,7 +123,7 @@ func (h *Handler) cancelInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	if !deleted {
-		writeErr(w, http.StatusNotFound, errInviteNotFound)
+		web.Err(w, http.StatusNotFound, errInviteNotFound)
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -129,32 +132,32 @@ func (h *Handler) cancelInvite(w http.ResponseWriter, r *http.Request, userID st
 
 // showInvite is public: the invite page needs it before the visitor signs in.
 func (h *Handler) showInvite(w http.ResponseWriter, r *http.Request) error {
-	info, err := h.model.inviteInfo(r.Context(), hash(r.PathValue("token")))
+	info, err := h.model.inviteInfo(r.Context(), secret.Hash(r.PathValue("token")))
 	if err != nil {
 		return err
 	}
 	if info == nil {
-		writeErr(w, http.StatusNotFound, errInviteInvalid)
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, info)
+	web.JSON(w, http.StatusOK, info)
 	return nil
 }
 
 func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, email, err := h.model.accept(r.Context(), userID, hash(r.PathValue("token")))
+	ws, email, err := h.model.accept(r.Context(), userID, secret.Hash(r.PathValue("token")))
 	if errors.Is(err, errWrongEmail) {
-		writeErr(w, http.StatusForbidden, "This invite is for "+email+". Sign in with that email to accept it.")
+		web.Err(w, http.StatusForbidden, "This invite is for "+email+". Sign in with that email to accept it.")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if ws == nil {
-		writeErr(w, http.StatusNotFound, errInviteInvalid)
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, ws)
+	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
 
@@ -166,10 +169,10 @@ func (h *Handler) assignable(w http.ResponseWriter, r *http.Request, ws *Workspa
 	case err != nil:
 		return nil, false, err
 	case role == nil:
-		writeFields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
 		return nil, false, nil
 	case !subset(role.Permissions, ws.Permissions):
-		writeErr(w, http.StatusForbidden, errEscalation)
+		web.Err(w, http.StatusForbidden, errEscalation)
 		return nil, false, nil
 	}
 	return role, true, nil
@@ -187,10 +190,10 @@ func (h *Handler) manageable(w http.ResponseWriter, r *http.Request, ws *Workspa
 	case err != nil:
 		return false, err
 	case role == nil:
-		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		web.Err(w, http.StatusNotFound, errMemberNotFound)
 		return false, nil
 	case !subset(role.Permissions, ws.Permissions):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return false, nil
 	}
 	return true, nil
@@ -203,7 +206,7 @@ func (h *Handler) changeMember(w http.ResponseWriter, r *http.Request, userID st
 	}
 	id := strings.TrimSpace(r.FormValue("role_id"))
 	if id == "" {
-		writeFields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"role_id": errChooseRole})
 		return nil
 	}
 	if ok, err := h.manageable(w, r, ws, userID); !ok || err != nil {
@@ -215,17 +218,17 @@ func (h *Handler) changeMember(w http.ResponseWriter, r *http.Request, userID st
 	}
 	mb, err := h.model.setMemberRole(r.Context(), ws, userID, r.PathValue("userId"), role.ID)
 	if errors.Is(err, errLastAdmin) {
-		writeErr(w, http.StatusConflict, errNoAdmin)
+		web.Err(w, http.StatusConflict, errNoAdmin)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if mb == nil {
-		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		web.Err(w, http.StatusNotFound, errMemberNotFound)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, mb)
+	web.JSON(w, http.StatusOK, mb)
 	return nil
 }
 
@@ -238,7 +241,7 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	target := r.PathValue("userId")
 	if target != userID {
 		if !Has(ws.Permissions, permMembersManage) {
-			writeErr(w, http.StatusForbidden, errForbidden)
+			web.Err(w, http.StatusForbidden, errForbidden)
 			return nil
 		}
 		if ok, err := h.manageable(w, r, ws, userID); !ok || err != nil {
@@ -247,14 +250,14 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	}
 	removed, err := h.model.removeMember(r.Context(), ws, userID, target)
 	if errors.Is(err, errLastAdmin) {
-		writeErr(w, http.StatusConflict, errNoAdmin)
+		web.Err(w, http.StatusConflict, errNoAdmin)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if !removed {
-		writeErr(w, http.StatusNotFound, errMemberNotFound)
+		web.Err(w, http.StatusNotFound, errMemberNotFound)
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -270,7 +273,7 @@ func (h *Handler) canSend(w http.ResponseWriter, r *http.Request, ws *Workspace,
 	}
 	if ok, err := h.model.verified(ctx, userID); err != nil || !ok {
 		if err == nil {
-			writeErr(w, http.StatusForbidden, errUnverified)
+			web.Err(w, http.StatusForbidden, errUnverified)
 		}
 		return false, err
 	}
@@ -284,7 +287,7 @@ func (h *Handler) canSend(w http.ResponseWriter, r *http.Request, ws *Workspace,
 	}
 	if ok, err := h.model.takeInviteSend(ctx, ws.ID, userID, perUser, perWorkspace); err != nil || !ok {
 		if err == nil {
-			writeErr(w, http.StatusTooManyRequests, errInviteLimit)
+			web.Err(w, http.StatusTooManyRequests, errInviteLimit)
 		}
 		return false, err
 	}
@@ -295,7 +298,7 @@ func (h *Handler) canSend(w http.ResponseWriter, r *http.Request, ws *Workspace,
 func (h *Handler) mailReady(w http.ResponseWriter, r *http.Request) (bool, error) {
 	ok, err := h.mail.Configured(r.Context())
 	if err == nil && !ok {
-		writeErr(w, http.StatusServiceUnavailable, errNoMail)
+		web.Err(w, http.StatusServiceUnavailable, errNoMail)
 	}
 	return ok, err
 }

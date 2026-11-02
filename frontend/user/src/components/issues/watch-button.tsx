@@ -1,7 +1,8 @@
 import { useRouter } from '@tanstack/react-router'
 import { useOptimistic, useState, useTransition } from 'react'
 import { Button } from '@tether/shared/button'
-import { api, toFormErrors, type Issue, type Workspace } from '@/api'
+import { EyeIcon } from '@tether/shared/icons'
+import { api, toFormErrors, type Issue, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 
 export function WatchButton({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
@@ -16,7 +17,7 @@ export function WatchButton({ workspace, issue }: { workspace: Workspace; issue:
     startTransition(async () => {
       setWatching(next)
       try {
-        await api(`/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(issue.identifier)}/watch`, undefined, next ? 'POST' : 'DELETE')
+        await api(`${workspacePath(workspace.slug)}/issues/${encodeURIComponent(issue.identifier)}/watch`, undefined, next ? 'POST' : 'DELETE')
         await reloadPage(router)
       } catch (e) {
         setError(toFormErrors(e).error)
@@ -27,10 +28,7 @@ export function WatchButton({ workspace, issue }: { workspace: Workspace; issue:
   return (
     <div className="grid gap-1 flex-noshrink" style={{ justifyItems: 'end' }}>
       <Button variant="secondary" aria-pressed={watching} onClick={toggle} aria-label="Watch">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
-          <circle cx="12" cy="12" r="3" fill={watching ? 'currentColor' : 'none'} />
-        </svg>
+        <EyeIcon size={16} filled={watching} />
         {watching ? 'Watching' : 'Watch'}
       </Button>
       {error ? <p role="alert" className="m-0 text-caption text-accent">{error}</p> : null}

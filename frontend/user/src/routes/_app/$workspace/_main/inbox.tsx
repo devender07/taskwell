@@ -2,13 +2,14 @@ import { Outlet, createFileRoute, useLoaderData, useMatch } from '@tanstack/reac
 import type { Chat, Member } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ChatList } from '@/components/chat/chat-list'
+import { workspacePath } from '@/api'
 
 type Search = { new?: 'group' | 'message' }
 
 export const Route = createFileRoute('/_app/$workspace/_main/inbox')({
   validateSearch: (search): Search => (search.new === 'group' || search.new === 'message' ? { new: search.new } : {}),
   loader: async (ctx) => {
-    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}`
+    const path = `${workspacePath(ctx.params.workspace)}`
     const [chats, { members }] = await Promise.all([loaderApi<Chat[]>(ctx, `${path}/chats`), loaderApi<{ members: Member[] }>(ctx, `${path}/members`)])
     return { chats, members }
   },

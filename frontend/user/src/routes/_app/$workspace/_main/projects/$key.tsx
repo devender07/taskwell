@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { LockIcon } from '@tether/shared/icons'
-import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Issue, type Label, type Member, type Project, type Status, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
@@ -18,7 +18,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
   validateSearch: validateViewSearch,
   loader: async (ctx) => {
     const { params } = ctx
-    const path = `/workspaces/${encodeURIComponent(params.workspace)}`
+    const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     trackPath(ctx, `${path}/members`)
     const [project, issues, cycles, statuses, labels, members] = await Promise.all([

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/devender07/tether/backend/mcp/internal/server"
+	"github.com/devender07/tether/backend/shared/env"
 )
 
 func main() {
@@ -20,9 +21,9 @@ func main() {
 		h = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	slog.SetDefault(slog.New(h))
-	addr := ":" + env("PORT", "8095")
-	apiURL := env("TETHER_API_URL", "http://localhost:8090")
-	appURL := env("APP_URL", "http://localhost:5173")
+	addr := ":" + env.Get("PORT", "8095")
+	apiURL := env.Get("TETHER_API_URL", "http://localhost:8090")
+	appURL := env.Get("APP_URL", "http://localhost:5173")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -45,11 +46,4 @@ func main() {
 	if err := srv.Shutdown(sctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Warn("shutdown: requests still running", "err", err)
 	}
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

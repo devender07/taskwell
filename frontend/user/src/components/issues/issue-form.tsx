@@ -8,7 +8,7 @@ import type { Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, issuePath, toFormErrors, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, issuePath, toFormErrors, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
@@ -49,7 +49,7 @@ export function CreateIssueForm({ workspace, project, parent, cycle, prefill, st
     if (cycle) form.set('cycle', cycle.id)
     let issue: Issue
     try {
-      issue = await api<Issue>(`/workspaces/${encodeURIComponent(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
+      issue = await api<Issue>(`${workspacePath(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
     } catch (e) {
       return toFormErrors(e)
     }

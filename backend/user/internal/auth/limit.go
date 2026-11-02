@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -71,7 +73,7 @@ func tooMany(w http.ResponseWriter, wait time.Duration) bool {
 		return false
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
-	writeErr(w, http.StatusTooManyRequests, errTooMany)
+	web.Err(w, http.StatusTooManyRequests, errTooMany)
 	return true
 }
 

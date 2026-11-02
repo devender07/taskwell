@@ -63,3 +63,16 @@ func Open(key, ad []byte, stored string) (string, error) {
 	}
 	return string(plain), nil
 }
+
+// NewToken is a 256-bit random token, URL-safe.
+func NewToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error (Go 1.24+)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// Hash is the SHA-256 a token is stored as.
+func Hash(s string) []byte {
+	h := sha256.Sum256([]byte(s))
+	return h[:]
+}

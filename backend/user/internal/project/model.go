@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -121,7 +122,7 @@ func changed(ctx context.Context, tx pgx.Tx, e realtime.Event, projectID string,
 
 // checkMembers returns errNotMember unless every id is a member of the workspace.
 func checkMembers(ctx context.Context, tx pgx.Tx, workspaceID string, ids []string) error {
-	if slices.ContainsFunc(ids, func(id string) bool { return !isUUID(id) }) {
+	if slices.ContainsFunc(ids, func(id string) bool { return !web.IsUUID(id) }) {
 		return errNotMember
 	}
 	var n int
@@ -171,7 +172,7 @@ func (m *model) create(ctx context.Context, workspaceID, userID, name, key, desc
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return p, errTaken
 	}
 	if errors.Is(err, errNotMember) {
@@ -229,7 +230,7 @@ func (m *model) update(ctx context.Context, workspaceID, key, actorID, name, new
 		}
 		return changed(ctx, tx, e, id, flipped, old, p.Key)
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return nil, errTaken
 	}
 	return p, err
@@ -305,7 +306,7 @@ func (m *model) setMembers(ctx context.Context, workspaceID, key, actorID string
 			}
 			err = addMembers(ctx, tx, id, actorID, ids)
 		} else {
-			ids = slices.DeleteFunc(ids, func(id string) bool { return !isUUID(id) })
+			ids = slices.DeleteFunc(ids, func(id string) bool { return !web.IsUUID(id) })
 			_, err = tx.Exec(ctx, `delete from project_members where project_id = $1 and user_id = any($2::uuid[])`, id, ids)
 		}
 		if err != nil {
@@ -344,9 +345,4 @@ func one(row pgx.Row) (*Project, error) {
 		return nil, fmt.Errorf("project: %w", err)
 	}
 	return &p, nil
-}
-
-func isUniqueViolation(err error) bool {
-	pgErr := (*pgconn.PgError)(nil)
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -84,7 +84,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		}
 		out = append(out, in)
 	}
-	writeJSON(w, http.StatusOK, out)
+	web.JSON(w, http.StatusOK, out)
 	return nil
 }
 
@@ -105,7 +105,7 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request, userID string)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"integration": in, "secret": plain})
+	web.JSON(w, http.StatusOK, map[string]any{"integration": in, "secret": plain})
 	return nil
 }
 
@@ -146,7 +146,7 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request, userID string
 		return err
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return nil
 	}
 	found, err := h.model.settings(r.Context(), ws.ID, provider, open, merge, changed(ws, userID))
@@ -154,14 +154,14 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request, userID string
 		return err
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, notConnected(provider))
+		web.Err(w, http.StatusNotFound, notConnected(provider))
 		return nil
 	}
 	in, err := h.integration(r.Context(), ws.ID, provider)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, in)
+	web.JSON(w, http.StatusOK, in)
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, notConnected(provider))
+		web.Err(w, http.StatusNotFound, notConnected(provider))
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -188,11 +188,11 @@ func (h *Handler) hook(provider string) http.HandlerFunc {
 		ctx := r.Context()
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxDelivery))
 		if errors.As(err, new(*http.MaxBytesError)) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The payload is over 1 MB.")
+			web.Err(w, http.StatusRequestEntityTooLarge, "The payload is over 1 MB.")
 			return
 		}
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "The payload couldn't be read.")
+			web.Err(w, http.StatusBadRequest, "The payload couldn't be read.")
 			return
 		}
 		hk, err := h.model.hookByToken(ctx, provider, r.PathValue("token"))
@@ -201,7 +201,7 @@ func (h *Handler) hook(provider string) http.HandlerFunc {
 			return
 		}
 		if hk == nil {
-			writeErr(w, http.StatusNotFound, "Unknown webhook.")
+			web.Err(w, http.StatusNotFound, "Unknown webhook.")
 			return
 		}
 		sec, err := secret.Open(h.key, sealAD(hk.workspaceID, provider), hk.secret)
@@ -215,14 +215,14 @@ func (h *Handler) hook(provider string) http.HandlerFunc {
 		if provider == github {
 			event = r.Header.Get("X-GitHub-Event")
 			if !validSignature(sec, r.Header.Get("X-Hub-Signature-256"), body) {
-				writeErr(w, http.StatusUnauthorized, "Invalid signature.")
+				web.Err(w, http.StatusUnauthorized, "Invalid signature.")
 				return
 			}
 			p, handled, err = parseGitHub(event, body)
 		} else {
 			event = r.Header.Get("X-Gitlab-Event")
 			if subtle.ConstantTimeCompare([]byte(sec), []byte(r.Header.Get("X-Gitlab-Token"))) != 1 {
-				writeErr(w, http.StatusUnauthorized, "Invalid token.")
+				web.Err(w, http.StatusUnauthorized, "Invalid token.")
 				return
 			}
 			p, handled, err = parseGitLab(event, body)
@@ -230,7 +230,7 @@ func (h *Handler) hook(provider string) http.HandlerFunc {
 		log := slog.With("provider", provider, "workspace_id", hk.workspaceID, "event", event, "action", p.Action)
 		if err != nil {
 			log.WarnContext(ctx, "webhook", "outcome", "bad payload")
-			writeErr(w, http.StatusBadRequest, "The payload isn't valid JSON.")
+			web.Err(w, http.StatusBadRequest, "The payload isn't valid JSON.")
 			return
 		}
 		if !handled {
@@ -240,22 +240,22 @@ func (h *Handler) hook(provider string) http.HandlerFunc {
 		}
 		switch {
 		case errors.Is(err, errNoHook):
-			writeErr(w, http.StatusNotFound, "Unknown webhook.")
+			web.Err(w, http.StatusNotFound, "Unknown webhook.")
 		case err != nil:
 			h.fail(w, r, err)
 		case !handled:
 			log.InfoContext(ctx, "webhook", "outcome", "ignored")
-			writeJSON(w, http.StatusOK, map[string]bool{"ignored": true})
+			web.JSON(w, http.StatusOK, map[string]bool{"ignored": true})
 		default:
 			log.InfoContext(ctx, "webhook", "outcome", "ok", "state", p.State)
-			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			web.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 		}
 	}
 }
 
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	slog.ErrorContext(r.Context(), "webhook failed", "err", err)
-	writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+	web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 }
 
 // validSignature checks GitHub's "sha256=<hex HMAC of the body>" header.
@@ -292,7 +292,7 @@ func (h *Handler) provider(w http.ResponseWriter, r *http.Request, userID string
 	}
 	p := r.PathValue("provider")
 	if providerNames[p] == "" {
-		writeErr(w, http.StatusNotFound, errUnknown)
+		web.Err(w, http.StatusNotFound, errUnknown)
 		return nil, "", false, nil
 	}
 	return ws, p, true, nil
@@ -306,10 +306,10 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string) 
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
 	case !workspace.Has(ws.Permissions, workspace.PermIntegrationsManage):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
@@ -331,17 +331,3 @@ func randomToken() string {
 }
 
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]any{"errors": errs})
-}

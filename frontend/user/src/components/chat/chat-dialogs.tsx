@@ -7,7 +7,8 @@ import { IconButton } from '@tether/shared/icon-button'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { groupName } from '@tether/shared/validate'
-import { api, avatarSrc, toFormErrors, type Chat, type FieldErrors, type Member, type PersonRef } from '@/api'
+import { XIcon } from '@tether/shared/icons'
+import { api, avatarSrc, toFormErrors, type Chat, type FieldErrors, type Member, type PersonRef, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { reloadRoutes } from '@/realtime'
 import './chat.css'
@@ -15,7 +16,7 @@ import './chat.css'
 type State = { errors?: FieldErrors; error?: string | null }
 
 export const INBOX_ROUTES = ['/_app/$workspace/_main/inbox', '/_app/$workspace/_main/inbox/c/$chatId']
-export const chatsPath = (slug: string) => `/workspaces/${encodeURIComponent(slug)}/chats`
+export const chatsPath = (slug: string) => `${workspacePath(slug)}/chats`
 
 const options = (members: Member[], exclude: string[]) =>
   members.filter((m) => !exclude.includes(m.id)).map((m) => ({ value: m.id, label: m.name, hint: m.email }))
@@ -371,8 +372,6 @@ export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean;
 
 export function CloseIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
+    <XIcon size={16} strokeWidth={2} />
   )
 }

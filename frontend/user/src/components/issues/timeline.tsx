@@ -9,7 +9,8 @@ import { RichText, type Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { commentBody } from '@tether/shared/validate'
-import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
+import { MoreIcon } from '@tether/shared/icons'
+import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { eventActor, eventText } from './event-text'
@@ -175,11 +176,7 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
               placement="bottom-end"
               trigger={(props) => (
                 <IconButton aria-label="Comment actions" style={{ width: 44, height: 44 }} {...props}>
-                  <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <circle cx={5} cy={12} r={1.75} />
-                    <circle cx={12} cy={12} r={1.75} />
-                    <circle cx={19} cy={12} r={1.75} />
-                  </svg>
+                  <MoreIcon size={20} />
                 </IconButton>
               )}
             >
@@ -219,7 +216,7 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
   )
 }
 
-const commentPath = (workspace: Workspace, id: string) => `/workspaces/${encodeURIComponent(workspace.slug)}/comments/${encodeURIComponent(id)}`
+const commentPath = (workspace: Workspace, id: string) => `${workspacePath(workspace.slug)}/comments/${encodeURIComponent(id)}`
 
 function useSaveComment(path: string, draft: Draft, done: (saved: Comment) => void) {
   const router = useRouter()

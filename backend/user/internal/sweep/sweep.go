@@ -12,11 +12,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // fileGrace is how long an upload may stay unreferenced (a draft not yet saved) before it's deleted.
@@ -110,8 +111,6 @@ func (s *Sweeper) remove(id string) {
 	}
 }
 
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
 // sweepDisk removes files on disk older than fileGrace that have no row: their workspace was deleted, or a crash
 // came between deleting a row and its file. Interrupted uploads' temp files go too.
 // ponytail: lists the whole directory each sweep; shard it into subdirectories or move to S3 past ~1M files.
@@ -129,7 +128,7 @@ func (s *Sweeper) sweepDisk(ctx context.Context, m model) (int, error) {
 			continue
 		}
 		switch name := e.Name(); {
-		case uuidRe.MatchString(name):
+		case web.IsUUID(name):
 			ids = append(ids, name)
 		case strings.HasPrefix(name, ".upload-"):
 			s.remove(name)

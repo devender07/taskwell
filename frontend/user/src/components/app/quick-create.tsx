@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { api, projectPeoplePath, toFormErrors, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, projectPeoplePath, toFormErrors, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
 import { subscribePaths } from '@/realtime'
@@ -29,7 +29,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
   const [key, setKey] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
   const [people, setPeople] = useState<{ key: string; members: Member[] } | null>(null)
-  const path = `/workspaces/${encodeURIComponent(workspace.slug)}`
+  const path = `${workspacePath(workspace.slug)}`
   const secret = data?.projects.find((p) => p.key === key)?.private
 
   useEffect(

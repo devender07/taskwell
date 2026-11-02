@@ -1,7 +1,7 @@
 import { Link, notFound } from '@tanstack/react-router'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
-import { ApiError, can, projectPeoplePath, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData, type User, type Workspace } from '@/api'
+import { ApiError, can, projectPeoplePath, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
@@ -18,7 +18,7 @@ export type IssueData = { issue: Issue; project: Project; statuses: Status[]; la
 
 // Everything the issue page shows; the issue page and the inbox preview both load it. A 404 prunes Recently viewed.
 export async function loadIssue(ctx: LoaderContext, workspace: string, identifier: string): Promise<IssueData> {
-  const path = `/workspaces/${encodeURIComponent(workspace)}`
+  const path = `${workspacePath(workspace)}`
   const key = identifier.replace(/-.*/, '').toUpperCase()
   trackPath(ctx, `${path}/members`)
   const [issue, project, statuses, labels, members, timeline] = await Promise.all([

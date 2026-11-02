@@ -1,6 +1,5 @@
 // Package obs is the service's observability: slog setup, the request-id and access-log middleware, and metrics in
-// the Prometheus text format. The user service has the original; keep them in step.
-// ponytail: copied, as the two modules share no package; move to a shared module if a third copy appears.
+// the Prometheus text format. Shared by the user, tester and admin services.
 package obs
 
 import (
@@ -14,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -100,7 +100,11 @@ func Middleware(next http.Handler) http.Handler {
 		if u := in.userID.Load(); u != nil {
 			user = *u
 		}
-		slog.InfoContext(ctx, "request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/api/hooks/") { // the last segment is a webhook's token
+			path = path[:strings.LastIndexByte(path, '/')+1] + "…"
+		}
+		slog.InfoContext(ctx, "request", "method", r.Method, "path", path, "status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(), "bytes", rec.bytes, "user_id", user)
 	})
 }
@@ -195,4 +199,10 @@ func Healthcheck(addr string) int {
 		return 1
 	}
 	return 0
+}
+
+// Fatal logs msg and exits: for a service that can't start.
+func Fatal(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
 }

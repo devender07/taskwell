@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 func TestValidation(t *testing.T) {
@@ -61,11 +63,11 @@ func TestEmail(t *testing.T) {
 		strings.Repeat("a", 250) + "@a.co": "Enter a valid email address.",
 		" Bob@Acme.com ":                   "",
 	} {
-		if got := checkEmail(in); got != want {
-			t.Errorf("checkEmail(%q) = %q, want %q", in, got, want)
+		if got := web.CheckEmail(in); got != want {
+			t.Errorf("web.CheckEmail(%q) = %q, want %q", in, got, want)
 		}
 	}
-	if normEmail(" Bob@Acme.COM ") != "bob@acme.com" {
+	if web.NormEmail(" Bob@Acme.COM ") != "bob@acme.com" {
 		t.Error("normEmail does not lowercase and trim")
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // Browser sessions: an MCP client drives the tester's browser one action at a time, the tester records each
@@ -83,8 +84,8 @@ func (r *Runner) openSession(w http.ResponseWriter, req *http.Request) {
 		WorkspaceID string `json:"workspace_id"`
 		URL         string `json:"url"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxBody)).Decode(&in); err != nil || !isUUID(in.WorkspaceID) {
-		writeErr(w, http.StatusBadRequest, "Send workspace_id and url.")
+	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxBody)).Decode(&in); err != nil || !web.IsUUID(in.WorkspaceID) {
+		web.Err(w, http.StatusBadRequest, "Send workspace_id and url.")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(req.Context()), actionTimeout)
@@ -100,7 +101,7 @@ func (r *Runner) openSession(w http.ResponseWriter, req *http.Request) {
 	}
 	hosts := siteHosts(j.sites)
 	if u, err := url.Parse(in.URL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedHost(u.Hostname(), hosts) {
-		writeErr(w, http.StatusBadRequest, msgSessionURL)
+		web.Err(w, http.StatusBadRequest, msgSessionURL)
 		return
 	}
 	room, err := r.model.sessionRoom(ctx, j.wsID, r.workspaceCap(ctx))
@@ -109,7 +110,7 @@ func (r *Runner) openSession(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !room || !r.takeSlot() {
-		writeErr(w, http.StatusConflict, msgBrowserBusy)
+		web.Err(w, http.StatusConflict, msgBrowserBusy)
 		return
 	}
 	now := time.Now()
@@ -145,7 +146,7 @@ func (r *Runner) openSession(w http.ResponseWriter, req *http.Request) {
 	}
 	slog.Info("browser session opened", "session", s.id, "workspace", j.wsID)
 	a.ID, a.Token = s.id, s.token
-	writeJSON(w, http.StatusCreated, a)
+	web.JSON(w, http.StatusCreated, a)
 }
 
 func (r *Runner) sessionAct(w http.ResponseWriter, req *http.Request) {
@@ -155,7 +156,7 @@ func (r *Runner) sessionAct(w http.ResponseWriter, req *http.Request) {
 	}
 	var a sessionAction
 	if err := json.NewDecoder(http.MaxBytesReader(w, req.Body, maxBody)).Decode(&a); err != nil {
-		writeErr(w, http.StatusBadRequest, "Send the action as JSON.")
+		web.Err(w, http.StatusBadRequest, "Send the action as JSON.")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(req.Context()), actionTimeout)
@@ -163,7 +164,7 @@ func (r *Runner) sessionAct(w http.ResponseWriter, req *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		web.Err(w, http.StatusNotFound, msgSessionEnded)
 		return
 	}
 	slog.Info("browser session step", "session", s.id, "action", a.Action, "ref", a.Ref) // never the typed text
@@ -174,7 +175,7 @@ func (r *Runner) sessionAct(w http.ResponseWriter, req *http.Request) {
 		r.failed(w, http.StatusNotFound, s.id, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ans)
+	web.JSON(w, http.StatusOK, ans)
 }
 
 func (r *Runner) sessionScreenshot(w http.ResponseWriter, req *http.Request) {
@@ -187,7 +188,7 @@ func (r *Runner) sessionScreenshot(w http.ResponseWriter, req *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		web.Err(w, http.StatusNotFound, msgSessionEnded)
 		return
 	}
 	shot, err := s.pg.screenshot(ctx)
@@ -208,13 +209,13 @@ func (r *Runner) sessionClose(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if r.drop(s.id) == nil { // a sweep ended it meanwhile
-		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		web.Err(w, http.StatusNotFound, msgSessionEnded)
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.end(s)
-	writeJSON(w, http.StatusOK, map[string][]scriptStep{"steps": s.steps})
+	web.JSON(w, http.StatusOK, map[string][]scriptStep{"steps": s.steps})
 }
 
 // failed logs err and answers status: 404 says the session ended (its browser broke), anything else that it
@@ -227,10 +228,10 @@ func (r *Runner) failed(w http.ResponseWriter, status int, id string, err error)
 	}
 	r.mu.Unlock()
 	if status == http.StatusNotFound {
-		writeErr(w, status, msgSessionEnded)
+		web.Err(w, status, msgSessionEnded)
 		return
 	}
-	writeErr(w, status, "Something went wrong. Try again.")
+	web.Err(w, status, "Something went wrong. Try again.")
 }
 
 // step runs one action on the session's page (the caller holds s.mu) and records its step when it worked. An action
@@ -320,7 +321,7 @@ func (r *Runner) lookup(w http.ResponseWriter, req *http.Request) *session {
 	}
 	r.sessMu.Unlock()
 	if s == nil {
-		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		web.Err(w, http.StatusNotFound, msgSessionEnded)
 	}
 	return s
 }

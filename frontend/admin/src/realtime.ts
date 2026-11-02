@@ -1,6 +1,7 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { coalescer, eventPaths, loadedPaths, matchKey, touches, type RealtimeEvent } from '@tether/shared/realtime'
+import { createSocket } from '@tether/shared/socket'
 import { api, getMe, setClient } from '@/api'
 
 // The admin service's realtime socket (docs/realtime-plan.md): events name the admin API paths that changed and
@@ -13,15 +14,7 @@ const loaded = loadedPaths()
 const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)
 
 let router: AnyRouter | null = null
-let ws: WebSocket | null = null
 let client = ''
-let running = false
-let opened = false
-let delay = 1000
-let steady: ReturnType<typeof setTimeout> | undefined // resets the backoff once a socket has stayed up
-let retry: ReturnType<typeof setTimeout> | undefined
-let ping: ReturnType<typeof setInterval> | undefined
-let pong: ReturnType<typeof setTimeout> | undefined
 
 // A loader's GET, tracked so events for its path reload the match.
 export function loaderApi<T>(ctx: LoaderContext, path: string) {
@@ -37,98 +30,36 @@ const push = coalescer(
   { throttle: (p) => (p === '/stats' ? 5000 : undefined) },
 )
 
-// Only after `hello`.
-const send = (msg: object) => {
-  if (client && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
-}
-
-function onMessage(data: unknown) {
-  let msg: Message
-  try {
-    msg = JSON.parse(String(data))
-  } catch {
-    return
-  }
-  if (msg.type === 'hello') {
-    client = msg.client
-    setClient(client)
-    clearTimeout(steady)
-    steady = setTimeout(() => (delay = 1000), 10_000)
-    if (opened) setTimeout(() => push(['/']), Math.random() * 2000) // spread a restart's refetches over 2s
-    opened = true
-    clearInterval(ping)
-    ping = setInterval(checkAlive, 25_000)
-  } else if (msg.type === 'pong') clearTimeout(pong)
-  else if (msg.type === 'resync') push(['/'])
-  else if (msg.type === 'event') push(eventPaths(msg, client))
-}
-
-function checkAlive() {
-  if (ws?.readyState !== WebSocket.OPEN) return
-  send({ type: 'ping' })
-  clearTimeout(pong)
-  pong = setTimeout(() => {
-    const sock = ws
-    if (!sock) return
-    sock.onclose = null
-    sock.close()
-    dropped(sock, true)
-  }, 10_000)
-}
-
-function connect() {
-  const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/realtime`)
-  ws = sock
-  sock.onmessage = (e) => onMessage(e.data)
-  sock.onclose = () => dropped(sock, client !== '')
-}
-
-// A connect that fails before `hello` may be a lapsed session: back to sign-in if so.
-function dropped(sock: WebSocket, hello: boolean) {
-  if (ws !== sock) return
-  ws = null
-  client = ''
-  setClient('')
-  clearInterval(ping)
-  clearTimeout(pong)
-  clearTimeout(steady)
-  if (!running) return
-  retry = setTimeout(async () => {
-    if (!hello && !(await getMe().catch(() => true))) {
-      location.assign(`/signin?redirect=${encodeURIComponent(location.pathname + location.search)}`)
-      return
-    }
-    if (running && !ws) connect()
-  }, delay * (0.5 + Math.random()))
-  delay = Math.min(delay * 2, 10_000)
-}
-
-function onVisible() {
-  if (document.visibilityState !== 'visible' || !running) return
-  if (ws) return checkAlive()
-  clearTimeout(retry)
-  delay = 1000
-  connect()
-}
+const socket = createSocket({
+  onHello(id, again) {
+    client = id
+    setClient(id)
+    if (again) setTimeout(() => push(['/']), Math.random() * 2000) // spread a restart's refetches over 2s
+  },
+  onDrop() {
+    client = ''
+    setClient('')
+  },
+  onMessage(msg) {
+    const m = msg as Message
+    if (m.type === 'resync') push(['/'])
+    else if (m.type === 'event') push(eventPaths(m, client))
+  },
+  // A connect that fails before `hello` may be a lapsed session: back to sign-in if so.
+  async stillSignedIn() {
+    if (await getMe().catch(() => true)) return true
+    location.assign(`/signin?redirect=${encodeURIComponent(location.pathname + location.search)}`)
+    return false
+  },
+})
 
 function start(r: AnyRouter) {
   router = r
-  running = true
-  opened = false
-  connect()
-  document.addEventListener('visibilitychange', onVisible)
+  const stop = socket.start()
   const unsubscribe = r.subscribe('onResolved', () => loaded.prune(r.state.matches.map(keyOf)))
   return () => {
     unsubscribe()
-    running = false
-    clearTimeout(retry)
-    document.removeEventListener('visibilitychange', onVisible)
-    const sock = ws
-    if (sock) {
-      sock.onclose = null
-      sock.close()
-      dropped(sock, true)
-    }
+    stop()
   }
 }
 

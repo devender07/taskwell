@@ -4,6 +4,7 @@ import { IconButton } from '@tether/shared/icon-button'
 import { Textarea } from '@tether/shared/textarea'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { testNote } from '@tether/shared/validate'
+import { XIcon } from '@tether/shared/icons'
 import {
   can,
   cancelTestRun,
@@ -109,9 +110,7 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
           </Button>
         ) : null}
         <IconButton aria-label="Close test run" onClick={onClose}>
-          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
+          <XIcon size={20} strokeWidth={2} />
         </IconButton>
       </header>
       <div className="grid gap-6 p-6 overflow-y-auto" style={{ alignContent: 'start', gridAutoRows: 'max-content' }}>

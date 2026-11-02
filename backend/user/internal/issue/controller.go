@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -58,7 +58,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		return err
 	}
 	if projectID == "" {
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
 	is, err := h.model.list(r.Context(), projectID)
@@ -68,7 +68,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	for i := range is {
 		allow(&is[i], userID, ws.Permissions)
 	}
-	writeJSON(w, http.StatusOK, is)
+	web.JSON(w, http.StatusOK, is)
 	return nil
 }
 
@@ -85,7 +85,7 @@ func (h *Handler) myIssues(w http.ResponseWriter, r *http.Request, userID string
 	for i := range is {
 		allow(&is[i], userID, ws.Permissions)
 	}
-	writeJSON(w, http.StatusOK, is)
+	web.JSON(w, http.StatusOK, is)
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	// A project the caller can't see is not found before anything about the form is said.
 	if projectID, err := h.model.projectID(r.Context(), ws.ID, key, userID); err != nil || projectID == "" {
 		if err == nil {
-			writeErr(w, http.StatusNotFound, errProjectNotFound)
+			web.Err(w, http.StatusNotFound, errProjectNotFound)
 		}
 		return err
 	}
@@ -108,21 +108,21 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	id, err := h.model.create(r.Context(), ws.ID, key, userID, f)
 	if errors.Is(err, errArchived) {
-		writeErr(w, http.StatusConflict, errArchivedProject)
+		web.Err(w, http.StatusConflict, errArchivedProject)
 		return nil
 	}
 	if !checkParent(w, err) {
 		return nil
 	}
 	if errors.Is(err, errNoCycle) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if id == "" {
-		writeErr(w, http.StatusNotFound, errProjectNotFound)
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
@@ -163,7 +163,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	if errors.Is(err, errNoCycle) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
 		return nil
 	}
 	if err != nil {
@@ -178,7 +178,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if allow(i, userID, ws.Permissions); !i.CanDelete {
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil
 	}
 	if err := h.model.delete(r.Context(), i.ID, userID); err != nil {
@@ -194,12 +194,12 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	q := searchQuery(r)
-	key, number, _ := parseIdentifier(q)
+	key, number, _ := ParseIdentifier(q)
 	refs, err := h.model.search(r.Context(), ws.ID, userID, normKey(r.URL.Query().Get("project")), q, key, number)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, refs)
+	web.JSON(w, http.StatusOK, refs)
 	return nil
 }
 
@@ -210,12 +210,12 @@ func (h *Handler) searchAll(w http.ResponseWriter, r *http.Request, userID strin
 		return err
 	}
 	q := searchQuery(r)
-	key, number, _ := parseIdentifier(q)
+	key, number, _ := ParseIdentifier(q)
 	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, userID, q, key, number)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"issues": issues, "projects": projects})
+	web.JSON(w, http.StatusOK, map[string]any{"issues": issues, "projects": projects})
 	return nil
 }
 
@@ -240,7 +240,7 @@ func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) er
 	case other.ID == i.ID:
 		errs["issue"] = "An issue can't block itself."
 	}
-	if !checkFields(w, errs) {
+	if !web.Check(w, errs) {
 		return nil
 	}
 	blocker, blocked := i.ID, other.ID
@@ -249,7 +249,7 @@ func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) er
 	}
 	err = h.model.link(r.Context(), blocker, blocked, userID)
 	if errors.Is(err, errLinked) {
-		writeFields(w, http.StatusConflict, map[string]string{"issue": "These issues are already linked."})
+		web.Fields(w, http.StatusConflict, map[string]string{"issue": "These issues are already linked."})
 		return nil
 	}
 	if err != nil {
@@ -268,7 +268,7 @@ func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if other == nil {
-		writeErr(w, http.StatusNotFound, errIssueNotFound)
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
 		return nil
 	}
 	found, err := h.model.unlink(r.Context(), i.ID, other.ID, userID)
@@ -276,7 +276,7 @@ func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, "Link not found.")
+		web.Err(w, http.StatusNotFound, "Link not found.")
 		return nil
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
@@ -292,14 +292,14 @@ func (h *Handler) watch(on bool) func(w http.ResponseWriter, r *http.Request, us
 		if err := h.model.setWatching(r.Context(), i.ID, userID, on); err != nil {
 			return err
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"watching": on})
+		web.JSON(w, http.StatusOK, map[string]bool{"watching": on})
 		return nil
 	}
 }
 
 // find returns the workspace's issue with the identifier; nil when there's none or the viewer can't see it.
 func (h *Handler) find(ctx context.Context, workspaceID, identifier, viewerID string) (*Issue, error) {
-	key, number, ok := parseIdentifier(identifier)
+	key, number, ok := ParseIdentifier(identifier)
 	if !ok {
 		return nil, nil
 	}
@@ -313,7 +313,7 @@ func (h *Handler) editable(w http.ResponseWriter, r *http.Request, userID string
 		return nil, nil, false, err
 	}
 	if allow(i, userID, ws.Permissions); !i.CanEdit {
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, nil, false, nil
 	}
 	return ws, i, true, nil
@@ -330,7 +330,7 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID string) (
 		return nil, nil, false, err
 	}
 	if i == nil {
-		writeErr(w, http.StatusNotFound, errIssueNotFound)
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
 		return nil, nil, false, nil
 	}
 	return ws, i, true, nil
@@ -343,7 +343,7 @@ func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status in
 		return err
 	}
 	if i == nil {
-		writeErr(w, http.StatusNotFound, errIssueNotFound)
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
 		return nil
 	}
 	allow(i, userID, ws.Permissions)
@@ -351,7 +351,7 @@ func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status in
 	if err != nil {
 		return err
 	}
-	writeJSON(w, status, d)
+	web.JSON(w, status, d)
 	return nil
 }
 
@@ -359,7 +359,7 @@ func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status in
 func checkParent(w http.ResponseWriter, err error) bool {
 	var pe parentError
 	if errors.As(err, &pe) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"parent": string(pe)})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"parent": string(pe)})
 		return false
 	}
 	return true
@@ -411,7 +411,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	}
 	f.assigneeID = value("assignee_id")
 	f.parent = value("parent")
-	if f.cycleID = value("cycle"); f.cycleID != nil && *f.cycleID != "" && !isUUID(*f.cycleID) {
+	if f.cycleID = value("cycle"); f.cycleID != nil && *f.cycleID != "" && !web.IsUUID(*f.cycleID) {
 		errs["cycle"] = errCycleNotFound
 	}
 	if ids, ok := form["label_ids"]; ok {
@@ -419,20 +419,20 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 		f.labelIDs = slices.Compact(slices.Sorted(slices.Values(slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" }))))
 	}
 	// Ids that aren't uuids can't be the workspace's; checking here keeps them out of uuid comparisons.
-	if f.statusID != nil && !isUUID(*f.statusID) {
+	if f.statusID != nil && !web.IsUUID(*f.statusID) {
 		errs["status_id"] = "Choose a status."
 	}
-	if f.assigneeID != nil && *f.assigneeID != "" && !isUUID(*f.assigneeID) {
+	if f.assigneeID != nil && *f.assigneeID != "" && !web.IsUUID(*f.assigneeID) {
 		errs["assignee_id"] = "Choose someone in this workspace."
 	}
-	if slices.ContainsFunc(f.labelIDs, func(s string) bool { return !isUUID(s) }) {
+	if slices.ContainsFunc(f.labelIDs, func(s string) bool { return !web.IsUUID(s) }) {
 		errs["label_ids"] = "Choose labels from this workspace."
 	}
-	if !checkFields(w, errs) {
+	if !web.Check(w, errs) {
 		return f, false, nil
 	}
 	refErrs, err := h.model.checkRefs(r.Context(), workspaceID, key, keep, f)
-	if err != nil || !checkFields(w, refErrs) {
+	if err != nil || !web.Check(w, refErrs) {
 		return f, false, err
 	}
 	return f, true, nil
@@ -448,7 +448,7 @@ func readBefore(w http.ResponseWriter, r *http.Request) (*time.Time, bool) {
 	}
 	t, err := time.Parse(time.RFC3339Nano, v)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+		web.Err(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
 		return nil, false
 	}
 	return &t, true
@@ -468,7 +468,7 @@ func (h *Handler) activity(w http.ResponseWriter, r *http.Request, userID string
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": as, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"items": as, "has_more": more})
 	return nil
 }
 
@@ -488,7 +488,7 @@ func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string
 	for i := range cs {
 		allowComment(&cs[i], userID, ws.Permissions)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es, "has_more": more})
 	return nil
 }
 
@@ -498,7 +498,7 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	if !workspace.Has(ws.Permissions, workspace.PermCommentsCreate) {
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil
 	}
 	archived, err := h.model.archived(r.Context(), i.ID)
@@ -506,7 +506,7 @@ func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	if archived {
-		writeErr(w, http.StatusForbidden, errArchivedProject)
+		web.Err(w, http.StatusForbidden, errArchivedProject)
 		return nil
 	}
 	body, ok := readComment(w, r)
@@ -559,14 +559,14 @@ func (h *Handler) ownComment(w http.ResponseWriter, r *http.Request, userID stri
 	case err != nil:
 		return nil, nil, false, err
 	case c == nil:
-		writeErr(w, http.StatusNotFound, errCommentNotFound)
+		web.Err(w, http.StatusNotFound, errCommentNotFound)
 		return nil, nil, false, nil
 	case c.archived:
-		writeErr(w, http.StatusForbidden, errArchivedProject)
+		web.Err(w, http.StatusForbidden, errArchivedProject)
 		return nil, nil, false, nil
 	}
 	if allowComment(c, userID, ws.Permissions); !can(c) {
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, nil, false, nil
 	}
 	return ws, c, true, nil
@@ -578,11 +578,11 @@ func (h *Handler) respondComment(w http.ResponseWriter, r *http.Request, status 
 		return err
 	}
 	if c == nil {
-		writeErr(w, http.StatusNotFound, errCommentNotFound)
+		web.Err(w, http.StatusNotFound, errCommentNotFound)
 		return nil
 	}
 	allowComment(c, userID, ws.Permissions)
-	writeJSON(w, status, c)
+	web.JSON(w, status, c)
 	return nil
 }
 
@@ -599,7 +599,7 @@ func allowComment(c *Comment, userID string, perms []string) {
 func readComment(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
 	_ = r.ParseMultipartForm(maxBody)
 	body, msg := checkComment(r.PostForm.Get("body"))
-	return body, checkFields(w, map[string]string{"body": msg})
+	return body, web.Check(w, map[string]string{"body": msg})
 }
 
 // --- statuses ---
@@ -613,7 +613,7 @@ func (h *Handler) listStatuses(w http.ResponseWriter, r *http.Request, userID st
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ss)
+	web.JSON(w, http.StatusOK, ss)
 	return nil
 }
 
@@ -629,13 +629,13 @@ func (h *Handler) createStatus(w http.ResponseWriter, r *http.Request, userID st
 	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, typeID, workflowChanged(ws, userID, "statuses"))
 	switch {
 	case errors.Is(err, errNameTaken):
-		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
 	case errors.Is(err, errNoType):
-		writeFields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
 	case err != nil:
 		return err
 	default:
-		writeJSON(w, http.StatusCreated, s)
+		web.JSON(w, http.StatusCreated, s)
 	}
 	return nil
 }
@@ -653,15 +653,15 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request, userID st
 	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, typeID, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
-		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
 	case errors.Is(err, errNoType):
-		writeFields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
 	case err != nil:
 		return err
 	case s == nil:
-		writeErr(w, http.StatusNotFound, errStatusNotFound)
+		web.Err(w, http.StatusNotFound, errStatusNotFound)
 	default:
-		writeJSON(w, http.StatusOK, s)
+		web.JSON(w, http.StatusOK, s)
 	}
 	return nil
 }
@@ -674,7 +674,7 @@ func (h *Handler) orderStatuses(w http.ResponseWriter, r *http.Request, userID s
 	_ = r.ParseMultipartForm(maxBody)
 	err = h.model.reorderStatuses(r.Context(), ws.ID, r.PostForm["ids"], workflowChanged(ws, userID, "statuses"))
 	if errors.Is(err, errBadOrder) {
-		writeErr(w, http.StatusBadRequest, "Send every status once.")
+		web.Err(w, http.StatusBadRequest, "Send every status once.")
 		return nil
 	}
 	if err != nil {
@@ -684,7 +684,7 @@ func (h *Handler) orderStatuses(w http.ResponseWriter, r *http.Request, userID s
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ss)
+	web.JSON(w, http.StatusOK, ss)
 	return nil
 }
 
@@ -696,13 +696,13 @@ func (h *Handler) deleteStatus(w http.ResponseWriter, r *http.Request, userID st
 	found, err := h.model.deleteStatus(r.Context(), ws.ID, r.PathValue("id"), r.URL.Query().Get("move_to"), workflowChanged(ws, userID, "statuses"))
 	switch {
 	case errors.Is(err, errLastStatus):
-		writeErr(w, http.StatusConflict, "A workspace needs at least one status.")
+		web.Err(w, http.StatusConflict, "A workspace needs at least one status.")
 	case errors.Is(err, errInUse):
-		writeErr(w, http.StatusConflict, "Move its issues to another status first.")
+		web.Err(w, http.StatusConflict, "Move its issues to another status first.")
 	case err != nil:
 		return err
 	case !found:
-		writeErr(w, http.StatusNotFound, errStatusNotFound)
+		web.Err(w, http.StatusNotFound, errStatusNotFound)
 	default:
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -716,13 +716,13 @@ func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, 
 	errs := map[string]string{"name": checkStatusName(name)}
 	if t := r.FormValue("type_id"); t != "" {
 		typeID = &t
-		if !isUUID(t) {
+		if !web.IsUUID(t) {
 			errs["type_id"] = errChooseType
 		}
 	} else {
 		errs["category"] = checkCategory(category)
 	}
-	return name, category, typeID, checkFields(w, errs)
+	return name, category, typeID, web.Check(w, errs)
 }
 
 // --- status types ---
@@ -736,7 +736,7 @@ func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request, userID strin
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ts)
+	web.JSON(w, http.StatusOK, ts)
 	return nil
 }
 
@@ -751,13 +751,13 @@ func (h *Handler) createType(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	t, err := h.model.createType(r.Context(), ws.ID, name, category, icon, color, typesChanged(ws, userID))
 	if errors.Is(err, errNameTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, t)
+	web.JSON(w, http.StatusCreated, t)
 	return nil
 }
 
@@ -774,13 +774,13 @@ func (h *Handler) updateType(w http.ResponseWriter, r *http.Request, userID stri
 	t, err := h.model.updateType(r.Context(), ws.ID, r.PathValue("id"), name, category, icon, color, typesChanged(ws, userID, realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
-		writeFields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
 	case err != nil:
 		return err
 	case t == nil:
-		writeErr(w, http.StatusNotFound, errTypeNotFound)
+		web.Err(w, http.StatusNotFound, errTypeNotFound)
 	default:
-		writeJSON(w, http.StatusOK, t)
+		web.JSON(w, http.StatusOK, t)
 	}
 	return nil
 }
@@ -795,7 +795,7 @@ func (h *Handler) deleteType(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, errTypeNotFound)
+		web.Err(w, http.StatusNotFound, errTypeNotFound)
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -814,7 +814,7 @@ func readType(w http.ResponseWriter, r *http.Request) (name, category, icon stri
 		color = &c
 		errs["color"] = checkColor(c)
 	}
-	return name, category, icon, color, checkFields(w, errs)
+	return name, category, icon, color, web.Check(w, errs)
 }
 
 // typesChanged is the event for a change to the workspace's status types, which its statuses show too.
@@ -833,7 +833,7 @@ func (h *Handler) listLabels(w http.ResponseWriter, r *http.Request, userID stri
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ls)
+	web.JSON(w, http.StatusOK, ls)
 	return nil
 }
 
@@ -848,13 +848,13 @@ func (h *Handler) createLabel(w http.ResponseWriter, r *http.Request, userID str
 	}
 	l, err := h.model.createLabel(r.Context(), ws.ID, name, color, workflowChanged(ws, userID, "labels"))
 	if errors.Is(err, errNameTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, l)
+	web.JSON(w, http.StatusCreated, l)
 	return nil
 }
 
@@ -871,13 +871,13 @@ func (h *Handler) updateLabel(w http.ResponseWriter, r *http.Request, userID str
 	l, err := h.model.updateLabel(r.Context(), ws.ID, r.PathValue("id"), name, color, workflowChanged(ws, userID, "labels", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
-		writeFields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
 	case err != nil:
 		return err
 	case l == nil:
-		writeErr(w, http.StatusNotFound, errLabelNotFound)
+		web.Err(w, http.StatusNotFound, errLabelNotFound)
 	default:
-		writeJSON(w, http.StatusOK, l)
+		web.JSON(w, http.StatusOK, l)
 	}
 	return nil
 }
@@ -892,7 +892,7 @@ func (h *Handler) deleteLabel(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	if !found {
-		writeErr(w, http.StatusNotFound, errLabelNotFound)
+		web.Err(w, http.StatusNotFound, errLabelNotFound)
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -902,7 +902,7 @@ func (h *Handler) deleteLabel(w http.ResponseWriter, r *http.Request, userID str
 // readLabel returns the trimmed name and normalized color, or writes a 400 with field errors and returns ok=false.
 func readLabel(w http.ResponseWriter, r *http.Request) (name, color string, ok bool) {
 	name, color = strings.TrimSpace(r.FormValue("name")), normColor(r.FormValue("color"))
-	return name, color, checkFields(w, map[string]string{"name": checkLabelName(name), "color": checkColor(color)})
+	return name, color, web.Check(w, map[string]string{"name": checkLabelName(name), "color": checkColor(color)})
 }
 
 // workflowChanged is the event for a change to the workspace's "statuses" or "labels" (what), plus the other paths
@@ -922,42 +922,18 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
 }
 
-// checkFields drops empty messages and writes a 400 with the rest, returning false when there were any.
-func checkFields(w http.ResponseWriter, msgs map[string]string) bool {
-	maps.DeleteFunc(msgs, func(_, msg string) bool { return msg == "" })
-	if len(msgs) > 0 {
-		writeFields(w, http.StatusBadRequest, msgs)
-		return false
-	}
-	return true
-}
-
 func normKey(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
 
 // --- responses ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
-}
 
 // maxQuery caps search text: longer queries only make trigram scans slower.
 const maxQuery = 200

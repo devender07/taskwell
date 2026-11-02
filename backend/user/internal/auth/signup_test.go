@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/tether/backend/user/internal/secret"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -22,7 +23,7 @@ func TestVerifySignupIsAtomic(t *testing.T) {
 		_, _ = pool.Exec(ctx, `delete from users where email = $1`, email)
 	})
 	m := &model{db: pool, onCreated: func(context.Context, pgx.Tx, string, string, string) error { return errors.New("boom") }}
-	code := hash("123456.nonce")
+	code := secret.Hash("123456.nonce")
 	if err := m.startSignup(ctx, "Ada Lovelace", email, "x", "", code, 10); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestSignupWorkspaceName(t *testing.T) {
 		_, _ = pool.Exec(ctx, `delete from users where email = $1`, email)
 	})
 	m := &model{db: pool, onCreated: workspace.CreateFirst}
-	code := hash("654321.nonce")
+	code := secret.Hash("654321.nonce")
 	if err := m.startSignup(ctx, "Ada Lovelace", email, "x", "Analytical Engines", code, 10); err != nil {
 		t.Fatal(err)
 	}

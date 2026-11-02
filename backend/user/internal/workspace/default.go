@@ -9,13 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/devender07/tether/backend/user/internal/doc"
 	"github.com/devender07/tether/backend/user/internal/realtime"
 )
-
-// CreateDefault is CreateFirst with the workspace named after the user.
-func CreateDefault(ctx context.Context, tx pgx.Tx, userID, userName string) error {
-	return CreateFirst(ctx, tx, userID, userName, "")
-}
 
 // CreateFirst gives a new user their first workspace, named workspaceName (the company or team they gave at sign-up)
 // or else "Ada's workspace", at a URL made from that name, adding a random suffix when it's taken. Called by auth
@@ -27,7 +23,7 @@ func CreateFirst(ctx context.Context, tx pgx.Tx, userID, userName, workspaceName
 	}
 	first, _, _ := strings.Cut(strings.TrimSpace(userName), " ")
 	name, from := first+"'s workspace", first
-	if first == "" || jsLen(name) > 50 {
+	if first == "" || doc.Len(name) > 50 {
 		name = "My workspace"
 	}
 	if s := strings.TrimSpace(workspaceName); s != "" && checkName(s) == "" {

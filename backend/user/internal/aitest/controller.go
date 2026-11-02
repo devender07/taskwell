@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -20,7 +19,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -69,7 +70,7 @@ func (h *Handler) listCases(w http.ResponseWriter, r *http.Request, userID strin
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, cs)
+	web.JSON(w, http.StatusOK, cs)
 	return nil
 }
 
@@ -84,7 +85,7 @@ func (h *Handler) createCase(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	id, err := h.model.createCase(r.Context(), i.id, userID, f)
 	if errors.Is(err, errTooMany) {
-		writeErr(w, http.StatusConflict, "An issue can have at most 50 test cases.")
+		web.Err(w, http.StatusConflict, "An issue can have at most 50 test cases.")
 		return nil
 	}
 	if err != nil {
@@ -99,8 +100,8 @@ func (h *Handler) updateCase(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	id := r.PathValue("id")
-	if !isUUID(id) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+	if !web.IsUUID(id) {
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	f, ok := readCase(w, r)
@@ -109,7 +110,7 @@ func (h *Handler) updateCase(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	err = h.model.updateCase(r.Context(), ws.ID, id, userID, f)
 	if errors.Is(err, errNotFound) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	if err != nil {
@@ -124,13 +125,13 @@ func (h *Handler) deleteCase(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	id := r.PathValue("id")
-	if isUUID(id) {
+	if web.IsUUID(id) {
 		err = h.model.deleteCase(r.Context(), ws.ID, id, userID)
 	} else {
 		err = errNotFound
 	}
 	if errors.Is(err, errNotFound) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	if err != nil {
@@ -148,7 +149,7 @@ func (h *Handler) orderCases(w http.ResponseWriter, r *http.Request, userID stri
 	_ = r.ParseMultipartForm(maxBody)
 	ids := r.PostForm["ids"]
 	for _, id := range ids {
-		if !isUUID(id) {
+		if !web.IsUUID(id) {
 			err = errBadOrder
 		}
 	}
@@ -156,7 +157,7 @@ func (h *Handler) orderCases(w http.ResponseWriter, r *http.Request, userID stri
 		err = h.model.orderCases(r.Context(), i.id, userID, ids)
 	}
 	if errors.Is(err, errBadOrder) {
-		writeErr(w, http.StatusBadRequest, "The list changed. Reload and try again.")
+		web.Err(w, http.StatusBadRequest, "The list changed. Reload and try again.")
 		return nil
 	}
 	if err != nil {
@@ -166,7 +167,7 @@ func (h *Handler) orderCases(w http.ResponseWriter, r *http.Request, userID stri
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, cs)
+	web.JSON(w, http.StatusOK, cs)
 	return nil
 }
 
@@ -177,13 +178,13 @@ func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	id := r.PathValue("id")
-	if !isUUID(id) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+	if !web.IsUUID(id) {
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	var sc script
 	if err := json.Unmarshal([]byte(r.FormValue("script")), &sc); err != nil {
-		writeFields(w, http.StatusBadRequest, map[string]string{"script": "Send the script as JSON."})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"script": "Send the script as JSON."})
 		return nil
 	}
 	hosts, labels, err := h.scriptScope(r.Context(), ws.ID)
@@ -193,12 +194,12 @@ func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID stri
 	sc, msg := checkScript(sc, hosts, labels)
 	_, setCode := r.PostForm["playwright"]
 	code := strings.TrimSpace(r.PostForm.Get("playwright"))
-	if !checkFields(w, map[string]string{"script": msg, "playwright": checkPlaywright(code)}) {
+	if !web.Check(w, map[string]string{"script": msg, "playwright": checkPlaywright(code)}) {
 		return nil
 	}
 	err = h.model.setScript(r.Context(), ws.ID, id, userID, &sc, setCode, code)
 	if errors.Is(err, errNotFound) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	if err != nil {
@@ -230,7 +231,7 @@ func (h *Handler) clearScript(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	err = errNotFound
-	if id := r.PathValue("id"); isUUID(id) {
+	if id := r.PathValue("id"); web.IsUUID(id) {
 		err = h.model.setScript(r.Context(), ws.ID, id, userID, nil, false, "")
 	}
 	return noContent(w, err, errCaseNotFound)
@@ -260,7 +261,7 @@ func (h *Handler) playwright(w http.ResponseWriter, r *http.Request, userID stri
 func readCase(w http.ResponseWriter, r *http.Request) (caseFields, bool) {
 	_ = r.ParseMultipartForm(maxBody)
 	f := cleanCase(caseFields{Title: r.PostForm.Get("title"), Steps: r.PostForm["steps"], Expected: r.PostForm.Get("expected")})
-	return f, checkFields(w, checkCase(f))
+	return f, web.Check(w, checkCase(f))
 }
 
 func (h *Handler) respondCase(w http.ResponseWriter, r *http.Request, status int, workspaceID, id, userID string) error {
@@ -269,10 +270,10 @@ func (h *Handler) respondCase(w http.ResponseWriter, r *http.Request, status int
 		return err
 	}
 	if c == nil {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
-	writeJSON(w, status, c)
+	web.JSON(w, status, c)
 	return nil
 }
 
@@ -287,7 +288,7 @@ func (h *Handler) listRuns(w http.ResponseWriter, r *http.Request, userID string
 	if v := r.URL.Query().Get("before"); v != "" {
 		t, err := time.Parse(time.RFC3339Nano, v)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+			web.Err(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
 			return nil
 		}
 		before = &t
@@ -296,7 +297,7 @@ func (h *Handler) listRuns(w http.ResponseWriter, r *http.Request, userID string
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": rs, "has_more": more})
+	web.JSON(w, http.StatusOK, map[string]any{"runs": rs, "has_more": more})
 	return nil
 }
 
@@ -316,14 +317,14 @@ func (h *Handler) live(w http.ResponseWriter, r *http.Request, userID string) er
 	}
 	id := r.PathValue("id")
 	tester := ""
-	if isUUID(id) {
+	if web.IsUUID(id) {
 		if tester, err = h.model.liveTester(r.Context(), ws.ID, id, userID); err != nil {
 			return err
 		}
 	}
 	target, err := url.Parse(tester)
 	if tester == "" || err != nil {
-		writeErr(w, http.StatusNotFound, "This test run isn't running.")
+		web.Err(w, http.StatusNotFound, "This test run isn't running.")
 		return nil
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{}) // the stream lasts as long as the run
@@ -336,7 +337,7 @@ func (h *Handler) live(w http.ResponseWriter, r *http.Request, userID string) er
 		},
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			writeErr(w, http.StatusBadGateway, "The live view isn't available. Try again.")
+			web.Err(w, http.StatusBadGateway, "The live view isn't available. Try again.")
 		},
 	}).ServeHTTP(w, r)
 	return nil
@@ -355,7 +356,7 @@ func (h *Handler) createRun(w http.ResponseWriter, r *http.Request, userID strin
 	if _, _, ok, err := h.issue(w, r, userID, ""); !ok || err != nil {
 		return err
 	}
-	writeFields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai, manual or replay."})
+	web.Fields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai, manual or replay."})
 	return nil
 }
 
@@ -366,7 +367,7 @@ func (h *Handler) createManualRun(w http.ResponseWriter, r *http.Request, userID
 	}
 	id, err := h.model.createManual(r.Context(), ws.ID, i.id, userID)
 	if errors.Is(err, errNoCases) {
-		writeErr(w, http.StatusConflict, "Add a test case first.")
+		web.Err(w, http.StatusConflict, "Add a test case first.")
 		return nil
 	}
 	if err != nil {
@@ -381,8 +382,8 @@ func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	runID, resultID := r.PathValue("id"), r.PathValue("result_id")
-	if !isUUID(runID) {
-		writeErr(w, http.StatusNotFound, errRunNotFound)
+	if !web.IsUUID(runID) {
+		web.Err(w, http.StatusNotFound, errRunNotFound)
 		return nil
 	}
 	_ = r.ParseMultipartForm(maxBody)
@@ -394,25 +395,25 @@ func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID stri
 	if doc.Len(note) > maxNoteLen {
 		errs["note"] = "Note must be 2000 characters or fewer."
 	}
-	if !checkFields(w, errs) {
+	if !web.Check(w, errs) {
 		return nil
 	}
 	var notePtr *string
 	if note != "" {
 		notePtr = &note
 	}
-	if isUUID(resultID) {
+	if web.IsUUID(resultID) {
 		err = h.model.mark(r.Context(), ws.ID, runID, resultID, userID, status, notePtr)
 	} else {
 		err = errNotFound
 	}
 	switch {
 	case errors.Is(err, errNotFound):
-		writeErr(w, http.StatusNotFound, errResultNotFound)
+		web.Err(w, http.StatusNotFound, errResultNotFound)
 	case errors.Is(err, errAIRun):
-		writeErr(w, http.StatusConflict, "AI runs are marked by the test runner.")
+		web.Err(w, http.StatusConflict, "AI runs are marked by the test runner.")
 	case errors.Is(err, errFinished):
-		writeErr(w, http.StatusConflict, errRunFinished)
+		web.Err(w, http.StatusConflict, errRunFinished)
 	case err != nil:
 		return err
 	default:
@@ -428,7 +429,7 @@ func (h *Handler) cancelRun(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	id := r.PathValue("id")
 	kind := ""
-	if isUUID(id) {
+	if web.IsUUID(id) {
 		if kind, err = h.model.runKind(r.Context(), ws.ID, id, userID); err != nil {
 			return err
 		}
@@ -439,18 +440,18 @@ func (h *Handler) cancelRun(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	switch {
 	case kind == "":
-		writeErr(w, http.StatusNotFound, errRunNotFound)
+		web.Err(w, http.StatusNotFound, errRunNotFound)
 		return nil
 	case !workspace.Has(ws.Permissions, perm):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil
 	}
 	err = h.model.cancel(r.Context(), ws.ID, id, userID)
 	switch {
 	case errors.Is(err, errNotFound):
-		writeErr(w, http.StatusNotFound, errRunNotFound)
+		web.Err(w, http.StatusNotFound, errRunNotFound)
 	case errors.Is(err, errFinished):
-		writeErr(w, http.StatusConflict, errRunFinished)
+		web.Err(w, http.StatusConflict, errRunFinished)
 	case err != nil:
 		return err
 	default:
@@ -462,16 +463,16 @@ func (h *Handler) cancelRun(w http.ResponseWriter, r *http.Request, userID strin
 func (h *Handler) respondRun(w http.ResponseWriter, r *http.Request, status int, workspaceID, id, userID string) error {
 	var d *RunDetail
 	var err error
-	if isUUID(id) {
+	if web.IsUUID(id) {
 		if d, err = h.model.run(r.Context(), workspaceID, id, userID); err != nil {
 			return err
 		}
 	}
 	if d == nil {
-		writeErr(w, http.StatusNotFound, errRunNotFound)
+		web.Err(w, http.StatusNotFound, errRunNotFound)
 		return nil
 	}
-	writeJSON(w, status, d)
+	web.JSON(w, status, d)
 	return nil
 }
 
@@ -485,17 +486,17 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, perm str
 		return nil, nil, false, err
 	}
 	var i *issueRef
-	if key, number, ok := parseIdentifier(r.PathValue("identifier")); ok {
+	if key, number, ok := issue.ParseIdentifier(r.PathValue("identifier")); ok {
 		if i, err = h.model.issue(r.Context(), ws.ID, key, number, userID); err != nil {
 			return nil, nil, false, err
 		}
 	}
 	switch {
 	case i == nil:
-		writeErr(w, http.StatusNotFound, errIssueNotFound)
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
 		return nil, nil, false, nil
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, nil, false, nil
 	}
 	return ws, i, true, nil
@@ -509,37 +510,13 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errWorkspaceNotFound)
+		web.Err(w, http.StatusNotFound, errWorkspaceNotFound)
 		return nil, false, nil
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
-}
-
-// checkFields drops empty messages and writes a 400 with the rest, returning false when there were any.
-func checkFields(w http.ResponseWriter, msgs map[string]string) bool {
-	maps.DeleteFunc(msgs, func(_, msg string) bool { return msg == "" })
-	if len(msgs) > 0 {
-		writeFields(w, http.StatusBadRequest, msgs)
-		return false
-	}
-	return true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
 }
 
 // --- AI runs ---
@@ -554,7 +531,7 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	if tester == "" {
-		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
+		web.Err(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
 	limit, err := limitUSD(r.Context(), h.cfg)
@@ -562,20 +539,20 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	caseID := r.PostForm.Get("case_id")
-	if caseID != "" && !isUUID(caseID) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+	if caseID != "" && !web.IsUUID(caseID) {
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	id, err := h.model.createAI(r.Context(), ws.ID, i.id, userID, caseID, caseID == "" && r.PostForm.Get("regenerate") == "true", int64(limit*1e6))
 	switch {
 	case errors.Is(err, errNotFound):
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 	case errors.Is(err, errNoSites):
-		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
+		web.Err(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
 	case errors.Is(err, errLimit):
-		writeErr(w, http.StatusConflict, msgLimit)
+		web.Err(w, http.StatusConflict, msgLimit)
 	case errors.Is(err, errRunActive):
-		writeErr(w, http.StatusConflict, "A test is already running on this issue.")
+		web.Err(w, http.StatusConflict, "A test is already running on this issue.")
 	case err != nil:
 		return err
 	default:
@@ -595,17 +572,17 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 		return err
 	}
 	if tester == "" {
-		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
+		web.Err(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
 	id, err := h.model.createReplay(r.Context(), ws.ID, i.id, userID)
 	switch {
 	case errors.Is(err, errNoSites):
-		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
+		web.Err(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
 	case errors.Is(err, errNoScript):
-		writeErr(w, http.StatusConflict, "Record a test case first.")
+		web.Err(w, http.StatusConflict, "Record a test case first.")
 	case errors.Is(err, errRunActive):
-		writeErr(w, http.StatusConflict, "A test is already running on this issue.")
+		web.Err(w, http.StatusConflict, "A test is already running on this issue.")
 	case err != nil:
 		return err
 	default:
@@ -640,7 +617,7 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"spent_usd": float64(n) / 1e6, "limit_usd": limit,
+	web.JSON(w, http.StatusOK, map[string]any{"spent_usd": float64(n) / 1e6, "limit_usd": limit,
 		"resets_at": monthStart(time.Now()).AddDate(0, 1, 0)})
 	return nil
 }
@@ -663,7 +640,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	if tester == "" {
-		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
+		web.Err(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
 	sites, err := h.model.sites(r.Context(), ws.ID)
@@ -671,7 +648,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	if len(sites) == 0 {
-		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
+		web.Err(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
 		return nil
 	}
 	start := strings.TrimSpace(r.FormValue("url"))
@@ -679,7 +656,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 		start = sites[0].BaseURL
 	}
 	if u, err := url.Parse(start); err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedHost(u.Hostname(), siteHosts(sites)) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
 		return nil
 	}
 	code, data, err := h.callTester(r.Context(), http.MethodPost, tester+"/sessions", "", map[string]string{"workspace_id": ws.ID, "url": start})
@@ -689,10 +666,10 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 	switch code {
 	case http.StatusCreated:
 	case http.StatusConflict:
-		writeErr(w, http.StatusConflict, msgBrowserBusy)
+		web.Err(w, http.StatusConflict, msgBrowserBusy)
 		return nil
 	case http.StatusBadRequest:
-		writeFields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"url": msgSessionURL})
 		return nil
 	default:
 		return fmt.Errorf("open browser session: tester answered %d", code)
@@ -710,7 +687,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 		_ = h.endSession(context.WithoutCancel(r.Context()), browserSession{a.ID, tester, a.Token}) // logged inside
 		return err
 	}
-	writeJSON(w, http.StatusCreated, struct {
+	web.JSON(w, http.StatusCreated, struct {
 		ID    string          `json:"id"`
 		Page  json.RawMessage `json:"page"`
 		Error string          `json:"error,omitempty"`
@@ -725,7 +702,7 @@ func (h *Handler) sessionAction(w http.ResponseWriter, r *http.Request, userID s
 	}
 	action := r.FormValue("action")
 	if !slices.Contains(sessionActions, action) {
-		writeFields(w, http.StatusBadRequest, map[string]string{"action": "Choose an action."})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"action": "Choose an action."})
 		return nil
 	}
 	ref, _ := strconv.Atoi(r.FormValue("ref")) // not a number: no element has it, and the tester says so
@@ -745,7 +722,7 @@ func (h *Handler) sessionAction(w http.ResponseWriter, r *http.Request, userID s
 	if err := json.Unmarshal(data, &a); err != nil {
 		return fmt.Errorf("browser session action: %w", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"page": a.Page, "error": a.Error, "steps": len(a.Steps)})
+	web.JSON(w, http.StatusOK, map[string]any{"page": a.Page, "error": a.Error, "steps": len(a.Steps)})
 	return nil
 }
 
@@ -772,8 +749,8 @@ func (h *Handler) saveSession(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	caseID, check := r.FormValue("case_id"), strings.TrimSpace(r.FormValue("check"))
-	if !isUUID(caseID) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+	if !web.IsUUID(caseID) {
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	msg := ""
@@ -783,7 +760,7 @@ func (h *Handler) saveSession(w http.ResponseWriter, r *http.Request, userID str
 	case doc.Len(check) > maxCheckLen:
 		msg = "Check must be 200 characters or fewer."
 	}
-	if !checkFields(w, map[string]string{"check": msg}) {
+	if !web.Check(w, map[string]string{"check": msg}) {
 		return nil
 	}
 	data, ok, err := h.toTester(w, r, s, http.MethodPost, "/actions", map[string]string{"action": "snapshot"})
@@ -801,12 +778,12 @@ func (h *Handler) saveSession(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	sc, msg := checkScript(script{Steps: a.Steps, Check: check}, hosts, labels)
-	if !checkFields(w, map[string]string{"script": msg}) {
+	if !web.Check(w, map[string]string{"script": msg}) {
 		return nil
 	}
 	err = h.model.setScript(r.Context(), ws.ID, caseID, userID, &sc, true, "") // the export generates code from the steps
 	if errors.Is(err, errNotFound) {
-		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
 		return nil
 	}
 	if err != nil {
@@ -839,11 +816,11 @@ func (h *Handler) session(w http.ResponseWriter, r *http.Request, userID string)
 		return nil, s, false, err
 	}
 	err = errNotFound
-	if isUUID(s.id) {
+	if web.IsUUID(s.id) {
 		s.tester, s.token, err = h.model.session(r.Context(), ws.ID, s.id, userID)
 	}
 	if errors.Is(err, errNotFound) {
-		writeErr(w, http.StatusNotFound, msgSessionEnded)
+		web.Err(w, http.StatusNotFound, msgSessionEnded)
 		return nil, s, false, nil
 	}
 	return ws, s, err == nil, err
@@ -867,7 +844,7 @@ func (h *Handler) toTester(w http.ResponseWriter, r *http.Request, s browserSess
 	if err := h.model.closeSession(r.Context(), s.id); err != nil {
 		return nil, false, err
 	}
-	writeErr(w, http.StatusNotFound, msgSessionEnded)
+	web.Err(w, http.StatusNotFound, msgSessionEnded)
 	return nil, false, nil
 }
 
@@ -923,7 +900,7 @@ func (h *Handler) listSites(w http.ResponseWriter, r *http.Request, userID strin
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ss)
+	web.JSON(w, http.StatusOK, ss)
 	return nil
 }
 
@@ -933,18 +910,18 @@ func (h *Handler) createSite(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	base, host, msg := checkBaseURL(r.FormValue("base_url"), h.opts.AllowHTTP, h.opts.AllowPrivate)
-	if !checkFields(w, map[string]string{"base_url": msg}) {
+	if !web.Check(w, map[string]string{"base_url": msg}) {
 		return nil
 	}
 	s, err := h.model.createSite(r.Context(), ws.ID, ws.Slug, userID, base, host)
 	if errors.Is(err, errTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"base_url": "This site is already added."})
+		web.Fields(w, http.StatusConflict, map[string]string{"base_url": "This site is already added."})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, s)
+	web.JSON(w, http.StatusCreated, s)
 	return nil
 }
 
@@ -954,7 +931,7 @@ func (h *Handler) deleteSite(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	err = errNotFound
-	if id := r.PathValue("id"); isUUID(id) {
+	if id := r.PathValue("id"); web.IsUUID(id) {
 		err = h.model.deleteSite(r.Context(), ws.ID, ws.Slug, userID, id)
 	}
 	return noContent(w, err, "Test site not found.")
@@ -971,7 +948,7 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request, userID st
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, as)
+	web.JSON(w, http.StatusOK, as)
 	return nil
 }
 
@@ -984,33 +961,33 @@ func (h *Handler) saveAccount(w http.ResponseWriter, r *http.Request, userID str
 		return err
 	}
 	id := r.PathValue("id")
-	if id != "" && !isUUID(id) {
-		writeErr(w, http.StatusNotFound, errAccountNotFound)
+	if id != "" && !web.IsUUID(id) {
+		web.Err(w, http.StatusNotFound, errAccountNotFound)
 		return nil
 	}
 	label, username, password := strings.TrimSpace(r.FormValue("label")), strings.TrimSpace(r.FormValue("username")), r.FormValue("password")
 	siteID := strings.TrimSpace(r.FormValue("site_id"))
 	errs := checkAccount(label, username, password, id == "")
-	if siteID != "" && !isUUID(siteID) {
+	if siteID != "" && !web.IsUUID(siteID) {
 		errs["site_id"] = errChooseSite
 	}
-	if !checkFields(w, errs) {
+	if !web.Check(w, errs) {
 		return nil
 	}
 	a, err := h.model.saveAccount(r.Context(), h.opts.Key, ws.ID, ws.Slug, userID, id, label, username, password, siteID)
 	switch {
 	case errors.Is(err, errSiteNotFound):
-		writeFields(w, http.StatusBadRequest, map[string]string{"site_id": errChooseSite})
+		web.Fields(w, http.StatusBadRequest, map[string]string{"site_id": errChooseSite})
 	case errors.Is(err, errTaken):
-		writeFields(w, http.StatusConflict, map[string]string{"label": "An account with this label already exists."})
+		web.Fields(w, http.StatusConflict, map[string]string{"label": "An account with this label already exists."})
 	case errors.Is(err, errNotFound):
-		writeErr(w, http.StatusNotFound, errAccountNotFound)
+		web.Err(w, http.StatusNotFound, errAccountNotFound)
 	case err != nil:
 		return err
 	case id == "":
-		writeJSON(w, http.StatusCreated, a)
+		web.JSON(w, http.StatusCreated, a)
 	default:
-		writeJSON(w, http.StatusOK, a)
+		web.JSON(w, http.StatusOK, a)
 	}
 	return nil
 }
@@ -1021,7 +998,7 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	err = errNotFound
-	if id := r.PathValue("id"); isUUID(id) {
+	if id := r.PathValue("id"); web.IsUUID(id) {
 		err = h.model.deleteAccount(r.Context(), ws.ID, ws.Slug, userID, id)
 	}
 	return noContent(w, err, errAccountNotFound)
@@ -1031,7 +1008,7 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request, userID s
 func noContent(w http.ResponseWriter, err error, notFound string) error {
 	switch {
 	case errors.Is(err, errNotFound):
-		writeErr(w, http.StatusNotFound, notFound)
+		web.Err(w, http.StatusNotFound, notFound)
 	case err != nil:
 		return err
 	default:

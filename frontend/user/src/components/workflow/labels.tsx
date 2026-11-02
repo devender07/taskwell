@@ -5,7 +5,7 @@ import { Dialog } from '@tether/shared/dialog'
 import { ColorPicker } from '@tether/shared/color-picker'
 import { Input } from '@tether/shared/input'
 import { labelColor, labelName } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors, type Label, type Workspace } from '@/api'
+import { api, toFormErrors, type FieldErrors, type Label, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot } from '@/components/issues/fields'
@@ -14,7 +14,7 @@ type State = { errors?: FieldErrors; error?: string | null }
 
 const DEFAULT_COLOR = '#5e6ad2'
 
-const labelsPath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}/labels`
+const labelsPath = (workspace: Workspace) => `${workspacePath(workspace.slug)}/labels`
 
 // Create (no label) or edit a label.
 function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?: Label; onDone?: () => void }) {

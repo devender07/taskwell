@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { api, type Chat } from '@/api'
+import { api, type Chat, workspacePath } from '@/api'
 import { subscribePaths } from '@/realtime'
 
 // ponytail: every open tab chimes and notifies; elect one tab (BroadcastChannel) if that gets noisy.
@@ -10,7 +10,7 @@ let audio: AudioContext | null = null
 const at = (c: Chat) => (c.last_message_at ? Date.parse(c.last_message_at) : 0)
 
 // A short two-note chime, made in the browser so there's no sound file to ship.
-export function chime() {
+function chime() {
   audio ??= new AudioContext()
   const t = audio.currentTime
   for (const [i, freq] of [880, 1320].entries()) {
@@ -28,7 +28,7 @@ export function chime() {
 
 // Chrome plays sound and asks for notification permission only after the user does something on the page, so
 // both happen on the first click.
-export function askOnFirstClick() {
+function askOnFirstClick() {
   const first = () => {
     audio ??= new AudioContext()
     void audio.resume()
@@ -39,7 +39,7 @@ export function askOnFirstClick() {
 }
 
 // A desktop notification for the chat's newest message; clicking it opens the chat.
-export function notify(chat: Chat, open: () => void) {
+function notify(chat: Chat, open: () => void) {
   if (!('Notification' in window) || Notification.permission !== 'granted' || !chat.last_message) return
   const who = chat.last_message.author?.name
   const n = new Notification(chat.kind === 'direct' || !who ? (who ?? chat.name) : `${who} in ${chat.name}`, {
@@ -62,7 +62,7 @@ export function useChatAlerts(slug: string | undefined, userId: string) {
   useEffect(askOnFirstClick, [])
   useEffect(() => {
     if (!slug) return
-    const path = `/workspaces/${encodeURIComponent(slug)}/chats`
+    const path = `${workspacePath(slug)}/chats`
     let last: Map<string, number> | null = null
     let stale = false
     const check = () =>

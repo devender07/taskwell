@@ -2,13 +2,13 @@ package chat
 
 import (
 	"encoding/json"
-	"regexp"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -17,11 +17,6 @@ const (
 	maxMembers    = 50 // a group's people, its creator included
 	maxEmojiLen   = 16 // code points, as the reactions table checks
 )
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
-func isUUID(s string) bool { return uuidRe.MatchString(s) }
 
 // checkName takes a group name trimmed.
 func checkName(s string) string {
@@ -61,7 +56,7 @@ func people(ids []string, self string) ([]string, bool) {
 	var out []string
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
-		if !isUUID(id) {
+		if !web.IsUUID(id) {
 			ok = false
 			continue
 		}

@@ -14,9 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/db"
 	"github.com/devender07/tether/backend/user/internal/doc"
 	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 var (
@@ -727,7 +729,7 @@ func setParent(ctx context.Context, tx pgx.Tx, id, identifier, actorID string) e
 		_, err := tx.Exec(ctx, `update issues set parent_id = null where id = $1`, id)
 		return err
 	}
-	key, number, ok := parseIdentifier(identifier)
+	key, number, ok := ParseIdentifier(identifier)
 	var parentID string
 	if ok {
 		err := tx.QueryRow(ctx,
@@ -1194,7 +1196,7 @@ func activityCut(as []Activity) ([]Activity, bool) {
 
 // comment returns the workspace's comment with the id; nil when there's none or the viewer can't see its issue.
 func (m *model) comment(ctx context.Context, workspaceID, id, viewerID string) (*Comment, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id = $2
@@ -1404,7 +1406,7 @@ func (m *model) createStatus(ctx context.Context, workspaceID, name, category st
 		return err
 	})
 	switch {
-	case isUniqueViolation(err):
+	case db.IsUniqueViolation(err):
 		return s, errNameTaken
 	case errors.Is(err, errNoType):
 		return s, err
@@ -1417,7 +1419,7 @@ func (m *model) createStatus(ctx context.Context, workspaceID, name, category st
 // updateStatus renames a status and sets its type (or its category, without one), publishing e; nil when there's
 // none. Returns errNameTaken when the name is in use, and errNoType when the type isn't one of the workspace's.
 func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, typeID *string, e realtime.Event) (*workflowStatus, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	var s workflowStatus
@@ -1434,7 +1436,7 @@ func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, categor
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil
-	case isUniqueViolation(err):
+	case db.IsUniqueViolation(err):
 		return nil, errNameTaken
 	case errors.Is(err, errNoType):
 		return nil, err
@@ -1486,7 +1488,7 @@ func (m *model) createType(ctx context.Context, workspaceID, name, category, ico
 			 returning `+typeCols, workspaceID, name, category, icon, color))
 		return err
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return t, errNameTaken
 	}
 	if err != nil {
@@ -1498,7 +1500,7 @@ func (m *model) createType(ctx context.Context, workspaceID, name, category, ico
 // updateType changes a type and moves its statuses to its category, publishing e; nil when there's none. Returns
 // errNameTaken when the name is in use.
 func (m *model) updateType(ctx context.Context, workspaceID, id, name, category, icon string, color *string, e realtime.Event) (*StatusType, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	var t StatusType
@@ -1521,7 +1523,7 @@ func (m *model) updateType(ctx context.Context, workspaceID, id, name, category,
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil
-	case isUniqueViolation(err):
+	case db.IsUniqueViolation(err):
 		return nil, errNameTaken
 	case err != nil:
 		return nil, fmt.Errorf("update status type: %w", err)
@@ -1532,7 +1534,7 @@ func (m *model) updateType(ctx context.Context, workspaceID, id, name, category,
 // deleteType deletes a type, turning its statuses into built-ins of the same category, and publishes e; false when
 // there's none.
 func (m *model) deleteType(ctx context.Context, workspaceID, id string, e realtime.Event) (bool, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return false, nil
 	}
 	found := false
@@ -1601,7 +1603,7 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 			return errLastStatus
 		}
 		var moved pgconn.CommandTag
-		if isUUID(moveTo) {
+		if web.IsUUID(moveTo) {
 			moved, err = tx.Exec(ctx,
 				`update issues i set status_id = s.id from statuses s
 				 where i.status_id = $2 and s.workspace_id = $1 and s.id = $3 and s.id <> $2`,
@@ -1665,7 +1667,7 @@ func (m *model) createLabel(ctx context.Context, workspaceID, name, color string
 			`insert into labels (workspace_id, name, color) values ($1, $2, $3) returning `+labelCols, workspaceID, name, color))
 		return err
 	})
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return l, errNameTaken
 	}
 	if err != nil {
@@ -1676,7 +1678,7 @@ func (m *model) createLabel(ctx context.Context, workspaceID, name, color string
 
 // updateLabel publishes e. It returns nil when there's no such label, and errNameTaken when the name is in use.
 func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color string, e realtime.Event) (*Label, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return nil, nil
 	}
 	var l Label
@@ -1690,7 +1692,7 @@ func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color st
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, nil
-	case isUniqueViolation(err):
+	case db.IsUniqueViolation(err):
 		return nil, errNameTaken
 	case err != nil:
 		return nil, fmt.Errorf("update label: %w", err)
@@ -1700,7 +1702,7 @@ func (m *model) updateLabel(ctx context.Context, workspaceID, id, name, color st
 
 // deleteLabel deletes a label, which removes it from its issues, and publishes e; false when there's none.
 func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realtime.Event) (bool, error) {
-	if !isUUID(id) {
+	if !web.IsUUID(id) {
 		return false, nil
 	}
 	found := false
@@ -1715,9 +1717,4 @@ func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realt
 		return false, fmt.Errorf("delete label: %w", err)
 	}
 	return found, nil
-}
-
-func isUniqueViolation(err error) bool {
-	pgErr := (*pgconn.PgError)(nil)
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

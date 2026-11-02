@@ -2,7 +2,6 @@ package file
 
 import (
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -12,7 +11,6 @@ import (
 const maxNameLen = 200
 
 var (
-	uuidRe      = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	imageTypes  = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
 	defaultName = "file"
 )

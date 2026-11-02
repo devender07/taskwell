@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 func TestValidation(t *testing.T) {
 	cases := []struct {
 		got, want string
 	}{
-		{checkEmail(""), "Email is required."},
-		{checkEmail("  "), "Email is required."},
-		{checkEmail("a@b"), "Enter a valid email address."},
-		{checkEmail("a b@c.d"), "Enter a valid email address."},
-		{checkEmail(strings.Repeat("a", 250) + "@b.co"), "Enter a valid email address."},
-		{checkEmail(" Ann@Example.com "), ""},
+		{web.CheckEmail(""), "Email is required."},
+		{web.CheckEmail("  "), "Email is required."},
+		{web.CheckEmail("a@b"), "Enter a valid email address."},
+		{web.CheckEmail("a b@c.d"), "Enter a valid email address."},
+		{web.CheckEmail(strings.Repeat("a", 250) + "@b.co"), "Enter a valid email address."},
+		{web.CheckEmail(" Ann@Example.com "), ""},
 		{checkName(""), "Name is required."},
 		{checkName(strings.Repeat("é", 101)), "Name must be 100 characters or fewer."},
 		{checkName(strings.Repeat("é", 100)), ""},
@@ -39,11 +42,11 @@ func TestValidation(t *testing.T) {
 }
 
 func TestTokens(t *testing.T) {
-	a, b := newToken(), newToken()
+	a, b := secret.NewToken(), secret.NewToken()
 	if a == b || len(a) != 43 {
 		t.Fatalf("tokens not unique or wrong length: %q %q", a, b)
 	}
-	if !bytes.Equal(hash(a), hash(a)) || bytes.Equal(hash(a), hash(b)) || len(hash(a)) != 32 {
+	if !bytes.Equal(secret.Hash(a), secret.Hash(a)) || bytes.Equal(secret.Hash(a), secret.Hash(b)) || len(secret.Hash(a)) != 32 {
 		t.Fatal("hash is not a deterministic sha256")
 	}
 	for range 100 {

@@ -1,6 +1,6 @@
 import { useParams } from '@tanstack/react-router'
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api } from '@/api'
+import { api, workspacePath } from '@/api'
 import { connected, subscribePaths } from '@/realtime'
 
 // count: unread notifications (the navbar bell); chats: unread chat messages (the sidebar's Inbox).
@@ -16,7 +16,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => {
     if (!slug) return
-    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    const ws = `${workspacePath(slug)}`
     api<{ count: number }>(`${ws}/notifications/unread-count`).then(({ count }) => setState({ slug, count }), () => {})
     api<{ count: number }>(`${ws}/chats/unread-count`).then(({ count }) => setChatState({ slug, count }), () => {})
   }, [slug])
@@ -27,7 +27,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     let ticks = 0
     // ponytail: fallback poll; remove it once the socket has proven itself.
     const timer = setInterval(() => (!connected() || ++ticks % 5 === 0) && refresh(), 60_000)
-    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    const ws = `${workspacePath(slug)}`
     const unsubscribe = subscribePaths([`${ws}/notifications/unread-count`, `${ws}/chats/unread-count`], refresh)
     window.addEventListener('focus', refresh)
     return () => {
