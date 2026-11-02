@@ -1,4 +1,4 @@
-import { Link, useLoaderData, useMatchRoute, useNavigate } from '@tanstack/react-router'
+import { Link, useLoaderData, useLocation, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { can } from '@/api'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
@@ -20,6 +20,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
     if (onSettings) setExpanded(true)
   }
 
+  // An issue has no section of its own: it stays under the one it was opened from (its project when opened directly).
+  const section = useLocation({ select: (l) => l.pathname.slice(workspace.length + 2).split('/')[0] || 'home' })
+  const [from, setFrom] = useState(section === 'issue' ? 'projects' : section)
+  if (section !== 'issue' && section !== from) setFrom(section)
+  const current = (name: string) => (section === 'issue' && from === name ? 'page' : undefined)
+
   function toggleSettings() {
     setExpanded(!expanded)
     if (!expanded) navigate({ to: '/$workspace/settings/profile', params: { workspace } })
@@ -32,20 +38,20 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         Search
         <kbd className="kbd" style={{ marginLeft: 'auto' }}>{paletteKey}</kbd>
       </button>
-      <Link to="/$workspace" params={{ workspace }} activeOptions={{ exact: true }}>
+      <Link to="/$workspace" params={{ workspace }} activeOptions={{ exact: true }} aria-current={current('home')}>
         <HomeIcon />
         Home
       </Link>
-      <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined}>
+      <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
         <InboxIcon />
         Inbox
         {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
       </Link>
-      <Link to="/$workspace/my-issues" params={{ workspace }}>
+      <Link to="/$workspace/my-issues" params={{ workspace }} aria-current={current('my-issues')}>
         <UserIcon />
         My issues
       </Link>
-      <Link to="/$workspace/projects" params={{ workspace }}>
+      <Link to="/$workspace/projects" params={{ workspace }} aria-current={current('projects')}>
         <FolderIcon />
         Projects
       </Link>

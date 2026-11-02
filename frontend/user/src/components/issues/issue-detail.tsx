@@ -91,7 +91,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           <PullRequests issue={issue} />
           <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} members={members} />
         </article>
-        <aside className="grid gap-4">
+        <aside className="issue-aside grid gap-4">
           <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} members={members} />
           {issue.can_delete ? <DeleteIssue workspace={workspace} issue={issue} /> : null}
         </aside>

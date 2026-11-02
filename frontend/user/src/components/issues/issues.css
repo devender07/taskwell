@@ -60,6 +60,8 @@
 .issue-layout { display: grid; gap: 32px; align-items: start; }
 @container (min-width: 720px) {
   .issue-layout { grid-template-columns: minmax(0, 1fr) clamp(260px, 32%, 320px); }
+  /* Stays in view under the 56px navbar while the issue scrolls; scrolls itself on a short window. */
+  .issue-aside { position: sticky; top: 80px; max-height: calc(100dvh - 104px); overflow-y: auto; }
 }
 
 .issue-group-header {

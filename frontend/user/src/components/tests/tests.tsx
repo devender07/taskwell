@@ -13,7 +13,6 @@ import {
   can,
   deleteTestCase,
   orderTestCases,
-  playwrightURL,
   saveTestCase,
   startTestRun,
   testCasesPath,
@@ -242,11 +241,6 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
             <Button variant="ghost" disabled={starting || list.length === 0} onClick={() => run({ kind: 'manual' })}>
               Run manually
             </Button>
-          ) : null}
-          {list.length > 0 ? (
-            <a className="button button-ghost" href={playwrightURL(workspace, issue.identifier)} download>
-              Download Playwright
-            </a>
           ) : null}
         </div>
       </div>

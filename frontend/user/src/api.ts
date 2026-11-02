@@ -403,8 +403,6 @@ export function startTestRun(workspace: Workspace, identifier: string, kind: Run
 
 export const startRecordedRun = (workspace: Workspace, identifier: string) => startTestRun(workspace, identifier, 'replay')
 
-export const playwrightURL = (workspace: Workspace, identifier: string) => `/api${issuePath(workspace, identifier)}/playwright`
-
 export function markTestResult(workspace: Workspace, run: string, result: string, status: 'passed' | 'failed' | 'skipped', note: string) {
   const form = new FormData()
   form.set('status', status)

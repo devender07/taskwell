@@ -176,7 +176,7 @@ export function DeleteIssue({ workspace, issue }: { workspace: Workspace; issue:
 
   return (
     <>
-      <Button variant="ghost" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
+      <Button variant="ghost" style={{ justifySelf: 'start', color: 'var(--accent)' }} onClick={() => setOpen(true)}>
         Delete issue
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Delete ${issue.identifier}?`} description="This can't be undone.">
