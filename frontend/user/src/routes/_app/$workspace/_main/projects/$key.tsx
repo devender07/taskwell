@@ -1,14 +1,16 @@
 import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
+import { BackLink } from '@tether/shared/back-link'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
-import { ApiError, can, cyclesPath, type Cycle, type Issue, type Label, type Member, type Project, type Status } from '@/api'
-import { loaderApi } from '@/realtime'
+import { LockIcon } from '@tether/shared/icons'
+import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Issue, type Label, type Member, type Project, type Status } from '@/api'
+import { loaderApi, trackPath } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
 import { validateViewSearch } from '@/components/issues/view-search'
-import { ArchiveProject, ProjectForm } from '@/components/projects/project-form'
+import { ArchiveProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
@@ -18,13 +20,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     const { params } = ctx
     const path = `/workspaces/${encodeURIComponent(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
-    const [project, issues, cycles, statuses, labels, { members }] = await Promise.all([
+    trackPath(ctx, `${path}/members`)
+    const [project, issues, cycles, statuses, labels, members] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<Issue[]>(ctx, `${projectPath}/issues`),
       loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
+      loaderApi<Member[]>(ctx, projectPeoplePath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -51,18 +54,19 @@ function ProjectPage() {
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
-        <Link
+        <BackLink
           to="/$workspace/projects"
           params={{ workspace: workspace.slug }}
           search={project.archived ? { archived: true } : {}}
-          className="text-caption text-secondary"
         >
-          ← Projects
-        </Link>
+          Projects
+        </BackLink>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
             <span className="project-key flex-noshrink">{project.key}</span>
+            {project.private ? <LockIcon className="text-secondary flex-noshrink" /> : null}
             <h1 className="text-h2 ellipsis">{project.name}</h1>
+            {project.private ? <span className="project-tag flex-noshrink">Private</span> : null}
             {project.archived ? <span className="project-tag flex-noshrink">Archived</span> : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -84,6 +88,7 @@ function ProjectPage() {
                 <Button variant="secondary" onClick={() => setEditing(true)}>
                   Edit
                 </Button>
+                {project.private ? <ProjectMembers workspace={workspace} project={project} /> : null}
                 <ArchiveProject workspace={workspace} project={project} />
               </>
             ) : null}

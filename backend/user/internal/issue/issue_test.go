@@ -31,6 +31,8 @@ func TestValidation(t *testing.T) {
 		{checkLabelName(""), "Label name is required."},
 		{checkLabelName(strings.Repeat("a", 31)), "Label name must be 30 characters or fewer."},
 		{checkColor(normColor(" #AABBCC ")), ""},
+		{checkColor("#5e6ad280"), ""},
+		{checkColor("#5e6ad28"), "Choose a color."},
 		{checkColor("#abc"), "Choose a color."},
 		{checkColor("red"), "Choose a color."},
 	}

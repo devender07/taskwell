@@ -8,11 +8,20 @@ export type Member = { id: string; name: string; email: string; role: RoleRef }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; created_at: string }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
-// type: the workspace's own label for the category ("Reopen"); missing = the category's name. Only on /statuses.
-export type Status = { id: string; name: string; category: StatusCategory; position: number; type?: string }
+// icon/color: its custom type's look (null = the category's icon). type: the custom type, only on /statuses.
+export type Status = {
+  id: string
+  name: string
+  category: StatusCategory
+  position: number
+  icon: string | null
+  color: string | null
+  type?: { id: string; name: string } | null
+}
+export type StatusType = { id: string; name: string; category: StatusCategory; icon: string; color: string | null; status_count: number }
 export type Label = { id: string; name: string; color: string }
 export type CycleState = 'upcoming' | 'current' | 'past'
 export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
@@ -76,7 +85,7 @@ export type Comment = {
   can_edit: boolean
   can_delete: boolean
 }
-type StatusSnap = Pick<Status, 'id' | 'name' | 'category'>
+type StatusSnap = Pick<Status, 'id' | 'name' | 'category'> & Partial<Pick<Status, 'icon' | 'color'>>
 type EventRef = Pick<IssueRef, 'id' | 'identifier' | 'title'>
 type Change<T> = { from: T; to: T }
 export type IssueEvent = { id: string; actor: PersonRef | null; created_at: string } & (
@@ -161,8 +170,18 @@ export const issuePath = (workspace: Workspace, identifier: string) =>
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
-export const cyclesPath = (workspace: string, project: string) =>
-  `/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/cycles`
+export const projectPath = (workspace: string, project: string) => `/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}`
+// Everyone who can see the project, for its assignee and mention pickers: the whole workspace for a public project.
+export const projectPeoplePath = (workspace: string, project: string) => `${projectPath(workspace, project)}/people`
+export function addProjectMembers(workspace: string, project: string, ids: string[]) {
+  const form = new FormData()
+  for (const id of ids) form.append('user_ids', id)
+  return api<Project>(`${projectPath(workspace, project)}/members`, form)
+}
+export const removeProjectMember = (workspace: string, project: string, userId: string) =>
+  api<Project>(`${projectPath(workspace, project)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export const cyclesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/cycles`
 const cyclePath = (workspace: string, project: string, number: number) => `${cyclesPath(workspace, project)}/${number}`
 
 export const listCycles = (workspace: string, project: string, signal?: AbortSignal) => api<Cycle[]>(cyclesPath(workspace, project), undefined, 'GET', signal)
@@ -174,6 +193,11 @@ export function rolloverCycle(workspace: string, project: string, number: number
   form.set('to', String(to))
   return api<{ moved: number; cycle: Cycle }>(`${cyclePath(workspace, project, number)}/rollover`, form)
 }
+
+export const statusTypesPath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}/status-types`
+const statusTypePath = (workspace: string, id: string) => `${statusTypesPath(workspace)}/${encodeURIComponent(id)}`
+export const saveStatusType = (workspace: string, form: FormData, id?: string) => api<StatusType>(id ? statusTypePath(workspace, id) : statusTypesPath(workspace), form)
+export const deleteStatusType = (workspace: string, id: string) => api(statusTypePath(workspace, id), undefined, 'DELETE')
 
 export const integrationsPath = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}/integrations`
 const integrationPath = (workspace: string, provider: Provider) => `${integrationsPath(workspace)}/${provider}`

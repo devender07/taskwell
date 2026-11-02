@@ -31,8 +31,7 @@ type Integration struct {
 
 type model struct{ db *pgxpool.Pool }
 
-const statusJSON = `(select json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position)
-	from statuses s where s.id = %s)`
+const statusJSON = `(select status_json(s) from statuses s where s.id = %s)`
 
 // integration returns the workspace's connection to the provider; nil when there's none.
 func (m *model) integration(ctx context.Context, workspaceID, provider string) (*Integration, error) {
@@ -200,34 +199,46 @@ func (m *model) deliver(ctx context.Context, hookID, provider string, p pr) erro
 		if err != nil {
 			return err
 		}
-		var paths []string
+		var ids []string
 		for kind, ls := range map[string][]linked{"pr_linked": gained, "pr_unlinked": lost} {
 			for _, l := range ls {
 				if _, err := tx.Exec(ctx, `insert into issue_events (issue_id, kind, data) values ($1, $2, $3)`, l.issueID, kind, data); err != nil {
 					return fmt.Errorf("add %s event: %w", kind, err)
 				}
+				ids = append(ids, l.issueID)
 			}
 		}
-		// Every linked issue's page shows the pull request, so all of them refetch.
+		// Every linked issue's page shows the pull request, so all of them refetch; each project's issues are told only
+		// to who can see that project.
 		rows, err := tx.Query(ctx,
-			`select p.key || '-' || i.number from issue_pull_requests l join issues i on i.id = l.issue_id
-			 join projects p on p.id = i.project_id where l.pr_id = $1`, prID)
+			`select p.id::text, array_agg(p.key || '-' || i.number) from issues i join projects p on p.id = i.project_id
+			 where i.id in (select issue_id from issue_pull_requests where pr_id = $1) or i.id = any($2::uuid[])
+			 group by p.id`, prID, ids)
 		if err != nil {
 			return fmt.Errorf("linked issues: %w", err)
 		}
-		current, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		type group struct {
+			projectID   string
+			identifiers []string
+		}
+		groups, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (group, error) {
+			var g group
+			err := row.Scan(&g.projectID, &g.identifiers)
+			return g, err
+		})
 		if err != nil {
 			return fmt.Errorf("linked issues: %w", err)
 		}
-		for _, id := range slices.Concat(current, identifiers(lost)) {
-			paths = append(paths, realtime.Issue(slug, id), realtime.Timeline(slug, id))
-		}
-		if len(gained) > 0 || len(lost) > 0 {
-			paths = append(paths, realtime.Activity(slug))
-		}
-		if len(paths) > 0 {
+		for _, g := range groups {
+			var paths []string
+			for _, id := range g.identifiers {
+				paths = append(paths, realtime.Issue(slug, id), realtime.Timeline(slug, id))
+			}
+			if len(ids) > 0 {
+				paths = append(paths, realtime.Activity(slug))
+			}
 			if err := realtime.Publish(ctx, tx, realtime.Event{Kind: "issue.updated", Workspace: slug,
-				Audience: realtime.ToWorkspace(wsID), Paths: paths}); err != nil {
+				Audience: realtime.ToWorkspace(wsID), Paths: paths, Project: g.projectID}); err != nil {
 				return err
 			}
 		}
@@ -303,14 +314,6 @@ func relink(ctx context.Context, tx pgx.Tx, wsID, prID string, refs []Ref) (gain
 		return nil, nil, fmt.Errorf("relinked issues: %w", err)
 	}
 	return gained, lost, nil
-}
-
-func identifiers(ls []linked) []string {
-	ids := make([]string, len(ls))
-	for i, l := range ls {
-		ids[i] = l.identifier
-	}
-	return ids
 }
 
 // move moves the pull request's closing links' issues when its state changed from before: to openStatus (if set)

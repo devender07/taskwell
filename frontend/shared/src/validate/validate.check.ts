@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { commentBody, dueDate, email, issueDescription, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, username, workspaceName, workspaceSlug } from './validate.ts'
+import { commentBody, dueDate, email, issueDescription, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, statusTypeName, username, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -68,6 +68,9 @@ assert.equal(dueDate('2026-1-01'), 'Enter a valid date.')
 assert.equal(statusName(' In review '), null)
 assert.equal(statusName(' '), 'Status name is required.')
 assert.equal(statusName('x'.repeat(31)), 'Status name must be 30 characters or fewer.')
+assert.equal(statusTypeName(' In review '), null)
+assert.equal(statusTypeName(''), 'Type name is required.')
+assert.equal(statusTypeName('x'.repeat(31)), 'Type name must be 30 characters or fewer.')
 assert.equal(statusCategory('started'), null)
 assert.equal(statusCategory('done'), 'Choose a category.')
 assert.equal(labelName(' Bug '), null)

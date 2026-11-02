@@ -108,7 +108,7 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
   const setSearch = (next: ViewSearch) => navigate({ to: '.', search: next })
 
   const choices: Choice[] = [
-    { key: 'status', title: 'Status', options: statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon category={s.category} /> })) },
+    { key: 'status', title: 'Status', options: statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> })) },
     ...(mine
       ? []
       : [
@@ -294,7 +294,7 @@ function FilterMenu({ choices, search, onChange }: { choices: Choice[]; search: 
 }
 
 function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
-  if (group.status) return <StatusIcon category={group.status.category} />
+  if (group.status) return <StatusIcon status={group.status} />
   if (by === 'assignee' && group.key) return <Avatar name={group.label} size={20} src={avatarSrc(group.key)} />
   return null
 }
@@ -302,7 +302,7 @@ function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
 export const IssueRow = memo(function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
   return (
     <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row">
-      <StatusIcon category={issue.status.category} label={issue.status.name} />
+      <StatusIcon status={issue.status} label={issue.status.name} />
       <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
       {issue.parent ? <span className="issue-id flex-noshrink">↳ {issue.parent.identifier}</span> : null}
       <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>

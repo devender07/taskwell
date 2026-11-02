@@ -261,10 +261,13 @@ func scanInvite(row pgx.Row) (Invite, error) {
 	return inv, err
 }
 
-// invites returns the workspace's invites, expired included, newest first.
+// invites returns the workspace's invites, expired included, newest first. An invite whose person already joined (by
+// signing up with that email, see joinInvited) isn't pending any more: its link still lands them here, but it's hidden.
 func (m *model) invites(ctx context.Context, workspaceID string) ([]Invite, error) {
 	rows, err := m.db.Query(ctx,
-		`with i as (select * from workspace_invites where workspace_id = $1) `+inviteCols+` order by i.created_at desc`,
+		`with i as (select * from workspace_invites v where workspace_id = $1 and not exists (select 1 from workspace_members m
+		   join users u on u.id = m.user_id where m.workspace_id = v.workspace_id and u.email = v.email))
+		 `+inviteCols+` order by i.created_at desc`,
 		workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list invites: %w", err)
@@ -693,8 +696,8 @@ func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userI
 	return mb, nil
 }
 
-// removeMember takes the user out of the workspace and unassigns their issues there, by the actor (the user when they
-// leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
+// removeMember takes the user out of the workspace and its private projects and unassigns their issues there, by the
+// actor (the user when they leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
 func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID string) (bool, error) {
 	if !isUUID(userID) {
 		return false, nil
@@ -706,6 +709,10 @@ func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID
 			return err
 		}
 		if _, err = tx.Exec(ctx, `update issues set assignee_id = null where workspace_id = $1 and assignee_id = $2`, ws.ID, userID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `delete from project_members where user_id = $2
+			and project_id in (select id from projects where workspace_id = $1)`, ws.ID, userID); err != nil {
 			return err
 		}
 		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {

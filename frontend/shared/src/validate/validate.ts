@@ -141,6 +141,13 @@ const STATUS_CATEGORIES = ['backlog', 'unstarted', 'started', 'completed', 'canc
 
 export const statusCategory: Check = (v) => ((STATUS_CATEGORIES as readonly string[]).includes(v) ? null : 'Choose a category.')
 
+export const statusTypeName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Type name is required.'
+  if (s.length > 30) return 'Type name must be 30 characters or fewer.'
+  return null
+}
+
 export const labelName: Check = (v) => {
   const s = v.trim()
   if (!s) return 'Label name is required.'
@@ -148,7 +155,7 @@ export const labelName: Check = (v) => {
   return null
 }
 
-export const labelColor: Check = (v) => (/^#[0-9a-f]{6}$/.test(v.toLowerCase()) ? null : 'Choose a color.')
+export const labelColor: Check = (v) => (/^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(v.toLowerCase()) ? null : 'Choose a color.')
 
 export const groupName: Check = (v) => {
   const s = v.trim()

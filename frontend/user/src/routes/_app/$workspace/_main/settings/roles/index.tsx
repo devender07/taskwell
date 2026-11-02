@@ -12,7 +12,7 @@ function RolesSettings() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const roles = Route.useLoaderData()
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="flex items-end justify-between gap-4">
         <div className="grid gap-2">
           <h1 className="text-h2">Roles</h1>

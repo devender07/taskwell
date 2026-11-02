@@ -8,9 +8,11 @@ import (
 
 // statusSnap and eventRef are the names an event keeps, so the log reads right after renames and deletes.
 type statusSnap struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Category string `json:"category"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Category string  `json:"category"`
+	Icon     *string `json:"icon,omitempty"` // the type's; left out for built-ins, as in events from before types
+	Color    *string `json:"color,omitempty"`
 }
 
 type eventRef struct {

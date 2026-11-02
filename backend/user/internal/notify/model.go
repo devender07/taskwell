@@ -15,7 +15,8 @@ import (
 )
 
 // Record writes the change's notifications and new watchers in tx, the change's own transaction, and tells the
-// recipients' tabs. Recipients and watchers who aren't members of the issue's workspace are skipped. A status
+// recipients' tabs. Recipients and watchers who aren't members of the issue's workspace, or can't see its project, are
+// skipped. A status
 // notification the recipient hasn't read from the last 10 minutes on the same issue is updated (new "to", time and
 // actor, emailed again) instead of adding another.
 func Record(ctx context.Context, tx pgx.Tx, c Change) error {
@@ -48,7 +49,8 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	if len(ns) > 0 {
 		// Watchers are unique, so each user has at most one status note to bump.
 		rows, err := tx.Query(ctx,
-			`with n as (select * from unnest($3::uuid[], $4::text[], $5::jsonb[]) as n(user_id, kind, data)),
+			`with n as (select * from unnest($3::uuid[], $4::text[], $5::jsonb[]) as n(user_id, kind, data)
+			   where can_see_project((select project_id from issues where id = $1), n.user_id)),
 			 bumped as (
 			   update notifications t set data = jsonb_set(t.data, '{to}', n.data -> 'to') - 'via' || (n.data - 'from' - 'to'),
 			     actor_id = $2::uuid, created_at = now(),
@@ -94,7 +96,7 @@ func Record(ctx context.Context, tx pgx.Tx, c Change) error {
 	if _, err := tx.Exec(ctx,
 		`insert into issue_watchers (issue_id, user_id)
 		 select i.id, m.user_id from issues i join workspace_members m on m.workspace_id = i.workspace_id
-		 where i.id = $1 and m.user_id = any($2::uuid[])
+		 where i.id = $1 and m.user_id = any($2::uuid[]) and can_see_project(i.project_id, m.user_id)
 		 on conflict do nothing`, c.IssueID, watch); err != nil {
 		return fmt.Errorf("add watchers: %w", err)
 	}
@@ -213,20 +215,23 @@ type Notification struct {
 
 const pageSize = 30
 
+// seen is whether the notification n's recipient can see its issue i (left joined); chat ones always.
+const seen = `(n.issue_id is null or can_see_project(i.project_id, n.user_id))`
+
 type model struct{ db *pgxpool.Pool }
 
 // list returns a page of the user's notifications in the workspace, newest first, older than before unless it's "",
-// and whether there are more.
+// and whether there are more. Those about issues the user can't see are left out.
 func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([]Notification, bool, error) {
 	rows, err := m.db.Query(ctx,
 		`select n.id::text, n.kind, (select json_build_object('id', a.id, 'name', a.name) from users a where a.id = n.actor_id),
 		        case when i.id is not null then json_build_object('identifier', p.key || '-' || i.number, 'title', i.title,
-		          'status', json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position)) end,
+		          'status', status_json(s)) end,
 		        case when c.id is not null then json_build_object('id', c.id, 'kind', c.kind, 'name', chat_name(c, n.user_id)) end,
 		        n.data, n.read_at is not null, n.created_at
 		 from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
 		 left join statuses s on s.id = i.status_id left join chats c on c.id = n.chat_id
-		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid)
+		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid) and `+seen+`
 		 order by n.id desc limit $4`, userID, workspaceID, before, pageSize+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("list notifications: %w", err)
@@ -249,7 +254,8 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string) ([
 func (m *model) unreadCount(ctx context.Context, userID, workspaceID string) (int, error) {
 	var n int
 	err := m.db.QueryRow(ctx,
-		`select count(*) from notifications where user_id = $1 and workspace_id = $2 and read_at is null`, userID, workspaceID).Scan(&n)
+		`select count(*) from notifications n left join issues i on i.id = n.issue_id
+		 where n.user_id = $1 and n.workspace_id = $2 and n.read_at is null and `+seen, userID, workspaceID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count unread: %w", err)
 	}
@@ -357,10 +363,10 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 
 const (
 	// wanted is whether the recipient's settings s (left joined) want the notification n emailed at all. A direct
-	// message read before its email was due isn't emailed.
-	wanted = `(coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
+	// message read before its email was due isn't emailed, nor one about an issue i (left joined) they can't see.
+	wanted = `(` + seen + ` and (coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
 		when 'status' then s.status when 'comment' then s.comments when 'chat_mention' then s.mentions and s.chat
-		else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null))`
+		else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
 	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.
 	settled = `n.created_at < now() - make_interval(secs => case n.kind when 'message' then $2::float8 else $1::float8 end)`
 	msgCols = `n.id::text, n.kind,
@@ -389,7 +395,7 @@ func scanMessage(row pgx.Row, extra ...any) (string, message, error) {
 func (m *model) skipUnwanted(ctx context.Context, settle time.Duration) error {
 	_, err := m.db.Exec(ctx,
 		`update notifications t set emailed_at = now()
-		 from notifications n left join notification_settings s on s.user_id = n.user_id
+		 from notifications n left join notification_settings s on s.user_id = n.user_id left join issues i on i.id = n.issue_id
 		 where t.id = n.id and n.emailed_at is null and `+settled+` and not `+wanted, settle.Seconds(), messageDelay.Seconds())
 	if err != nil {
 		return fmt.Errorf("skip unwanted emails: %w", err)

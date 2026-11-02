@@ -324,7 +324,7 @@ func (h *Handler) Join(ctx context.Context, peer Peer, userID, slug, identifier 
 	if err != nil || ws == nil {
 		return nil, errNotFound, err
 	}
-	i, err := h.find(ctx, ws.ID, identifier)
+	i, err := h.find(ctx, ws.ID, identifier, userID)
 	if err != nil || i == nil {
 		return nil, errIssueNotFound, err
 	}

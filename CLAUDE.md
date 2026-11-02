@@ -77,6 +77,7 @@ frontend/           npm workspaces (shared, admin, user)
 - Build/vet from `backend/`: `go build github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/...`
 - Frontend stack is fixed: Vite, React 19, TanStack Router with file-based routes. No UI kit, no CSS framework, no state library, no schema library. Ask before adding any dependency.
 - Imports: `@/` is the app's `src/` (both apps). Use it instead of `../`; same-folder `./` imports stay relative.
+- Icons: import from `@tether/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
 - Styling: utility classes from `@tether/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
 - Frontend commands from `frontend/`: `npm run dev:user`, `npm run dev:admin`, `npm run build` (vite build + tsc per app).
 

@@ -1,11 +1,12 @@
-import { Link, createFileRoute, notFound, redirect, useLoaderData, useRouter } from '@tanstack/react-router'
+import { createFileRoute, notFound, redirect, useLoaderData, useRouter } from '@tanstack/react-router'
+import { BackLink } from '@tether/shared/back-link'
 import { startTransition, useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { ApiError, can, cyclesPath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { ApiError, can, cyclesPath, projectPeoplePath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components/cycles/cycles'
@@ -25,13 +26,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const list = cyclesPath(params.workspace, params.key)
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
-    const [project, { cycle, issues }, cycles, statuses, labels, { members }] = await Promise.all([
+    trackPath(ctx, `${path}/members`)
+    const [project, { cycle, issues }, cycles, statuses, labels, members] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
+      loaderApi<Member[]>(ctx, projectPeoplePath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -64,9 +66,9 @@ function CyclePage() {
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
-        <Link to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }} className="text-caption text-secondary">
-          ← {project.name} cycles
-        </Link>
+        <BackLink to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }}>
+          {project.name} cycles
+        </BackLink>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3" style={{ minWidth: 0 }}>
             <h1 className="text-h2 ellipsis">{cycle.name}</h1>

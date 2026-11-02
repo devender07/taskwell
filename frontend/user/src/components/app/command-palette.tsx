@@ -152,7 +152,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
           label: i.title,
           lead: (
             <>
-              <StatusIcon category={i.status.category} />
+              <StatusIcon status={i.status} />
               <span className="issue-id flex-noshrink">{i.identifier}</span>
             </>
           ),
@@ -240,7 +240,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         label: 'Status',
         items: opts.map((o) => {
           const status = ctx.statuses.find((s) => s.id === o.value)!
-          return { id: o.value, label: o.label, lead: <StatusIcon category={status.category} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
+          return { id: o.value, label: o.label, lead: <StatusIcon status={status} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
         }),
       })
     } else if (mode === 'assignee') {

@@ -1,0 +1,32 @@
+/* Settings: its own section menu beside the page, under the app sidebar. */
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
+.settings-nav { display: grid; align-content: start; gap: 2px; padding: 40px 12px 0 24px; }
+.settings-nav-title { margin: 0 0 12px 12px; color: var(--text-2); font: 510 13px/19.5px var(--font); }
+.settings-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  color: var(--text-2);
+  font: 400 14px/21px var(--font);
+  text-decoration: none;
+  border-radius: 6px;
+}
+@media (hover: hover) {
+  .settings-nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+}
+.settings-nav a[aria-current='page'] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.settings-nav a:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+
+@media (min-width: 1024px) {
+  .settings-layout { grid-template-columns: 280px minmax(0, 1fr); }
+  .settings-nav { position: sticky; top: 56px; align-self: start; }
+}
+@media (max-width: 1023px) {
+  .settings-nav { grid-auto-flow: column; justify-content: start; padding: 16px 24px 0; overflow-x: auto; scrollbar-width: none; }
+  .settings-nav-title { display: none; }
+}
+@media (pointer: coarse) {
+  .settings-nav a { height: 44px; }
+}

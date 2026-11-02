@@ -49,7 +49,7 @@ type model struct {
 	db *pgxpool.Pool
 	// onCreated runs in the transaction that creates or first verifies an account (it creates the default
 	// workspace), so a failure leaves no half-made account.
-	onCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error
+	onCreated func(ctx context.Context, tx pgx.Tx, userID, name, workspaceName string) error
 }
 
 // --- users ---
@@ -58,7 +58,7 @@ type model struct {
 // keeps the existing unverified one) and stores the code's hash with the name and password hash to apply once it is
 // verified. Older pending codes stay usable: each is bound to the browser that asked for it. Returns errEmailTaken
 // when a verified account has the email.
-func (m *model) startSignup(ctx context.Context, name, email, passwordHash string, tokenHash []byte, minutes int) error {
+func (m *model) startSignup(ctx context.Context, name, email, passwordHash, workspaceName string, tokenHash []byte, minutes int) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var userID string
 		var verified, inserted bool
@@ -72,9 +72,9 @@ func (m *model) startSignup(ctx context.Context, name, email, passwordHash strin
 			return errEmailTaken
 		}
 		if _, err := tx.Exec(ctx, `
-			insert into auth_tokens (user_id, purpose, token_hash, expires_at, name, password_hash)
-			values ($1, $2, $3, now() + make_interval(mins => $4), $5, $6)`,
-			userID, purposeVerify, tokenHash, minutes, name, passwordHash); err != nil {
+			insert into auth_tokens (user_id, purpose, token_hash, expires_at, name, password_hash, workspace_name)
+			values ($1, $2, $3, now() + make_interval(mins => $4), $5, $6, nullif($7, ''))`,
+			userID, purposeVerify, tokenHash, minutes, name, passwordHash, workspaceName); err != nil {
 			return err
 		}
 		if inserted {
@@ -96,13 +96,13 @@ func (m *model) startSignup(ctx context.Context, name, email, passwordHash strin
 func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var tokenID, userID, name, ph string
+		var tokenID, userID, name, ph, wsName string
 		err := tx.QueryRow(ctx, `
-			select t.id::text, u.id::text, t.name, t.password_hash
+			select t.id::text, u.id::text, t.name, t.password_hash, coalesce(t.workspace_name, '')
 			from auth_tokens t join users u on u.id = t.user_id
 			where u.email = $1 and u.email_verified_at is null and t.purpose = $2 and t.token_hash = $3
 			  and t.used_at is null and t.expires_at > now()
-			for update of t, u`, email, purposeVerify, tokenHash).Scan(&tokenID, &userID, &name, &ph)
+			for update of t, u`, email, purposeVerify, tokenHash).Scan(&tokenID, &userID, &name, &ph, &wsName)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -119,7 +119,7 @@ func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte
 			return err
 		}
 		u = &got
-		if err := m.onCreated(ctx, tx, got.ID, got.Name); err != nil {
+		if err := m.onCreated(ctx, tx, got.ID, got.Name, wsName); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
@@ -287,7 +287,7 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			if first, err := markVerified(ctx, tx, &u, name); err != nil || !first {
 				return err
 			}
-			return m.onCreated(ctx, tx, u.ID, u.Name)
+			return m.onCreated(ctx, tx, u.ID, u.Name, "")
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -296,7 +296,7 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
 			return err
 		}
-		if err := m.onCreated(ctx, tx, u.ID, u.Name); err != nil {
+		if err := m.onCreated(ctx, tx, u.ID, u.Name, ""); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
@@ -380,7 +380,7 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *
 			return err
 		}
 		if first {
-			if err := m.onCreated(ctx, tx, cand.ID, cand.Name); err != nil {
+			if err := m.onCreated(ctx, tx, cand.ID, cand.Name, ""); err != nil {
 				return err
 			}
 		}

@@ -83,14 +83,15 @@ type querier interface {
 }
 
 // findProject returns the workspace's project with the key (old keys too), locking it when lock is set; nil when
-// there's none.
-func findProject(ctx context.Context, q querier, workspaceID, key string, lock bool) (*project, error) {
-	sql := `select id::text, key, archived_at is not null from projects where workspace_id = $1 and key = canonical_key($1, $2)`
+// there's none or the viewer can't see it.
+func findProject(ctx context.Context, q querier, workspaceID, key, viewerID string, lock bool) (*project, error) {
+	sql := `select id::text, key, archived_at is not null from projects where workspace_id = $1 and key = canonical_key($1, $2)
+		and can_see_project(id, $3)`
 	if lock {
 		sql += ` for update`
 	}
 	var p project
-	err := q.QueryRow(ctx, sql, workspaceID, key).Scan(&p.id, &p.key, &p.archived)
+	err := q.QueryRow(ctx, sql, workspaceID, key, viewerID).Scan(&p.id, &p.key, &p.archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -100,8 +101,8 @@ func findProject(ctx context.Context, q querier, workspaceID, key string, lock b
 	return &p, nil
 }
 
-func (m *model) project(ctx context.Context, workspaceID, key string) (*project, error) {
-	return findProject(ctx, m.db, workspaceID, key, false)
+func (m *model) project(ctx context.Context, workspaceID, key, viewerID string) (*project, error) {
+	return findProject(ctx, m.db, workspaceID, key, viewerID, false)
 }
 
 // list returns the project's cycles, latest start first, with their progress.
@@ -135,8 +136,8 @@ func getCycle(ctx context.Context, q querier, projectID string, number int) (*Cy
 
 // writable locks the workspace's project with the key for a cycle write: errNoProject when there's none,
 // errArchived when it's archived.
-func writable(ctx context.Context, tx pgx.Tx, workspaceID, key string) (*project, error) {
-	p, err := findProject(ctx, tx, workspaceID, key, true)
+func writable(ctx context.Context, tx pgx.Tx, workspaceID, key, viewerID string) (*project, error) {
+	p, err := findProject(ctx, tx, workspaceID, key, viewerID, true)
 	switch {
 	case err != nil:
 		return nil, err
@@ -173,7 +174,7 @@ func checkDates(ctx context.Context, tx pgx.Tx, projectID, selfID string, starts
 func (m *model) create(ctx context.Context, workspaceID, key, userID string, in input, e realtime.Event) (*Cycle, error) {
 	var c *Cycle
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		p, err := writable(ctx, tx, workspaceID, key)
+		p, err := writable(ctx, tx, workspaceID, key, userID)
 		if err != nil {
 			return err
 		}
@@ -191,17 +192,17 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, in 
 		if c, err = getCycle(ctx, tx, p.id, number); err != nil {
 			return err
 		}
-		return publish(ctx, tx, e, p.key, []int{number}, nil)
+		return publish(ctx, tx, e, p, []int{number}, nil)
 	})
 	return c, wrapErr("create cycle", err)
 }
 
 // update changes the cycle's name and dates as in says and publishes e; errNoCycle when the project has no cycle
 // with the number.
-func (m *model) update(ctx context.Context, workspaceID, key string, number int, in input, e realtime.Event) (*Cycle, error) {
+func (m *model) update(ctx context.Context, workspaceID, key, viewerID string, number int, in input, e realtime.Event) (*Cycle, error) {
 	var c *Cycle
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		p, id, err := lockCycle(ctx, tx, workspaceID, key, number)
+		p, id, err := lockCycle(ctx, tx, workspaceID, key, viewerID, number)
 		if err != nil {
 			return err
 		}
@@ -230,16 +231,16 @@ func (m *model) update(ctx context.Context, workspaceID, key string, number int,
 		if err != nil {
 			return err
 		}
-		return publish(ctx, tx, e, p.key, []int{number}, ids)
+		return publish(ctx, tx, e, p, []int{number}, ids)
 	})
 	return c, wrapErr("update cycle", err)
 }
 
 // delete removes the project's cycle with the number (its issues keep no cycle) and publishes e; errNoCycle when
 // there's none.
-func (m *model) delete(ctx context.Context, workspaceID, key string, number int, e realtime.Event) error {
+func (m *model) delete(ctx context.Context, workspaceID, key, viewerID string, number int, e realtime.Event) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		p, id, err := lockCycle(ctx, tx, workspaceID, key, number)
+		p, id, err := lockCycle(ctx, tx, workspaceID, key, viewerID, number)
 		if err != nil {
 			return err
 		}
@@ -250,7 +251,7 @@ func (m *model) delete(ctx context.Context, workspaceID, key string, number int,
 		if _, err := tx.Exec(ctx, `delete from cycles where id = $1`, id); err != nil {
 			return err
 		}
-		return publish(ctx, tx, e, p.key, []int{number}, ids)
+		return publish(ctx, tx, e, p, []int{number}, ids)
 	})
 	return wrapErr("delete cycle", err)
 }
@@ -262,7 +263,7 @@ func (m *model) rollover(ctx context.Context, workspaceID, key string, number, t
 	var moved []string
 	var target *Cycle
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		p, id, err := lockCycle(ctx, tx, workspaceID, key, number)
+		p, id, err := lockCycle(ctx, tx, workspaceID, key, actorID, number)
 		if err != nil {
 			return err
 		}
@@ -307,15 +308,15 @@ func (m *model) rollover(ctx context.Context, workspaceID, key string, number, t
 		if target, err = getCycle(ctx, tx, p.id, to); err != nil {
 			return err
 		}
-		return publish(ctx, tx, e, p.key, []int{number, to}, moved)
+		return publish(ctx, tx, e, p, []int{number, to}, moved)
 	})
 	return len(moved), target, wrapErr("roll over cycle", err)
 }
 
 // lockCycle locks the project for a write to its cycle with the number and returns them: errNoProject or errNoCycle
 // when they don't exist, errArchived when the project is archived.
-func lockCycle(ctx context.Context, tx pgx.Tx, workspaceID, key string, number int) (*project, string, error) {
-	p, err := findProject(ctx, tx, workspaceID, key, true)
+func lockCycle(ctx context.Context, tx pgx.Tx, workspaceID, key, viewerID string, number int) (*project, string, error) {
+	p, err := findProject(ctx, tx, workspaceID, key, viewerID, true)
 	if err != nil || p == nil {
 		return nil, "", cmp(err, errNoProject)
 	}
@@ -345,8 +346,9 @@ func identifiers(ctx context.Context, tx pgx.Tx, cycleID string) ([]string, erro
 
 // publish tells the workspace the project's cycles changed: the cycle list, the numbered cycles' pages, the project
 // page and issue list, and the issues with the identifiers (their pages and rows show their cycle).
-func publish(ctx context.Context, tx pgx.Tx, e realtime.Event, key string, numbers []int, issues []string) error {
-	e.Kind = "cycle.changed"
+func publish(ctx context.Context, tx pgx.Tx, e realtime.Event, p *project, numbers []int, issues []string) error {
+	e.Kind, e.Project = "cycle.changed", p.id
+	key := p.key
 	e.Paths = []string{realtime.Project(e.Workspace, key), realtime.ProjectIssues(e.Workspace, key), realtime.Cycles(e.Workspace, key)}
 	for _, n := range numbers {
 		e.Paths = append(e.Paths, realtime.Cycle(e.Workspace, key, n))

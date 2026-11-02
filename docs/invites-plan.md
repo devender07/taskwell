@@ -11,7 +11,7 @@ Out of scope (next task, "Roles"): changing a member's role, removing members, l
 Known limits:
 - Accepting needs the signed-in email to match the invite (a forwarded link can't be used by someone else).
 - "Continue with Google" from the invite's sign-in page lands on `/`, not back on the invite; the user reopens the email link. `ponytail:` carry `redirect` through the Google state cookie if this bites.
-- Signing up from an invite still creates the user's own default workspace as well.
+- Signing up with an email that has a pending invite joins the invited workspaces instead of creating a default workspace (`joinInvited` in `workspace/default.go`). The invite stays so the emailed link still lands them in the workspace, but it's hidden from the pending list once they're a member.
 
 ## Schema
 

@@ -4,7 +4,7 @@ import type { Issue, Member, Status } from '../../api.ts'
 import { filterIssues, groupIssues, sortIssues, validateViewSearch } from './view-search.ts'
 
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
-const status = (n: number, position: number): Status => ({ id: id(n), name: `S${n}`, category: 'unstarted', position })
+const status = (n: number, position: number): Status => ({ id: id(n), name: `S${n}`, category: 'unstarted', position, icon: null, color: null })
 const [todo, done] = [status(1, 1), status(2, 0)]
 const me = id(10)
 const other = id(11)

@@ -1,7 +1,7 @@
 import { Link, notFound } from '@tanstack/react-router'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
-import { ApiError, can, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData, type User, type Workspace } from '@/api'
+import { ApiError, can, projectPeoplePath, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData, type User, type Workspace } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
@@ -11,7 +11,7 @@ import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
 import { TestsSection } from '@/components/tests/tests'
 import { WatchButton } from '@/components/issues/watch-button'
-import { loaderApi, type LoaderContext, type Viewer } from '@/realtime'
+import { loaderApi, trackPath, type LoaderContext, type Viewer } from '@/realtime'
 import '@/components/issues/issues.css'
 
 export type IssueData = { issue: Issue; project: Project; statuses: Status[]; labels: Label[]; members: Member[]; timeline: TimelineData }
@@ -20,12 +20,13 @@ export type IssueData = { issue: Issue; project: Project; statuses: Status[]; la
 export async function loadIssue(ctx: LoaderContext, workspace: string, identifier: string): Promise<IssueData> {
   const path = `/workspaces/${encodeURIComponent(workspace)}`
   const key = identifier.replace(/-.*/, '').toUpperCase()
-  const [issue, project, statuses, labels, { members }, timeline] = await Promise.all([
+  trackPath(ctx, `${path}/members`)
+  const [issue, project, statuses, labels, members, timeline] = await Promise.all([
     loaderApi<Issue>(ctx, `${path}/issues/${encodeURIComponent(identifier)}`),
     loaderApi<Project>(ctx, `${path}/projects/${encodeURIComponent(key)}`),
     loaderApi<Status[]>(ctx, `${path}/statuses`),
     loaderApi<Label[]>(ctx, `${path}/labels`),
-    loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
+    loaderApi<Member[]>(ctx, projectPeoplePath(workspace, key)),
     loaderApi<TimelineData>(ctx, `${path}/issues/${encodeURIComponent(identifier)}/timeline`),
   ]).catch((e) => {
     if (e instanceof ApiError && e.status === 404) {

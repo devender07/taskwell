@@ -1,0 +1,243 @@
+import type { ReactNode, SVGProps } from 'react'
+
+// The app's icon set: 24x24 line icons in currentColor, so they take the text color around them. Every new icon goes
+// here and is imported from @tether/shared/icons; size defaults to 18.
+type IconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & { size?: number }
+
+function Icon({ size = 18, children, ...props }: IconProps & { children: ReactNode }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      {...props}
+    >
+      {children}
+    </svg>
+  )
+}
+
+export const SearchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </Icon>
+)
+
+export const HomeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
+  </Icon>
+)
+
+export const InboxIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+  </Icon>
+)
+
+export const UserIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </Icon>
+)
+
+export const UsersIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="9" cy="8" r="4" />
+    <path d="M2 21a7 7 0 0 1 14 0" />
+    <path d="M16 4.13a4 4 0 0 1 0 7.75M22 21a7 7 0 0 0-4-6.3" />
+  </Icon>
+)
+
+export const FolderIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
+  </Icon>
+)
+
+export const SettingsIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </Icon>
+)
+
+export const BellIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+  </Icon>
+)
+
+export const KeyIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="7.5" cy="15.5" r="4.5" />
+    <path d="m10.7 12.3 9.8-9.8M17 6l3 3M14.5 8.5l2 2" />
+  </Icon>
+)
+
+export const GridIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+  </Icon>
+)
+
+export const ShieldIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </Icon>
+)
+
+export const WorkflowIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="18" cy="18" r="2.5" />
+    <path d="M6 8.5V12a3 3 0 0 0 3 3h6.5" />
+  </Icon>
+)
+
+export const TagIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" />
+    <circle cx="8" cy="8" r="1.5" />
+  </Icon>
+)
+
+export const FlaskIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" />
+    <path d="M7.5 14h9" />
+  </Icon>
+)
+
+export const PlugIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 2v6M15 2v6" />
+    <path d="M6 8h12v4a6 6 0 0 1-12 0z" />
+    <path d="M12 18v4" />
+  </Icon>
+)
+
+export const LockIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </Icon>
+)
+
+export const ArrowLeftIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M19 12H5" />
+    <path d="m12 19-7-7 7-7" />
+  </Icon>
+)
+
+const STATUS_SHAPES = {
+  circle: <circle cx="12" cy="12" r="9" />,
+  'circle-dashed': <circle cx="12" cy="12" r="9" strokeDasharray="3.5 3.5" />,
+  'circle-half': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 6a6 6 0 0 1 0 12z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'circle-check': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 3 3 5-6" />
+    </>
+  ),
+  'circle-x': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m9 9 6 6M15 9l-6 6" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  refresh: <path d="M20 11a8 8 0 0 0-14.9-4M4 3v4h4M4 13a8 8 0 0 0 14.9 4M20 21v-4h-4" />,
+  pause: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 9v6M14 9v6" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  flag: <path d="M5 21V4h11l-2 4 2 4H5" />,
+  star: <path d="m12 3 2.8 5.8 6.2.8-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.8z" />,
+  bug: (
+    <>
+      <path d="M12 7a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0v-4a4 4 0 0 1 4-4z" />
+      <path d="M10 7.5 8.5 4M14 7.5 15.5 4M3 13h5M16 13h5M4 8l4 2M20 8l-4 2M4 19l4-2M20 19l-4-2M12 11v8" />
+    </>
+  ),
+  rocket: (
+    <>
+      <path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2a2.1 2.1 0 0 0-3-3z" />
+      <path d="m12 15-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22 22 0 0 1-4 2z" />
+      <path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0M12 15v5s3-.6 4-2c1.1-1.6 0-5 0-5" />
+    </>
+  ),
+  alert: (
+    <>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+}
+
+export type StatusIconKey = keyof typeof STATUS_SHAPES
+
+// The icons a status type can have (docs/status-types-plan.md); the backend validates against the same keys.
+export const STATUS_ICONS = Object.keys(STATUS_SHAPES) as StatusIconKey[]
+
+// A status type's icon in its color (currentColor when none); unknown keys draw a plain circle.
+export function StatusTypeIcon({ icon, color, size = 14, title, style, ...props }: Omit<IconProps, 'color'> & { icon: string; color?: string | null; title?: string }) {
+  return (
+    <Icon size={size} style={{ flexShrink: 0, color: color ?? undefined, ...style }} {...props}>
+      {title ? <title>{title}</title> : null}
+      {STATUS_SHAPES[icon as StatusIconKey] ?? STATUS_SHAPES.circle}
+    </Icon>
+  )
+}
+
+export const ChevronUpIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m6 15 6-6 6 6" />
+  </Icon>
+)
+
+export const ChevronDownIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m6 9 6 6 6-6" />
+  </Icon>
+)

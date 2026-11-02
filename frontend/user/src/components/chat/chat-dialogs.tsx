@@ -10,6 +10,7 @@ import { groupName } from '@tether/shared/validate'
 import { api, avatarSrc, toFormErrors, type Chat, type FieldErrors, type Member, type PersonRef } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { reloadRoutes } from '@/realtime'
+import './chat.css'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
@@ -20,7 +21,7 @@ const options = (members: Member[], exclude: string[]) =>
   members.filter((m) => !exclude.includes(m.id)).map((m) => ({ value: m.id, label: m.name, hint: m.email }))
 
 // Picks several people: each pick adds a chip and clears the field for the next one.
-function PeoplePicker({ members, value, onChange, exclude, error }: { members: Member[]; value: string[]; onChange: (ids: string[]) => void; exclude: string[]; error?: string | null }) {
+export function PeoplePicker({ members, value, onChange, exclude, error }: { members: Member[]; value: string[]; onChange: (ids: string[]) => void; exclude: string[]; error?: string | null }) {
   const [round, setRound] = useState(0)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {

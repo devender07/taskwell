@@ -101,7 +101,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	c, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), n, in, event(ws, userID))
+	c, err := h.model.update(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, n, in, event(ws, userID))
 	if err != nil {
 		return answer(w, err)
 	}
@@ -114,7 +114,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	err = h.model.delete(r.Context(), ws.ID, normKey(r.PathValue("key")), n, event(ws, userID))
+	err = h.model.delete(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, n, event(ws, userID))
 	if err != nil {
 		return answer(w, err)
 	}
@@ -185,7 +185,7 @@ func (h *Handler) project(w http.ResponseWriter, r *http.Request, userID string)
 	if !ok || err != nil {
 		return nil, nil, false, err
 	}
-	p, err := h.model.project(r.Context(), ws.ID, normKey(r.PathValue("key")))
+	p, err := h.model.project(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
 	if err != nil {
 		return nil, nil, false, err
 	}

@@ -46,7 +46,7 @@ type Handler struct {
 // New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run inside the transaction that
 // first verifies an account's email (it creates the default workspace).
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
-	onUserCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error) *Handler {
+	onUserCreated func(ctx context.Context, tx pgx.Tx, userID, name, workspaceName string) error) *Handler {
 	return &Handler{model: &model{db: db, onCreated: onUserCreated}, cfg: cfg, mail: m, secret: secret, lim: newLimits(db),
 		alive: newAliveCache()}
 }
@@ -57,7 +57,9 @@ func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
 func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	name, email, pw := r.FormValue("name"), r.FormValue("email"), r.FormValue("password")
-	if errs := fieldErrors("name", checkName(name), "email", checkEmail(email), "password", checkPassword(pw)); errs != nil {
+	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up joins the inviter's
+	if errs := fieldErrors("name", checkName(name), "email", checkEmail(email), "password", checkPassword(pw),
+		"workspace_name", checkWorkspaceName(wsName)); errs != nil {
 		writeFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
@@ -87,7 +89,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	subject := "Your Tether verification code: " + code
 	body := fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
 		"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)
-	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), hash(code+"."+nonce), minutes)
+	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), wsName, hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
 		// Answer exactly as for a new address, so sign-up can't tell who has an account; tell the owner instead.
 		if subject, body, err = h.signupTakenMail(ctx); err != nil {

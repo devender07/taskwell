@@ -1,4 +1,5 @@
 import { Checkbox } from '@tether/shared/checkbox'
+import { StatusTypeIcon } from '@tether/shared/icons'
 import { Popover } from '@tether/shared/popover'
 import type { Option } from '@tether/shared/smart-autocomplete'
 import type { Label, Member, Status, StatusCategory } from '@/api'
@@ -22,7 +23,7 @@ export const CATEGORIES: { value: StatusCategory; label: string }[] = [
 
 export const priorityOptions: Option[] = PRIORITIES.map((p) => ({ value: String(p.value), label: p.label }))
 export const categoryOptions: Option[] = CATEGORIES
-export const statusOptions = (statuses: Status[]): Option[] => statuses.map((s) => ({ value: s.id, label: s.name }))
+export const statusOptions = (statuses: Status[]): Option[] => statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> }))
 export const assigneeOptions = (members: Member[]): Option[] => [
   { value: '', label: 'No assignee' },
   ...members.map((m) => ({ value: m.id, label: m.name, hint: m.email })),
@@ -44,9 +45,14 @@ export function formatDate(value: string) {
 
 export const formatRange = (c: { starts_on: string; ends_on: string }) => `${formatDate(c.starts_on)} – ${formatDate(c.ends_on)}`
 
-export function StatusIcon({ category, label }: { category: StatusCategory; label?: string }) {
-  const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true }
+type StatusLook = { category: StatusCategory; icon?: string | null; color?: string | null }
+
+// A status's custom icon in its color when it has one, else its category's icon. Old snapshots without icon fall back.
+export function StatusIcon({ status, label }: { status: StatusLook; label?: string }) {
+  const { category, icon } = status
+  const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
   const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
+  if (icon) return <StatusTypeIcon icon={icon} color={status.color ?? color} title={label} {...a11y} />
   return (
     <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth={1.5} className="flex-noshrink" {...a11y}>
       {label ? <title>{label}</title> : null}

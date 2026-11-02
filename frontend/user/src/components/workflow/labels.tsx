@@ -2,6 +2,7 @@ import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
+import { ColorPicker } from '@tether/shared/color-picker'
 import { Input } from '@tether/shared/input'
 import { labelColor, labelName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Label, type Workspace } from '@/api'
@@ -41,8 +42,8 @@ function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?:
   return (
     <form action={submit} noValidate className="grid gap-2">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="flex-noshrink" style={{ width: 56 }}>
-          <Input aria-label="Color" type="color" value={color} onChange={(e) => setColor(e.target.value)} error={errors?.color} style={{ padding: 4, cursor: 'pointer' }} />
+        <div className="flex-noshrink" style={{ width: 152 }}>
+          <ColorPicker aria-label="Color" value={color} onChange={setColor} error={errors?.color} />
         </div>
         <div className="flex-grow" style={{ minWidth: 160 }}>
           <Input aria-label="Label name" placeholder="Bug" autoComplete="off" autoFocus={Boolean(label)} value={name} onChange={(e) => setName(e.target.value)} error={errors?.name} />

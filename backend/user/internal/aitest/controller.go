@@ -90,7 +90,7 @@ func (h *Handler) createCase(w http.ResponseWriter, r *http.Request, userID stri
 	if err != nil {
 		return err
 	}
-	return h.respondCase(w, r, http.StatusCreated, ws.ID, id)
+	return h.respondCase(w, r, http.StatusCreated, ws.ID, id, userID)
 }
 
 func (h *Handler) updateCase(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -115,7 +115,7 @@ func (h *Handler) updateCase(w http.ResponseWriter, r *http.Request, userID stri
 	if err != nil {
 		return err
 	}
-	return h.respondCase(w, r, http.StatusOK, ws.ID, id)
+	return h.respondCase(w, r, http.StatusOK, ws.ID, id, userID)
 }
 
 func (h *Handler) deleteCase(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -204,7 +204,7 @@ func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID stri
 	if err != nil {
 		return err
 	}
-	return h.respondCase(w, r, http.StatusOK, ws.ID, id)
+	return h.respondCase(w, r, http.StatusOK, ws.ID, id, userID)
 }
 
 // scriptScope is what a script may use: the workspace's site hosts and account labels.
@@ -263,8 +263,8 @@ func readCase(w http.ResponseWriter, r *http.Request) (caseFields, bool) {
 	return f, checkFields(w, checkCase(f))
 }
 
-func (h *Handler) respondCase(w http.ResponseWriter, r *http.Request, status int, workspaceID, id string) error {
-	c, err := h.model.testCase(r.Context(), workspaceID, id)
+func (h *Handler) respondCase(w http.ResponseWriter, r *http.Request, status int, workspaceID, id, userID string) error {
+	c, err := h.model.testCase(r.Context(), workspaceID, id, userID)
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func (h *Handler) getRun(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	return h.respondRun(w, r, http.StatusOK, ws.ID, r.PathValue("id"))
+	return h.respondRun(w, r, http.StatusOK, ws.ID, r.PathValue("id"), userID)
 }
 
 // live proxies the tester's MJPEG stream of a running AI run's browser to a workspace member.
@@ -317,7 +317,7 @@ func (h *Handler) live(w http.ResponseWriter, r *http.Request, userID string) er
 	id := r.PathValue("id")
 	tester := ""
 	if isUUID(id) {
-		if tester, err = h.model.liveTester(r.Context(), ws.ID, id); err != nil {
+		if tester, err = h.model.liveTester(r.Context(), ws.ID, id, userID); err != nil {
 			return err
 		}
 	}
@@ -372,7 +372,7 @@ func (h *Handler) createManualRun(w http.ResponseWriter, r *http.Request, userID
 	if err != nil {
 		return err
 	}
-	return h.respondRun(w, r, http.StatusCreated, ws.ID, id)
+	return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
 }
 
 func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -416,7 +416,7 @@ func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID stri
 	case err != nil:
 		return err
 	default:
-		return h.respondRun(w, r, http.StatusOK, ws.ID, runID)
+		return h.respondRun(w, r, http.StatusOK, ws.ID, runID, userID)
 	}
 	return nil
 }
@@ -429,7 +429,7 @@ func (h *Handler) cancelRun(w http.ResponseWriter, r *http.Request, userID strin
 	id := r.PathValue("id")
 	kind := ""
 	if isUUID(id) {
-		if kind, err = h.model.runKind(r.Context(), ws.ID, id); err != nil {
+		if kind, err = h.model.runKind(r.Context(), ws.ID, id, userID); err != nil {
 			return err
 		}
 	}
@@ -454,16 +454,16 @@ func (h *Handler) cancelRun(w http.ResponseWriter, r *http.Request, userID strin
 	case err != nil:
 		return err
 	default:
-		return h.respondRun(w, r, http.StatusOK, ws.ID, id)
+		return h.respondRun(w, r, http.StatusOK, ws.ID, id, userID)
 	}
 	return nil
 }
 
-func (h *Handler) respondRun(w http.ResponseWriter, r *http.Request, status int, workspaceID, id string) error {
+func (h *Handler) respondRun(w http.ResponseWriter, r *http.Request, status int, workspaceID, id, userID string) error {
 	var d *RunDetail
 	var err error
 	if isUUID(id) {
-		if d, err = h.model.run(r.Context(), workspaceID, id); err != nil {
+		if d, err = h.model.run(r.Context(), workspaceID, id, userID); err != nil {
 			return err
 		}
 	}
@@ -486,7 +486,7 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, perm str
 	}
 	var i *issueRef
 	if key, number, ok := parseIdentifier(r.PathValue("identifier")); ok {
-		if i, err = h.model.issue(r.Context(), ws.ID, key, number); err != nil {
+		if i, err = h.model.issue(r.Context(), ws.ID, key, number, userID); err != nil {
 			return nil, nil, false, err
 		}
 	}
@@ -579,7 +579,7 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 	case err != nil:
 		return err
 	default:
-		return h.respondRun(w, r, http.StatusCreated, ws.ID, id)
+		return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
 	}
 	return nil
 }
@@ -609,7 +609,7 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 	case err != nil:
 		return err
 	default:
-		return h.respondRun(w, r, http.StatusCreated, ws.ID, id)
+		return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
 	}
 	return nil
 }
@@ -815,7 +815,7 @@ func (h *Handler) saveSession(w http.ResponseWriter, r *http.Request, userID str
 	if err := h.endSession(r.Context(), s); err != nil {
 		return err
 	}
-	return h.respondCase(w, r, http.StatusOK, ws.ID, caseID)
+	return h.respondCase(w, r, http.StatusOK, ws.ID, caseID, userID)
 }
 
 func (h *Handler) deleteSession(w http.ResponseWriter, r *http.Request, userID string) error {

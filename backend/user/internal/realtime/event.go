@@ -24,6 +24,9 @@ type Event struct {
 	WorkspaceID string `json:"-"`
 	// Close ends the audience's connections after the event: they re-authenticate, reconnect and re-join.
 	Close bool `json:"-"`
+	// Project is the id of the project a ToWorkspace event is about, if any. When it's private, Publish sends the
+	// event to each person who can see it (ToUser) instead.
+	Project string `json:"-"`
 }
 
 const ToAdmin = "admin"

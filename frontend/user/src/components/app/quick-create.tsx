@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { api, toFormErrors, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { api, projectPeoplePath, toFormErrors, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
 import { subscribePaths } from '@/realtime'
@@ -28,7 +28,9 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
+  const [people, setPeople] = useState<{ key: string; members: Member[] } | null>(null)
   const path = `/workspaces/${encodeURIComponent(workspace.slug)}`
+  const secret = data?.projects.find((p) => p.key === key)?.private
 
   useEffect(
     () => subscribePaths([`${path}/projects`, `${path}/statuses`, `${path}/labels`, `${path}/members`], () => setVersion((v) => v + 1)),
@@ -57,11 +59,24 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
     }
   }, [path, workspace.slug, projectKey, version])
 
+  useEffect(() => {
+    if (!key || !secret) return
+    let live = true
+    api<Member[]>(projectPeoplePath(workspace.slug, key)).then(
+      (members) => live && setPeople({ key, members }),
+      (e) => live && setError(toFormErrors(e).error),
+    )
+    return () => {
+      live = false
+    }
+  }, [workspace.slug, key, secret, version])
+
   if (!data) return error ? <FormError>{error}</FormError> : <p className="text-body-sm text-secondary">Loading…</p>
   if (data.projects.length === 0) return <p className="text-body-sm text-secondary">No active projects. Create a project first.</p>
 
   const options = data.projects.map((p) => ({ value: p.key, label: p.name, hint: p.key }))
   const project = data.projects.find((p) => p.key === key)
+  const members = project?.private ? (people?.key === project.key ? people.members : null) : data.members
 
   return (
     <div className="grid gap-4">
@@ -71,9 +86,10 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
         value={options.find((o) => o.value === key) ?? null}
         onChange={(o) => setKey(o?.value ?? null)}
       />
-      {project ? (
+      <FormError>{error}</FormError>
+      {project && members ? (
         <div onSubmit={() => rememberProject(workspace.slug, project.key)}>
-          <CreateIssueForm workspace={workspace} project={project} prefill={prefill} statuses={data.statuses} labels={data.labels} members={data.members} />
+          <CreateIssueForm workspace={workspace} project={project} prefill={prefill} statuses={data.statuses} labels={data.labels} members={members} />
         </div>
       ) : null}
     </div>

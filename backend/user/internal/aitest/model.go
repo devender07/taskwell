@@ -71,13 +71,13 @@ type caseFields struct {
 // --- realtime ---
 
 // scope is what a test write's realtime event needs, read in its transaction.
-type scope struct{ wsID, slug, identifier string }
+type scope struct{ wsID, slug, identifier, projectID string }
 
 func issueScope(ctx context.Context, tx pgx.Tx, issueID string) (scope, error) {
 	var s scope
-	err := tx.QueryRow(ctx, `select w.id::text, w.slug, p.key || '-' || i.number
+	err := tx.QueryRow(ctx, `select w.id::text, w.slug, p.key || '-' || i.number, p.id::text
 		from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id where i.id = $1`, issueID).
-		Scan(&s.wsID, &s.slug, &s.identifier)
+		Scan(&s.wsID, &s.slug, &s.identifier, &s.projectID)
 	if err != nil {
 		return s, fmt.Errorf("issue scope: %w", err)
 	}
@@ -90,14 +90,14 @@ func (s scope) runPath(runID string) string {
 	return realtime.Workspace(s.slug) + "/test-runs/" + runID
 }
 
-// publish tells the issue's workspace kind happened, touching paths.
+// publish tells the issue's workspace (those who can see its project) kind happened, touching paths.
 func publish(ctx context.Context, tx pgx.Tx, issueID, actorID, kind string, paths func(scope) []string) error {
 	s, err := issueScope(ctx, tx, issueID)
 	if err != nil {
 		return err
 	}
 	return realtime.Publish(ctx, tx, realtime.Event{Kind: kind, Workspace: s.slug, Actor: actorID,
-		Audience: realtime.ToWorkspace(s.wsID), Paths: paths(s)})
+		Audience: realtime.ToWorkspace(s.wsID), Paths: paths(s), Project: s.projectID})
 }
 
 func publishCases(ctx context.Context, tx pgx.Tx, issueID, actorID string) error {
@@ -119,12 +119,14 @@ func publishRun(ctx context.Context, tx pgx.Tx, issueID, runID, actorID string, 
 
 type issueRef struct{ id, identifier, title string }
 
-// issue returns the workspace's issue with the project key (or an old key) and number; nil when there's none.
-func (m *model) issue(ctx context.Context, workspaceID, key string, number int) (*issueRef, error) {
+// issue returns the workspace's issue with the project key (or an old key) and number; nil when there's none or the
+// viewer can't see it.
+func (m *model) issue(ctx context.Context, workspaceID, key string, number int, viewerID string) (*issueRef, error) {
 	var i issueRef
 	err := m.db.QueryRow(ctx, `select i.id::text, p.key || '-' || i.number, i.title
 		from issues i join projects p on p.id = i.project_id
-		where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3`, workspaceID, key, number).
+		where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3 and can_see_project(p.id, $4)`,
+		workspaceID, key, number, viewerID).
 		Scan(&i.id, &i.identifier, &i.title)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -174,10 +176,10 @@ func (m *model) cases(ctx context.Context, issueID string) ([]Case, error) {
 	return cs, nil
 }
 
-// testCase returns the workspace's saved case with the id; nil when there's none.
-func (m *model) testCase(ctx context.Context, workspaceID, id string) (*Case, error) {
+// testCase returns the workspace's saved case with the id; nil when there's none or the viewer can't see its issue.
+func (m *model) testCase(ctx context.Context, workspaceID, id, viewerID string) (*Case, error) {
 	c, err := scanCase(m.db.QueryRow(ctx, `select `+caseCols+` join issues i on i.id = c.issue_id
-		where c.id = $1 and i.workspace_id = $2 and c.deleted_at is null`, id, workspaceID))
+		where c.id = $1 and i.workspace_id = $2 and c.deleted_at is null and can_see_project(i.project_id, $3)`, id, workspaceID, viewerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -214,13 +216,14 @@ func (m *model) createCase(ctx context.Context, issueID, userID string, f caseFi
 	return id, err
 }
 
-// updateCase rewrites the workspace's case; errNotFound when there's none.
+// updateCase rewrites the workspace's case; errNotFound when there's none or the user can't see its issue.
 func (m *model) updateCase(ctx context.Context, workspaceID, id, userID string, f caseFields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueID string
 		err := tx.QueryRow(ctx, `update test_cases c set title = $3, steps = $4, expected = $5, script = null, playwright = null, updated_at = now()
 			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
-			returning c.issue_id::text`, id, workspaceID, f.Title, f.Steps, f.Expected).Scan(&issueID)
+			  and can_see_project(i.project_id, $6)
+			returning c.issue_id::text`, id, workspaceID, f.Title, f.Steps, f.Expected, userID).Scan(&issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNotFound
 		}
@@ -235,13 +238,14 @@ func (m *model) updateCase(ctx context.Context, workspaceID, id, userID string, 
 	return err
 }
 
-// deleteCase soft-deletes the workspace's case; errNotFound when there's none.
+// deleteCase soft-deletes the workspace's case; errNotFound when there's none or the user can't see its issue.
 func (m *model) deleteCase(ctx context.Context, workspaceID, id, userID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueID string
 		err := tx.QueryRow(ctx, `update test_cases c set deleted_at = now()
 			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
-			returning c.issue_id::text`, id, workspaceID).Scan(&issueID)
+			  and can_see_project(i.project_id, $3)
+			returning c.issue_id::text`, id, workspaceID, userID).Scan(&issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNotFound
 		}
@@ -257,14 +261,15 @@ func (m *model) deleteCase(ctx context.Context, workspaceID, id, userID string) 
 }
 
 // setScript saves the workspace's case's script and, when setCode, its Playwright code ("" clears it); a nil
-// script clears both. errNotFound when there's no such case.
+// script clears both. errNotFound when there's no such case the user can see.
 func (m *model) setScript(ctx context.Context, workspaceID, id, userID string, sc *script, setCode bool, code string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueID string
 		err := tx.QueryRow(ctx, `update test_cases c set script = $3,
 			  playwright = case when $3::jsonb is null or $4 then nullif($5, '') else c.playwright end
 			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
-			returning c.issue_id::text`, id, workspaceID, sc, setCode, code).Scan(&issueID)
+			  and can_see_project(i.project_id, $6)
+			returning c.issue_id::text`, id, workspaceID, sc, setCode, code, userID).Scan(&issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errNotFound
 		}
@@ -430,9 +435,10 @@ func (m *model) runs(ctx context.Context, issueID string, before *time.Time) ([]
 	return rs, false, nil
 }
 
-// run returns the workspace's run with the id and its results; nil when there's none.
-func (m *model) run(ctx context.Context, workspaceID, id string) (*RunDetail, error) {
-	r, err := scanRun(m.db.QueryRow(ctx, `select `+runCols+` where r.id = $1 and r.workspace_id = $2 group by r.id, i.id, p.id`, id, workspaceID))
+// run returns the workspace's run with the id and its results; nil when there's none or the viewer can't see its issue.
+func (m *model) run(ctx context.Context, workspaceID, id, viewerID string) (*RunDetail, error) {
+	r, err := scanRun(m.db.QueryRow(ctx, `select `+runCols+` where r.id = $1 and r.workspace_id = $2 and can_see_project(p.id, $3)
+		group by r.id, i.id, p.id`, id, workspaceID, viewerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -493,10 +499,11 @@ func (m *model) addLogs(ctx context.Context, d *RunDetail) error {
 	return nil
 }
 
-// runKind returns the workspace's run's kind; "" when there's none.
-func (m *model) runKind(ctx context.Context, workspaceID, id string) (string, error) {
+// runKind returns the workspace's run's kind; "" when there's none or the viewer can't see its issue.
+func (m *model) runKind(ctx context.Context, workspaceID, id, viewerID string) (string, error) {
 	var kind string
-	err := m.db.QueryRow(ctx, `select kind from test_runs where id = $1 and workspace_id = $2`, id, workspaceID).Scan(&kind)
+	err := m.db.QueryRow(ctx, `select kind from test_runs where id = $1 and workspace_id = $2 and `+runSeen,
+		id, workspaceID, viewerID).Scan(&kind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -544,10 +551,14 @@ func snapshotCases(ctx context.Context, tx pgx.Tx, runID, issueID, caseID string
 	return tag.RowsAffected(), nil
 }
 
-// lockRun locks the workspace's run and returns its kind, status and issue; errNotFound when there's none.
-func lockRun(ctx context.Context, tx pgx.Tx, workspaceID, runID string) (kind, status, issueID string, err error) {
-	err = tx.QueryRow(ctx, `select kind, status, issue_id::text from test_runs where id = $1 and workspace_id = $2 for update`,
-		runID, workspaceID).Scan(&kind, &status, &issueID)
+// runSeen is whether the viewer ($3) can see the issue of the run in test_runs.
+const runSeen = `can_see_project((select project_id from issues where id = test_runs.issue_id), $3)`
+
+// lockRun locks the workspace's run and returns its kind, status and issue; errNotFound when there's none or the
+// viewer can't see its issue.
+func lockRun(ctx context.Context, tx pgx.Tx, workspaceID, runID, viewerID string) (kind, status, issueID string, err error) {
+	err = tx.QueryRow(ctx, `select kind, status, issue_id::text from test_runs where id = $1 and workspace_id = $2 and `+runSeen+`
+		for update`, runID, workspaceID, viewerID).Scan(&kind, &status, &issueID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = errNotFound
 	}
@@ -558,7 +569,7 @@ func lockRun(ctx context.Context, tx pgx.Tx, workspaceID, runID string) (kind, s
 // errNotFound for a missing run or result, errAIRun or errFinished when it can't be marked.
 func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, status string, note *string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		kind, runStatus, issueID, err := lockRun(ctx, tx, workspaceID, runID)
+		kind, runStatus, issueID, err := lockRun(ctx, tx, workspaceID, runID, userID)
 		switch {
 		case err != nil:
 			return err
@@ -629,7 +640,7 @@ func finishRun(ctx context.Context, tx pgx.Tx, runID, actorID, status string, ms
 // cancel ends a manual or queued run, or asks the tester to stop an AI run in progress; errNotFound or errFinished.
 func (m *model) cancel(ctx context.Context, workspaceID, runID, userID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		kind, status, issueID, err := lockRun(ctx, tx, workspaceID, runID)
+		kind, status, issueID, err := lockRun(ctx, tx, workspaceID, runID, userID)
 		switch {
 		case err != nil:
 			return err
@@ -1040,11 +1051,13 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 	return id, nil
 }
 
-// liveTester returns the tester URL of the workspace's AI or replay run while it's generating or running, else "".
-func (m *model) liveTester(ctx context.Context, workspaceID, id string) (string, error) {
+// liveTester returns the tester URL of the workspace's AI or replay run while it's generating or running and the
+// viewer can see its issue, else "".
+func (m *model) liveTester(ctx context.Context, workspaceID, id, viewerID string) (string, error) {
 	var u string
 	err := m.db.QueryRow(ctx, `select coalesce(tester_url, '') from test_runs
-		where id = $1 and workspace_id = $2 and kind in ('ai', 'replay') and status in ('generating', 'running')`, id, workspaceID).Scan(&u)
+		where id = $1 and workspace_id = $2 and kind in ('ai', 'replay') and status in ('generating', 'running') and `+runSeen,
+		id, workspaceID, viewerID).Scan(&u)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -1344,10 +1357,11 @@ func (m *model) createSession(ctx context.Context, id, wsID, issueID, userID, te
 }
 
 // session returns the tester URL and token of the user's open session in the workspace; errNotFound when there's
-// none (another user's, closed, or over its time limit).
+// none (another user's, closed, over its time limit, or on an issue they can no longer see).
 func (m *model) session(ctx context.Context, wsID, id, userID string) (testerURL, token string, err error) {
-	err = m.db.QueryRow(ctx, `select tester_url, token from browser_sessions where id = $1 and workspace_id = $2
-		and started_by = $3 and closed_at is null and created_at > now() - make_interval(secs => $4)`,
+	err = m.db.QueryRow(ctx, `select tester_url, token from browser_sessions b where id = $1 and workspace_id = $2
+		and started_by = $3 and closed_at is null and created_at > now() - make_interval(secs => $4)
+		and can_see_project((select project_id from issues where id = b.issue_id), $3)`,
 		id, wsID, userID, sessionMax.Seconds()).Scan(&testerURL, &token)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", errNotFound

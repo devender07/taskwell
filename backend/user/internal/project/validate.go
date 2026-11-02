@@ -11,6 +11,10 @@ import (
 
 var keyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,4}$`)
 
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func isUUID(s string) bool { return uuidRe.MatchString(s) }
+
 func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
 
 func checkName(s string) string {

@@ -2,6 +2,7 @@ import { Link, createFileRoute, useLoaderData, useNavigate } from '@tanstack/rea
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
+import { LockIcon } from '@tether/shared/icons'
 import { Tabs } from '@tether/shared/tabs'
 import { can, type Project } from '@/api'
 import { loaderApi } from '@/realtime'
@@ -57,7 +58,10 @@ function Projects() {
                 <Link to="/$workspace/projects/$key" params={{ workspace: workspace.slug, key: p.key }} className="project-row">
                   <span className="project-key flex-noshrink" style={{ width: 56 }}>{p.key}</span>
                   <div className="grid flex-grow" style={{ minWidth: 0 }}>
-                    <span className="text-label text-primary ellipsis">{p.name}</span>
+                    <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                      {p.private ? <LockIcon size={14} className="text-secondary flex-noshrink" role="img" aria-hidden={false} aria-label="Private" /> : null}
+                      <span className="text-label text-primary ellipsis">{p.name}</span>
+                    </span>
                     {p.description ? <span className="text-caption text-secondary ellipsis">{p.description}</span> : null}
                   </div>
                 </Link>

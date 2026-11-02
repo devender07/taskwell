@@ -15,11 +15,14 @@ import (
 // Lengths count UTF-16 units to match JS String.length. Callers pass names and titles trimmed.
 
 var (
-	colorRe      = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	colorRe      = regexp.MustCompile(`^#[0-9a-f]{6}([0-9a-f]{2})?$`) // #rrggbb, or #rrggbbaa with opacity
 	dateRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
 	uuidRe       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
+	// typeIcons are the status type icon keys, as @tether/shared/icons draws them.
+	typeIcons = []string{"circle", "circle-dashed", "circle-half", "circle-check", "circle-x", "eye", "refresh", "pause",
+		"clock", "flag", "star", "bug", "rocket", "alert", "lock", "message"}
 )
 
 func jsLen(s string) int { return doc.Len(s) }
@@ -89,9 +92,19 @@ func checkStatusName(s string) string {
 	return ""
 }
 
-func checkStatusType(t *string) string {
-	if t != nil && jsLen(*t) > 30 {
-		return "Type must be 30 characters or fewer."
+func checkTypeName(s string) string {
+	if s == "" {
+		return "Type name is required."
+	}
+	if jsLen(s) > 30 {
+		return "Type name must be 30 characters or fewer."
+	}
+	return ""
+}
+
+func checkTypeIcon(s string) string {
+	if !slices.Contains(typeIcons, s) {
+		return "Choose an icon."
 	}
 	return ""
 }

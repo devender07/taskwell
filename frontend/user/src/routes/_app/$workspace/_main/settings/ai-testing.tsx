@@ -21,7 +21,7 @@ function AiTestingSettings() {
   const { usage, sites, accounts } = Route.useLoaderData()
   const manage = can(workspace, 'ai_tests.manage')
   return (
-    <main className="grid gap-8 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-8 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
         <h1 className="text-h2">AI testing</h1>
         <p className="text-body-sm text-secondary">Where AI tests run, the accounts they sign in with, and this month's spend.</p>

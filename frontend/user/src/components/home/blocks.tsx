@@ -64,7 +64,7 @@ export function NeedsAttention({ workspace, issues }: { workspace: string; issue
           {issues.slice(0, 8).map((i) => (
             <li key={i.id}>
               <IssueLine workspace={workspace} identifier={i.identifier}>
-                <StatusIcon category={i.status.category} label={i.status.name} />
+                <StatusIcon status={i.status} label={i.status.name} />
                 <span className="issue-id flex-noshrink">{i.identifier}</span>
                 <span className="text-label text-primary ellipsis flex-grow">{i.title}</span>
                 <span className={`text-caption flex-noshrink ${overdue(i.due_date, i.status.category) ? 'text-accent' : 'text-secondary'}`}>
@@ -105,7 +105,7 @@ export function AssignedToMe({ workspace, issues, statuses, others }: AssignedPr
         groups.map((g) => (
           <div key={g.key} role="group" aria-label={`${g.label}, ${g.issues.length}`}>
             <div className="issue-group-header">
-              {g.status ? <StatusIcon category={g.status.category} /> : null}
+              {g.status ? <StatusIcon status={g.status} /> : null}
               <span className="text-label">{g.label}</span>
               <span className="text-caption text-secondary">{g.issues.length}</span>
             </div>
@@ -329,7 +329,7 @@ export function RecentlyViewed({ workspace, issues }: { workspace: string; issue
             return (
               <li key={r.identifier}>
                 <IssueLine workspace={workspace} identifier={r.identifier}>
-                  {issue ? <StatusIcon category={issue.status.category} label={issue.status.name} /> : null}
+                  {issue ? <StatusIcon status={issue.status} label={issue.status.name} /> : null}
                   <span className="issue-id flex-noshrink">{r.identifier}</span>
                   <span className="text-label text-primary ellipsis flex-grow">{issue?.title ?? r.title}</span>
                 </IssueLine>

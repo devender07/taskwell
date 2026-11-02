@@ -138,7 +138,7 @@ function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }
     <li className="flex items-start gap-2 text-caption text-secondary" style={{ paddingInline: 16 }}>
       <span className="inline-grid place-center flex-noshrink" style={{ width: 20, height: 20 }}>
         {event.kind === 'status' ? (
-          <StatusIcon category={event.data.to.category} />
+          <StatusIcon status={event.data.to} />
         ) : event.kind === 'pr_linked' || event.kind === 'pr_unlinked' ? (
           <ProviderIcon provider={event.data.provider} />
         ) : (

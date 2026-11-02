@@ -33,7 +33,7 @@ function RefRow({ workspace, issue, children }: { workspace: string; issue: Issu
   return (
     <li className="flex items-center" style={{ paddingRight: children ? 16 : 0 }}>
       <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row flex-grow" style={{ minWidth: 0 }}>
-        <StatusIcon category={issue.status.category} label={issue.status.name} />
+        <StatusIcon status={issue.status} label={issue.status.name} />
         <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
         <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>
         <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>

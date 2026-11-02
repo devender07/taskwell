@@ -210,7 +210,7 @@ func TestRecordedRuns(t *testing.T) {
 		t.Errorf("cancel: %s", body)
 	}
 	do("DELETE", "/test-cases/"+caseID+"/script", nil, 204)
-	if c, err := m.testCase(ctx, wsID, caseID); err != nil || c.Recorded || c.Playwright {
+	if c, err := m.testCase(ctx, wsID, caseID, ann); err != nil || c.Recorded || c.Playwright {
 		t.Errorf("cleared case %+v %v", c, err)
 	}
 }
@@ -346,7 +346,7 @@ func TestRunner(t *testing.T) {
 	}
 	r.execute(ctx, runID)
 
-	d, err := m.run(ctx, wsID, runID)
+	d, err := m.run(ctx, wsID, runID, ann)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestRunner(t *testing.T) {
 		t.Fatalf("claim replay run: %q %v", id, err)
 	}
 	r.execute(ctx, replayID)
-	d, err = m.run(ctx, wsID, replayID)
+	d, err = m.run(ctx, wsID, replayID, ann)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestRunner(t *testing.T) {
 			t.Fatalf("claim replay run: %q %v", got, err)
 		}
 		r.execute(ctx, id)
-		d, err := m.run(ctx, wsID, id)
+		d, err := m.run(ctx, wsID, id, ann)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -249,7 +249,10 @@ export function SmartAutocomplete({
                     onPointerMove={() => setActive(i)}
                     onClick={() => !o.disabled && choose(o)}
                   >
-                    <span className="ellipsis"><Highlight text={o.label} query={term} /></span>
+                    <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                      {o.icon}
+                      <span className="ellipsis"><Highlight text={o.label} query={term} /></span>
+                    </span>
                     {o.hint ? <span className="autocomplete-hint ellipsis">{o.hint}</span> : null}
                   </li>
                 ))}

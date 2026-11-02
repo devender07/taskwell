@@ -24,6 +24,14 @@ func checkEmail(v string) string {
 	return ""
 }
 
+// checkWorkspaceName is the sign-up's optional workspace name; the same limit as naming a workspace.
+func checkWorkspaceName(s string) string {
+	if jsLen(s) > 50 {
+		return "Workspace name must be 50 characters or fewer."
+	}
+	return ""
+}
+
 func checkName(v string) string {
 	s := strings.TrimSpace(v)
 	if s == "" {

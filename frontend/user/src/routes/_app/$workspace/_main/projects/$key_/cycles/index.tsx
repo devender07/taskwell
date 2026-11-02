@@ -1,4 +1,5 @@
 import { Link, createFileRoute, notFound, redirect, useLoaderData } from '@tanstack/react-router'
+import { BackLink } from '@tether/shared/back-link'
 import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
@@ -43,9 +44,9 @@ function CyclesPage() {
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
-        <Link to="/$workspace/projects/$key" params={{ workspace: workspace.slug, key: project.key }} className="text-caption text-secondary">
-          ← {project.name}
-        </Link>
+        <BackLink to="/$workspace/projects/$key" params={{ workspace: workspace.slug, key: project.key }}>
+          {project.name}
+        </BackLink>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-h2">Cycles</h1>
           {manage && cycles.length > 0 ? <Button onClick={() => setCreating(true)}>New cycle</Button> : null}

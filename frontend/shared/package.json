@@ -13,6 +13,8 @@
     "./validate": "./src/validate/validate.ts",
     "./time": "./src/time/relative.ts",
     "./logo": "./src/components/logo/logo.tsx",
+    "./icons": "./src/components/icons/icons.tsx",
+    "./back-link": "./src/components/back-link/back-link.tsx",
     "./tabs": "./src/components/tabs/tabs.tsx",
     "./checkbox": "./src/components/checkbox/checkbox.tsx",
     "./icon-button": "./src/components/icon-button/icon-button.tsx",
@@ -23,6 +25,7 @@
     "./smart-autocomplete": "./src/components/smart-autocomplete/smart-autocomplete.tsx",
     "./match": "./src/components/smart-autocomplete/match.ts",
     "./date-picker": "./src/components/date-picker/date-picker.tsx",
+    "./color-picker": "./src/components/color-picker/color-picker.tsx",
     "./rich-editor": "./src/components/rich-editor/rich-editor.tsx",
     "./rich-text": "./src/components/rich-editor/rich-text.tsx",
     "./realtime": "./src/realtime/paths.ts"

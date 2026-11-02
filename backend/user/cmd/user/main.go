@@ -100,7 +100,7 @@ func main() {
 		fatal("MAIL_MAX_ATTEMPTS must be a number of at least 1")
 	}
 	mailer := mail.New(pool, cfg, duration("MAIL_TIMEOUT", 20*time.Second), duration("MAIL_RETRY_BASE", 30*time.Second), maxAttempts)
-	authH := auth.New(pool, cfg, mailer, secret, workspace.CreateDefault)
+	authH := auth.New(pool, cfg, mailer, secret, workspace.CreateFirst)
 	authH.Register(mux)
 	// Every handler but auth's own signs requests in through this, so the access log knows the user.
 	authenticate := func(r *http.Request) (string, error) {

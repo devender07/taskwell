@@ -136,7 +136,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
         <>
           <Property label="Status">
             <span className="flex items-center gap-2">
-              <StatusIcon category={issue.status.category} />
+              <StatusIcon status={issue.status} />
               {issue.status.name}
             </span>
           </Property>

@@ -27,6 +27,7 @@ var (
 	errLastStatus = errors.New("last status")
 	errLinked     = errors.New("issues already linked")
 	errNoCycle    = errors.New("cycle not in the issue's project")
+	errNoType     = errors.New("status type not in the workspace")
 )
 
 // parentError is the message for a parent that breaks the sub-issue rules.
@@ -39,9 +40,9 @@ type Status struct {
 	Name     string `json:"name"`
 	Category string `json:"category"`
 	Position int    `json:"position"`
-	// Type is the status's own label for its category ("Reopen"); nil means the category's name. Only the statuses
-	// endpoints fill it.
-	Type *string `json:"type,omitempty"`
+	// Icon and Color are the status's type's; nil when it has no type (its category's icon).
+	Icon  *string `json:"icon"`
+	Color *string `json:"color"`
 }
 
 type Label struct {
@@ -128,7 +129,7 @@ type fields struct {
 // refJSON is an issue ref as JSON, selected with refFrom.
 const (
 	refJSON = `json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title,
-		'status', json_build_object('id', rs.id, 'name', rs.name, 'category', rs.category, 'position', rs.position),
+		'status', status_json(rs),
 		'assignee', (select json_build_object('id', ru.id, 'name', ru.name) from users ru where ru.id = r.assignee_id))`
 	refFrom = ` from issues r join projects rp on rp.id = r.project_id join statuses rs on rs.id = r.status_id`
 	// cycleJSON is the issue's cycle ref; its state matches cycle's stateSQL.
@@ -146,7 +147,7 @@ const (
 	issueHead = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name,
 	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, `
 	issueTail = `
-	s.id::text, s.name, s.category, s.position, a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
+	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
 	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation
@@ -158,7 +159,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var i Issue
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
-		&i.Status.ID, &i.Status.Name, &i.Status.Category, &i.Status.Position, &aID, &aName, &i.Priority, &i.DueDate,
+		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
 		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
@@ -176,6 +177,7 @@ type model struct{ db *pgxpool.Pool }
 // names are what an issue's realtime events need, read in the change's transaction.
 type names struct {
 	wsID, slug, identifier, key string
+	projectID                   string   // its project's events go only to who can see it (realtime.Event.Project)
 	cycle                       *int     // its cycle's number
 	related                     []string // identifiers of its parent, sub-issues and linked issues: their pages show it
 }
@@ -183,25 +185,29 @@ type names struct {
 func issueNames(ctx context.Context, tx pgx.Tx, id string) (names, error) {
 	var n names
 	err := tx.QueryRow(ctx,
-		`select w.id::text, w.slug, p.key || '-' || i.number, p.key, (select number from cycles where id = i.cycle_id),
+		`select w.id::text, w.slug, p.key || '-' || i.number, p.key, p.id::text, (select number from cycles where id = i.cycle_id),
 		        array(select rp.key || '-' || r.number from issues r join projects rp on rp.id = r.project_id
-		              where r.id = i.parent_id or r.parent_id = i.id
+		              where (r.id = i.parent_id or r.parent_id = i.id
 		                 or r.id in (select blocked_id from issue_links where blocker_id = i.id
 		                             union select blocker_id from issue_links where blocked_id = i.id))
+		                and (r.project_id = i.project_id or not rp.private))
 		 from issues i join projects p on p.id = i.project_id join workspaces w on w.id = i.workspace_id
-		 where i.id = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.cycle, &n.related)
+		 where i.id = $1`, id).Scan(&n.wsID, &n.slug, &n.identifier, &n.key, &n.projectID, &n.cycle, &n.related)
 	if err != nil {
 		return n, fmt.Errorf("issue names: %w", err)
 	}
 	return n, nil
 }
 
-// event is kind for the issue's workspace, by the actor, with paths.
+// event is kind for the issue's workspace (only who can see its project), by the actor, with paths.
 func (n names) event(kind, actorID string, paths ...string) realtime.Event {
-	return realtime.Event{Kind: kind, Workspace: n.slug, Actor: actorID, Audience: realtime.ToWorkspace(n.wsID), Paths: paths}
+	return realtime.Event{Kind: kind, Workspace: n.slug, Actor: actorID, Audience: realtime.ToWorkspace(n.wsID), Paths: paths,
+		Project: n.projectID}
 }
 
 // relatedPaths are the pages of the issue's parent, sub-issues and linked issues, and its cycle's (which count it).
+// ponytail: a linked issue in another private project isn't told (the event's audience is this issue's project), so
+// its page shows this one stale until reloaded; publish per related project if that matters.
 func (n names) relatedPaths() []string {
 	ps := make([]string, len(n.related))
 	for i, r := range n.related {
@@ -225,10 +231,11 @@ func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, ns ...na
 
 // --- issues ---
 
-// projectID returns the id of the project with the key; "" when there's none.
-func (m *model) projectID(ctx context.Context, workspaceID, key string) (string, error) {
+// projectID returns the id of the project with the key; "" when there's none or the viewer can't see it.
+func (m *model) projectID(ctx context.Context, workspaceID, key, viewerID string) (string, error) {
 	var id string
-	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and key = canonical_key($1, $2)`, workspaceID, key).Scan(&id)
+	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and key = canonical_key($1, $2)
+		and can_see_project(id, $3)`, workspaceID, key, viewerID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -253,9 +260,9 @@ func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
 	return m.issues(ctx, `i.project_id = $1 order by i.number desc`, projectID)
 }
 
-// assigned returns the user's assigned issues in the workspace's active projects, newest first.
+// assigned returns the user's assigned issues in the workspace's active projects they can see, newest first.
 func (m *model) assigned(ctx context.Context, workspaceID, userID string) ([]Issue, error) {
-	return m.issues(ctx, `i.workspace_id = $1 and i.assignee_id = $2 and p.archived_at is null
+	return m.issues(ctx, `i.workspace_id = $1 and i.assignee_id = $2 and p.archived_at is null and can_see_project(p.id, $2)
 		order by i.created_at desc, i.id desc`, workspaceID, userID)
 }
 
@@ -272,27 +279,27 @@ func (m *model) issues(ctx context.Context, where string, args ...any) ([]Issue,
 	return is, nil
 }
 
-// get returns the issue with the project key and number; nil when there's none.
+// get returns the issue with the project key and number; nil when there's none or the viewer can't see it.
 // The key may be a project's old key (canonical_key resolves aliases), so issue URLs survive key changes.
-func (m *model) get(ctx context.Context, workspaceID, key string, number int) (*Issue, error) {
-	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3`,
-		workspaceID, key, number))
+func (m *model) get(ctx context.Context, workspaceID, key string, number int, viewerID string) (*Issue, error) {
+	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3
+		and can_see_project(p.id, $4)`, workspaceID, key, number, viewerID))
 }
 
 func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
 	return oneIssue(m.db.QueryRow(ctx, `select `+issueCols+` where i.id = $1`, id))
 }
 
-// relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first),
-// whether the user watches it and its pull requests.
+// relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first)
+// that the user can see, whether the user watches it and its pull requests.
 func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDetail, error) {
 	d := IssueDetail{Issue: i}
 	err := m.db.QueryRow(ctx,
 		`select coalesce((select json_agg(`+refJSON+` order by r.number)`+refFrom+` where r.parent_id = $1), '[]'),
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
-		                  join issue_links l on l.blocked_id = r.id where l.blocker_id = $1), '[]'),
+		                  join issue_links l on l.blocked_id = r.id where l.blocker_id = $1 and can_see_project(r.project_id, $2)), '[]'),
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
-		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1), '[]'),
+		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1 and can_see_project(r.project_id, $2)), '[]'),
 		        exists(select 1 from issue_watchers where issue_id = $1 and user_id = $2),
 		        coalesce((select json_agg(json_build_object('provider', pr.provider, 'repo', pr.repo, 'number', pr.number,
 		                    'url', pr.url, 'title', pr.title, 'branch', pr.branch, 'author', pr.author, 'state', pr.state,
@@ -305,15 +312,15 @@ func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDe
 	return d, nil
 }
 
-// search returns up to 20 of the workspace's issues, limited to the project key unless it's "": with q "" the
-// newest; otherwise the issue key-number first, then those whose title contains q, newest first.
-func (m *model) search(ctx context.Context, workspaceID, project, q, key string, number int) ([]IssueRef, error) {
+// search returns up to 20 of the workspace's issues the viewer can see, limited to the project key unless it's "":
+// with q "" the newest; otherwise the issue key-number first, then those whose title contains q, newest first.
+func (m *model) search(ctx context.Context, workspaceID, viewerID, project, q, key string, number int) ([]IssueRef, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+refJSON+refFrom+`
-		 where r.workspace_id = $1 and ($2 = '' or rp.key = canonical_key($1, $2))
+		 where r.workspace_id = $1 and ($2 = '' or rp.key = canonical_key($1, $2)) and can_see_project(rp.id, $7)
 		   and ($3 = '' or rp.key = canonical_key($1, $4) and r.number = $5 or r.title ilike '%' || $6 || '%')
 		 order by rp.key = canonical_key($1, $4) and r.number = $5 desc, r.created_at desc, r.id desc limit 20`,
-		workspaceID, project, q, key, number, escapeLike(q))
+		workspaceID, project, q, key, number, escapeLike(q), viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("search issues: %w", err)
 	}
@@ -347,21 +354,22 @@ const (
 		where i.workspace_id = $1 and p.key = (select canonical_key($1, $2)) and i.number = $3)`
 )
 
-// searchAll finds the workspace's issues (up to 12) and projects (up to 8) for the palette. Issues match on their
+// searchAll finds the workspace's issues (up to 12) and projects (up to 8) the viewer can see, for the palette. Issues match on their
 // exact identifier first, then title (substring, or a trigram word match for typos), then description text; each
 // kind newest first, with archived projects' issues after the rest. Projects match on key, then name. With q ""
 // it returns the 8 most recently updated issues and the first 8 active projects.
-func (m *model) searchAll(ctx context.Context, workspaceID, q, key string, number int) ([]Hit, []ProjectHit, error) {
+func (m *model) searchAll(ctx context.Context, workspaceID, viewerID, q, key string, number int) ([]Hit, []ProjectHit, error) {
 	var hits []Hit
 	var projects []ProjectHit
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueSQL, projectSQL string
+		// The viewer is the last argument.
 		args, projectArgs := []any{workspaceID}, []any{workspaceID}
 		if q == "" {
 			issueSQL = `select ` + hitJSON + refFrom + ` cross join (select 0) m(rank)
-				where r.workspace_id = $1 order by r.updated_at desc, r.id desc limit 8`
+				where r.workspace_id = $1 and can_see_project(rp.id, $2) order by r.updated_at desc, r.id desc limit 8`
 			projectSQL = `select key, name, false from projects where workspace_id = $1 and archived_at is null
-				order by lower(name), key limit 8`
+				and can_see_project(id, $2) order by lower(name), key limit 8`
 		} else {
 			// <% uses the trigram indexes at this threshold; word_similarity's default (0.6) misses most typos.
 			if _, err := tx.Exec(ctx, `select set_config('pg_trgm.word_similarity_threshold', '0.3', true)`); err != nil {
@@ -370,17 +378,19 @@ func (m *model) searchAll(ctx context.Context, workspaceID, q, key string, numbe
 			issueSQL = `select ` + hitJSON + refFrom + `
 				cross join lateral (select case when r.id = ` + identified + ` then 1
 				  when r.title ilike $4 or $5 <% r.title then 2 else 3 end) m(rank)
-				where r.workspace_id = $1
+				where r.workspace_id = $1 and can_see_project(rp.id, $6)
 				  and (r.id = ` + identified + ` or r.title ilike $4 or $5 <% r.title or r.description_text ilike $4)
 				order by m.rank = 1 desc, rp.archived_at is not null, m.rank, r.updated_at desc, r.id desc limit 12`
 			projectSQL = `select key, name, archived_at is not null from projects
-				where workspace_id = $1 and (key = (select canonical_key($1, upper($3))) or name ilike $2 or $3 <% name)
+				where workspace_id = $1 and can_see_project(id, $4)
+				  and (key = (select canonical_key($1, upper($3))) or name ilike $2 or $3 <% name)
 				order by key = (select canonical_key($1, upper($3))) desc, archived_at is not null, name ilike $2 desc,
 				  lower(name), key limit 8`
 			pattern := "%" + escapeLike(q) + "%"
 			args = append(args, key, number, pattern, q)
 			projectArgs = append(projectArgs, pattern, q)
 		}
+		args, projectArgs = append(args, viewerID), append(projectArgs, viewerID)
 		rows, err := tx.Query(ctx, issueSQL, args...)
 		if err != nil {
 			return err
@@ -406,19 +416,22 @@ func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// checkRefs returns field errors for a status, assignee or labels that aren't the workspace's.
-func (m *model) checkRefs(ctx context.Context, workspaceID string, f fields) (map[string]string, error) {
-	var statusOK, assigneeOK bool
+// checkRefs returns field errors for a status, assignee or labels that aren't the workspace's, or an assignee who
+// can't see the project with the key. keep is the issue's current assignee, who stays even when they can't.
+func (m *model) checkRefs(ctx context.Context, workspaceID, key, keep string, f fields) (map[string]string, error) {
+	var statusOK, assigneeOK, seesOK bool
 	var labels int
 	assignee := f.assigneeID
-	if assignee != nil && *assignee == "" {
+	if assignee != nil && (*assignee == "" || *assignee == keep) {
 		assignee = nil
 	}
 	err := m.db.QueryRow(ctx,
 		`select $2::uuid is null or exists(select 1 from statuses where workspace_id = $1 and id = $2),
 		        $3::uuid is null or exists(select 1 from workspace_members where workspace_id = $1 and user_id = $3),
+		        $3::uuid is null or coalesce(can_see_project((select id from projects where workspace_id = $1
+		          and key = canonical_key($1, $5)), $3), false),
 		        (select count(*) from labels where workspace_id = $1 and id = any($4::uuid[]))`,
-		workspaceID, f.statusID, assignee, f.labelIDs).Scan(&statusOK, &assigneeOK, &labels)
+		workspaceID, f.statusID, assignee, f.labelIDs, key).Scan(&statusOK, &assigneeOK, &seesOK, &labels)
 	if err != nil {
 		return nil, fmt.Errorf("check issue refs: %w", err)
 	}
@@ -426,8 +439,11 @@ func (m *model) checkRefs(ctx context.Context, workspaceID string, f fields) (ma
 	if !statusOK {
 		errs["status_id"] = "Choose a status."
 	}
-	if !assigneeOK {
+	switch {
+	case !assigneeOK:
 		errs["assignee_id"] = "Choose someone in this workspace."
+	case !seesOK:
+		errs["assignee_id"] = "They can't see this project."
 	}
 	if labels != len(f.labelIDs) {
 		errs["label_ids"] = "Choose labels from this workspace."
@@ -446,7 +462,8 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		var archived bool
 		if err := tx.QueryRow(ctx,
 			`update projects set issue_seq = issue_seq + 1 where workspace_id = $1 and key = canonical_key($1, $2)
-			 returning id::text, issue_seq, archived_at is not null`, workspaceID, key).Scan(&projectID, &number, &archived); err != nil {
+			   and can_see_project(id, $3)
+			 returning id::text, issue_seq, archived_at is not null`, workspaceID, key, userID).Scan(&projectID, &number, &archived); err != nil {
 			return err
 		}
 		if archived {
@@ -467,7 +484,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			return err
 		}
 		if f.parent != nil {
-			if err := setParent(ctx, tx, id, *f.parent); err != nil {
+			if err := setParent(ctx, tx, id, *f.parent, userID); err != nil {
 				return err
 			}
 		}
@@ -550,7 +567,7 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 		}
 	}
 	if f.parent != nil {
-		if err := setParent(ctx, tx, id, *f.parent); err != nil {
+		if err := setParent(ctx, tx, id, *f.parent, actorID); err != nil {
 			return err
 		}
 	}
@@ -619,7 +636,7 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 	var s snapshot
 	err := tx.QueryRow(ctx,
-		`select i.title, i.description, s.id::text, s.name, s.category,
+		`select i.title, i.description, status_json(s),
 		        (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = i.assignee_id),
 		        i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 		        coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
@@ -630,7 +647,7 @@ func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 		        (select json_build_object('number', cy.number, 'name', coalesce(cy.name, 'Cycle ' || cy.number))
 		         from cycles cy where cy.id = i.cycle_id)
 		 from issues i join statuses s on s.id = i.status_id where i.id = $1 for update of i`, id).
-		Scan(&s.title, &s.description, &s.status.ID, &s.status.Name, &s.status.Category, &s.assignee, &s.priority, &s.dueDate,
+		Scan(&s.title, &s.description, &s.status, &s.assignee, &s.priority, &s.dueDate,
 			&s.labels, &s.parent, &s.projectID, &s.cycleID, &s.cycle)
 	return s, err
 }
@@ -702,10 +719,10 @@ func addLinkEvents(ctx context.Context, tx pgx.Tx, blockerID, blockedID, actorID
 	return nil
 }
 
-// setParent makes the issue with the id a sub-issue of the one with the identifier in the same workspace, or
-// top-level when identifier is "". Returns a parentError when that breaks the rules. Locking both issues first
+// setParent makes the issue with the id a sub-issue of the one with the identifier in the same workspace that the
+// actor can see, or top-level when identifier is "". Returns a parentError when that breaks the rules. Locking both issues first
 // keeps concurrent changes from nesting deeper than one level.
-func setParent(ctx context.Context, tx pgx.Tx, id, identifier string) error {
+func setParent(ctx context.Context, tx pgx.Tx, id, identifier, actorID string) error {
 	if identifier == "" {
 		_, err := tx.Exec(ctx, `update issues set parent_id = null where id = $1`, id)
 		return err
@@ -715,7 +732,8 @@ func setParent(ctx context.Context, tx pgx.Tx, id, identifier string) error {
 	if ok {
 		err := tx.QueryRow(ctx,
 			`select i.id::text from issues i join projects p on p.id = i.project_id join issues c on c.workspace_id = i.workspace_id
-			 where c.id = $1 and p.key = canonical_key(c.workspace_id, $2) and i.number = $3`, id, key, number).Scan(&parentID)
+			 where c.id = $1 and p.key = canonical_key(c.workspace_id, $2) and i.number = $3 and can_see_project(p.id, $4)`,
+			id, key, number, nullable(actorID)).Scan(&parentID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -809,18 +827,19 @@ func (m *model) unlink(ctx context.Context, a, b, actorID string) (bool, error) 
 	return found, nil
 }
 
-// publishLink tells the workspace both linked issues' pages and timelines, and the activity feed, changed.
+// publishLink tells who can see each linked issue that its page and timeline, and the activity feed, changed.
 func publishLink(ctx context.Context, tx pgx.Tx, a, b, actorID string) error {
-	var paths []string
-	var n names
 	for _, id := range []string{a, b} {
-		var err error
-		if n, err = issueNames(ctx, tx, id); err != nil {
+		n, err := issueNames(ctx, tx, id)
+		if err != nil {
 			return err
 		}
-		paths = append(paths, realtime.Issue(n.slug, n.identifier), realtime.Timeline(n.slug, n.identifier))
+		if err := realtime.Publish(ctx, tx, n.event("issue.updated", actorID, realtime.Issue(n.slug, n.identifier),
+			realtime.Timeline(n.slug, n.identifier), realtime.Activity(n.slug))); err != nil {
+			return err
+		}
 	}
-	return realtime.Publish(ctx, tx, n.event("issue.updated", actorID, append(paths, realtime.Activity(n.slug))...))
+	return nil
 }
 
 func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labelIDs []string) error {
@@ -1032,10 +1051,15 @@ func scanComment(row pgx.Row) (Comment, error) {
 // timelinePage caps a timeline page's comments and events together.
 const timelinePage = 10
 
-// timeline returns a page of the issue's comments and events: the newest timelinePage created before before (all
-// when nil), each oldest first, and whether there are older ones. A page never splits a created_at that's shared
+// linkSeen is whether the viewer ($N) can see the other issue of the issue event e when it's a link (relations show
+// only on the side the viewer can see); a deleted other issue still shows.
+const linkSeen = `(e.kind <> 'link' or coalesce(can_see_project((select project_id from issues
+	where id = (e.data #>> '{issue,id}')::uuid), $%d), true))`
+
+// timeline returns a page of the issue's comments and events as the viewer sees them: the newest timelinePage created
+// before before (all when nil), each oldest first, and whether there are older ones. A page never splits a created_at that's shared
 // (one change logs several events at the same time), so the next page, before its oldest item, misses none.
-func (m *model) timeline(ctx context.Context, issueID string, before *time.Time) ([]Comment, []Event, bool, error) {
+func (m *model) timeline(ctx context.Context, issueID, viewerID string, before *time.Time) ([]Comment, []Event, bool, error) {
 	rows, err := m.db.Query(ctx, `select `+commentCols+` where c.issue_id = $1 and ($2::timestamptz is null or c.created_at < $2)
 		order by c.created_at desc, c.id desc limit $3`, issueID, before, timelinePage+1)
 	if err != nil {
@@ -1048,8 +1072,8 @@ func (m *model) timeline(ctx context.Context, issueID string, before *time.Time)
 	rows, err = m.db.Query(ctx,
 		`select e.id::text, (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = e.actor_id),
 		        e.kind, e.data, e.created_at
-		 from issue_events e where e.issue_id = $1 and ($2::timestamptz is null or e.created_at < $2)
-		 order by e.created_at desc, e.id desc limit $3`, issueID, before, timelinePage+1)
+		 from issue_events e where e.issue_id = $1 and ($2::timestamptz is null or e.created_at < $2) and `+fmt.Sprintf(linkSeen, 4)+`
+		 order by e.created_at desc, e.id desc limit $3`, issueID, before, timelinePage+1, viewerID)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("list events: %w", err)
 	}
@@ -1111,25 +1135,25 @@ type Activity struct {
 const activityPage = 30
 
 // activity returns a page of the workspace's events (but description edits) and comments on issues in active
-// projects, newest first: the newest activityPage created before before (all when nil), and whether there are older
+// projects the viewer can see, newest first: the newest activityPage created before before (all when nil), and whether there are older
 // ones. Like the timeline, a page never splits a shared created_at.
 // ponytail: the created_at indexes are workspace-wide, so a quiet workspace's page scans other workspaces' newer rows;
 // denormalise workspace_id onto issue_events and comments with (workspace_id, created_at) indexes when that shows up.
-func (m *model) activity(ctx context.Context, workspaceID string, before *time.Time) ([]Activity, bool, error) {
-	const issue = `json_build_object('identifier', p.key || '-' || i.number, 'title', i.title, 'status',
-		json_build_object('id', s.id, 'name', s.name, 'category', s.category, 'position', s.position))`
+func (m *model) activity(ctx context.Context, workspaceID, viewerID string, before *time.Time) ([]Activity, bool, error) {
+	const issue = `json_build_object('identifier', p.key || '-' || i.number, 'title', i.title, 'status', status_json(s))`
 	const actor = `(select json_build_object('id', u.id, 'name', u.name) from users u where u.id = %s)`
 	const from = ` join issues i on i.id = %s.issue_id join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
-		 where i.workspace_id = $1 and p.archived_at is null and ($2::timestamptz is null or %[1]s.created_at < $2)`
+		 where i.workspace_id = $1 and p.archived_at is null and ($2::timestamptz is null or %[1]s.created_at < $2)
+		   and can_see_project(p.id, $4)`
 	rows, err := m.db.Query(ctx,
 		`(select 'event', e.id::text, e.created_at, `+fmt.Sprintf(actor, "e.actor_id")+`, `+issue+`, e.kind, e.data, null::jsonb
-		  from issue_events e`+fmt.Sprintf(from, "e")+` and e.kind <> 'description'
+		  from issue_events e`+fmt.Sprintf(from, "e")+` and e.kind <> 'description' and `+fmt.Sprintf(linkSeen, 4)+`
 		  order by e.created_at desc, e.id desc limit $3)
 		 union all
 		 (select 'comment', c.id::text, c.created_at, `+fmt.Sprintf(actor, "c.author_id")+`, `+issue+`, '', null, c.body
 		  from comments c`+fmt.Sprintf(from, "c")+`
 		  order by c.created_at desc, c.id desc limit $3)
-		 order by 3 desc, 2 desc limit $3`, workspaceID, before, activityPage+1)
+		 order by 3 desc, 2 desc limit $3`, workspaceID, before, activityPage+1, viewerID)
 	if err != nil {
 		return nil, false, fmt.Errorf("list activity: %w", err)
 	}
@@ -1168,12 +1192,13 @@ func activityCut(as []Activity) ([]Activity, bool) {
 	return as[:n], true
 }
 
-// comment returns the workspace's comment with the id; nil when there's none.
-func (m *model) comment(ctx context.Context, workspaceID, id string) (*Comment, error) {
+// comment returns the workspace's comment with the id; nil when there's none or the viewer can't see its issue.
+func (m *model) comment(ctx context.Context, workspaceID, id, viewerID string) (*Comment, error) {
 	if !isUUID(id) {
 		return nil, nil
 	}
-	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id = $2`, workspaceID, id))
+	c, err := scanComment(m.db.QueryRow(ctx, `select `+commentCols+` where i.workspace_id = $1 and c.id = $2
+		and can_see_project(p.id, $3)`, workspaceID, id, viewerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -1302,20 +1327,37 @@ func oneIssue(row pgx.Row) (*Issue, error) {
 
 // --- statuses ---
 
-const statusCols = `id::text, name, category, position, type`
+// statusCols select a workflowStatus from the statuses s (a table or a with query).
+const statusCols = `s.id::text, s.name, s.category, s.position, t.icon, t.color, t.id::text, t.name
+	from %s s left join status_types t on t.id = s.type_id`
 
-func scanStatus(row pgx.Row) (Status, error) {
-	var s Status
-	err := row.Scan(&s.ID, &s.Name, &s.Category, &s.Position, &s.Type)
+// workflowStatus is a status as the statuses endpoints show it, with its type (nil when it's a built-in).
+type workflowStatus struct {
+	Status
+	Type *typeRef `json:"type"`
+}
+
+type typeRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func scanStatus(row pgx.Row) (workflowStatus, error) {
+	var s workflowStatus
+	var tID, tName *string
+	err := row.Scan(&s.ID, &s.Name, &s.Category, &s.Position, &s.Icon, &s.Color, &tID, &tName)
+	if tID != nil {
+		s.Type = &typeRef{*tID, *tName}
+	}
 	return s, err
 }
 
-func (m *model) listStatuses(ctx context.Context, workspaceID string) ([]Status, error) {
-	rows, err := m.db.Query(ctx, `select `+statusCols+` from statuses where workspace_id = $1 order by position, id`, workspaceID)
+func (m *model) listStatuses(ctx context.Context, workspaceID string) ([]workflowStatus, error) {
+	rows, err := m.db.Query(ctx, `select `+fmt.Sprintf(statusCols, "statuses")+` where s.workspace_id = $1 order by s.position, s.id`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list statuses: %w", err)
 	}
-	ss, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Status, error) { return scanStatus(row) })
+	ss, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (workflowStatus, error) { return scanStatus(row) })
 	if err != nil {
 		return nil, fmt.Errorf("list statuses: %w", err)
 	}
@@ -1332,38 +1374,148 @@ func (m *model) publishing(ctx context.Context, e realtime.Event, fn func(pgx.Tx
 	})
 }
 
-// createStatus appends a status after the last one, publishing e. Returns errNameTaken when the name is in use.
-func (m *model) createStatus(ctx context.Context, workspaceID, name, category string, typ *string, e realtime.Event) (Status, error) {
-	var s Status
+// typeCategory returns the category of the workspace's status type typeID, holding the type against changes until tx
+// ends; category itself when typeID is nil. Returns errNoType when there's no such type.
+func typeCategory(ctx context.Context, tx pgx.Tx, workspaceID string, typeID *string, category string) (string, error) {
+	if typeID == nil {
+		return category, nil
+	}
+	err := tx.QueryRow(ctx, `select category from status_types where workspace_id = $1 and id = $2 for share`,
+		workspaceID, *typeID).Scan(&category)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errNoType
+	}
+	return category, err
+}
+
+// createStatus appends a status after the last one, publishing e. With a type, its category is the type's. Returns
+// errNameTaken when the name is in use, and errNoType when the type isn't one of the workspace's.
+func (m *model) createStatus(ctx context.Context, workspaceID, name, category string, typeID *string, e realtime.Event) (workflowStatus, error) {
+	var s workflowStatus
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
-		var err error
+		category, err := typeCategory(ctx, tx, workspaceID, typeID, category)
+		if err != nil {
+			return err
+		}
 		s, err = scanStatus(tx.QueryRow(ctx,
-			`insert into statuses (workspace_id, name, category, type, position)
+			`with s as (insert into statuses (workspace_id, name, category, type_id, position)
 			 values ($1, $2, $3, $4, (select coalesce(max(position) + 1, 0) from statuses where workspace_id = $1))
-			 returning `+statusCols, workspaceID, name, category, typ))
+			 returning *) select `+fmt.Sprintf(statusCols, "s"), workspaceID, name, category, typeID))
 		return err
 	})
-	if isUniqueViolation(err) {
+	switch {
+	case isUniqueViolation(err):
 		return s, errNameTaken
-	}
-	if err != nil {
+	case errors.Is(err, errNoType):
+		return s, err
+	case err != nil:
 		return s, fmt.Errorf("create status: %w", err)
 	}
 	return s, nil
 }
 
-// updateStatus renames and recategorizes a status, publishing e; nil when there's none. Returns errNameTaken when the
-// name is in use.
-func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, typ *string, e realtime.Event) (*Status, error) {
+// updateStatus renames a status and sets its type (or its category, without one), publishing e; nil when there's
+// none. Returns errNameTaken when the name is in use, and errNoType when the type isn't one of the workspace's.
+func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, category string, typeID *string, e realtime.Event) (*workflowStatus, error) {
 	if !isUUID(id) {
 		return nil, nil
 	}
-	var s Status
+	var s workflowStatus
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		category, err := typeCategory(ctx, tx, workspaceID, typeID, category)
+		if err != nil {
+			return err
+		}
+		s, err = scanStatus(tx.QueryRow(ctx,
+			`with s as (update statuses set name = $3, category = $4, type_id = $5 where workspace_id = $1 and id = $2
+			 returning *) select `+fmt.Sprintf(statusCols, "s"), workspaceID, id, name, category, typeID))
+		return err
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, nil
+	case isUniqueViolation(err):
+		return nil, errNameTaken
+	case errors.Is(err, errNoType):
+		return nil, err
+	case err != nil:
+		return nil, fmt.Errorf("update status: %w", err)
+	}
+	return &s, nil
+}
+
+// --- status types ---
+
+// StatusType is a workspace's own kind of status: its statuses count as its category and show its icon and color.
+type StatusType struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Category    string  `json:"category"`
+	Icon        string  `json:"icon"`
+	Color       *string `json:"color"`
+	StatusCount int     `json:"status_count"`
+}
+
+const typeCols = `t.id::text, t.name, t.category, t.icon, t.color, (select count(*) from statuses s where s.type_id = t.id)`
+
+func scanType(row pgx.Row) (StatusType, error) {
+	var t StatusType
+	err := row.Scan(&t.ID, &t.Name, &t.Category, &t.Icon, &t.Color, &t.StatusCount)
+	return t, err
+}
+
+func (m *model) listTypes(ctx context.Context, workspaceID string) ([]StatusType, error) {
+	rows, err := m.db.Query(ctx, `select `+typeCols+` from status_types t where t.workspace_id = $1 order by lower(t.name), t.id`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list status types: %w", err)
+	}
+	ts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (StatusType, error) { return scanType(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list status types: %w", err)
+	}
+	return ts, nil
+}
+
+// createType publishes e. Returns errNameTaken when the name is in use.
+func (m *model) createType(ctx context.Context, workspaceID, name, category, icon string, color *string, e realtime.Event) (StatusType, error) {
+	var t StatusType
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		var err error
-		s, err = scanStatus(tx.QueryRow(ctx,
-			`update statuses set name = $3, category = $4, type = $5 where workspace_id = $1 and id = $2 returning `+statusCols,
-			workspaceID, id, name, category, typ))
+		t, err = scanType(tx.QueryRow(ctx,
+			`insert into status_types as t (workspace_id, name, category, icon, color) values ($1, $2, $3, $4, $5)
+			 returning `+typeCols, workspaceID, name, category, icon, color))
+		return err
+	})
+	if isUniqueViolation(err) {
+		return t, errNameTaken
+	}
+	if err != nil {
+		return t, fmt.Errorf("create status type: %w", err)
+	}
+	return t, nil
+}
+
+// updateType changes a type and moves its statuses to its category, publishing e; nil when there's none. Returns
+// errNameTaken when the name is in use.
+func (m *model) updateType(ctx context.Context, workspaceID, id, name, category, icon string, color *string, e realtime.Event) (*StatusType, error) {
+	if !isUUID(id) {
+		return nil, nil
+	}
+	var t StatusType
+	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`update status_types set name = $3, category = $4, icon = $5, color = $6 where workspace_id = $1 and id = $2`,
+			workspaceID, id, name, category, icon, color)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		if _, err := tx.Exec(ctx, `update statuses set category = $2 where type_id = $1 and category <> $2`, id, category); err != nil {
+			return err
+		}
+		t, err = scanType(tx.QueryRow(ctx, `select `+typeCols+` from status_types t where t.id = $1`, id))
 		return err
 	})
 	switch {
@@ -1372,9 +1524,30 @@ func (m *model) updateStatus(ctx context.Context, workspaceID, id, name, categor
 	case isUniqueViolation(err):
 		return nil, errNameTaken
 	case err != nil:
-		return nil, fmt.Errorf("update status: %w", err)
+		return nil, fmt.Errorf("update status type: %w", err)
 	}
-	return &s, nil
+	return &t, nil
+}
+
+// deleteType deletes a type, turning its statuses into built-ins of the same category, and publishes e; false when
+// there's none.
+func (m *model) deleteType(ctx context.Context, workspaceID, id string, e realtime.Event) (bool, error) {
+	if !isUUID(id) {
+		return false, nil
+	}
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from status_types where workspace_id = $1 and id = $2`, workspaceID, id)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		found = true
+		return realtime.Publish(ctx, tx, e)
+	})
+	if err != nil {
+		return false, fmt.Errorf("delete status type: %w", err)
+	}
+	return found, nil
 }
 
 // lockStatuses returns the workspace's status ids, locking them against concurrent reorders and deletes.

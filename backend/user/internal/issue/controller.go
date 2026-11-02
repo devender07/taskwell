@@ -23,6 +23,9 @@ const (
 	errIssueNotFound   = "Issue not found."
 	errStatusNotFound  = "Status not found."
 	errLabelNotFound   = "Label not found."
+	errTypeNotFound    = "Type not found."
+	errTypeTaken       = "That type already exists."
+	errChooseType      = "Choose a type."
 	errForbidden       = "You don't have permission to do that."
 	errCommentNotFound = "Comment not found."
 	errArchivedProject = "This project is archived."
@@ -50,7 +53,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if !ok || err != nil {
 		return err
 	}
-	projectID, err := h.model.projectID(r.Context(), ws.ID, normKey(r.PathValue("key")))
+	projectID, err := h.model.projectID(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
 	if err != nil {
 		return err
 	}
@@ -91,11 +94,19 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	f, ok, err := h.readFields(w, r, ws.ID, true)
+	key := normKey(r.PathValue("key"))
+	// A project the caller can't see is not found before anything about the form is said.
+	if projectID, err := h.model.projectID(r.Context(), ws.ID, key, userID); err != nil || projectID == "" {
+		if err == nil {
+			writeErr(w, http.StatusNotFound, errProjectNotFound)
+		}
+		return err
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, key, "", true)
 	if !ok || err != nil {
 		return err
 	}
-	id, err := h.model.create(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, f)
+	id, err := h.model.create(r.Context(), ws.ID, key, userID, f)
 	if errors.Is(err, errArchived) {
 		writeErr(w, http.StatusConflict, errArchivedProject)
 		return nil
@@ -139,7 +150,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	f, ok, err := h.readFields(w, r, ws.ID, false)
+	keep := ""
+	if i.Assignee != nil {
+		keep = i.Assignee.ID
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, i.Project.Key, keep, false)
 	if !ok || err != nil {
 		return err
 	}
@@ -180,7 +195,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	q := searchQuery(r)
 	key, number, _ := parseIdentifier(q)
-	refs, err := h.model.search(r.Context(), ws.ID, normKey(r.URL.Query().Get("project")), q, key, number)
+	refs, err := h.model.search(r.Context(), ws.ID, userID, normKey(r.URL.Query().Get("project")), q, key, number)
 	if err != nil {
 		return err
 	}
@@ -196,7 +211,7 @@ func (h *Handler) searchAll(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	q := searchQuery(r)
 	key, number, _ := parseIdentifier(q)
-	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, q, key, number)
+	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, userID, q, key, number)
 	if err != nil {
 		return err
 	}
@@ -211,7 +226,7 @@ func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) er
 	}
 	_ = r.ParseMultipartForm(maxBody)
 	typ := r.PostForm.Get("type")
-	other, err := h.find(r.Context(), ws.ID, r.PostForm.Get("issue"))
+	other, err := h.find(r.Context(), ws.ID, r.PostForm.Get("issue"), userID)
 	if err != nil {
 		return err
 	}
@@ -248,7 +263,7 @@ func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	other, err := h.find(r.Context(), ws.ID, r.PathValue("other"))
+	other, err := h.find(r.Context(), ws.ID, r.PathValue("other"), userID)
 	if err != nil {
 		return err
 	}
@@ -282,13 +297,13 @@ func (h *Handler) watch(on bool) func(w http.ResponseWriter, r *http.Request, us
 	}
 }
 
-// find returns the workspace's issue with the identifier; nil when there's none.
-func (h *Handler) find(ctx context.Context, workspaceID, identifier string) (*Issue, error) {
+// find returns the workspace's issue with the identifier; nil when there's none or the viewer can't see it.
+func (h *Handler) find(ctx context.Context, workspaceID, identifier, viewerID string) (*Issue, error) {
 	key, number, ok := parseIdentifier(identifier)
 	if !ok {
 		return nil, nil
 	}
-	return h.model.get(ctx, workspaceID, key, number)
+	return h.model.get(ctx, workspaceID, key, number, viewerID)
 }
 
 // editable is issue, plus a 403 unless the caller may edit it.
@@ -310,7 +325,7 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID string) (
 	if !ok || err != nil {
 		return nil, nil, false, err
 	}
-	i, err := h.find(r.Context(), ws.ID, r.PathValue("identifier"))
+	i, err := h.find(r.Context(), ws.ID, r.PathValue("identifier"), userID)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -360,8 +375,9 @@ func allow(i *Issue, userID string, perms []string) {
 }
 
 // readFields returns the issue fields present in the form, or writes a 400 with field errors and returns ok=false.
-// On create the title is always checked, and an empty status_id or priority means the default.
-func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID string, create bool) (fields, bool, error) {
+// On create the title is always checked, and an empty status_id or priority means the default. key is the issue's
+// project, whose assignees must see it, and keep its current assignee (kept even when they can't).
+func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID, key, keep string, create bool) (fields, bool, error) {
 	_ = r.ParseMultipartForm(maxBody)
 	form := r.PostForm
 	value := func(k string) *string {
@@ -415,7 +431,7 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	if !checkFields(w, errs) {
 		return f, false, nil
 	}
-	refErrs, err := h.model.checkRefs(r.Context(), workspaceID, f)
+	refErrs, err := h.model.checkRefs(r.Context(), workspaceID, key, keep, f)
 	if err != nil || !checkFields(w, refErrs) {
 		return f, false, err
 	}
@@ -448,7 +464,7 @@ func (h *Handler) activity(w http.ResponseWriter, r *http.Request, userID string
 	if !ok {
 		return nil
 	}
-	as, more, err := h.model.activity(r.Context(), ws.ID, before)
+	as, more, err := h.model.activity(r.Context(), ws.ID, userID, before)
 	if err != nil {
 		return err
 	}
@@ -465,7 +481,7 @@ func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string
 	if !ok {
 		return nil
 	}
-	cs, es, more, err := h.model.timeline(r.Context(), i.ID, before)
+	cs, es, more, err := h.model.timeline(r.Context(), i.ID, userID, before)
 	if err != nil {
 		return err
 	}
@@ -538,7 +554,7 @@ func (h *Handler) ownComment(w http.ResponseWriter, r *http.Request, userID stri
 	if !ok || err != nil {
 		return nil, nil, false, err
 	}
-	c, err := h.model.comment(r.Context(), ws.ID, r.PathValue("id"))
+	c, err := h.model.comment(r.Context(), ws.ID, r.PathValue("id"), userID)
 	switch {
 	case err != nil:
 		return nil, nil, false, err
@@ -557,7 +573,7 @@ func (h *Handler) ownComment(w http.ResponseWriter, r *http.Request, userID stri
 }
 
 func (h *Handler) respondComment(w http.ResponseWriter, r *http.Request, status int, id, userID string, ws *workspace.Workspace) error {
-	c, err := h.model.comment(r.Context(), ws.ID, id)
+	c, err := h.model.comment(r.Context(), ws.ID, id, userID)
 	if err != nil {
 		return err
 	}
@@ -606,19 +622,21 @@ func (h *Handler) createStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	name, category, typ, ok := readStatus(w, r)
+	name, category, typeID, ok := readStatus(w, r)
 	if !ok {
 		return nil
 	}
-	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, typ, workflowChanged(ws, userID, "statuses"))
-	if errors.Is(err, errNameTaken) {
+	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, typeID, workflowChanged(ws, userID, "statuses"))
+	switch {
+	case errors.Is(err, errNameTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
-		return nil
-	}
-	if err != nil {
+	case errors.Is(err, errNoType):
+		writeFields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
+	case err != nil:
 		return err
+	default:
+		writeJSON(w, http.StatusCreated, s)
 	}
-	writeJSON(w, http.StatusCreated, s)
 	return nil
 }
 
@@ -627,15 +645,17 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
-	name, category, typ, ok := readStatus(w, r)
+	name, category, typeID, ok := readStatus(w, r)
 	if !ok {
 		return nil
 	}
-	// Issues show their status's name and category.
-	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, typ, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
+	// Issues show their status's name, category and icon.
+	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, typeID, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
 	switch {
 	case errors.Is(err, errNameTaken):
 		writeFields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
+	case errors.Is(err, errNoType):
+		writeFields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
 	case err != nil:
 		return err
 	case s == nil:
@@ -689,15 +709,117 @@ func (h *Handler) deleteStatus(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
-// readStatus returns the trimmed name and category, or writes a 400 with field errors and returns ok=false.
-// readStatus reads name, category and the optional type (empty = none).
-func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, typ *string, ok bool) {
+// readStatus returns the trimmed name, the category and the type id (nil for none; the category is the type's then),
+// or writes a 400 with field errors and returns ok=false.
+func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, typeID *string, ok bool) {
 	name, category = strings.TrimSpace(r.FormValue("name")), r.FormValue("category")
-	if t := strings.TrimSpace(r.FormValue("type")); t != "" {
-		typ = &t
+	errs := map[string]string{"name": checkStatusName(name)}
+	if t := r.FormValue("type_id"); t != "" {
+		typeID = &t
+		if !isUUID(t) {
+			errs["type_id"] = errChooseType
+		}
+	} else {
+		errs["category"] = checkCategory(category)
 	}
-	errs := map[string]string{"name": checkStatusName(name), "category": checkCategory(category), "type": checkStatusType(typ)}
-	return name, category, typ, checkFields(w, errs)
+	return name, category, typeID, checkFields(w, errs)
+}
+
+// --- status types ---
+
+func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	ts, err := h.model.listTypes(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, ts)
+	return nil
+}
+
+func (h *Handler) createType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, icon, color, ok := readType(w, r)
+	if !ok {
+		return nil
+	}
+	t, err := h.model.createType(r.Context(), ws.ID, name, category, icon, color, typesChanged(ws, userID))
+	if errors.Is(err, errNameTaken) {
+		writeFields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, t)
+	return nil
+}
+
+func (h *Handler) updateType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, icon, color, ok := readType(w, r)
+	if !ok {
+		return nil
+	}
+	// Its statuses show its icon and count as its category everywhere.
+	t, err := h.model.updateType(r.Context(), ws.ID, r.PathValue("id"), name, category, icon, color, typesChanged(ws, userID, realtime.All(ws.Slug)))
+	switch {
+	case errors.Is(err, errNameTaken):
+		writeFields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+	case err != nil:
+		return err
+	case t == nil:
+		writeErr(w, http.StatusNotFound, errTypeNotFound)
+	default:
+		writeJSON(w, http.StatusOK, t)
+	}
+	return nil
+}
+
+func (h *Handler) deleteType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	found, err := h.model.deleteType(r.Context(), ws.ID, r.PathValue("id"), typesChanged(ws, userID, realtime.All(ws.Slug)))
+	if err != nil {
+		return err
+	}
+	if !found {
+		writeErr(w, http.StatusNotFound, errTypeNotFound)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// readType returns the trimmed name, category, icon and normalized color (nil for none), or writes a 400 with field
+// errors and returns ok=false.
+func readType(w http.ResponseWriter, r *http.Request) (name, category, icon string, color *string, ok bool) {
+	name, category, icon = strings.TrimSpace(r.FormValue("name")), r.FormValue("category"), r.FormValue("icon")
+	errs := map[string]string{"name": checkTypeName(name), "icon": checkTypeIcon(icon)}
+	if checkCategory(category) != "" {
+		errs["category"] = "Choose how it counts."
+	}
+	if c := normColor(r.FormValue("color")); c != "" {
+		color = &c
+		errs["color"] = checkColor(c)
+	}
+	return name, category, icon, color, checkFields(w, errs)
+}
+
+// typesChanged is the event for a change to the workspace's status types, which its statuses show too.
+func typesChanged(ws *workspace.Workspace, userID string, paths ...string) realtime.Event {
+	return workflowChanged(ws, userID, "status-types", append(paths, realtime.Workspace(ws.Slug)+"/statuses")...)
 }
 
 // --- labels ---
