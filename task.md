@@ -93,6 +93,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] MCP server (`backend/mcp`, `/mcp`, streamable HTTP, stateless): list workspaces / projects / options, search, list (filters), my issues, get, create, update, comment; names instead of ids; forwards the caller's token to the API
 - [x] MCP tools for every feature: AI testing (test cases, AI runs with wait, manual runs marked by the client, sites, accounts, usage), projects, cycles, issue links/watch/delete, comments, activity, labels, statuses, chat, inbox, invites
 - [x] Tests view (MCP Apps) for `get_test_run` and `list_test_cases` in Claude Desktop / claude.ai: results, notes, reproduction steps, screenshots on demand, open in Tether
+- [x] Recorded tests (`docs/recorded-tests-plan.md`): MCP clients save browser steps (and their playwright-cli Playwright code) on test cases; "Run recorded tests" replays them in the sandboxed Chrome without Claude or the AI limit; `assert_text` / `assert_no_text` steps; "Download Playwright" exports `<ID>.spec.ts` for developers
 
 ## Admin app (alongside, as each phase needs it)
 

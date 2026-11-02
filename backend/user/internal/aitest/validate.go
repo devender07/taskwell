@@ -1,12 +1,14 @@
 package aitest
 
 import (
+	"fmt"
 	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
 )
@@ -130,4 +132,111 @@ func checkAccount(label, username, password string, passwordRequired bool) map[s
 		errs["password"] = "Password must be 500 characters or fewer."
 	}
 	return errs
+}
+
+const (
+	maxScriptSteps = 60
+	maxCheckLen    = 200
+)
+
+// checkScript keeps only each step's own fields and returns the cleaned script, or a message for the script field.
+// Navigations must stay on the workspace's site hosts and fill_password must name one of its account labels.
+func checkScript(sc script, hosts, labels []string) (script, string) {
+	sc.Check = strings.TrimSpace(sc.Check)
+	switch {
+	case len(sc.Steps) == 0:
+		return sc, "Add at least one step."
+	case len(sc.Steps) > maxScriptSteps:
+		return sc, "Use 60 steps or fewer."
+	case sc.Steps[0].Tool != "navigate":
+		return sc, "Step 1: start with a navigate step."
+	case sc.Check == "":
+		return sc, "Add a check: text that's on the page only when the expected result is met."
+	case doc.Len(sc.Check) > maxCheckLen:
+		return sc, "Check must be 200 characters or fewer."
+	}
+	out := script{Steps: make([]scriptStep, len(sc.Steps)), Check: sc.Check}
+	for i, s := range sc.Steps {
+		c, msg := checkStep(s, hosts, labels)
+		if msg != "" {
+			return sc, fmt.Sprintf("Step %d: %s", i+1, msg)
+		}
+		out.Steps[i] = c
+	}
+	return out, ""
+}
+
+func checkStep(s scriptStep, hosts, labels []string) (scriptStep, string) {
+	c := scriptStep{Tool: s.Tool}
+	if s.Tool == "click" || s.Tool == "type" || s.Tool == "select" || s.Tool == "fill_password" {
+		t := s.Target
+		switch {
+		case t == nil || t.Tag == "" || (t.CSS == "" && t.Name == ""):
+			return c, "give the target's tag and its css or name."
+		case len(t.CSS) > 500:
+			return c, "css must be 500 characters or fewer."
+		case doc.Len(t.Name) > 200:
+			return c, "name must be 200 characters or fewer."
+		}
+		c.Target = &locator{CSS: t.CSS, Tag: strings.ToLower(t.Tag), Name: t.Name}
+	}
+	switch s.Tool {
+	case "navigate":
+		u, err := url.Parse(s.URL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !allowedHost(u.Hostname(), hosts) {
+			return c, s.URL + " isn't a registered test site. Add it in Settings → AI testing."
+		}
+		c.URL = s.URL
+	case "click":
+	case "type":
+		if doc.Len(s.Text) > 1000 {
+			return c, "text must be 1000 characters or fewer."
+		}
+		c.Text = s.Text
+	case "select":
+		if doc.Len(s.Value) > 200 {
+			return c, "value must be 200 characters or fewer."
+		}
+		c.Value = s.Value
+	case "press":
+		if s.Key == "" || len(s.Key) > 30 {
+			return c, "key must be 1–30 characters."
+		}
+		c.Key = s.Key
+	case "wait":
+		if s.Seconds < 1 || s.Seconds > 5 {
+			return c, "wait 1 to 5 seconds."
+		}
+		c.Seconds = s.Seconds
+	case "assert_text", "assert_no_text":
+		c.Text = strings.TrimSpace(s.Text)
+		if c.Text == "" || doc.Len(c.Text) > 200 {
+			return c, "text must be 1–200 characters."
+		}
+	case "fill_password":
+		if !slices.Contains(labels, s.Account) {
+			return c, fmt.Sprintf("no test account is labelled %q. Add it in Settings → AI testing.", s.Account)
+		}
+		c.Account = s.Account
+	default:
+		return c, fmt.Sprintf("unknown step %q.", s.Tool)
+	}
+	return c, ""
+}
+
+// literalFill is a .fill( call given a string literal.
+var literalFill = regexp.MustCompile("\\.fill\\(\\s*['\"`]")
+
+// checkPlaywright returns the message for a case's Playwright code: at most 20000 characters, and passwords only
+// through process.env (a line mentioning a password may not fill a literal).
+func checkPlaywright(code string) string {
+	if utf8.RuneCountInString(code) > 20000 {
+		return "Use 20000 characters or fewer."
+	}
+	for l := range strings.Lines(code) {
+		if strings.Contains(strings.ToLower(l), "password") && literalFill.MatchString(l) {
+			return "Use process.env for passwords, never a literal."
+		}
+	}
+	return ""
 }

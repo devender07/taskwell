@@ -61,7 +61,7 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
     case 'test_run': {
       const d = e.data
       const tally = (['passed', 'failed', 'skipped', 'error'] as const).filter((k) => d[k]).map((k) => `${d[k]} ${k}`).join(', ')
-      return <>ran {d.kind === 'ai' ? 'AI tests' : 'tests manually'}{subject ? <> on{s}</> : null}{tally ? `: ${tally}` : ''}</>
+      return <>ran {d.kind === 'ai' ? 'AI tests' : d.kind === 'replay' ? 'recorded tests' : 'tests manually'}{subject ? <> on{s}</> : null}{tally ? `: ${tally}` : ''}</>
     }
     case 'test_cases_regenerated':
       return <>regenerated the test cases{subject ? <> on{s}</> : null}</>

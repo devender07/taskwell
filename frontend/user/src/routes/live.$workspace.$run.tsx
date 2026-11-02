@@ -16,7 +16,7 @@ function LiveView() {
   const { data: run, error } = useLive<TestRun>(path)
   const [attempt, setAttempt] = useState(0)
   const [broken, setBroken] = useState(false)
-  const streaming = run?.kind === 'ai' && run.status === 'running'
+  const streaming = run?.kind !== 'manual' && run?.status === 'running'
   const current = run?.results.find((r) => r.status === 'running')
   const done = run?.results.filter((r) => !['pending', 'running'].includes(r.status)).length ?? 0
 
@@ -36,8 +36,8 @@ function LiveView() {
     ? error
     : !run
       ? 'Loading…'
-      : run.kind !== 'ai'
-        ? 'Only AI runs have a live browser.'
+      : run.kind === 'manual'
+        ? 'Manual runs have no live browser.'
         : run.status === 'queued'
           ? 'Waiting for a test runner…'
           : run.status === 'generating'

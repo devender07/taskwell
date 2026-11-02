@@ -13,6 +13,7 @@ import {
   can,
   deleteTestCase,
   orderTestCases,
+  playwrightURL,
   saveTestCase,
   startTestRun,
   testCasesPath,
@@ -21,6 +22,7 @@ import {
   toFormErrors,
   type FieldErrors,
   type Issue,
+  type RunKind,
   type RunStatus,
   type TestCase,
   type TestResult,
@@ -162,7 +164,7 @@ export function ConfirmButton(props: { label: string; title: string; description
   )
 }
 
-type Start = { kind: 'ai' | 'manual'; regenerate?: boolean; caseId?: string }
+type Start = { kind: RunKind; regenerate?: boolean; caseId?: string }
 
 export function TestsSection({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const navigate = useNavigate()
@@ -175,6 +177,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
   const [regenerating, setRegenerating] = useState(false)
   const list = cases.data ?? []
   const noSite = sites.data?.length === 0
+  const recorded = list.some((c) => c.recorded)
 
   const [startError, start, starting] = useActionState(async (_prev: string | null, { kind, regenerate, caseId }: Start) => {
     let run
@@ -229,9 +232,21 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
             </span>
           ) : null}
           {manage ? (
+            <span title={recorded ? undefined : 'Record a test case first.'}>
+              <Button variant="ghost" disabled={starting || !recorded} onClick={() => run({ kind: 'replay' })}>
+                Run recorded tests
+              </Button>
+            </span>
+          ) : null}
+          {manage ? (
             <Button variant="ghost" disabled={starting || list.length === 0} onClick={() => run({ kind: 'manual' })}>
               Run manually
             </Button>
+          ) : null}
+          {list.length > 0 ? (
+            <a className="button button-ghost" href={playwrightURL(workspace, issue.identifier)} download>
+              Download Playwright
+            </a>
           ) : null}
         </div>
       </div>
@@ -531,6 +546,8 @@ function counts(r: TestRunSummary) {
     .join(', ')
 }
 
+const RUN_KINDS: Record<RunKind, string> = { ai: 'AI test', manual: 'Manual run', replay: 'Recorded' }
+
 type RunPage = { runs: TestRunSummary[]; has_more: boolean }
 
 // `page` is the newest page (refetched live); older pages load on demand below it.
@@ -568,7 +585,7 @@ function History({ workspace, issue, page, error }: { workspace: Workspace; issu
               className="issue-row flex-wrap"
             >
               <RunStatusPill status={r.status} />
-              <span className="text-label text-primary flex-noshrink">{r.kind === 'ai' ? 'AI test' : 'Manual run'}</span>
+              <span className="text-label text-primary flex-noshrink">{RUN_KINDS[r.kind]}</span>
               <span className="text-caption text-secondary ellipsis flex-grow">{counts(r)}</span>
               {r.kind === 'ai' && r.cost_usd != null ? <span className="text-caption text-secondary flex-noshrink">{formatCost(r.cost_usd)}</span> : null}
               {r.started_by ? <span className="issue-row-wide text-caption text-secondary flex-noshrink">{r.started_by.name}</span> : null}

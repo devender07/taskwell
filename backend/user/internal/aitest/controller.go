@@ -163,6 +163,86 @@ func (h *Handler) orderCases(w http.ResponseWriter, r *http.Request, userID stri
 	return nil
 }
 
+// saveScript records a case's browser steps, written by an MCP client, for replay runs and the Playwright export.
+func (h *Handler) saveScript(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	var sc script
+	if err := json.Unmarshal([]byte(r.FormValue("script")), &sc); err != nil {
+		writeFields(w, http.StatusBadRequest, map[string]string{"script": "Send the script as JSON."})
+		return nil
+	}
+	sites, err := h.model.sites(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	accounts, err := h.model.accounts(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	hosts, labels := make([]string, len(sites)), make([]string, len(accounts))
+	for i, s := range sites {
+		hosts[i] = s.Host
+	}
+	for i, a := range accounts {
+		labels[i] = a.Label
+	}
+	sc, msg := checkScript(sc, hosts, labels)
+	_, setCode := r.PostForm["playwright"]
+	code := strings.TrimSpace(r.PostForm.Get("playwright"))
+	if !checkFields(w, map[string]string{"script": msg, "playwright": checkPlaywright(code)}) {
+		return nil
+	}
+	err = h.model.setScript(r.Context(), ws.ID, id, userID, &sc, setCode, code)
+	if errors.Is(err, errNotFound) {
+		writeErr(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.respondCase(w, r, http.StatusOK, ws.ID, id)
+}
+
+func (h *Handler) clearScript(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	err = errNotFound
+	if id := r.PathValue("id"); isUUID(id) {
+		err = h.model.setScript(r.Context(), ws.ID, id, userID, nil, false, "")
+	}
+	return noContent(w, err, errCaseNotFound)
+}
+
+// playwright answers the issue's cases as a Playwright spec to download.
+func (h *Handler) playwright(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	cs, err := h.model.exportCases(r.Context(), i.id)
+	if err != nil {
+		return err
+	}
+	sites, err := h.model.sites(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+i.identifier+`.spec.ts"`)
+	_, _ = w.Write([]byte(playwrightSpec(i.identifier, i.title, sites, cs)))
+	return nil
+}
+
 // readCase returns the form's cleaned case, or writes a 400 with field errors and returns ok=false.
 func readCase(w http.ResponseWriter, r *http.Request) (caseFields, bool) {
 	_ = r.ParseMultipartForm(maxBody)
@@ -256,11 +336,13 @@ func (h *Handler) createRun(w http.ResponseWriter, r *http.Request, userID strin
 		return h.createManualRun(w, r, userID)
 	case "ai":
 		return h.createAIRun(w, r, userID)
+	case "replay":
+		return h.createReplayRun(w, r, userID)
 	}
 	if _, _, ok, err := h.issue(w, r, userID, ""); !ok || err != nil {
 		return err
 	}
-	writeFields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai or manual."})
+	writeFields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai, manual or replay."})
 	return nil
 }
 
@@ -479,6 +561,36 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
 	case errors.Is(err, errLimit):
 		writeErr(w, http.StatusConflict, msgLimit)
+	case errors.Is(err, errRunActive):
+		writeErr(w, http.StatusConflict, "A test is already running on this issue.")
+	case err != nil:
+		return err
+	default:
+		return h.respondRun(w, r, http.StatusCreated, ws.ID, id)
+	}
+	return nil
+}
+
+// createReplayRun queues a run that replays the recorded cases: no Claude call and no spend-limit check.
+func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	alive, err := h.model.testerAlive(r.Context())
+	if err != nil {
+		return err
+	}
+	if !alive {
+		writeErr(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
+		return nil
+	}
+	id, err := h.model.createReplay(r.Context(), ws.ID, i.id, userID)
+	switch {
+	case errors.Is(err, errNoSites):
+		writeErr(w, http.StatusConflict, "Add a test site in Settings → AI testing first.")
+	case errors.Is(err, errNoScript):
+		writeErr(w, http.StatusConflict, "Record a test case first.")
 	case errors.Is(err, errRunActive):
 		writeErr(w, http.StatusConflict, "A test is already running on this issue.")
 	case err != nil:

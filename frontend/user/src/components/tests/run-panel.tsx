@@ -13,6 +13,7 @@ import {
   testRunsPath,
   toFormErrors,
   type TestResult,
+  type RunKind,
   type TestRun,
   type Workspace,
 } from '@/api'
@@ -29,6 +30,8 @@ const nextPending = (run: TestRun, after: string) => {
   const i = run.results.findIndex((r) => r.id === after)
   return [...run.results.slice(i + 1), ...run.results.slice(0, i)].find((r) => r.status === 'pending')
 }
+
+const RUN_TITLES: Record<RunKind, string> = { ai: 'AI test run', manual: 'Manual test run', replay: 'Recorded test run' }
 
 // Side panel for one run (?run=<id>). P / F / S mark the selected case of a running manual run; while the panel is
 // open they win over the issue page's S and P, and A and L keep working.
@@ -96,10 +99,10 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
   return (
     <aside className="run-panel" aria-label="Test run">
       <header className="flex flex-wrap items-center gap-3 px-6 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
-        <h2 className="text-label flex-grow">{run ? (run.kind === 'ai' ? 'AI test run' : 'Manual test run') : 'Test run'}</h2>
+        <h2 className="text-label flex-grow">{run ? RUN_TITLES[run.kind] : 'Test run'}</h2>
         {run ? <RunStatusPill status={run.status} /> : null}
         {run?.kind === 'ai' && run.cost_usd != null ? <span className="text-caption text-secondary">{formatCost(run.cost_usd)}</span> : null}
-        {run?.kind === 'ai' && !finished ? <WatchLive workspace={workspace.slug} runId={runId} /> : null}
+        {run && run.kind !== 'manual' && !finished ? <WatchLive workspace={workspace.slug} runId={runId} /> : null}
         {cancellable ? (
           <Button variant="ghost" disabled={cancelling} onClick={() => startTransition(cancel)}>
             {cancelling ? 'Cancelling…' : 'Cancel run'}
@@ -189,7 +192,7 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
       <CaseText steps={result.steps} expected={result.expected} />
       {result.summary && !markable ? (
         <div className="grid gap-1">
-          <h4 className="text-caption text-secondary m-0">{run.kind === 'ai' ? 'Summary' : 'Note'}</h4>
+          <h4 className="text-caption text-secondary m-0">{run.kind === 'manual' ? 'Note' : 'Summary'}</h4>
           <p className="text-body-sm m-0" style={{ whiteSpace: 'pre-wrap' }}>{result.summary}</p>
         </div>
       ) : null}

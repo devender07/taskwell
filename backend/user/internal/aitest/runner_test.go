@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,6 +103,115 @@ func TestClaim(t *testing.T) {
 	}
 	if generating != 2 {
 		t.Fatalf("%d generating, want 2 (no saved cases)", generating)
+	}
+}
+
+// TestRecordedRuns saves a script through the API, exports it, and starts a replay run with the AI limit at 0: the
+// run is queued and claimed straight into running, and it blocks a second run on the issue.
+func TestRecordedRuns(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, wsID, issueID := testIssue(t, pool)
+	m := &model{db: pool}
+	var slug, caseID string
+	if err := pool.QueryRow(ctx, `select slug from workspaces where id = $1`, wsID).Scan(&slug); err != nil {
+		t.Fatal(err)
+	}
+	id, err := m.createCase(ctx, issueID, ann, caseFields{Title: "Sign in", Steps: []string{"Sign in"}, Expected: "Home"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caseID = id
+	if _, err := m.createSite(ctx, wsID, slug, ann, "https://app.acme.test", "app.acme.test"); err != nil {
+		t.Fatal(err)
+	}
+	var limit string
+	if err := pool.QueryRow(ctx, `select value from system_config where key = 'ai_test_monthly_limit_usd'`).Scan(&limit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `update system_config set value = '0' where key = 'ai_test_monthly_limit_usd'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `update system_config set value = $1 where key = 'ai_test_monthly_limit_usd'`, limit)
+	})
+	if err := m.heartbeat(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	New(pool, sysconfig.New(pool), Options{}, dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, nil).Member).Register(mux)
+	base := "/api/workspaces/" + slug
+	do := func(method, path string, form url.Values, want int) string {
+		t.Helper()
+		code, body := dbtest.Do(t, mux, ann, method, base+path, form)
+		if code != want {
+			t.Fatalf("%s %s: %d %s, want %d", method, path, code, body, want)
+		}
+		return body
+	}
+	replay := url.Values{"kind": {"replay"}}
+	if body := do("POST", "/issues/ENG-1/test-runs", replay, 409); !strings.Contains(body, "Record a test case first.") {
+		t.Errorf("unrecorded: %s", body)
+	}
+	if body := do("POST", "/test-cases/"+caseID+"/script", url.Values{"script": {"{"}}, 400); !strings.Contains(body, "Send the script as JSON.") {
+		t.Errorf("bad json: %s", body)
+	}
+	if body := do("POST", "/test-cases/"+caseID+"/script", url.Values{"script": {`{"steps":[{"tool":"navigate","url":"https://evil.test"}],"check":"x"}`}}, 400); !strings.Contains(body, "Step 1: https://evil.test isn't a registered test site.") {
+		t.Errorf("other host: %s", body)
+	}
+	sc := `{"steps":[{"tool":"navigate","url":"https://app.acme.test/login"},{"tool":"assert_no_text","text":"Error"}],"check":"Home"}`
+	if body := do("POST", "/test-cases/"+caseID+"/script", url.Values{"script": {sc}, "playwright": {"await page.locator('#password').fill('x');"}}, 400); !strings.Contains(body, "Use process.env for passwords") {
+		t.Errorf("literal password: %s", body)
+	}
+	body := do("POST", "/test-cases/"+caseID+"/script", url.Values{"script": {sc}, "playwright": {"await page.goto('https://app.acme.test');"}}, 200)
+	if !strings.Contains(body, `"recorded":true`) || !strings.Contains(body, `"has_playwright":true`) {
+		t.Errorf("saved case: %s", body)
+	}
+	body = do("POST", "/test-cases/"+caseID+"/script", url.Values{"script": {sc}}, 200) // no playwright field keeps the code
+	if !strings.Contains(body, `"has_playwright":true`) {
+		t.Errorf("code dropped: %s", body)
+	}
+	code, spec := dbtest.Do(t, mux, ann, "GET", base+"/issues/ENG-1/playwright", nil)
+	if code != 200 || !strings.Contains(spec, `test("Sign in", async ({ page }) => {`+"\nawait page.goto('https://app.acme.test');") {
+		t.Errorf("export %d:\n%s", code, spec)
+	}
+
+	if body := do("POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"ai"}}, 409); !strings.Contains(body, msgLimit) {
+		t.Errorf("ai run at limit 0: %s", body)
+	}
+	var run Run
+	if err := json.Unmarshal([]byte(do("POST", "/issues/ENG-1/test-runs", replay, 201)), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Kind != "replay" || run.Status != "queued" || run.CostUSD != nil {
+		t.Errorf("replay run %+v", run)
+	}
+	if body := do("POST", "/issues/ENG-1/test-runs", replay, 409); !strings.Contains(body, "A test is already running on this issue.") {
+		t.Errorf("second run: %s", body)
+	}
+	for {
+		id, err := m.claim(ctx, 2, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id == run.ID {
+			break
+		}
+		if id == "" {
+			t.Fatal("replay run not claimed")
+		}
+	}
+	j, err := m.job(ctx, run.ID)
+	if err != nil || j.kind != "replay" || j.status != "running" {
+		t.Fatalf("claimed job %+v %v", j, err)
+	}
+	if body := do("POST", "/test-runs/"+run.ID+"/cancel", url.Values{}, 200); !strings.Contains(body, `"kind":"replay"`) {
+		t.Errorf("cancel: %s", body)
+	}
+	do("DELETE", "/test-cases/"+caseID+"/script", nil, 204)
+	if c, err := m.testCase(ctx, wsID, caseID); err != nil || c.Recorded || c.Playwright {
+		t.Errorf("cleared case %+v %v", c, err)
 	}
 }
 
@@ -329,6 +439,47 @@ func TestRunner(t *testing.T) {
 	}
 	if gotPassword != password || !strings.HasPrefix(d.Results[0].Log[0].Action, "replay navigate") {
 		t.Errorf("replay typed %q, log %+v", gotPassword, d.Results[0].Log)
+	}
+
+	// Replay runs never call Claude: the recorded case passes with its assertion, then fails on a negative one with
+	// the reason, the steps so far and a screenshot of the page; the unrecorded case is skipped.
+	sc, err := m.script(ctx, cs[0].ID)
+	if err != nil || sc == nil {
+		t.Fatalf("script %v %v", sc, err)
+	}
+	for _, c := range []struct{ tool, status string }{{"assert_text", "passed"}, {"assert_no_text", "failed"}} {
+		withAssert := *sc
+		withAssert.Steps = append(slices.Clone(sc.Steps), scriptStep{Tool: c.tool, Text: "Welcome Ann"})
+		if err := m.setScript(ctx, wsID, cs[0].ID, ann, &withAssert, false, ""); err != nil {
+			t.Fatal(err)
+		}
+		id, err := m.createReplay(ctx, wsID, issueID, ann)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := m.claim(ctx, 2, ""); err != nil || got != id {
+			t.Fatalf("claim replay run: %q %v", got, err)
+		}
+		r.execute(ctx, id)
+		d, err := m.run(ctx, wsID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Kind != "replay" || d.Status != c.status || calls != callsBefore || d.CostUSD != nil || len(d.Results) != 2 {
+			t.Fatalf("%s run %s, %d Claude calls: %+v", c.tool, d.Status, calls-callsBefore, d.Results)
+		}
+		x, skipped := d.Results[0], d.Results[1]
+		if skipped.Status != "skipped" || skipped.Summary == nil || *skipped.Summary != msgNotRecorded {
+			t.Errorf("unrecorded case %+v", skipped)
+		}
+		if c.status == "failed" {
+			last := x.Log[len(x.Log)-1]
+			if x.Summary == nil || *x.Summary != `Expected "Welcome Ann" not to be on the page.` ||
+				len(x.Reproduction) != len(withAssert.Steps) || x.Reproduction[len(x.Reproduction)-1] != `check "Welcome Ann" isn't on the page` ||
+				last.Action != *x.Summary || last.ScreenshotURL == nil {
+				t.Errorf("failed result %+v", x)
+			}
+		}
 	}
 }
 

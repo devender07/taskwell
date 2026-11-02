@@ -11,18 +11,19 @@ import (
 	"time"
 )
 
-// script is a passed AI case recorded for replay without Claude: the actions that worked, each element found again
-// by a selector or its tag and name, and a text that's on the page only when the expected result is met.
+// script is a case recorded for replay without Claude (by a passed AI run, or written by an MCP client and saved
+// through the API): the actions, each element found again by a selector or its tag and name, texts that must or
+// mustn't be on the page along the way, and a text that's on the page only when the expected result is met.
 type script struct {
 	Steps []scriptStep `json:"steps"`
 	Check string       `json:"check"`
 }
 
 type scriptStep struct {
-	Tool    string   `json:"tool"` // navigate, click, type, select, press, wait, fill_password
+	Tool    string   `json:"tool"` // navigate, click, type, select, press, wait, fill_password, assert_text, assert_no_text
 	URL     string   `json:"url,omitempty"`
 	Target  *locator `json:"target,omitempty"`
-	Text    string   `json:"text,omitempty"` // typed text; never a password (fill_password keeps the account label)
+	Text    string   `json:"text,omitempty"` // typed or asserted text; never a password (fill_password keeps the account label)
 	Value   string   `json:"value,omitempty"`
 	Key     string   `json:"key,omitempty"`
 	Seconds int      `json:"seconds,omitempty"`
@@ -99,45 +100,58 @@ func hasTextJS(text string) string {
 	return `(() => !!document.body && document.body.innerText.includes(` + string(b) + `))()`
 }
 
-// replay runs the case's script without Claude, logging each step with a screenshot. ok is false with why when a
-// step's element isn't there or the check text doesn't appear; err is a broken browser or a stopped run.
-func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logged *int) (ok bool, why string, err error) {
+func noTextJS(text string) string {
+	b, _ := json.Marshal(text)
+	return `(() => !document.body || !document.body.innerText.includes(` + string(b) + `))()`
+}
+
+// replay runs the case's script without Claude, logging each step with a screenshot. why is "" when it passed;
+// otherwise it says which step's element isn't there, which assertion failed or that the check text didn't
+// appear, a last step logs it with the page's screenshot (plus then, when Claude takes over the case), and repro
+// is the steps up to the failing one. err is a broken browser or a stopped run.
+func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logged *int, then string) (why string, repro []string, err error) {
 	db := context.WithoutCancel(ctx)
 	c, err := r.browser(ctx)
 	if err != nil {
-		return false, "", err
+		return "", nil, err
 	}
 	pg, err := c.newPage(ctx, r.o.ProxyURL, j.runID, j.token, func(f []byte) { r.o.Live.publish(j.runID, f) })
 	if err != nil {
-		return false, "", err
+		return "", nil, err
 	}
 	defer pg.close()
 	hosts := make([]string, len(j.sites))
 	for i, s := range j.sites {
 		hosts[i] = s.Host
 	}
-	for _, s := range sc.Steps {
+	fail := func(why string, done int) (string, []string, error) {
+		for _, s := range sc.Steps[:done] {
+			repro = append(repro, s.describe())
+		}
+		return why, repro, r.logStep(ctx, pg, j, x, logged, strings.TrimSpace(why+" "+then))
+	}
+	for i, s := range sc.Steps {
 		if cancelled, err := r.model.cancelRequested(db, j.runID); err != nil || cancelled {
 			if err == nil {
 				err = errCancelled
 			}
-			return false, "", err
+			return "", nil, err
 		}
 		action := "replay " + s.describe()
 		if s.Target != nil {
 			found, err := pg.waitFor(ctx, resolveJS(s.Target), 5*time.Second)
 			if err != nil {
-				return false, "", err
+				return "", nil, err
 			}
 			if !found {
-				return false, fmt.Sprintf("The recorded step \"%s\" no longer matches the page.", s.describe()), nil
+				return fail(fmt.Sprintf("The recorded step \"%s\" no longer matches the page.", s.describe()), i+1)
 			}
 		}
 		switch s.Tool {
 		case "navigate":
 			u, perr := url.Parse(s.URL)
 			if perr != nil || !allowedHost(u.Hostname(), hosts) {
-				return false, "A recorded URL isn't a registered test site any more.", nil
+				return fail("A recorded URL isn't a registered test site any more.", i+1)
 			}
 			err = pg.navigate(ctx, s.URL)
 		case "click":
@@ -155,26 +169,38 @@ func (r *Runner) replay(ctx context.Context, j *job, x Result, sc *script, logge
 			if pw, err = r.accountPassword(ctx, j, s.Account); err == nil {
 				err = pg.typeText(ctx, replayRef, pw)
 			}
+		case "assert_text", "assert_no_text":
+			js, msg := hasTextJS(s.Text), "Expected \""+s.Text+"\" on the page."
+			if s.Tool == "assert_no_text" {
+				js, msg = noTextJS(s.Text), "Expected \""+s.Text+"\" not to be on the page."
+			}
+			found, err := pg.waitFor(ctx, js, 5*time.Second)
+			if err != nil {
+				return "", nil, err
+			}
+			if !found {
+				return fail(msg, i+1)
+			}
 		}
 		var pe pageError
 		if errors.As(err, &pe) {
-			return false, fmt.Sprintf("The recorded step \"%s\" failed: %s", s.describe(), pe), nil
+			return fail(fmt.Sprintf("The recorded step \"%s\" failed: %s", s.describe(), pe), i+1)
 		}
 		if err != nil {
-			return false, "", err
+			return "", nil, err
 		}
 		if err := r.logStep(ctx, pg, j, x, logged, action); err != nil {
-			return false, "", err
+			return "", nil, err
 		}
 	}
 	found, err := pg.waitFor(ctx, hasTextJS(sc.Check), 5*time.Second)
 	if err != nil {
-		return false, "", err
+		return "", nil, err
 	}
 	if !found {
-		return false, fmt.Sprintf("After the recorded steps, %q isn't on the page.", sc.Check), nil
+		return fail(fmt.Sprintf("After the recorded steps, %q isn't on the page.", sc.Check), len(sc.Steps))
 	}
-	return true, "", nil
+	return "", nil, nil
 }
 
 // logStep adds a step with the page's URL and a screenshot to the result's log.
@@ -192,7 +218,7 @@ func (r *Runner) logStep(ctx context.Context, pg *page, j *job, x Result, logged
 	return nil
 }
 
-// describe is the step as the log shows it, never the typed text.
+// describe is the step as the log shows it, never the typed text (an asserted text is shown).
 func (s scriptStep) describe() string {
 	el := ""
 	if s.Target != nil {
@@ -213,6 +239,10 @@ func (s scriptStep) describe() string {
 		return fmt.Sprintf("wait %ds", s.Seconds)
 	case "fill_password":
 		return fmt.Sprintf("fill the password of %q into %s", s.Account, el)
+	case "assert_text":
+		return fmt.Sprintf("check %q is on the page", s.Text)
+	case "assert_no_text":
+		return fmt.Sprintf("check %q isn't on the page", s.Text)
 	}
 	return strings.TrimSpace(s.Tool + " " + el)
 }

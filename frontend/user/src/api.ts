@@ -90,7 +90,7 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'parent'; data: Change<EventRef | null> }
   | { kind: 'cycle'; data: Change<Pick<CycleRef, 'number' | 'name'> | null> }
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
-  | { kind: 'test_run'; data: { run_id: string; kind: 'ai' | 'manual'; status: string; passed: number; failed: number; skipped: number; error: number } }
+  | { kind: 'test_run'; data: { run_id: string; kind: RunKind; status: string; passed: number; failed: number; skipped: number; error: number } }
   | { kind: 'test_cases_regenerated'; data: { run_id: string } }
   | { kind: 'pr_linked' | 'pr_unlinked'; data: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'title' | 'url'> }
 )
@@ -320,6 +320,7 @@ export function toFormErrors(e: unknown): { errors: FieldErrors; error: string |
   return e instanceof ApiError ? { errors: e.errors, error: e.error } : { errors: {}, error: FALLBACK }
 }
 
+export type RunKind = 'ai' | 'manual' | 'replay'
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error'
 export type RunStatus = 'queued' | 'generating' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled' | 'limit_reached'
 export type TestCase = {
@@ -330,7 +331,7 @@ export type TestCase = {
   expected: string
   source: 'ai' | 'manual'
   updated_at: string
-  last_result: { status: TestStatus; run_id: string; kind: 'ai' | 'manual'; at: string } | null
+  last_result: { status: TestStatus; run_id: string; kind: RunKind; at: string } | null
   recorded: boolean
 }
 export type TestStep = { position: number; action: string; url: string | null; screenshot_url: string | null }
@@ -349,7 +350,7 @@ export type TestResult = {
 }
 export type TestRun = {
   id: string
-  kind: 'ai' | 'manual'
+  kind: RunKind
   issue: { identifier: string; title: string }
   status: RunStatus
   error: string | null
@@ -392,13 +393,17 @@ export function orderTestCases(workspace: Workspace, identifier: string, ids: st
   return api<TestCase[]>(`${testCasesPath(workspace, identifier)}/order`, form)
 }
 
-export function startTestRun(workspace: Workspace, identifier: string, kind: 'ai' | 'manual', regenerate = false, caseId?: string) {
+export function startTestRun(workspace: Workspace, identifier: string, kind: RunKind, regenerate = false, caseId?: string) {
   const form = new FormData()
   form.set('kind', kind)
   if (regenerate) form.set('regenerate', 'true')
   if (caseId) form.set('case_id', caseId)
   return api<TestRun>(testRunsPath(workspace, identifier), form)
 }
+
+export const startRecordedRun = (workspace: Workspace, identifier: string) => startTestRun(workspace, identifier, 'replay')
+
+export const playwrightURL = (workspace: Workspace, identifier: string) => `/api${issuePath(workspace, identifier)}/playwright`
 
 export function markTestResult(workspace: Workspace, run: string, result: string, status: 'passed' | 'failed' | 'skipped', note: string) {
   const form = new FormData()

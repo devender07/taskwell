@@ -244,3 +244,48 @@ func TestTestsView(t *testing.T) {
 		}
 	}
 }
+
+// TestSaveTestScript checks that save_test_script sends the steps and check as the script JSON field (and playwright
+// only when given), and that get_playwright_spec answers the spec's text.
+func TestSaveTestScript(t *testing.T) {
+	const token = "Bearer tth_test"
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/workspaces/acme/test-cases/c1/script":
+			_ = r.ParseForm()
+			got = r.PostForm
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"c1","title":"Sign in","steps":["Open"],"expected":"Home","recorded":true,"has_playwright":true}`))
+		case "GET /api/workspaces/acme/issues/ENG-1/playwright":
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte("import { test, expect } from '@playwright/test';\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	cs := connect(t, srv, token)
+
+	text, isErr := call(t, cs, "save_test_script", map[string]any{"workspace": "acme", "case_id": "c1", "check": "Home",
+		"steps": []map[string]any{{"tool": "navigate", "url": "https://app.test/login"},
+			{"tool": "fill_password", "target": map[string]string{"css": "", "tag": "input", "name": "Password"}, "account": "QA"},
+			{"tool": "assert_no_text", "text": "Error"}},
+		"playwright": "await page.goto('https://app.test/login');"})
+	if isErr || !strings.Contains(text, `"has_playwright":true`) {
+		t.Fatalf("save: %v %s", isErr, text)
+	}
+	want := `{"check":"Home","steps":[{"tool":"navigate","url":"https://app.test/login"},` +
+		`{"tool":"fill_password","target":{"css":"","tag":"input","name":"Password"},"account":"QA"},{"tool":"assert_no_text","text":"Error"}]}`
+	if got.Get("script") != want || got.Get("playwright") != "await page.goto('https://app.test/login');" {
+		t.Errorf("form %v", got)
+	}
+	if _, _ = call(t, cs, "save_test_script", map[string]any{"workspace": "acme", "case_id": "c1", "check": "Home",
+		"steps": []map[string]any{{"tool": "navigate", "url": "https://app.test"}}}); got.Has("playwright") {
+		t.Errorf("playwright sent when left out: %v", got)
+	}
+	text, isErr = call(t, cs, "get_playwright_spec", map[string]any{"workspace": "acme", "identifier": "ENG-1"})
+	if isErr || text != "import { test, expect } from '@playwright/test';\n" {
+		t.Errorf("spec: %v %q", isErr, text)
+	}
+}

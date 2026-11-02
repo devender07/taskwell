@@ -22,6 +22,7 @@ const (
 	runTimeout      = 10 * time.Minute
 	maxStepsPerCase = 30
 	msgRestart      = "The test runner restarted. Run it again."
+	msgNotRecorded  = "Not recorded yet. Record it with Claude Code or an AI run."
 )
 
 var (
@@ -197,27 +198,32 @@ func (r *Runner) runJob(ctx, stop context.Context, runID string) (status, msg st
 	return status, msg
 }
 
-// runOne replays the case's recorded script when it has one, with no Claude call; when there's none or the
-// replay no longer matches the page, Claude runs the case (and records it again when it passes).
+// runOne replays the case's recorded script when it has one, with no Claude call. In an AI run, when there's none
+// or the replay no longer matches the page, Claude runs the case (and records it again when it passes); a replay
+// run never calls Claude: the replay's failure fails the case and an unrecorded case is skipped.
 func (r *Runner) runOne(ctx, stop context.Context, j *job, x Result) (status, summary string, repro []string, err error) {
-	db := context.WithoutCancel(ctx)
 	logged := 0
-	sc, err := r.model.script(db, x.CaseID)
+	sc, err := r.model.script(context.WithoutCancel(ctx), x.CaseID)
 	if err != nil {
 		return "", "", nil, err
 	}
+	if j.kind == "replay" && sc == nil {
+		return "skipped", msgNotRecorded, nil, nil
+	}
 	if sc != nil && !j.regenerate {
-		ok, why, err := r.replay(ctx, j, x, sc, &logged)
-		if err != nil {
-			return "", "", nil, err
+		then := "Claude takes over."
+		if j.kind == "replay" {
+			then = ""
 		}
-		if ok {
+		why, steps, err := r.replay(ctx, j, x, sc, &logged, then)
+		switch {
+		case err != nil:
+			return "", "", nil, err
+		case why == "":
 			return "passed", fmt.Sprintf("Replayed %d recorded steps without AI and found %q on the page.", len(sc.Steps), sc.Check), nil, nil
+		case j.kind == "replay":
+			return "failed", why, steps, nil
 		}
-		if err := r.model.addStep(db, j, r.o.UploadDir, x.ID, logged, why+" Claude takes over.", "", nil); err != nil {
-			return "", "", nil, err
-		}
-		logged++
 	}
 	return r.runCase(ctx, stop, j, x, logged)
 }

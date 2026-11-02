@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -18,16 +19,18 @@ var pollEvery = 3 * time.Second
 // finished are the statuses a test run ends in.
 var finished = []string{"passed", "failed", "error", "cancelled", "limit_reached"}
 
-const testingHow = " Two ways to test an issue: (1) run_ai_test has Tether's AI drive a browser against the workspace's test site, " +
+const testingHow = " Three ways to test an issue: (1) run_ai_test has Tether's AI drive a browser against the workspace's test site, " +
 	"then get_test_run with wait_seconds until it finishes; (2) test it yourself with your own tools, recording the outcome with " +
-	"start_manual_test_run and mark_test_result for each result. A failed result becomes a bug through create_issue: the case's " +
+	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps with save_test_script, then " +
+	"run_recorded_tests replays them with no AI spend. A failed result becomes a bug through create_issue: the case's " +
 	"title as the title, the result's summary and reproduction steps as the description."
 
 // testTools registers the AI testing tools: test cases, runs, sites, accounts and usage.
 func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_test_cases", Annotations: readOnly, Meta: viewMeta(false),
 		Description: "List an issue's test cases with their ids, steps, expected result and last result. " +
-			"recorded means a passed AI run's steps are saved and replay without the AI." + testingHow}, t.listTestCases)
+			"recorded means the case has browser steps (from a passed AI run or save_test_script) that replay without the AI; " +
+			"has_playwright means save_test_script stored Playwright code for it." + testingHow}, t.listTestCases)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_test_case",
 		Description: "Add a test case to an issue: a title, the steps to follow and the expected result."}, t.createTestCase)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_test_cases",
@@ -57,6 +60,18 @@ func (t *tools) testTools(s *mcp.Server) {
 		Description: "List an issue's latest 10 test runs, newest first, with their status and counts."}, t.listTestRuns)
 	mcp.AddTool(s, &mcp.Tool{Name: "cancel_test_run",
 		Description: "Cancel a run that hasn't finished. An AI run in progress stops after its current step."}, t.cancelTestRun)
+	mcp.AddTool(s, &mcp.Tool{Name: "save_test_script", Description: recordingGuide}, t.saveTestScript)
+	mcp.AddTool(s, &mcp.Tool{Name: "clear_test_script", Annotations: destructive,
+		Description: "Remove a test case's recorded steps and Playwright code; runs then need the AI to test it."}, t.clearTestScript)
+	mcp.AddTool(s, &mcp.Tool{Name: "run_recorded_tests",
+		Description: "Start a recorded test run on an issue: Tether replays each recorded case's steps in a sandboxed browser against " +
+			"the workspace's test site, with no AI and no AI spend. A replay or assertion that fails fails the case with the reason, " +
+			"the steps so far and screenshots; unrecorded cases are skipped. Then call get_test_run with the run id and wait_seconds " +
+			"until it finishes."}, t.runRecordedTests)
+	mcp.AddTool(s, &mcp.Tool{Name: "get_playwright_spec", Annotations: readOnly,
+		Description: "Get an issue's test cases as a Playwright spec (TypeScript) a developer can run locally with " +
+			"npx playwright test: stored Playwright code first, else code generated from the recorded steps, else test.fixme."},
+		t.getPlaywrightSpec)
 	mcp.AddTool(s, &mcp.Tool{Name: "ai_test_usage", Annotations: readOnly,
 		Description: "The workspace's AI testing spend this month, its monthly limit and when it resets."}, t.aiTestUsage)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_test_sites", Annotations: readOnly,
@@ -72,6 +87,25 @@ func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "delete_test_account", Annotations: destructive,
 		Description: "Remove a test account."}, t.deleteTestAccount)
 }
+
+const recordingGuide = "Record a test case's browser steps so Tether replays it without AI (run_recorded_tests) and exports it to Playwright. " +
+	"Explore the site with your own browser tools first; Tether spends no AI here. " +
+	"steps start with navigate (a URL on one of the workspace's test sites, from list_test_sites); tools: navigate {url}, " +
+	"click {target}, type {target, text}, select {target, value}, press {key}, wait {seconds 1-5}, fill_password {target, account}, " +
+	"assert_text {text} and assert_no_text {text} (wait up to 5 s for the text to appear / disappear). " +
+	"target is {css, tag, name}: prefer a stable css selector matching one element (data-testid, an id without long digit runs, " +
+	"name, aria-label, placeholder) and always give tag (button, a, input, select, textarea, ...) and the accessible name " +
+	"(aria-label, label text, placeholder, inner text) as the fallback. " +
+	"Never put a password in a step: use fill_password with an account label from list_test_accounts (when there is none, ask the " +
+	"user to add one in Settings → AI testing). Add assert_text / assert_no_text after the steps that matter: negative checks catch " +
+	"most edge cases (a draft must not show in the other inbox). check is a text that's on the page only when the expected result holds. " +
+	"When playwright-cli is available, record with it: snapshot for element refs, each action prints its Playwright code, " +
+	"generate-locator for assertion locators. Send that code as playwright (the test's body, or a whole test(...) block), with " +
+	"passwords as process.env.TETHER_PASSWORD_<LABEL> (the account label upper-cased, other characters as _), never a literal; and " +
+	"translate each action to a step for the no-AI replay: role button/link/textbox/combobox/checkbox plus accessible name becomes " +
+	"target {tag, name} (check the real tag with playwright-cli eval \"el => el.tagName\" eN, and use a data-testid/id/name selector " +
+	"as css when eval shows one). Leave playwright out to keep the stored code, or send \"\" to clear it. " +
+	"Then call run_recorded_tests and get_test_run to prove it passes."
 
 // --- inputs ---
 
@@ -120,6 +154,29 @@ type aiRunIn struct {
 	Identifier string `json:"identifier" jsonschema:"issue identifier, such as ENG-142"`
 	CaseID     string `json:"case_id,omitempty" jsonschema:"test only this case"`
 	Regenerate bool   `json:"regenerate,omitempty" jsonschema:"the AI rewrites the cases from the issue before testing; not with case_id"`
+}
+
+type stepIn struct {
+	Tool   string `json:"tool" jsonschema:"navigate, click, type, select, press, wait, fill_password, assert_text or assert_no_text"`
+	URL    string `json:"url,omitempty" jsonschema:"navigate: a URL on a test site"`
+	Target *struct {
+		CSS  string `json:"css" jsonschema:"a selector matching only this element, or empty"`
+		Tag  string `json:"tag" jsonschema:"the element's tag, such as button or input"`
+		Name string `json:"name" jsonschema:"its accessible name: aria-label, label text, placeholder or inner text"`
+	} `json:"target,omitempty" jsonschema:"click, type, select and fill_password: the element"`
+	Text    string `json:"text,omitempty" jsonschema:"type: the text to type; assert_text and assert_no_text: the text to look for"`
+	Value   string `json:"value,omitempty" jsonschema:"select: the option's value"`
+	Key     string `json:"key,omitempty" jsonschema:"press: a key such as Enter"`
+	Seconds int    `json:"seconds,omitempty" jsonschema:"wait: 1-5"`
+	Account string `json:"account,omitempty" jsonschema:"fill_password: a test account label from list_test_accounts"`
+}
+
+type scriptIn struct {
+	Workspace  string   `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
+	CaseID     string   `json:"case_id" jsonschema:"from list_test_cases"`
+	Steps      []stepIn `json:"steps" jsonschema:"1-60 steps, the first a navigate"`
+	Check      string   `json:"check" jsonschema:"text on the page only when the expected result holds; up to 200 characters"`
+	Playwright *string  `json:"playwright,omitempty" jsonschema:"the case's test as Playwright TypeScript (body or whole test); empty clears it"`
 }
 
 type markIn struct {
@@ -177,7 +234,8 @@ type testCase struct {
 		Kind   string `json:"kind"`
 		At     string `json:"at"`
 	} `json:"last_result,omitempty"`
-	Recorded bool `json:"recorded,omitempty"`
+	Recorded      bool `json:"recorded,omitempty"`
+	HasPlaywright bool `json:"has_playwright,omitempty"`
 }
 
 type testRun struct {
@@ -362,7 +420,46 @@ func (t *tools) reorderTestCases(ctx context.Context, _ *mcp.CallToolRequest, in
 	return result(cs)
 }
 
+func (t *tools) saveTestScript(ctx context.Context, _ *mcp.CallToolRequest, in scriptIn) (*mcp.CallToolResult, any, error) {
+	sc, err := json.Marshal(map[string]any{"steps": in.Steps, "check": in.Check})
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode script: %w", err)
+	}
+	form := url.Values{"script": {string(sc)}}
+	if in.Playwright != nil {
+		form.Set("playwright", *in.Playwright)
+	}
+	var c testCase
+	if err := t.api.post(ctx, ws(in.Workspace, "test-cases", strings.TrimSpace(in.CaseID), "script"), form, &c); err != nil {
+		return nil, nil, err
+	}
+	return result(c)
+}
+
+func (t *tools) clearTestScript(ctx context.Context, _ *mcp.CallToolRequest, in caseIDIn) (*mcp.CallToolResult, any, error) {
+	if err := t.api.del(ctx, ws(in.Workspace, "test-cases", strings.TrimSpace(in.CaseID), "script"), nil); err != nil {
+		return nil, nil, err
+	}
+	return result(map[string]string{"cleared": in.CaseID})
+}
+
 // --- runs ---
+
+func (t *tools) runRecordedTests(ctx context.Context, _ *mcp.CallToolRequest, in issueIn) (*mcp.CallToolResult, any, error) {
+	var r testRun
+	if err := t.api.post(ctx, ws(in.Workspace, "issues", in.Identifier, "test-runs"), url.Values{"kind": {"replay"}}, &r); err != nil {
+		return nil, nil, err
+	}
+	return result(t.runOut(in.Workspace, r))
+}
+
+func (t *tools) getPlaywrightSpec(ctx context.Context, _ *mcp.CallToolRequest, in issueIn) (*mcp.CallToolResult, any, error) {
+	spec, _, err := t.api.file(ctx, ws(in.Workspace, "issues", in.Identifier, "playwright"), 1<<20)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(spec)}}}, nil, nil
+}
 
 func (t *tools) runAITest(ctx context.Context, _ *mcp.CallToolRequest, in aiRunIn) (*mcp.CallToolResult, any, error) {
 	form := url.Values{"kind": {"ai"}}

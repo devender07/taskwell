@@ -99,7 +99,7 @@
     } }, "Refresh");
     show(
       el("header", {},
-        el("h1", {}, `${run.issue} · ${run.kind === "ai" ? "AI" : "Manual"} test run`), pill(run.status),
+        el("h1", {}, `${run.issue} · ${run.kind === "ai" ? "AI test run" : run.kind === "replay" ? "Recorded test run" : "Manual test run"}`), pill(run.status),
         el("span", { className: "spacer" }), refresh, openButton(run.url)),
       el("div", { className: "counts" },
         el("span", { className: "passed" }, `${c.passed ?? 0} passed`),

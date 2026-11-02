@@ -57,7 +57,8 @@ type Case struct {
 	Source     string      `json:"source"`
 	UpdatedAt  time.Time   `json:"updated_at"`
 	LastResult *LastResult `json:"last_result"`
-	Recorded   bool        `json:"recorded"` // a passed AI run's steps are saved; runs replay them without Claude
+	Recorded   bool        `json:"recorded"`       // its steps are saved (by a passed AI run or the script API); runs replay them without Claude
+	Playwright bool        `json:"has_playwright"` // an MCP client saved its test as Playwright code, used by the export
 }
 
 // caseFields is a case as a person or Claude wrote it.
@@ -144,7 +145,7 @@ func lockIssue(ctx context.Context, tx pgx.Tx, issueID string) error {
 
 // --- cases ---
 
-const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source, c.updated_at, c.script is not null,
+const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source, c.updated_at, c.script is not null, c.playwright is not null,
 	(select json_build_object('status', r.status, 'run_id', r.run_id, 'kind', t.kind, 'at', r.marked_at)
 	 from test_results r join test_runs t on t.id = r.run_id
 	 where r.case_id = c.id and r.marked_at is not null order by r.marked_at desc limit 1)
@@ -152,7 +153,7 @@ const caseCols = `c.id::text, c.position, c.title, c.steps, c.expected, c.source
 
 func scanCase(row pgx.Row) (Case, error) {
 	var c Case
-	err := row.Scan(&c.ID, &c.Position, &c.Title, &c.Steps, &c.Expected, &c.Source, &c.UpdatedAt, &c.Recorded, &c.LastResult)
+	err := row.Scan(&c.ID, &c.Position, &c.Title, &c.Steps, &c.Expected, &c.Source, &c.UpdatedAt, &c.Recorded, &c.Playwright, &c.LastResult)
 	c.UpdatedAt = c.UpdatedAt.UTC()
 	if c.LastResult != nil {
 		c.LastResult.At = c.LastResult.At.UTC()
@@ -217,7 +218,7 @@ func (m *model) createCase(ctx context.Context, issueID, userID string, f caseFi
 func (m *model) updateCase(ctx context.Context, workspaceID, id, userID string, f caseFields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var issueID string
-		err := tx.QueryRow(ctx, `update test_cases c set title = $3, steps = $4, expected = $5, script = null, updated_at = now()
+		err := tx.QueryRow(ctx, `update test_cases c set title = $3, steps = $4, expected = $5, script = null, playwright = null, updated_at = now()
 			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
 			returning c.issue_id::text`, id, workspaceID, f.Title, f.Steps, f.Expected).Scan(&issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -253,6 +254,53 @@ func (m *model) deleteCase(ctx context.Context, workspaceID, id, userID string) 
 		return fmt.Errorf("delete test case: %w", err)
 	}
 	return err
+}
+
+// setScript saves the workspace's case's script and, when setCode, its Playwright code ("" clears it); a nil
+// script clears both. errNotFound when there's no such case.
+func (m *model) setScript(ctx context.Context, workspaceID, id, userID string, sc *script, setCode bool, code string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var issueID string
+		err := tx.QueryRow(ctx, `update test_cases c set script = $3,
+			  playwright = case when $3::jsonb is null or $4 then nullif($5, '') else c.playwright end
+			from issues i where i.id = c.issue_id and c.id = $1 and i.workspace_id = $2 and c.deleted_at is null
+			returning c.issue_id::text`, id, workspaceID, sc, setCode, code).Scan(&issueID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNotFound
+		}
+		if err != nil {
+			return err
+		}
+		return publishCases(ctx, tx, issueID, userID)
+	})
+	if err != nil && !errors.Is(err, errNotFound) {
+		return fmt.Errorf("set test script: %w", err)
+	}
+	return err
+}
+
+// exportCase is a saved case with its script and Playwright code (nil when there's none), for the export.
+type exportCase struct {
+	caseFields
+	script     *script
+	playwright *string
+}
+
+// exportCases returns the issue's saved cases by position with their scripts.
+func (m *model) exportCases(ctx context.Context, issueID string) ([]exportCase, error) {
+	rows, err := m.db.Query(ctx, `select title, steps, expected, script, playwright from test_cases
+		where issue_id = $1 and deleted_at is null order by position, id`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("export test cases: %w", err)
+	}
+	cs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (exportCase, error) {
+		var c exportCase
+		return c, row.Scan(&c.Title, &c.Steps, &c.Expected, &c.script, &c.playwright)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("export test cases: %w", err)
+	}
+	return cs, nil
 }
 
 // orderCases sets positions to the order of ids, which must be every saved case of the issue once; else errBadOrder.
@@ -407,7 +455,7 @@ func (m *model) run(ctx context.Context, workspaceID, id string) (*RunDetail, er
 	if err != nil {
 		return nil, fmt.Errorf("get test results: %w", err)
 	}
-	if r.Kind == "ai" {
+	if r.Kind != "manual" {
 		if err := m.addLogs(ctx, d); err != nil {
 			return nil, err
 		}
@@ -415,7 +463,7 @@ func (m *model) run(ctx context.Context, workspaceID, id string) (*RunDetail, er
 	return d, nil
 }
 
-// addLogs fills the AI run's step logs and latest screenshot.
+// addLogs fills the AI or replay run's step logs and latest screenshot.
 func (m *model) addLogs(ctx context.Context, d *RunDetail) error {
 	rows, err := m.db.Query(ctx, `select s.result_id::text, s.position, s.action, s.url,
 		  case when f.id is not null then '/api/files/' || f.id || '/' || f.name end
@@ -514,7 +562,7 @@ func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, 
 		switch {
 		case err != nil:
 			return err
-		case kind == "ai":
+		case kind != "manual":
 			return errAIRun
 		case runStatus != "running":
 			return errFinished
@@ -612,9 +660,10 @@ func utc(t *time.Time) *time.Time {
 // --- AI testing: sites, accounts, usage and the tester ---
 
 var (
-	errTaken   = errors.New("already exists")
-	errNoSites = errors.New("no test sites")
-	errLimit   = errors.New("monthly limit reached")
+	errTaken    = errors.New("already exists")
+	errNoSites  = errors.New("no test sites")
+	errNoScript = errors.New("no recorded test cases")
+	errLimit    = errors.New("monthly limit reached")
 )
 
 const (
@@ -821,7 +870,7 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID stri
 		var sites int
 		var active bool
 		if err := tx.QueryRow(ctx, `select (select count(*) from test_sites where workspace_id = $1),
-			exists (select 1 from test_runs where issue_id = $2 and kind = 'ai' and status in ('queued', 'generating', 'running'))`,
+			exists (select 1 from test_runs where issue_id = $2 and kind in ('ai', 'replay') and status in ('queued', 'generating', 'running'))`,
 			wsID, issueID).Scan(&sites, &active); err != nil {
 			return err
 		}
@@ -860,6 +909,42 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID stri
 	return id, err
 }
 
+// createReplay queues a replay run and returns its id: errNoSites, errNoScript when no case is recorded, or
+// errRunActive when an AI or replay run is already queued or running on the issue. It never checks the spend limit.
+func (m *model) createReplay(ctx context.Context, wsID, issueID, userID string) (string, error) {
+	var id string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssue(ctx, tx, issueID); err != nil {
+			return err
+		}
+		var sites int
+		var recorded, active bool
+		if err := tx.QueryRow(ctx, `select (select count(*) from test_sites where workspace_id = $1),
+			exists (select 1 from test_cases where issue_id = $2 and deleted_at is null and script is not null),
+			exists (select 1 from test_runs where issue_id = $2 and kind in ('ai', 'replay') and status in ('queued', 'generating', 'running'))`,
+			wsID, issueID).Scan(&sites, &recorded, &active); err != nil {
+			return err
+		}
+		switch {
+		case sites == 0:
+			return errNoSites
+		case !recorded:
+			return errNoScript
+		case active:
+			return errRunActive
+		}
+		if err := tx.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, started_by, status, proxy_token)
+			values ($1, $2, 'replay', $3, 'queued', $4) returning id::text`, wsID, issueID, userID, rand.Text()).Scan(&id); err != nil {
+			return err
+		}
+		return publishRun(ctx, tx, issueID, id, userID, false)
+	})
+	if err != nil && !errors.Is(err, errNoSites) && !errors.Is(err, errNoScript) && !errors.Is(err, errRunActive) {
+		return "", fmt.Errorf("queue replay run: %w", err)
+	}
+	return id, err
+}
+
 // --- tester ---
 
 // heartbeat records that a tester is up.
@@ -877,10 +962,10 @@ const (
 	msgStale   = "The test runner stopped. Run it again."
 )
 
-// failStale ends AI runs a crashed tester left generating or running, claimed over staleAfter ago.
+// failStale ends AI and replay runs a crashed tester left generating or running, claimed over staleAfter ago.
 func (m *model) failStale(ctx context.Context) error {
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `select id::text from test_runs where kind = 'ai' and status in ('generating', 'running')
+		rows, err := tx.Query(ctx, `select id::text from test_runs where kind in ('ai', 'replay') and status in ('generating', 'running')
 			and claimed_at < now() - make_interval(secs => $1) for update skip locked`, staleAfter.Seconds())
 		if err != nil {
 			return fmt.Errorf("find stale runs: %w", err)
@@ -902,8 +987,8 @@ func (m *model) failStale(ctx context.Context) error {
 // ponytail: one global advisory lock per claim; per-workspace locks if claims ever queue behind it.
 const claimLock = 0x7465737472756e // "testrun"
 
-// claim takes the oldest queued AI run whose workspace has fewer than workspaceCap running, marks it generating
-// (when it needs cases) or running, and returns its id; "" when there's none.
+// claim takes the oldest queued AI or replay run whose workspace has fewer than workspaceCap of them running, marks
+// it generating (an AI run that needs cases) or running, and returns its id; "" when there's none.
 func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -912,8 +997,9 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 		}
 		var issueID string
 		err := tx.QueryRow(ctx, `select r.id::text, r.issue_id::text from test_runs r
-			where r.kind = 'ai' and r.status = 'queued'
-			  and (select count(*) from test_runs o where o.workspace_id = r.workspace_id and o.status in ('generating', 'running')) < $1
+			where r.kind in ('ai', 'replay') and r.status = 'queued'
+			  and (select count(*) from test_runs o where o.workspace_id = r.workspace_id and o.kind in ('ai', 'replay')
+			       and o.status in ('generating', 'running')) < $1
 			order by r.created_at, r.id limit 1 for update skip locked`, workspaceCap).Scan(&id, &issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -922,7 +1008,7 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 			return err
 		}
 		if _, err := tx.Exec(ctx, `update test_runs r set claimed_at = now(), tester_url = $2,
-			status = case when r.regenerate or not exists (select 1 from test_cases c where c.issue_id = r.issue_id and c.deleted_at is null)
+			status = case when r.kind = 'ai' and (r.regenerate or not exists (select 1 from test_cases c where c.issue_id = r.issue_id and c.deleted_at is null))
 			         then 'generating' else 'running' end
 			where id = $1`, id, testerURL); err != nil {
 			return err
@@ -935,11 +1021,11 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 	return id, nil
 }
 
-// liveTester returns the tester URL of the workspace's AI run while it's generating or running, else "".
+// liveTester returns the tester URL of the workspace's AI or replay run while it's generating or running, else "".
 func (m *model) liveTester(ctx context.Context, workspaceID, id string) (string, error) {
 	var u string
 	err := m.db.QueryRow(ctx, `select coalesce(tester_url, '') from test_runs
-		where id = $1 and workspace_id = $2 and kind = 'ai' and status in ('generating', 'running')`, id, workspaceID).Scan(&u)
+		where id = $1 and workspace_id = $2 and kind in ('ai', 'replay') and status in ('generating', 'running')`, id, workspaceID).Scan(&u)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
@@ -950,21 +1036,21 @@ type accountRef struct{ id, label, username string }
 
 // job is what the tester needs to run a claimed run.
 type job struct {
-	runID, wsID, issueID, status, token, startedBy, caseID string
-	regenerate                                             bool
-	issueTitle, description, project                       string
-	sites                                                  []Site
-	accounts                                               []accountRef
+	runID, wsID, issueID, kind, status, token, startedBy, caseID string
+	regenerate                                                   bool
+	issueTitle, description, project                             string
+	sites                                                        []Site
+	accounts                                                     []accountRef
 }
 
 func (m *model) job(ctx context.Context, runID string) (*job, error) {
 	j := job{runID: runID}
 	var desc []byte
 	var startedBy *string
-	err := m.db.QueryRow(ctx, `select r.workspace_id::text, r.issue_id::text, r.status, r.proxy_token, r.regenerate, r.started_by::text,
+	err := m.db.QueryRow(ctx, `select r.workspace_id::text, r.issue_id::text, r.kind, r.status, r.proxy_token, r.regenerate, r.started_by::text,
 		  coalesce(r.case_id::text, ''), i.title, i.description, p.name
 		from test_runs r join issues i on i.id = r.issue_id join projects p on p.id = i.project_id where r.id = $1`, runID).
-		Scan(&j.wsID, &j.issueID, &j.status, &j.token, &j.regenerate, &startedBy, &j.caseID, &j.issueTitle, &desc, &j.project)
+		Scan(&j.wsID, &j.issueID, &j.kind, &j.status, &j.token, &j.regenerate, &startedBy, &j.caseID, &j.issueTitle, &desc, &j.project)
 	if err != nil {
 		return nil, fmt.Errorf("read ai run: %w", err)
 	}
@@ -995,7 +1081,7 @@ const (
 )
 
 // startCases saves Claude's cases on the issue when generated isn't nil (replacing the old ones, logged when the
-// run regenerates), then sets the run running with a pending result per case, the ones past maxAIRunCases skipped.
+// run regenerates), then sets the run running with a pending result per case, an AI run's past maxAIRunCases skipped.
 func (m *model) startCases(ctx context.Context, j *job, generated []caseFields) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if err := lockIssue(ctx, tx, j.issueID); err != nil {
@@ -1024,9 +1110,11 @@ func (m *model) startCases(ctx context.Context, j *job, generated []caseFields) 
 		if _, err := snapshotCases(ctx, tx, j.runID, j.issueID, j.caseID, maxCases); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `update test_results set status = 'skipped', summary = $3, marked_at = now()
-			where run_id = $1 and position >= $2`, j.runID, maxAIRunCases, msgOverLimit); err != nil {
-			return err
+		if j.kind == "ai" {
+			if _, err := tx.Exec(ctx, `update test_results set status = 'skipped', summary = $3, marked_at = now()
+				where run_id = $1 and position >= $2`, j.runID, maxAIRunCases, msgOverLimit); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `update test_runs set status = 'running' where id = $1`, j.runID); err != nil {
 			return err
