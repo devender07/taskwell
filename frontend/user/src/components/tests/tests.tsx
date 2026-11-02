@@ -251,6 +251,11 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
         </div>
       </div>
       {runAi && noSite ? <p className="text-caption text-secondary m-0">Add a test site in Settings → AI testing to run AI tests.</p> : null}
+      {manage && list.length > 0 && !recorded ? (
+        <p className="text-caption text-secondary m-0">
+          No test case is recorded yet. Ask Claude Code to record them with the Tether MCP server, or pass one AI run, to run them without AI.
+        </p>
+      ) : null}
       <FormError>{regenerating ? null : startError}</FormError>
       <FormError>{cases.error}</FormError>
       {cases.data === null && !cases.error ? (
