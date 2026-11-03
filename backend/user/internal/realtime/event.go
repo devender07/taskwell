@@ -103,6 +103,9 @@ func Feedback(slug string) string { return Workspace(slug) + "/feedback" }
 
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
+// Watching is the list of issues the caller watches.
+func Watching(slug string) string { return Workspace(slug) + "/watching" }
+
 // Activity is the workspace's activity feed on Home.
 func Activity(slug string) string { return Workspace(slug) + "/activity" }
 
@@ -110,10 +113,10 @@ func Activity(slug string) string { return Workspace(slug) + "/activity" }
 func ProjectStats(slug string) string { return Workspace(slug) + "/project-stats" }
 
 // IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues,
-// Home's activity and project counts, and the roadmap's progress.
+// watched issues, Home's activity and project counts, and the roadmap's progress.
 func IssuePaths(slug, identifier, key string) []string {
 	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug),
-		Activity(slug), ProjectStats(slug), Roadmap(slug)}
+		Watching(slug), Activity(slug), ProjectStats(slug), Roadmap(slug)}
 }
 
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it

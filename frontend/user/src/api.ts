@@ -56,6 +56,7 @@ export type Issue = {
   can_edit: boolean
   can_delete: boolean
   watching: boolean
+  watchers?: PersonRef[]
   parent: IssueRef | null
   cycle: CycleRef | null
   sub_issues?: IssueRef[]

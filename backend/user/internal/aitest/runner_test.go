@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/tether/backend/user/internal/storage"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
@@ -330,7 +331,7 @@ func TestRunner(t *testing.T) {
 		returning id::text`, wsID, issueID, ann).Scan(&runID); err != nil {
 		t.Fatal(err)
 	}
-	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, UploadDir: t.TempDir(), ChromeURL: chromeURL,
+	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, Files: storage.New(sysconfig.New(pool)), ChromeURL: chromeURL,
 		ProxyURL: proxyURL, Browsers: 1, Proxy: proxy})
 	for {
 		id, err := m.claim(ctx, 2, "")

@@ -19,6 +19,7 @@ import (
 	"github.com/devender07/tether/backend/shared/obs"
 	"github.com/devender07/tether/backend/user/internal/aitest"
 	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/tether/backend/user/internal/storage"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 )
 
@@ -65,15 +66,17 @@ func main() {
 	liveSrv := &http.Server{Addr: env.Get("LIVE_ADDR", ":3129"), Handler: liveMux, ReadHeaderTimeout: 10 * time.Second}
 	host, _ := os.Hostname() // in compose, the container's hostname is its id, which the network resolves
 	_, port, _ := net.SplitHostPort(liveSrv.Addr)
-	o := aitest.RunnerOptions{Live: live, LiveURL: env.Get("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, UploadDir: env.Get("UPLOAD_DIR", "./uploads"), ChromeURL: env.Get("CHROME_URL", "http://chrome:9222"),
+	o := aitest.RunnerOptions{Live: live, LiveURL: env.Get("LIVE_URL", "http://"+net.JoinHostPort(host, port)), Key: key, ChromeURL: env.Get("CHROME_URL", "http://chrome:9222"),
 		ProxyURL: env.Get("PROXY_URL", "http://tester:3128"), Browsers: browsers, Proxy: proxy, IgnoreCertErrors: allowPrivate}
 	if apiKey != "" {
 		o.Send = aitest.NewSender(apiKey)
 	}
 	slog.Info("tester running", "app_env", map[bool]string{true: "production", false: "development"}[prod], "proxy_addr", proxySrv.Addr,
-		"proxy_url", o.ProxyURL, "chrome_url", o.ChromeURL, "browsers", browsers, "live_url", o.LiveURL, "upload_dir", o.UploadDir,
+		"proxy_url", o.ProxyURL, "chrome_url", o.ChromeURL, "browsers", browsers, "live_url", o.LiveURL,
 		"anthropic_api_key", apiKey != "", "allow_private_sites", allowPrivate)
-	runner := aitest.NewRunner(pool, sysconfig.New(pool), o)
+	cfg := sysconfig.New(pool)
+	o.Files = storage.New(cfg)
+	runner := aitest.NewRunner(pool, cfg, o)
 	runner.RegisterSessions(liveMux) // browser sessions share the internal port with the live view
 	go func() {
 		if err := liveSrv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {

@@ -14,7 +14,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
-// TestPagedLists runs the paged mode of the project, cycle and my-issues lists (filters, each sort, grouping counts
+// TestPagedLists runs the paged mode of the project, cycle, my-issues and watching lists (filters, each sort, grouping counts
 // and in/offset) against the scratch database (see dbtest).
 func TestPagedLists(t *testing.T) {
 	pool := dbtest.Pool(t)
@@ -142,4 +142,20 @@ func TestPagedLists(t *testing.T) {
 	get("/projects/ENG/cycles/2/issues?limit=5", 404, nil)
 	get("/projects/NOPE/cycles/1/issues", 404, nil)
 	check("/my-issues?limit=5&group=status&sort=due", 4, map[string]string{s0: "3 [3 5 1] false", s1: "1 [6] false"})
+
+	check("/watching?limit=5", 0, map[string]string{})
+	if _, err := pool.Exec(ctx, `insert into issue_watchers (issue_id, user_id) select id, $2 from issues
+		where workspace_id = $1 and number in (2, 4)`, wsID, ann); err != nil {
+		t.Fatal(err)
+	}
+	check("/watching?limit=5&group=none", 2, map[string]string{"all": "2 [4 2] false"})
+	get("/watching", 200, &all)
+	if !slices.Equal(numbers(all), []int{2, 4}) {
+		t.Errorf("unpaged watching: %v", numbers(all))
+	}
+	var d IssueDetail
+	get("/issues/ENG-2", 200, &d)
+	if !d.Watching || len(d.Watchers) != 1 || d.Watchers[0].ID != ann {
+		t.Errorf("ENG-2 watchers: %v %v", d.Watching, d.Watchers)
+	}
 }

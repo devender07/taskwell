@@ -70,7 +70,7 @@ const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.
 
 // Issue lists and Home's activity and project counts refetch at most every 3s, so a teammate typing doesn't reload
 // them on every save.
-const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|activity|project-stats)$/
+const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|watching|activity|project-stats)$/
 // The chat list and its unread count refetch at most every second, so a busy chat doesn't reload them per message.
 const CHATS = /^\/workspaces\/[^/]+\/chats(\/unread-count)?$/
 

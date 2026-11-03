@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/storage"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 )
 
@@ -33,11 +34,11 @@ var (
 
 // RunnerOptions configure the tester.
 type RunnerOptions struct {
-	Send      sendFunc // nil without ANTHROPIC_API_KEY: the tester stays idle and the API answers 503
-	Key       []byte   // from Key(TEST_SECRET_KEY), opens test account passwords
-	UploadDir string
-	ChromeURL string // the browser's DevTools endpoint, http://chrome:9222
-	ProxyURL  string // how Chrome reaches Proxy, http://tester:3128
+	Send      sendFunc       // nil without ANTHROPIC_API_KEY: the tester stays idle and the API answers 503
+	Key       []byte         // from Key(TEST_SECRET_KEY), opens test account passwords
+	Files     *storage.Store // where step screenshots go
+	ChromeURL string         // the browser's DevTools endpoint, http://chrome:9222
+	ProxyURL  string         // how Chrome reaches Proxy, http://tester:3128
 	// IgnoreCertErrors lets pages load sites with self-signed or local-CA certificates; development only.
 	IgnoreCertErrors bool
 	Browsers         int // runs at once
@@ -406,7 +407,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result, logged int
 			seenBlocked[host] = true
 			blocked := "Blocked: " + host + " isn't a registered test site"
 			note = strings.TrimSpace(note + "\n" + blocked + ".")
-			if err := r.model.addStep(db, j, r.o.UploadDir, x.ID, logged, blocked, "", nil); err != nil {
+			if err := r.model.addStep(db, j, r.o.Files, x.ID, logged, blocked, "", nil); err != nil {
 				return "", "", nil, err
 			}
 			logged++
@@ -420,7 +421,7 @@ func (r *Runner) runCase(ctx, stop context.Context, j *job, x Result, logged int
 		if err != nil {
 			return "", "", nil, err
 		}
-		if err := r.model.addStep(db, j, r.o.UploadDir, x.ID, logged, action, st.URL, shot); err != nil {
+		if err := r.model.addStep(db, j, r.o.Files, x.ID, logged, action, st.URL, shot); err != nil {
 			return "", "", nil, err
 		}
 		logged++

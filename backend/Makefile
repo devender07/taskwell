@@ -1,4 +1,4 @@
-# Local backend: `make` (or `make dev`) starts Postgres, Mailpit and Chrome, applies migrations, then runs the user
+# Local backend: `make` (or `make dev`) starts Postgres, Mailpit, an S3 store (uploads) and Chrome, applies migrations, then runs the user
 # API (:8090), AI tester (:3128 proxy, :3129 live view), admin API (:8080) and MCP server (:8095) with prefixed logs.
 # Ctrl+C stops them all. The tester reads ANTHROPIC_API_KEY and TEST_SECRET_KEY from the git-ignored .env.
 
@@ -20,7 +20,8 @@ dev: up migrate
 	@$(MAKE) --no-print-directory -j4 user tester admin mcp
 
 up:
-	$(COMPOSE) --profile ai up -d --wait postgres mailpit chrome
+	$(COMPOSE) --profile ai up -d --wait postgres mailpit s3 chrome
+	@echo 's3.bucket.create -name tether' | $(COMPOSE) exec -T s3 weed shell -master=localhost:9333 >/dev/null
 
 down:
 	$(COMPOSE) --profile ai down

@@ -2,17 +2,16 @@ package file
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/user/internal/storage"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/web"
 	"github.com/devender07/tether/backend/user/internal/workspace"
@@ -26,28 +25,23 @@ const (
 	avatarCache     = "private, max-age=300"
 )
 
-// Handler serves uploads. Each file is stored as <dir>/<id>: the name on disk is always the server's uuid, never
-// anything the client sent.
-// ponytail: local disk; move behind an interface with S3 when running more than one API host.
+// Handler serves uploads. Each file is stored as the object <id>: the key is always the server's uuid, never anything
+// the client sent.
 type Handler struct {
 	model        *model
-	dir          string
+	files        *storage.Store
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
 	cfg          *sysconfig.Store
 	profile      func(ctx context.Context, userID string) (any, error)
 }
 
-// New creates dir (0700) if needed. It takes the auth handler's Authenticate and Profile (the GET /api/me user)
-// and the workspace handler's Member.
-func New(db *pgxpool.Pool, dir string, authenticate func(*http.Request) (string, error),
+// New takes the auth handler's Authenticate and Profile (the GET /api/me user) and the workspace handler's Member.
+func New(db *pgxpool.Pool, files *storage.Store, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error), cfg *sysconfig.Store,
-	profile func(ctx context.Context, userID string) (any, error)) (*Handler, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create upload dir: %w", err)
-	}
-	return &Handler{model: &model{db: db}, dir: dir, authenticate: authenticate, member: member, cfg: cfg,
-		profile: profile}, nil
+	profile func(ctx context.Context, userID string) (any, error)) *Handler {
+	return &Handler{model: &model{db: db}, files: files, authenticate: authenticate, member: member, cfg: cfg,
+		profile: profile}
 }
 
 func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -102,24 +96,12 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, userID string) e
 		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return nil
 	}
-	// f.ID is a validated uuid that matched a row, so the path can't leave h.dir.
-	file, err := os.Open(filepath.Join(h.dir, f.ID))
-	if errors.Is(err, os.ErrNotExist) {
-		slog.Warn("file missing on disk", "id", f.ID)
-		web.Err(w, http.StatusNotFound, errFileNotFound)
-		return nil
-	}
+	u, err := h.files.URL(r.Context(), f.ID)
 	if err != nil {
-		return fmt.Errorf("open file: %w", err)
+		return err
 	}
-	defer file.Close()
-	hd := w.Header()
-	hd.Set("Content-Type", f.ContentType)
-	hd.Set("X-Content-Type-Options", "nosniff")
-	hd.Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	hd.Set("Content-Disposition", disposition(f.ContentType, f.Name))
-	hd.Set("Cache-Control", "private, max-age=31536000, immutable")
-	http.ServeContent(w, r, "", f.createdAt, file)
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(storage.CacheFor.Seconds())))
+	http.Redirect(w, r, u, http.StatusFound)
 	return nil
 }
 
@@ -142,7 +124,8 @@ func (h *Handler) replaceAvatar(w http.ResponseWriter, r *http.Request, userID s
 		return err
 	}
 	if old != "" {
-		if err := os.Remove(filepath.Join(h.dir, old)); err != nil {
+		// The sweep removes the object later if this fails: it has no row any more.
+		if err := h.files.Delete(r.Context(), old); err != nil {
 			slog.Warn("remove old avatar", "id", old, "err", err)
 		}
 	}
@@ -172,7 +155,7 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request, _ string) error
 	return nil
 }
 
-// save streams the multipart "file" field to disk and records it, writing a 400 or 413 and returning ok=false when
+// save streams the multipart "file" field to a temp file, then stores and records it, writing a 400 or 413 and returning ok=false when
 // the upload is missing, too large, or (with imageOnly) not an image. The bytes never sit in memory as a whole.
 func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *string, userID string, limit int64,
 	tooLarge string, imageOnly bool) (*File, bool, error) {
@@ -197,16 +180,15 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 			continue
 		}
 		f := &File{Name: cleanName(part.FileName()), workspaceID: workspaceID, uploaderID: userID}
-		tmp := filepath.Join(h.dir, ".upload-"+rand.Text())
-		out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		out, err := os.CreateTemp("", "tether-upload-")
 		if err != nil {
 			return nil, false, fmt.Errorf("create temp file: %w", err)
 		}
-		defer os.Remove(tmp) //nolint:errcheck // gone already once renamed
+		defer os.Remove(out.Name()) //nolint:errcheck // best effort
+		defer out.Close()
 		head := make([]byte, 512)
 		n, err := io.ReadFull(part, head)
 		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-			out.Close()
 			if tooBig(err) {
 				return fail(http.StatusRequestEntityTooLarge, tooLarge)
 			}
@@ -214,13 +196,9 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 		}
 		f.ContentType = http.DetectContentType(head[:n])
 		if _, err := out.Write(head[:n]); err != nil {
-			out.Close()
 			return nil, false, fmt.Errorf("write upload: %w", err)
 		}
 		rest, err := io.Copy(out, io.LimitReader(part, limit-int64(n)+1))
-		if cerr := out.Close(); err == nil && cerr != nil {
-			return nil, false, fmt.Errorf("close upload: %w", cerr)
-		}
 		f.Size = int64(n) + rest
 		switch {
 		case tooBig(err) || f.Size > limit:
@@ -233,11 +211,11 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 			return fail(http.StatusBadRequest, errChooseImage)
 		}
 		f.Image = isImage(f.ContentType)
+		if _, err := out.Seek(0, io.SeekStart); err != nil {
+			return nil, false, fmt.Errorf("rewind upload: %w", err)
+		}
 		err = h.model.create(r.Context(), f, func(id string) error {
-			if err := os.Rename(tmp, filepath.Join(h.dir, id)); err != nil {
-				return fmt.Errorf("store upload: %w", err)
-			}
-			return nil
+			return h.files.Put(r.Context(), id, f.ContentType, disposition(f.ContentType, f.Name), out)
 		})
 		if err != nil {
 			return nil, false, err

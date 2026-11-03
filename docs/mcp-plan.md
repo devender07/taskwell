@@ -74,6 +74,7 @@ Tools (every one but `list_workspaces` takes `workspace`, the slug). Names, not 
 | `search_issues` | `workspace`, `query`, `project?` | `GET …/issues?q=&project=` |
 | `list_issues` | `workspace`, `project`, `status?`, `assignee?`, `label?`, `priority?` | `GET …/projects/{key}/issues`; filters applied by the API if it supports them, else in the MCP server |
 | `my_issues` | `workspace` | `GET …/my-issues` |
+| `watching_issues` | `workspace` | `GET …/watching` |
 | `get_issue` | `workspace`, `identifier` (`ENG-142`) | `GET …/issues/{identifier}` + first page of `…/timeline` (comments as text) |
 | `create_issue` | `workspace`, `project`, `title`, `description?`, `status?`, `assignee?`, `priority?` (`none/urgent/high/medium/low` → 0–4 as the API defines), `due_date?` (`YYYY-MM-DD`), `labels?` ([]string) | `POST …/projects/{key}/issues` |
 | `update_issue` | `workspace`, `identifier`, same optional fields as create (empty string clears assignee / due date) | `POST …/issues/{identifier}` (only fields given are sent) |

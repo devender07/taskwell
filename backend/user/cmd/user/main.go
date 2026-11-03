@@ -33,6 +33,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/notify"
 	"github.com/devender07/tether/backend/user/internal/project"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/storage"
 	"github.com/devender07/tether/backend/user/internal/sweep"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
 	"github.com/devender07/tether/backend/user/internal/webhook"
@@ -180,14 +181,11 @@ func main() {
 	})
 	wg.Go(func() { mailer.Run(work) })
 	wg.Go(func() { webhookH.Run(work) })
-	uploadDir := env.Get("UPLOAD_DIR", "./uploads")
-	fileH, err := file.New(pool, uploadDir, authenticate, wsH.Member, cfg,
+	files := storage.New(cfg)
+	fileH := file.New(pool, files, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
-	if err != nil {
-		obs.Fatal("startup", "err", err)
-	}
 	fileH.Register(mux)
-	sweeper := sweep.New(pool, uploadDir)
+	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 
 	internal := http.NewServeMux()
@@ -310,8 +308,7 @@ func logConfig(prod bool, addr, dbURL, base string, envSecret bool) {
 	if prod {
 		appEnv = "production"
 	}
-	slog.Info("config", "app_env", appEnv, "addr", addr, "database", db, "app_base_url", base, "jwt_secret", jwtSource,
-		"upload_dir", env.Get("UPLOAD_DIR", "./uploads"))
+	slog.Info("config", "app_env", appEnv, "addr", addr, "database", db, "app_base_url", base, "jwt_secret", jwtSource)
 }
 
 // duration reads key as a time.Duration ("90s", "1m"), or def when it's unset or invalid.

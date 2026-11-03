@@ -95,6 +95,7 @@ export const REFERENCE: Group[] = [
     endpoints: [
       { method: 'GET', path: `${project}/issues`, about: 'The project’s issues.', fields: PAGE_FIELDS, returns: '200 [issue], or the paged shape with limit' },
       { method: 'GET', path: `${ws}/my-issues`, about: 'Issues assigned to you across active projects. Same paging and filters.', returns: '200 [issue], or the paged shape with limit' },
+      { method: 'GET', path: `${ws}/watching`, about: 'Issues you watch across active projects. Same paging and filters.', returns: '200 [issue], or the paged shape with limit' },
       { method: 'GET', path: `${cycle}/issues`, about: 'A cycle’s issues. Same paging and filters.', returns: '200 [issue], or the paged shape with limit' },
       {
         method: 'GET',

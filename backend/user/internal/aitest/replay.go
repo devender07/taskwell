@@ -216,7 +216,7 @@ func (r *Runner) logStep(ctx context.Context, pg *page, j *job, x Result, logged
 	if err != nil {
 		return err
 	}
-	if err := r.model.addStep(context.WithoutCancel(ctx), j, r.o.UploadDir, x.ID, *logged, action, u, shot); err != nil {
+	if err := r.model.addStep(context.WithoutCancel(ctx), j, r.o.Files, x.ID, *logged, action, u, shot); err != nil {
 		return err
 	}
 	*logged++

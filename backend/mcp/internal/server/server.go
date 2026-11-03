@@ -61,6 +61,8 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 		Description: "List a project's issues, newest first, optionally filtered by status, assignee, label or priority."}, t.listIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "my_issues", Annotations: readOnly,
 		Description: "List the issues assigned to you in a workspace's active projects."}, t.myIssues)
+	mcp.AddTool(s, &mcp.Tool{Name: "watching_issues", Annotations: readOnly,
+		Description: "List the issues you watch in a workspace's active projects."}, t.watchingIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_issue", Annotations: readOnly,
 		Description: "Read one issue: its fields, links, description and latest comments (with ids for update_comment and delete_comment)."}, t.getIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_issue",
@@ -406,11 +408,19 @@ func (t *tools) listIssues(ctx context.Context, _ *mcp.CallToolRequest, in listI
 }
 
 func (t *tools) myIssues(ctx context.Context, _ *mcp.CallToolRequest, in wsIn) (*mcp.CallToolResult, any, error) {
+	return t.userIssues(ctx, in.Workspace, "my-issues")
+}
+
+func (t *tools) watchingIssues(ctx context.Context, _ *mcp.CallToolRequest, in wsIn) (*mcp.CallToolResult, any, error) {
+	return t.userIssues(ctx, in.Workspace, "watching")
+}
+
+func (t *tools) userIssues(ctx context.Context, slug, list string) (*mcp.CallToolResult, any, error) {
 	var is []issue
-	if err := t.api.get(ctx, ws(in.Workspace, "my-issues"), nil, &is); err != nil {
+	if err := t.api.get(ctx, ws(slug, list), nil, &is); err != nil {
 		return nil, nil, err
 	}
-	return result(t.outs(in.Workspace, is))
+	return result(t.outs(slug, is))
 }
 
 func (t *tools) getIssue(ctx context.Context, _ *mcp.CallToolRequest, in issueIn) (*mcp.CallToolResult, any, error) {

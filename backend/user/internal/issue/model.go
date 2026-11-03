@@ -112,6 +112,7 @@ type IssueDetail struct {
 	Blocks    []IssueRef `json:"blocks"`
 	BlockedBy []IssueRef `json:"blocked_by"`
 	Watching  bool       `json:"watching"`
+	Watchers  []Person   `json:"watchers"` // every member watching it, by name
 	// PullRequests are the linked pull requests (gitlink's JSON), newest first.
 	PullRequests json.RawMessage `json:"pull_requests"`
 }
@@ -319,6 +320,19 @@ func (m *model) assignedPage(ctx context.Context, workspaceID, userID string, q 
 		workspaceID, userID)
 }
 
+// watching is where for the issues the user watches in the workspace's active projects they can see.
+const watching = `i.workspace_id = $1 and p.archived_at is null and can_see_project(p.id, $2)
+	and exists (select 1 from issue_watchers w where w.issue_id = i.id and w.user_id = $2)`
+
+// watched returns the issues the user watches, newest first.
+func (m *model) watched(ctx context.Context, workspaceID, userID string) ([]Issue, error) {
+	return m.issues(ctx, watching+` order by i.created_at desc, i.id desc`, workspaceID, userID)
+}
+
+func (m *model) watchedPage(ctx context.Context, workspaceID, userID string, q pageQuery) ([]Group, error) {
+	return m.page(ctx, q, watching, workspaceID, userID)
+}
+
 func (m *model) cyclePage(ctx context.Context, cycleID string, q pageQuery) ([]Group, error) {
 	return m.page(ctx, q, `i.cycle_id = $1`, cycleID)
 }
@@ -418,7 +432,7 @@ func (m *model) byID(ctx context.Context, id string) (*Issue, error) {
 }
 
 // relations returns the issue's sub-issues (by number), the issues it blocks and is blocked by (oldest link first)
-// that the user can see, whether the user watches it and its pull requests.
+// that the user can see, whether the user watches it, who watches it and its pull requests.
 func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDetail, error) {
 	d := IssueDetail{Issue: i}
 	err := m.db.QueryRow(ctx,
@@ -428,11 +442,15 @@ func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDe
 		        coalesce((select json_agg(`+refJSON+` order by l.created_at, r.id)`+refFrom+`
 		                  join issue_links l on l.blocker_id = r.id where l.blocked_id = $1 and can_see_project(r.project_id, $2)), '[]'),
 		        exists(select 1 from issue_watchers where issue_id = $1 and user_id = $2),
+		        coalesce((select json_agg(json_build_object('id', u.id, 'name', u.name) order by u.name, u.id)
+		                  from issue_watchers w join users u on u.id = w.user_id join issues wi on wi.id = w.issue_id
+		                  join workspace_members m on m.workspace_id = wi.workspace_id and m.user_id = w.user_id
+		                  where w.issue_id = $1), '[]'),
 		        coalesce((select json_agg(json_build_object('provider', pr.provider, 'repo', pr.repo, 'number', pr.number,
 		                    'url', pr.url, 'title', pr.title, 'branch', pr.branch, 'author', pr.author, 'state', pr.state,
 		                    'closes', ipr.closes, 'updated_at', pr.updated_at) order by pr.id desc)
 		                  from issue_pull_requests ipr join pull_requests pr on pr.id = ipr.pr_id where ipr.issue_id = $1), '[]')`,
-		i.ID, userID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy, &d.Watching, &d.PullRequests)
+		i.ID, userID).Scan(&d.SubIssues, &d.Blocks, &d.BlockedBy, &d.Watching, &d.Watchers, &d.PullRequests)
 	if err != nil {
 		return d, fmt.Errorf("issue relations: %w", err)
 	}
@@ -631,7 +649,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		}
 		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
 			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
-				realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)})...)); err != nil {
+				realtime.Watching(n.slug), realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)})...)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
@@ -1401,7 +1419,7 @@ func publishComment(ctx context.Context, tx pgx.Tx, issueID, actorID string) err
 	return realtime.Publish(ctx, tx, n.event("comment.changed", actorID, realtime.Timeline(n.slug, n.identifier), realtime.Activity(n.slug)))
 }
 
-// setWatching starts or stops the user watching the issue, telling their other tabs.
+// setWatching starts or stops the user watching the issue, telling everyone who can see it (its watcher list).
 func (m *model) setWatching(ctx context.Context, issueID, userID string, on bool) error {
 	sql := `delete from issue_watchers where issue_id = $1 and user_id = $2`
 	if on {
@@ -1415,9 +1433,7 @@ func (m *model) setWatching(ctx context.Context, issueID, userID string, on bool
 		if err != nil {
 			return err
 		}
-		e := n.event("issue.watch", userID, realtime.Issue(n.slug, n.identifier))
-		e.Audience = realtime.ToUser(userID)
-		return realtime.Publish(ctx, tx, e)
+		return realtime.Publish(ctx, tx, n.event("issue.watch", userID, realtime.Issue(n.slug, n.identifier), realtime.Watching(n.slug)))
 	})
 	if err != nil {
 		return fmt.Errorf("set watching: %w", err)

@@ -123,7 +123,7 @@ func (m *model) stats(ctx context.Context, workspaceID, viewerID string) ([]Stat
 // see it, or to the whole workspace with every path when everyone must refetch (its visibility changed).
 func changed(ctx context.Context, tx pgx.Tx, e realtime.Event, projectID string, everyone bool, keys ...string) error {
 	e.Kind = "project.changed"
-	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.MyIssues(e.Workspace),
+	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.MyIssues(e.Workspace), realtime.Watching(e.Workspace),
 		realtime.ProjectStats(e.Workspace), realtime.Roadmap(e.Workspace), realtime.Activity(e.Workspace)} // archiving hides its issues from the feed
 	for _, k := range keys {
 		e.Paths = append(e.Paths, realtime.Project(e.Workspace, k), realtime.ProjectIssues(e.Workspace, k))

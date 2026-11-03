@@ -1,13 +1,12 @@
 package aitest
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/doc"
 	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/tether/backend/user/internal/storage"
 )
 
 var (
@@ -1230,7 +1230,7 @@ func (m *model) setResult(ctx context.Context, j *job, resultID, status string, 
 
 // addStep logs a step with its screenshot (JPEG bytes, or nil): the file's row and bytes, the step and the
 // run's event commit together.
-func (m *model) addStep(ctx context.Context, j *job, uploadDir, resultID string, position int, action, pageURL string, jpeg []byte) error {
+func (m *model) addStep(ctx context.Context, j *job, files *storage.Store, resultID string, position int, action, pageURL string, jpeg []byte) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var fileID *string
 		if jpeg != nil {
@@ -1239,12 +1239,7 @@ func (m *model) addStep(ctx context.Context, j *job, uploadDir, resultID string,
 				returning id::text`, j.wsID, fmt.Sprintf("step-%d.jpg", position+1), len(jpeg)).Scan(&id); err != nil {
 				return err
 			}
-			tmp := filepath.Join(uploadDir, ".upload-"+rand.Text())
-			if err := os.WriteFile(tmp, jpeg, 0o600); err != nil {
-				return err
-			}
-			if err := os.Rename(tmp, filepath.Join(uploadDir, id)); err != nil {
-				_ = os.Remove(tmp)
+			if err := files.Put(ctx, id, "image/jpeg", "inline", bytes.NewReader(jpeg)); err != nil {
 				return err
 			}
 			fileID = &id

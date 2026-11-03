@@ -83,16 +83,28 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 
 // myIssues lists the caller's assigned issues across the workspace's active projects.
 func (h *Handler) myIssues(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.userList(w, r, userID, h.model.assigned, h.model.assignedPage)
+}
+
+// watching lists the issues the caller watches across the workspace's active projects.
+func (h *Handler) watching(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.userList(w, r, userID, h.model.watched, h.model.watchedPage)
+}
+
+// userList answers a list of the caller's issues: paged with limit, else whole.
+func (h *Handler) userList(w http.ResponseWriter, r *http.Request, userID string,
+	all func(ctx context.Context, workspaceID, userID string) ([]Issue, error),
+	page func(ctx context.Context, workspaceID, userID string, q pageQuery) ([]Group, error)) error {
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
 		return err
 	}
 	if r.URL.Query().Has("limit") {
 		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
-			return h.model.assignedPage(ctx, ws.ID, userID, q)
+			return page(ctx, ws.ID, userID, q)
 		})
 	}
-	is, err := h.model.assigned(r.Context(), ws.ID, userID)
+	is, err := all(r.Context(), ws.ID, userID)
 	if err != nil {
 		return err
 	}

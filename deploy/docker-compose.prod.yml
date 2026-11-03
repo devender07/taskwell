@@ -61,14 +61,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       TEST_SECRET_KEY: ${TEST_SECRET_KEY:?set TEST_SECRET_KEY}
       INTEGRATION_SECRET_KEY: ${INTEGRATION_SECRET_KEY:?set INTEGRATION_SECRET_KEY}
-      UPLOAD_DIR: /data/uploads
       NOTIFY_INTERVAL: ${NOTIFY_INTERVAL:-1m}
       NOTIFY_SETTLE: ${NOTIFY_SETTLE:-30s}
       MAIL_TIMEOUT: ${MAIL_TIMEOUT:-20s}
       MAIL_RETRY_BASE: ${MAIL_RETRY_BASE:-30s}
       MAIL_MAX_ATTEMPTS: ${MAIL_MAX_ATTEMPTS:-8}
-    volumes:
-      - uploads:/data/uploads
 
   admin:
     build: { context: .., dockerfile: deploy/backend.Dockerfile, args: { SVC: admin } }
@@ -129,13 +126,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-} # the tester refuses to start without it
       TEST_SECRET_KEY: ${TEST_SECRET_KEY:?set TEST_SECRET_KEY}
       AI_TEST_BROWSERS: ${AI_TEST_BROWSERS:-2}
-      UPLOAD_DIR: /data/uploads
       CHROME_URL: http://chrome:9222
       PROXY_ADDR: ":3128"
       PROXY_URL: http://tester:3128
     networks: [default, browser]
-    volumes:
-      - uploads:/data/uploads
 
   chrome:
     profiles: ["ai"]
@@ -166,6 +160,7 @@ services:
     environment:
       APP_HOST: ${APP_HOST:?set APP_HOST}
       ADMIN_HOST: ${ADMIN_HOST:?set ADMIN_HOST}
+      S3_ORIGIN: ${S3_ORIGIN:?set S3_ORIGIN}
     ports:
       - "80:80"
       - "443:443"
@@ -180,6 +175,5 @@ networks:
 
 volumes:
   pgdata:
-  uploads:
   caddy-data:
   caddy-config:

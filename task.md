@@ -28,7 +28,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] List view with grouping (status, assignee, priority) and sorting
 - [x] Kanban board with drag between columns (pointer events: mouse and touch, edge auto-scroll)
 - [x] Filters by assignee, status, label, priority, kept in the URL so they can be shared
-- [x] "My issues" view
+- [x] "My issues" view, with an Assigned / Watching switch
 
 ## Phase 4: Collaboration
 
@@ -36,7 +36,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Comments on issues (rich text, reusing the shared editor; edit and delete; `comments.create` / `comments.manage`)
 - [x] Activity log (status changes, reassignments, edits)
 - [x] `@mentions` in comments and descriptions, notified by email
-- [x] Image and file attachments in descriptions and comments (local disk under `UPLOAD_DIR`; paste, drop or the attach button)
+- [x] Image and file attachments in descriptions and comments (S3 or compatible, configured in `system_config` `s3_*`, served by presigned redirect; paste, drop or the attach button)
 
 ## Phase 5: Keyboard-first
 
