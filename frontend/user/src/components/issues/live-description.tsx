@@ -27,7 +27,7 @@ const NOTICES = {
 
 // The live description editor (loaded lazily by ./description); `onViewers` (a stable setter) gets the other people
 // who have this issue open.
-export default function LiveDescription({ workspace, issue, user, members, onViewers }: DescriptionProps) {
+export default function LiveDescription({ workspace, issue, user, people: mentions, onViewers }: DescriptionProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
@@ -40,7 +40,6 @@ export default function LiveDescription({ workspace, issue, user, members, onVie
   const long = useRef(false)
   const router = useRouter()
   useUnsavedPrompt(unsent)
-  const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
   const slug = workspace.slug
   const identifier = issue.identifier
   const userId = user.id

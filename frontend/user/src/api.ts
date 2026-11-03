@@ -190,7 +190,7 @@ export type Feedback = {
   created_at: string
 }
 // Newest first; `&before=` the last item's id fetches the next page.
-export type FeedbackPage = { items: Feedback[]; has_more: boolean }
+export type FeedbackPage = { items: Feedback[]; has_more: boolean; total?: number } // total: only on an issue's feedback
 export type FeedbackForm = { enabled: boolean; token: string | null }
 
 export const feedbackPath = (workspace: string) => `${workspacePath(workspace)}/feedback`

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, toFormErrors, type Invite, type Member, workspacePath } from '@/api'
+import { api, projectPeoplePath, toFormErrors, type Invite, type Member, workspacePath } from '@/api'
 import { subscribePaths } from '@/realtime'
 
 export type MemberPage = { members: Member[]; invites: Invite[]; total: number; has_more: boolean }
@@ -10,6 +10,16 @@ export const memberPagePath = (slug: string, q: string) => `${workspacePath(slug
 // Up to `limit` members whose name or email contains q, in members' order.
 export const searchMembers = async (slug: string, q: string, limit = 8, signal?: AbortSignal) =>
   (await api<MemberPage>(`${workspacePath(slug)}/members?${new URLSearchParams({ limit: String(limit), q })}`, undefined, 'GET', signal)).members
+
+export type PeopleSearch = (q: string, signal?: AbortSignal) => Promise<Member[]>
+
+// Who can be assigned and @mentioned, searched as you type: the project's people, or any workspace member without one.
+export const peopleSearch =
+  (slug: string, project?: string): PeopleSearch =>
+  (q, signal) =>
+    project
+      ? api<Member[]>(`${projectPeoplePath(slug, project)}?${new URLSearchParams({ limit: '20', q })}`, undefined, 'GET', signal)
+      : searchMembers(slug, q, 20, signal)
 
 // The members matching q, a page at a time: `first` is page one when a loader has it, else it's fetched (and
 // refetched live) here. `end` goes after the list; scrolling it into view loads the next page. A new page one (a

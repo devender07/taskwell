@@ -21,7 +21,7 @@ import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { Tabs } from '@tether/shared/tabs'
 import { ChevronDownIcon, ChevronRightIcon } from '@tether/shared/icons'
-import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
@@ -32,6 +32,7 @@ import {
   filterValues,
   issuePageQuery,
   orderGroups,
+  pageAssignees,
   viewGroup,
   type FilterKey,
   type GroupBy,
@@ -49,7 +50,6 @@ type Props = {
   source: string
   statuses: Status[]
   labels: Label[]
-  members: Member[]
   userId: string
   search: ViewSearch
   mine?: boolean
@@ -98,7 +98,7 @@ const sortOptions: Option[] = [
 
 // Toolbar plus list or board for the issues at `source`, starting from its first page (`page`, per group); display
 // options and filters live in the URL and the server applies them.
-export function IssueView({ workspace, page, source, statuses, labels, members, userId, search, mine, cycles }: Props) {
+export function IssueView({ workspace, page, source, statuses, labels, userId, search, mine, cycles }: Props) {
   const navigate = useNavigate()
   const router = useRouter()
   const [overrides, setOverrides] = useState<Override[]>([])
@@ -131,9 +131,10 @@ export function IssueView({ workspace, page, source, statuses, labels, members, 
   const sort: SortBy = search.sort ?? 'priority'
   const pages = useIssuePages(page, source, issuePageQuery(search, mine))
   const groups = useMemo(
-    () => applyOverrides(orderGroups(pages.page, group, { statuses, members, userId }), overrides, group),
-    [pages.page, group, statuses, members, userId, overrides],
+    () => applyOverrides(orderGroups(pages.page, group, { statuses, userId }), overrides, group),
+    [pages.page, group, statuses, userId, overrides],
   )
+  const assignees = useMemo(() => pageAssignees(pages.page), [pages.page])
   const setSearch = (next: ViewSearch) => navigate({ to: '.', search: next })
 
   const choices: Choice[] = [
@@ -147,7 +148,7 @@ export function IssueView({ workspace, page, source, statuses, labels, members, 
             options: [
               { value: 'me', label: 'Me' },
               { value: 'none', label: 'No assignee' },
-              ...members.filter((m) => m.id !== userId).map((m) => ({ value: m.id, label: m.name })),
+              ...[...assignees].filter(([id]) => id !== userId).map(([id, name]) => ({ value: id, label: name })),
             ],
           },
         ]),
@@ -180,9 +181,9 @@ export function IssueView({ workspace, page, source, statuses, labels, members, 
       form.set('status_id', key)
       next = { status }
     } else if (group === 'assignee') {
-      const m = members.find((m) => m.id === key)
+      const name = groups.find((g) => g.key === key)?.label
       form.set('assignee_id', key === 'none' ? '' : key)
-      next = { assignee: m ? { id: m.id, name: m.name } : null }
+      next = { assignee: key !== 'none' && name ? { id: key, name } : null }
     } else {
       form.set('priority', key)
       next = { priority: Number(key) }

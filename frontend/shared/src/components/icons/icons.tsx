@@ -135,6 +135,15 @@ export const TagIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const BranchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="6" cy="5" r="2" />
+    <circle cx="6" cy="19" r="2" />
+    <circle cx="18" cy="7" r="2" />
+    <path d="M6 7v10M18 9c0 5-12 3-12 8" />
+  </Icon>
+)
+
 export const FlaskIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" />

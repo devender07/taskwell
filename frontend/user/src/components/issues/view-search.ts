@@ -1,4 +1,4 @@
-import type { Issue, Member, Status } from '@/api'
+import type { Issue, Status } from '@/api'
 
 export type GroupBy = 'status' | 'assignee' | 'priority' | 'none'
 export type SortBy = 'priority' | 'updated' | 'created' | 'due'
@@ -80,12 +80,19 @@ export function filterParam(values: string[]) {
   return /^\d+$/.test(v) ? Number(v) : v
 }
 
+// The assignees of the page's loaded issues, by id. Lists name people from their issues rather than loading every member.
+export function pageAssignees(page: IssuePage) {
+  const people = new Map<string, string>()
+  for (const g of page.groups) for (const i of g.issues) if (i.assignee) people.set(i.assignee.id, i.assignee.name)
+  return people
+}
+
 export const PRIORITY_ORDER = [1, 2, 3, 4, 0]
 const PRIORITY_NAMES = ['No priority', 'Urgent', 'High', 'Medium', 'Low']
 
 // Every group in display order with the server's first page (or more) of it; empty groups get count 0 (the board shows
 // them, the list hides them).
-export function orderGroups(page: IssuePage, group: GroupBy, ctx: { statuses: Status[]; members: Member[]; userId: string }): IssueGroup[] {
+export function orderGroups(page: IssuePage, group: GroupBy, ctx: { statuses: Status[]; userId: string }): IssueGroup[] {
   const byKey = new Map(page.groups.map((g) => [g.key, g]))
   const fill = (key: string, label: string, status?: Status): IssueGroup => ({
     count: 0,
@@ -99,8 +106,7 @@ export function orderGroups(page: IssuePage, group: GroupBy, ctx: { statuses: St
   if (group === 'status') return [...ctx.statuses].sort((a, b) => a.position - b.position).map((s) => fill(s.id, s.name, s))
   if (group === 'priority') return PRIORITY_ORDER.map((p) => fill(String(p), PRIORITY_NAMES[p]!))
   if (group === 'assignee') {
-    const people = new Map(ctx.members.map((m) => [m.id, m.name]))
-    for (const g of page.groups) for (const i of g.issues) if (i.assignee && !people.has(i.assignee.id)) people.set(i.assignee.id, i.assignee.name)
+    const people = pageAssignees(page)
     const ordered = [...people].sort(([a, an], [b, bn]) => Number(b === ctx.userId) - Number(a === ctx.userId) || an.localeCompare(bn))
     return [...ordered.map(([id, name]) => fill(id, name)), fill('none', 'No assignee')]
   }

@@ -89,13 +89,23 @@ func (m *model) get(ctx context.Context, wsID, viewerID, id string) (*Feedback, 
 	return &fs[0], nil
 }
 
-// forIssue returns the issue's feedback, newest first, archived included.
-func (m *model) forIssue(ctx context.Context, wsID, viewerID, issueID string) ([]Feedback, error) {
-	fs, err := m.query(ctx, cols+` and f.issue_id = $3 order by f.id desc`, wsID, viewerID, issueID)
+// forIssue returns a page of the issue's feedback, newest first, archived included, older than before (from the
+// newest when nil), whether there's more and how many it has in all.
+func (m *model) forIssue(ctx context.Context, wsID, viewerID, issueID string, before *string) ([]Feedback, bool, int, error) {
+	fs, err := m.query(ctx, cols+` and f.issue_id = $3 and ($4::uuid is null or f.id < $4) order by f.id desc limit $5`,
+		wsID, viewerID, issueID, before, pageSize+1)
 	if err != nil {
-		return nil, fmt.Errorf("list issue feedback: %w", err)
+		return nil, false, 0, fmt.Errorf("list issue feedback: %w", err)
 	}
-	return fs, nil
+	var total int
+	if err := m.db.QueryRow(ctx, `select count(*) from feedback where workspace_id = $1 and issue_id = $2`, wsID, issueID).
+		Scan(&total); err != nil {
+		return nil, false, 0, fmt.Errorf("count issue feedback: %w", err)
+	}
+	if len(fs) > pageSize {
+		return fs[:pageSize], true, total, nil
+	}
+	return fs, false, total, nil
 }
 
 func (m *model) countNew(ctx context.Context, wsID string) (int, error) {

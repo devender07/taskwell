@@ -2,7 +2,8 @@ import { Checkbox } from '@tether/shared/checkbox'
 import { CategoryGlyph, StatusTypeIcon, XIcon } from '@tether/shared/icons'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import type { Label, Member, Status, StatusCategory } from '@/api'
+import type { Label, Member, PersonRef, Status, StatusCategory } from '@/api'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
 import './issues.css'
 
 export const PRIORITIES = [
@@ -27,6 +28,9 @@ export const assigneeOptions = (members: Member[]): Option[] => [
   { value: '', label: 'No assignee' },
   ...members.map((m) => ({ value: m.id, label: m.name, hint: m.email })),
 ]
+// For an assignee picker's loadOptions: the people matching what's typed, after "No assignee".
+export const loadAssignees = (people: PeopleSearch) => async (q: string, signal: AbortSignal) => assigneeOptions(await people(q, signal))
+export const assigneeOption = (a: PersonRef | null): Option | null => (a ? { value: a.id, label: a.name } : null)
 
 export const priorityLabel = (p: number) => PRIORITIES.find((x) => x.value === p)?.label ?? 'No priority'
 export const categoryLabel = (c: StatusCategory) => CATEGORIES.find((x) => x.value === c)?.label ?? c

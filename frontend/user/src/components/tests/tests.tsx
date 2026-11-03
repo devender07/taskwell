@@ -31,6 +31,7 @@ import {
   type TestStatus,
   type Workspace,
 } from '@/api'
+import { usePageEnd } from '@/components/issues/issue-pages'
 import { FormError } from '@/components/auth/auth-card'
 import type { Prefill } from '@/components/issues/issue-form'
 import { refetchPaths, subscribePaths } from '@/realtime'
@@ -550,6 +551,7 @@ function History({ workspace, issue, page, error }: { workspace: Workspace; issu
     }
     return null
   }, null)
+  const end = usePageEnd<HTMLFormElement>(!!more && !loading && !loadError ? () => startTransition(() => loadOlder()) : null, 'runs', runs.length)
 
   if (!runs.length && !error) return null
   return (
@@ -578,11 +580,14 @@ function History({ workspace, issue, page, error }: { workspace: Workspace; issu
         ))}
       </ul>
       {more ? (
-        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
-          <Button type="submit" variant="ghost" disabled={loading}>
-            {loading ? 'Loading…' : 'Show older runs'}
-          </Button>
+        <form ref={end} action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          {loading ? <p className="text-caption text-secondary m-0">Loading older runs…</p> : null}
           <FormError>{loadError}</FormError>
+          {loadError ? (
+            <Button type="submit" variant="ghost">
+              Try again
+            </Button>
+          ) : null}
         </form>
       ) : null}
     </div>

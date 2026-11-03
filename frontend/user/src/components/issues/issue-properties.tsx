@@ -4,21 +4,21 @@ import { Avatar } from '@tether/shared/avatar'
 import { DatePicker } from '@tether/shared/date-picker'
 import { filterOptions } from '@tether/shared/match'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { api, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
+import { LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 
-type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
+type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 type Patch = { form: FormData; next: Partial<Issue> }
 
 // Each property saves on change with a partial update; read-only text without edit rights.
-export function IssueProperties({ workspace, issue: saved, statuses, labels, members }: Props) {
+export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
   const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
-  const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
   const found = useRef(new Map<string, IssueRef>())
   const foundCycles = useRef(new Map<string, CycleRef>())
 
@@ -81,13 +81,12 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
           <SmartAutocomplete
             label="Assignee"
             placeholder="No assignee"
-            options={assigneeOpts}
-            value={assigneeOpts.find((o) => o.value && o.value === issue.assignee?.id) ?? null}
+            loadOptions={loadAssignees(people)}
+            value={assigneeOption(issue.assignee)}
             onChange={(o) => {
               const id = o?.value ?? ''
               if (id === (issue.assignee?.id ?? '')) return
-              const m = members.find((m) => m.id === id)
-              update('assignee_id', [id], { assignee: m ? { id: m.id, name: m.name } : null })
+              update('assignee_id', [id], { assignee: o && id ? { id, name: o.label } : null })
             }}
           />
           <DatePicker

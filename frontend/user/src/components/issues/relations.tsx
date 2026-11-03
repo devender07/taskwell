@@ -6,7 +6,8 @@ import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { XIcon } from '@tether/shared/icons'
-import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { FormError } from '@/components/auth/auth-card'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { StatusIcon } from './fields'
@@ -49,9 +50,9 @@ function RefRow({ workspace, issue, children }: { workspace: string; issue: Issu
   )
 }
 
-type SubIssuesProps = { workspace: Workspace; issue: Issue; project: Project; create: boolean; statuses: Status[]; labels: Label[]; members: Member[] }
+type SubIssuesProps = { workspace: Workspace; issue: Issue; project: Project; create: boolean; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 
-export function SubIssues({ workspace, issue, project, create, statuses, labels, members }: SubIssuesProps) {
+export function SubIssues({ workspace, issue, project, create, statuses, labels, people }: SubIssuesProps) {
   const [creating, setCreating] = useState(false)
   const subs = issue.sub_issues ?? []
 
@@ -76,7 +77,7 @@ export function SubIssues({ workspace, issue, project, create, statuses, labels,
       )}
       {create ? (
         <Dialog open={creating} onClose={() => setCreating(false)} title="New issue" wide>
-          <CreateIssueForm workspace={workspace} project={project} parent={issue} statuses={statuses} labels={labels} members={members} />
+          <CreateIssueForm workspace={workspace} project={project} parent={issue} statuses={statuses} labels={labels} people={people} />
         </Dialog>
       ) : null}
     </section>

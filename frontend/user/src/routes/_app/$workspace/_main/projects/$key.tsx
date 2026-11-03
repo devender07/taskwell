@@ -4,8 +4,8 @@ import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { LockIcon } from '@tether/shared/icons'
-import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Label, type Member, type Project, type Status, workspacePath } from '@/api'
-import { loaderApi, trackPath } from '@/realtime'
+import { ApiError, can, cyclesPath, type Cycle, type Label, type Project, type Status, workspacePath } from '@/api'
+import { loaderApi } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
@@ -24,14 +24,12 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const source = `${projectPath}/issues`
-    trackPath(ctx, `${path}/members`)
-    const [project, page, cycles, statuses, labels, members] = await Promise.all([
+    const [project, page, cycles, statuses, labels] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<Member[]>(ctx, projectPeoplePath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -39,14 +37,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     if (project.key !== params.key) {
       throw redirect({ to: '/$workspace/projects/$key', params: { workspace: params.workspace, key: project.key }, replace: true })
     }
-    return { project, page, source, cycles, statuses, labels, members }
+    return { project, page, source, cycles, statuses, labels }
   },
   component: ProjectPage,
 })
 
 function ProjectPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, page, source, cycles, statuses, labels, members } = Route.useLoaderData()
+  const { project, page, source, cycles, statuses, labels } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -127,7 +125,7 @@ function ProjectPage() {
             {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
           </div>
         ) : (
-          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} cycles={cycles} />
+          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cycles} />
         )}
       </section>
       {manage ? (

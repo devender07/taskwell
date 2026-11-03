@@ -7,8 +7,9 @@ import { IconButton } from '@tether/shared/icon-button'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { MoreIcon } from '@tether/shared/icons'
-import { ApiError, can, cyclesPath, projectPeoplePath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { ApiError, can, cyclesPath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
+import { peopleSearch } from '@/components/workspace/member-pages'
 import { FormError } from '@/components/auth/auth-card'
 import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
@@ -29,15 +30,13 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
     const list = cyclesPath(params.workspace, params.key)
     const source = `${list}/${params.number}/issues`
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
-    trackPath(ctx, `${path}/members`)
-    const [project, { cycle, issues }, page, cycles, statuses, labels, members] = await Promise.all([
+    const [project, { cycle, issues }, page, cycles, statuses, labels] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
       loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<Member[]>(ctx, projectPeoplePath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -50,14 +49,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
         replace: true,
       })
     }
-    return { project, cycle, issues, page, source, cycles, statuses, labels, members }
+    return { project, cycle, issues, page, source, cycles, statuses, labels }
   },
   component: CyclePage,
 })
 
 function CyclePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, cycle, issues, page, source, cycles, statuses, labels, members } = Route.useLoaderData()
+  const { project, cycle, issues, page, source, cycles, statuses, labels } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [dialog, setDialog] = useState<'edit' | 'delete' | 'issue' | null>(null)
@@ -117,11 +116,11 @@ function CyclePage() {
           <p className="text-body-sm text-secondary">No issues in this cycle.</p>
         </div>
       ) : (
-        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} />
       )}
       {create ? (
         <Dialog open={dialog === 'issue'} onClose={close} title="New issue" wide>
-          <CreateIssueForm workspace={workspace} project={project} cycle={cycle} statuses={statuses} labels={labels} members={members} />
+          <CreateIssueForm workspace={workspace} project={project} cycle={cycle} statuses={statuses} labels={labels} people={peopleSearch(workspace.slug, project.key)} />
         </Dialog>
       ) : null}
       {manage ? (

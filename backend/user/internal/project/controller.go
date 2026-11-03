@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -166,13 +167,22 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 	return nil
 }
 
-// people lists everyone who can see the project, for assignee and mention pickers.
+// people lists everyone who can see the project, for assignee and mention pickers: those matching ?q= (name or
+// email), at most ?limit= (1-100; all without it).
 func (h *Handler) people(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, false)
 	if !ok || err != nil {
 		return err
 	}
-	ms, err := h.model.people(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	query := r.URL.Query()
+	limit := 0
+	if query.Has("limit") {
+		if limit, err = strconv.Atoi(query.Get("limit")); err != nil || limit < 1 || limit > 100 {
+			web.Err(w, http.StatusBadRequest, "limit must be from 1 to 100.")
+			return nil
+		}
+	}
+	ms, err := h.model.people(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, strings.TrimSpace(query.Get("q")), limit)
 	if err != nil {
 		return err
 	}

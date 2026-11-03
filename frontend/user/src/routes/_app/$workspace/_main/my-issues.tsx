@@ -1,6 +1,6 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
 import { Tabs } from '@tether/shared/tabs'
-import type { Label, Member, Status } from '@/api'
+import type { Label, Status } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IssueView } from '@/components/issues/issue-view'
 import { hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
@@ -20,20 +20,19 @@ export const Route = createFileRoute('/_app/$workspace/_main/my-issues')({
     const { params } = ctx
     const path = `${workspacePath(params.workspace)}`
     const source = `${path}/${ctx.deps.watching ? 'watching' : 'my-issues'}`
-    const [page, statuses, labels, { members }] = await Promise.all([
+    const [page, statuses, labels] = await Promise.all([
       loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
     ])
-    return { page, source, statuses, labels, members }
+    return { page, source, statuses, labels }
   },
   component: MyIssues,
 })
 
 function MyIssues() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { page, source, statuses, labels, members } = Route.useLoaderData()
+  const { page, source, statuses, labels } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -54,7 +53,7 @@ function MyIssues() {
           {watching ? "You're not watching any issues." : 'Nothing assigned to you.'}
         </p>
       ) : (
-        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} mine={!watching} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} mine={!watching} />
       )}
     </main>
   )

@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types user/src/components/issues/view-search.check.ts
 import { assert } from '../../../../shared/src/check.ts'
-import type { Issue, Member, Status } from '../../api.ts'
+import type { Issue, Status } from '../../api.ts'
 import { hasFilters, issuePageQuery, orderGroups, validateViewSearch, type IssuePage } from './view-search.ts'
 
 const id = (n: number) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`
@@ -8,10 +8,6 @@ const status = (n: number, position: number): Status => ({ id: id(n), name: `S${
 const [todo, done] = [status(1, 1), status(2, 0)]
 const me = id(10)
 const other = id(11)
-const members = [
-  { id: other, name: 'Alice', email: '', role: { id: '', name: '' } },
-  { id: me, name: 'Zed', email: '', role: { id: '', name: '' } },
-] as Member[]
 
 const issue = (number: number, o: Partial<Issue>) =>
   ({
@@ -52,8 +48,8 @@ assert.equal(issuePageQuery({ group: 'assignee', assignee: 'me', cycle: 'none', 
 assert.equal(issuePageQuery({ group: 'none', assignee: 'me,none' }), 'limit=50&group=none&sort=priority&assignee=me%2Cnone')
 assert.ok(hasFilters({ assignee: 'me' }) && !hasFilters({ assignee: 'me' }, true) && !hasFilters({ view: 'board' }))
 
-// Grouping order over a server page; empty groups filled in, unknown assignees kept.
-const ctx = { statuses: [todo, done], members, userId: me }
+// Grouping order over a server page; empty groups filled in, assignees named from their issues.
+const ctx = { statuses: [todo, done], userId: me }
 const page = (groups: [string, Issue[]][]): IssuePage => ({
   total: groups.reduce((n, [, l]) => n + l.length, 0),
   groups: groups.map(([key, list]) => ({ key, count: list.length, issues: list, has_more: false })),
@@ -69,7 +65,7 @@ assert.deepEqual(orderGroups(page([['3', [issues[1]!]]]), 'priority', ctx).map((
 ])
 const byAssignee = page([['none', [issues[1]!]], [stranger, [issue(5, { assignee: { id: stranger, name: 'Bob' } })]], [me, [issues[0]!]]])
 assert.deepEqual(orderGroups(byAssignee, 'assignee', ctx).map((g) => [g.label, g.key === 'none' ? 'none' : '', g.count]), [
-  ['Zed', '', 1], ['Alice', '', 0], ['Bob', '', 1], ['No assignee', 'none', 1],
+  ['Zed', '', 1], ['Bob', '', 1], ['No assignee', 'none', 1],
 ])
 assert.deepEqual(orderGroups(page([['all', issues]]), 'none', ctx).map((g) => [g.key, g.count]), [['all', 4]])
 console.log('ok')

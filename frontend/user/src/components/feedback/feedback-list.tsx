@@ -43,7 +43,7 @@ export const feedbackChanged = (slug: string, issues: (string | null | undefined
 
 // Page one comes from the loader; scrolling the end into view appends the page before the last item. A new page one
 // (a reload after a change) starts the list over.
-function useFeedbackPages(path: string, first: FeedbackPage) {
+export function useFeedbackPages(path: string, first: FeedbackPage) {
   const [extra, setExtra] = useState<{ base: FeedbackPage; items: Feedback[]; has_more: boolean; error?: string | null } | null>(null)
   const busy = useRef(false)
   const more = extra?.base === first ? extra : null
@@ -57,7 +57,7 @@ function useFeedbackPages(path: string, first: FeedbackPage) {
     busy.current = true
     const prev = more?.items ?? []
     try {
-      const next = await api<FeedbackPage>(`${path}&before=${encodeURIComponent(last)}`)
+      const next = await api<FeedbackPage>(`${path}${path.includes('?') ? '&' : '?'}before=${encodeURIComponent(last)}`)
       setExtra({ base: first, items: [...prev, ...next.items], has_more: next.has_more })
     } catch (e) {
       setExtra({ base: first, items: prev, has_more: false, error: toFormErrors(e).error })

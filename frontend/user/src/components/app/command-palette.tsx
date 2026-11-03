@@ -6,10 +6,11 @@ import { CheckIcon } from '@tether/shared/icons'
 import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
+import { peopleSearch } from '@/components/workspace/member-pages'
 import './shortcuts.css'
 
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
-export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
+export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[] }
 
 type Props = {
   workspace: Workspace
@@ -75,6 +76,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
   const [chats, setChats] = useState<Chat[]>([])
   const [cycles, setCycles] = useState<{ key: string; list: Cycle[] } | null>(null)
+  const [people, setPeople] = useState<{ q: string; list: Member[] } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const q = query.trim()
   const slug = workspace.slug
@@ -99,6 +101,18 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
       ctrl.abort()
     }
   }, [mode, q, slug, version])
+
+  useEffect(() => {
+    if (mode !== 'assignee' || !ctx) return
+    const ctrl = new AbortController()
+    const t = setTimeout(() => {
+      peopleSearch(slug, ctx.issue.project.key)(q, ctrl.signal).then((list) => setPeople({ q, list }), () => {})
+    }, 120)
+    return () => {
+      clearTimeout(t)
+      ctrl.abort()
+    }
+  }, [mode, q, slug, ctx])
 
   useEffect(() => {
     if (mode !== 'root') return
@@ -251,7 +265,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         }),
       })
     } else if (mode === 'assignee') {
-      const opts = filterOptions(assigneeOptions(ctx.members), q)
+      const opts = filterOptions(assigneeOptions(people?.list ?? []), q)
       groups.push({
         label: 'Assignee',
         items: opts.map((o) => ({ id: o.value || 'none', label: o.label, hint: o.hint, checked: o.value === (issue.assignee?.id ?? ''), run: () => save('assignee_id', [o.value]) })),

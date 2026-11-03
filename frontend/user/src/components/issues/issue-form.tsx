@@ -6,12 +6,13 @@ import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
 import type { Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
+import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, feedbackPath, issuePath, toFormErrors, updateFeedback, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { api, feedbackPath, issuePath, toFormErrors, updateFeedback, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { refetchPaths, reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelSelect, assigneeOptions, priorityOptions, statusOptions } from './fields'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
+import { LabelSelect, loadAssignees, priorityOptions, statusOptions } from './fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
@@ -19,20 +20,18 @@ type State = { errors?: FieldErrors; error?: string | null }
 // new issue as blocking that one, `feedback` links that feedback to the new issue.
 export type Prefill = { title: string; description: Doc; blocks?: string; feedback?: string }
 
-type CreateProps = { workspace: Workspace; project: Project; projectPicker?: ReactNode; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
+type CreateProps = { workspace: Workspace; project: Project; projectPicker?: ReactNode; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 
-export function CreateIssueForm({ workspace, project, projectPicker, parent, cycle, prefill, statuses, labels, members }: CreateProps) {
+export function CreateIssueForm({ workspace, project, projectPicker, parent, cycle, prefill, statuses, labels, people }: CreateProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(prefill?.title ?? '')
   const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
   const [statusId, setStatusId] = useState(statuses[0]?.id ?? '')
   const [priority, setPriority] = useState('0')
-  const [assigneeId, setAssigneeId] = useState('')
+  const [assignee, setAssignee] = useState<Option | null>(null)
   const [due, setDue] = useState('')
   const [labelIds, setLabelIds] = useState<string[]>([])
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
-  const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
-  const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const errors = { title: issueTitle(title), description: issueDescription(description.length), due_date: dueDate(due) }
@@ -42,7 +41,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
     form.set('description', description.doc ? JSON.stringify(description.doc) : '')
     if (statusId) form.set('status_id', statusId)
     if (priority) form.set('priority', priority)
-    form.set('assignee_id', assigneeId)
+    form.set('assignee_id', assignee?.value ?? '')
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
     if (parent) form.set('parent', parent.identifier)
@@ -86,7 +85,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
         <RichEditor
           label="Description"
           placeholder="Add a description… Type @ to mention someone"
-          mentions={mentions}
+          mentions={people}
           minHeight={280}
           content={prefill?.description}
           onChange={(doc, length) => setDescription({ doc, length })}
@@ -113,9 +112,9 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
         <SmartAutocomplete
           label="Assignee"
           placeholder="No assignee"
-          options={assigneeOpts}
-          value={assigneeOpts.find((o) => o.value === assigneeId && o.value) ?? null}
-          onChange={(o) => setAssigneeId(o?.value ?? '')}
+          loadOptions={loadAssignees(people)}
+          value={assignee}
+          onChange={(o) => setAssignee(o?.value ? o : null)}
           error={errors?.assignee_id}
         />
         <DatePicker label="Due date" placeholder="No due date" value={due} onChange={setDue} error={errors?.due_date} />

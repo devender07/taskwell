@@ -322,9 +322,9 @@ func (m *model) remove(ctx context.Context, workspaceID, key, actorID string, e 
 	return found, err
 }
 
-// people returns the workspace members who can see the project with the key, ordered like the workspace's members;
-// nil when the viewer can't see it.
-func (m *model) people(ctx context.Context, workspaceID, key, viewerID string) ([]workspace.Member, error) {
+// people returns the workspace members who can see the project with the key whose name or email contains q, ordered
+// like the workspace's members, at most limit (0: all); nil when the viewer can't see it.
+func (m *model) people(ctx context.Context, workspaceID, key, viewerID, q string, limit int) ([]workspace.Member, error) {
 	var ms []workspace.Member
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		id, _, _, err := find(ctx, tx, workspaceID, key, viewerID)
@@ -335,7 +335,9 @@ func (m *model) people(ctx context.Context, workspaceID, key, viewerID string) (
 			`select u.id::text, u.name, u.email, r.id::text, r.name
 			   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
 			  where m.workspace_id = $1 and can_see_project($2, m.user_id)
-			  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email`, workspaceID, id)
+			    and (strpos(lower(u.name), lower($3)) > 0 or strpos(lower(u.email), lower($3)) > 0)
+			  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email
+			  limit nullif($4, 0)`, workspaceID, id, q, limit)
 		if err != nil {
 			return err
 		}
