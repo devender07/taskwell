@@ -822,7 +822,7 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := apiTokenPrefix + secret.NewToken()
 	t, err := h.model.insertAPIToken(r.Context(), userID, strings.TrimSpace(name), secret.Hash(tok))
-	if errors.Is(err, errTooManyTokens) {
+	if errors.Is(err, ErrTooManyTokens) {
 		web.Err(w, http.StatusConflict, fmt.Sprintf("You have %d tokens. Revoke one first.", maxAPITokens))
 		return nil
 	}

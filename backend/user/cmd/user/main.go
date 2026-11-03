@@ -31,6 +31,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/issue"
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/notify"
+	"github.com/devender07/tether/backend/user/internal/oauth"
 	"github.com/devender07/tether/backend/user/internal/project"
 	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/storage"
@@ -131,6 +132,7 @@ func main() {
 	gitlink.New(pool, gitKey, func(ctx context.Context) (string, error) { return cfg.Get(ctx, "app_base_url") },
 		authenticate, wsH.Member).Register(mux)
 	feedback.New(pool, authenticate, wsH.Member).Register(mux)
+	oauth.New(pool, cfg, authenticate).Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		obs.Fatal(err.Error())

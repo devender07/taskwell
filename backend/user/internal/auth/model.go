@@ -620,7 +620,8 @@ func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
 
 const maxAPITokens = 25
 
-var errTooManyTokens = errors.New("api token limit reached")
+// ErrTooManyTokens is returned when the user already has maxAPITokens.
+var ErrTooManyTokens = errors.New("api token limit reached")
 
 // APIToken is a personal API token as the token endpoints return it; the secret itself is never stored.
 type APIToken struct {
@@ -672,16 +673,23 @@ func (m *model) apiTokens(ctx context.Context, userID string) ([]APIToken, error
 	return tokens, nil
 }
 
-// insertAPIToken stores a token's hash; errTooManyTokens when the user already has maxAPITokens.
-// ponytail: two concurrent creates can both pass the count; lock the user row if the cap ever has to be exact.
+// insertAPIToken stores a token's hash; ErrTooManyTokens when the user already has maxAPITokens.
 func (m *model) insertAPIToken(ctx context.Context, userID, name string, tokenHash []byte) (*APIToken, error) {
+	return insertAPIToken(ctx, m.db, userID, name, tokenHash)
+}
+
+// insertAPIToken is the method on q: the pool, or another package's transaction (see NewAPIToken).
+// ponytail: two concurrent creates can both pass the count; lock the user row if the cap ever has to be exact.
+func insertAPIToken(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, userID, name string, tokenHash []byte) (*APIToken, error) {
 	t := APIToken{Name: name}
-	err := m.db.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		insert into api_tokens (user_id, name, token_hash)
 		select $1, $2, $3 where (select count(*) from api_tokens where user_id = $1) < $4
 		returning id::text, created_at`, userID, name, tokenHash, maxAPITokens).Scan(&t.ID, &t.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, errTooManyTokens
+		return nil, ErrTooManyTokens
 	}
 	if err != nil {
 		return nil, fmt.Errorf("insert api token: %w", err)

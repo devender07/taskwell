@@ -10,6 +10,7 @@ import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
 import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
+import { CopyButton } from '@/components/settings/integrations'
 import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
@@ -391,6 +392,29 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
           })}
         </ul>
       )}
+    </Card>
+  )
+}
+
+export function ConnectClaude() {
+  const url = `${location.origin}/mcp`
+  const command = `claude mcp add --transport http tether ${url}`
+  return (
+    <Card title="Connect Claude">
+      <div className="grid gap-3 px-6 py-4">
+        {[
+          { label: 'MCP URL', text: url },
+          { label: 'command', text: command },
+        ].map(({ label, text }) => (
+          <div key={label} className="flex items-center gap-3">
+            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, wordBreak: 'break-all' }}>
+              {text}
+            </code>
+            <CopyButton text={text} label={`Copy ${label}`} />
+          </div>
+        ))}
+        <p className="text-caption text-secondary m-0">The first use opens your browser to sign in and allow access.</p>
+      </div>
     </Card>
   )
 }

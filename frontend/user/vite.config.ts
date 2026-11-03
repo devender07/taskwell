@@ -35,5 +35,14 @@ export default defineConfig({
       },
     },
   },
-  server: { host: true, port: 5173, proxy: { '/api': { target: 'http://localhost:8090', ws: true }, '/mcp': 'http://localhost:8095' } },
+  server: {
+    host: true,
+    port: 5173,
+    proxy: {
+      '/api': { target: 'http://localhost:8090', ws: true },
+      '/mcp': 'http://localhost:8095',
+      '/.well-known/oauth-protected-resource': 'http://localhost:8095',
+      '/.well-known/oauth-authorization-server': 'http://localhost:8090',
+    },
+  },
 })

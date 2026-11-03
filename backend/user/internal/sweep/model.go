@@ -33,6 +33,9 @@ var retention = []struct{ table, where string }{
 	{"realtime_conns", `seen_at < now() - interval '1 hour'`},
 	// Every bucket refills within an hour (the slowest, emails per address, in 15 minutes); a missing row is a full one.
 	{"rate_limits", `at < now() - interval '1 hour'`},
+	// Registration is open, so clients with no code in flight go after 30 days; their tokens live on in api_tokens.
+	{"oauth_codes", `expires_at < now()`},
+	{"oauth_clients", `created_at < now() - interval '30 days' and not exists (select 1 from oauth_codes c where c.client_id = oauth_clients.id)`},
 }
 
 const deleteBatch = 5000

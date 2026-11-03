@@ -28,6 +28,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.Handle("/mcp", server.Handler(apiURL, appURL, &http.Client{Timeout: 30 * time.Second}))
+	mux.Handle("GET /.well-known/oauth-protected-resource/mcp", server.Metadata(appURL))
+	mux.Handle("GET /.well-known/oauth-protected-resource", server.Metadata(appURL))
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

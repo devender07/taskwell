@@ -19,6 +19,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as FTokenRouteImport } from './routes/f.$token'
+import { Route as authOauthAuthorizeRouteImport } from './routes/(auth)/oauth.authorize'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as LiveWorkspaceRunRouteImport } from './routes/live.$workspace.$run'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
@@ -99,6 +100,11 @@ const DocsApiRoute = DocsApiRouteImport.update({
 const FTokenRoute = FTokenRouteImport.update({
   id: '/f/$token',
   path: '/f/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const authOauthAuthorizeRoute = authOauthAuthorizeRouteImport.update({
+  id: '/(auth)/oauth/authorize',
+  path: '/oauth/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppWorkspaceMainRoute = AppWorkspaceMainRouteImport.update({
@@ -298,6 +304,7 @@ export interface FileRoutesByFullPath {
   '/$workspace': typeof AppWorkspaceRouteWithChildren
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
+  '/oauth/authorize': typeof authOauthAuthorizeRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
@@ -340,6 +347,7 @@ export interface FileRoutesByTo {
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/': typeof AppIndexRoute
+  '/oauth/authorize': typeof authOauthAuthorizeRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
@@ -381,6 +389,7 @@ export interface FileRoutesById {
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/_app/': typeof AppIndexRoute
+  '/(auth)/oauth/authorize': typeof authOauthAuthorizeRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/_app/$workspace/_main/feedback': typeof AppWorkspaceMainFeedbackRoute
@@ -426,6 +435,7 @@ export interface FileRouteTypes {
     | '/$workspace'
     | '/docs/api'
     | '/f/$token'
+    | '/oauth/authorize'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
     | '/$workspace/inbox'
@@ -468,6 +478,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/f/$token'
     | '/'
+    | '/oauth/authorize'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
     | '/$workspace/my-issues'
@@ -508,6 +519,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/f/$token'
     | '/_app/'
+    | '/(auth)/oauth/authorize'
     | '/_app/$workspace/_main'
     | '/live/$workspace/$run'
     | '/_app/$workspace/_main/feedback'
@@ -551,6 +563,7 @@ export interface RootRouteChildren {
   authSignupRoute: typeof authSignupRoute
   DocsApiRoute: typeof DocsApiRoute
   FTokenRoute: typeof FTokenRoute
+  authOauthAuthorizeRoute: typeof authOauthAuthorizeRoute
   LiveWorkspaceRunRoute: typeof LiveWorkspaceRunRoute
 }
 
@@ -624,6 +637,13 @@ declare module '@tanstack/react-router' {
       path: '/f/$token'
       fullPath: '/f/$token'
       preLoaderRoute: typeof FTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(auth)/oauth/authorize': {
+      id: '/(auth)/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof authOauthAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/$workspace/_main': {
@@ -992,6 +1012,7 @@ const rootRouteChildren: RootRouteChildren = {
   authSignupRoute: authSignupRoute,
   DocsApiRoute: DocsApiRoute,
   FTokenRoute: FTokenRoute,
+  authOauthAuthorizeRoute: authOauthAuthorizeRoute,
   LiveWorkspaceRunRoute: LiveWorkspaceRunRoute,
 }
 export const routeTree = rootRouteImport
