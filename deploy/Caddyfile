@@ -1,9 +1,9 @@
-# APP_HOST serves the user SPA and proxies /api to the user service; ADMIN_HOST does the same for admin.
+# APP_HOST serves the user SPA and proxies /api to the user service and /mcp to the MCP server; ADMIN_HOST does the same for admin.
 # Hosts that are real domain names get automatic HTTPS.
 
 (spa) {
 	header {
-		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: {$S3_ORIGIN}; media-src 'self' {$S3_ORIGIN}; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Referrer-Policy no-referrer
 		X-Content-Type-Options nosniff
@@ -12,8 +12,11 @@
 	}
 
 	# The API sets its own Cache-Control (e.g. no-store on auth, private on files); Caddy only proxies.
+	# flush_interval -1 passes streams (the AI test live view) through as they're written.
 	handle /api/* {
-		reverse_proxy {args[0]}
+		reverse_proxy {args[0]} {
+			flush_interval -1
+		}
 	}
 
 	# Hashed build output: cache forever, and a missing file is a 404, not index.html.
@@ -35,6 +38,12 @@
 }
 
 {$APP_HOST:localhost} {
+	# The MCP server for AI tools; it calls the user API with the caller's token.
+	handle /mcp {
+		reverse_proxy mcp:8095 {
+			flush_interval -1
+		}
+	}
 	import spa user:8090 /srv/user
 }
 

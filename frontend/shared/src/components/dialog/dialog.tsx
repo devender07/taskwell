@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { XIcon } from '../icons/icons'
 import './dialog.css'
 
 type DialogProps = {
@@ -9,16 +11,21 @@ type DialogProps = {
   children: ReactNode
   // false keeps it open on Esc and backdrop click and hides the close button (e.g. a required first step).
   dismissible?: boolean
+  wide?: boolean // 880px instead of 440px, for two-column forms
 }
 
 const EXIT_MS = 120 // matches the fade-out in dialog.css
 
-// Modal on the native <dialog>: the browser puts it in the top layer, traps focus, and restores focus on close.
-// Fades in and out; closes on Esc, backdrop click, or the close button.
-export function Dialog({ open, onClose, title, description, children, dismissible = true }: DialogProps) {
+// Modal on the native <dialog>, portaled to <body> so no ancestor's form, overflow or transform affects it. The browser
+// puts it in the top layer, traps focus, and restores focus on close. Fades in and out; closes on Esc, backdrop click,
+// or the close button. React events still bubble to the component's parents.
+export function Dialog({ open, onClose, title, description, children, dismissible = true, wide }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const [closing, setClosing] = useState(false)
+  // Content stays mounted from opening until the fade-out ends, so it never collapses for a frame in between.
+  const [mounted, setMounted] = useState(open)
+  if (open && !mounted) setMounted(true)
   const exit = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
@@ -33,15 +40,16 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
       exit.current = setTimeout(() => {
         dialog.close()
         setClosing(false)
+        setMounted(false)
       }, EXIT_MS)
     }
   }, [open])
   useEffect(() => () => clearTimeout(exit.current), [])
 
-  return (
+  return createPortal(
     <dialog
       ref={ref}
-      className="dialog"
+      className={wide ? 'dialog dialog-wide' : 'dialog'}
       data-state={closing ? 'closing' : 'open'}
       aria-labelledby={titleId}
       aria-describedby={description ? `${titleId}-desc` : undefined}
@@ -51,7 +59,7 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
       }}
       onClick={(e) => dismissible && e.target === e.currentTarget && onClose()} // the backdrop is the dialog box itself
     >
-      {open || closing ? (
+      {mounted ? (
         <div className="dialog-body grid gap-5">
           <header className="grid gap-2" style={{ paddingRight: dismissible ? 32 : 0 }}>
             <h2 id={titleId} className="text-h2">
@@ -62,13 +70,12 @@ export function Dialog({ open, onClose, title, description, children, dismissibl
           {children}
           {dismissible ? (
             <button type="button" className="dialog-close" aria-label="Close" onClick={onClose}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
+              <XIcon size={16} strokeWidth={2} />
             </button>
           ) : null}
         </div>
       ) : null}
-    </dialog>
+    </dialog>,
+    document.body,
   )
 }

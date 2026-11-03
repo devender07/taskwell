@@ -25,6 +25,7 @@ var retention = []struct{ table, where string }{
 	{"auth_tokens", `coalesce(used_at, expires_at) < now() - interval '1 day'`},
 	{"notifications", `read_at < now() - interval '90 days'`},
 	{"outbound_mail", `failed_at < now() - interval '30 days'`},
+	{"webhook_deliveries", `created_at < now() - interval '30 days'`},
 	// The longest failure window is an hour; sign-in attempts also prune them as they go.
 	{"auth_failures", `at < now() - interval '1 day'`},
 	// Presence prunes rows past 90s every 30s while any instance runs; this catches the rest.
@@ -92,7 +93,7 @@ const referenced = `
 	select m[1]::uuid from issue_doc_updates u, regexp_matches(encode(u.data, 'escape'), '` + fileRef + `', 'g') m`
 
 // deleteUnreferencedFiles deletes up to 1000 rows at a time of files older than grace that no document references
-// and that aren't an avatar, and returns their ids.
+// and that aren't an avatar or an AI test step's screenshot, and returns their ids.
 // ponytail: a document saved with a file between this statement's snapshot and its delete loses that file; it
 // needs a >24h-old upload re-added at that instant. Lock against saves if it ever happens.
 func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration) ([]string, error) {
@@ -104,6 +105,7 @@ func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration)
 			  select f.id from files f
 			  where f.created_at < now() - make_interval(secs => $1)
 			    and not exists (select 1 from users u where u.avatar_file_id = f.id)
+			    and not exists (select 1 from test_steps s where s.screenshot_id = f.id)
 			    and not exists (select 1 from refs r where r.id = f.id)
 			  limit 1000)
 			returning id::text`, grace.Seconds())

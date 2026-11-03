@@ -1,6 +1,7 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
+import { createSocket } from '@tether/shared/socket'
 import { api, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches
@@ -35,17 +36,8 @@ const channels = new Set<Channel>()
 const typists = new Set<(t: Typing) => void>()
 
 let router: AnyRouter | null = null
-let ws: WebSocket | null = null
 let client = ''
 let workspace: string | undefined
-let running = false
-let opened = false
-let delay = 1000
-let steady: ReturnType<typeof setTimeout> | undefined // resets the backoff once a socket has stayed up
-let reauthed = false // the last drop was the server asking for a fresh token, not a failure
-let retry: ReturnType<typeof setTimeout> | undefined
-let ping: ReturnType<typeof setInterval> | undefined
-let pong: ReturnType<typeof setTimeout> | undefined
 let notice: string | null = null
 
 // Events for `path` reload the loader's route match.
@@ -78,7 +70,7 @@ const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.
 
 // Issue lists and Home's activity and project counts refetch at most every 3s, so a teammate typing doesn't reload
 // them on every save.
-const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|activity|project-stats)$/
+const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|watching|activity|project-stats)$/
 // The chat list and its unread count refetch at most every second, so a busy chat doesn't reload them per message.
 const CHATS = /^\/workspaces\/[^/]+\/chats(\/unread-count)?$/
 
@@ -92,10 +84,6 @@ const push = coalescer(
   { throttle: (p) => (LIST.test(p) ? 3000 : CHATS.test(p) ? 1000 : undefined) },
 )
 
-// Only after `hello`; everything sent before then is sent again on hello.
-const send = (msg: object) => {
-  if (client && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
-}
 const join = (ch: Channel) => send({ type: 'collab.join', workspace: ch.workspace, issue: ch.issue })
 const channel = (issue: string) => [...channels].find((c) => c.issue === issue)
 
@@ -119,35 +107,8 @@ function onEvent(e: RealtimeEvent) {
   push(paths)
 }
 
-function onMessage(data: unknown) {
-  if (data instanceof ArrayBuffer) {
-    const frame = decodeFrame(new Uint8Array(data))
-    const ch = frame && [...channels].find((c) => c.uuid === frame.id)
-    if (ch) ch.onFrame(frame.type, frame.payload)
-    return
-  }
-  let msg: Message
-  try {
-    msg = JSON.parse(String(data))
-  } catch {
-    return
-  }
+function onMessage(msg: Message) {
   switch (msg.type) {
-    case 'hello':
-      client = msg.client
-      setClient(client)
-      clearTimeout(steady)
-      steady = setTimeout(() => (delay = 1000), 10_000)
-      if (workspace) send({ type: 'subscribe', workspace })
-      for (const ch of channels) join(ch)
-      if (opened) setTimeout(() => push(ALL), reauthed ? 0 : Math.random() * 2000) // spread a restart's refetches over 2s
-      opened = true
-      clearInterval(ping)
-      ping = setInterval(checkAlive, 25_000)
-      break
-    case 'pong':
-      clearTimeout(pong)
-      break
     case 'resync':
       push(ALL)
       break
@@ -177,81 +138,46 @@ function onMessage(data: unknown) {
   }
 }
 
-// A ping without a pong in 10s means the socket is dead (common after an iPad sleeps): drop it and reconnect.
-function checkAlive() {
-  if (ws?.readyState !== WebSocket.OPEN) return
-  send({ type: 'ping' })
-  clearTimeout(pong)
-  pong = setTimeout(() => {
-    const sock = ws
-    if (!sock) return
-    sock.onclose = null
-    sock.close()
-    reauthed = false
-    dropped(sock, true)
-  }, 10_000)
-}
-
-function connect() {
-  const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/realtime`)
-  sock.binaryType = 'arraybuffer'
-  ws = sock
-  sock.onmessage = (e) => onMessage(e.data)
-  // 4001: the access token expired or the sign-in may be revoked, so refresh before reconnecting, without backing off.
-  sock.onclose = (e) => {
-    reauthed = e.code === 4001
-    dropped(sock, client !== '' && !reauthed)
-    if (reauthed) delay = 1000
-  }
-}
-
-function dropped(sock: WebSocket, hello: boolean) {
-  if (ws !== sock) return
-  ws = null
-  client = ''
-  setClient('')
-  clearInterval(ping)
-  clearTimeout(pong)
-  clearTimeout(steady)
-  for (const ch of channels) {
-    ch.uuid = ch.id = null
-    ch.onClose()
-    ch.onPresence([])
-  }
-  if (!running) return
-  retry = setTimeout(async () => {
-    if (!hello && (await refreshAccess().catch(() => null))?.status === 401) return sessionEnded()
-    if (running && !ws) connect()
-  }, delay * (0.5 + Math.random()))
-  delay = Math.min(delay * 2, 10_000)
-}
-
-function onVisible() {
-  if (document.visibilityState !== 'visible' || !running) return
-  if (ws) return checkAlive()
-  clearTimeout(retry)
-  delay = 1000
-  connect()
-}
+const socket = createSocket({
+  binary: true,
+  onHello(id, again, reauthed) {
+    client = id
+    setClient(id)
+    if (workspace) send({ type: 'subscribe', workspace })
+    for (const ch of channels) join(ch)
+    if (again) setTimeout(() => push(ALL), reauthed ? 0 : Math.random() * 2000) // spread a restart's refetches over 2s
+  },
+  onDrop() {
+    client = ''
+    setClient('')
+    for (const ch of channels) {
+      ch.uuid = ch.id = null
+      ch.onClose()
+      ch.onPresence([])
+    }
+  },
+  onMessage(data) {
+    if (!(data instanceof ArrayBuffer)) return onMessage(data as Message)
+    const frame = decodeFrame(new Uint8Array(data))
+    const ch = frame && [...channels].find((c) => c.uuid === frame.id)
+    if (ch) ch.onFrame(frame.type, frame.payload)
+  },
+  async stillSignedIn() {
+    if ((await refreshAccess().catch(() => null))?.status !== 401) return true
+    sessionEnded()
+    return false
+  },
+})
+// Only after `hello`; everything sent before then is sent again on hello.
+const send = socket.send
 
 function start(r: AnyRouter) {
   router = r
-  running = true
-  opened = false
-  connect()
-  document.addEventListener('visibilitychange', onVisible)
+  const stop = socket.start()
   const unsubscribe = r.subscribe('onResolved', () => loaded.prune(r.state.matches.map(keyOf)))
   return () => {
     unsubscribe()
-    running = false
-    clearTimeout(retry)
-    document.removeEventListener('visibilitychange', onVisible)
-    const sock = ws
-    if (sock) {
-      sock.onclose = null
-      sock.close()
-      dropped(sock, true)
-    }
+    stop()
   }
 }
 
@@ -306,9 +232,7 @@ export function joinCollab(workspace: string, issue: string, handlers: Handlers)
   join(ch)
   return {
     send(type: number, payload: Uint8Array) {
-      if (!ch.id || ws?.readyState !== WebSocket.OPEN) return false
-      ws.send(encodeFrame(type, ch.id, payload))
-      return true
+      return ch.id ? socket.sendFrame(encodeFrame(type, ch.id, payload)) : false
     },
     leave() {
       channels.delete(ch)
@@ -316,3 +240,7 @@ export function joinCollab(workspace: string, issue: string, handlers: Handlers)
     },
   }
 }
+
+// Refetches `paths` in this tab as if another tab had changed them: for this tab's own writes that other parts of the
+// page show too (a manual mark updates the run, the history and the cases' last results).
+export const refetchPaths = (paths: string[]) => push(paths)

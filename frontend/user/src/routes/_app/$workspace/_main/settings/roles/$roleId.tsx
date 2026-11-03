@@ -1,5 +1,6 @@
-import { Link, createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
-import { can, type Permission, type Role } from '@/api'
+import { createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
+import { BackLink } from '@tether/shared/back-link'
+import { can, type Permission, type Role, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { DeleteRole, RoleForm } from '@/components/roles/role-form'
 
@@ -8,7 +9,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/$rol
     const { params } = ctx
     const [catalog, roles] = await Promise.all([
       loaderApi<Permission[]>(ctx, '/permissions'),
-      loaderApi<Role[]>(ctx, `/workspaces/${encodeURIComponent(params.workspace)}/roles`),
+      loaderApi<Role[]>(ctx, `${workspacePath(params.workspace)}/roles`),
     ])
     const role = roles.find((r) => r.id === params.roleId)
     if (!role) throw notFound()
@@ -21,11 +22,11 @@ function EditRole() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { catalog, role } = Route.useLoaderData()
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
-        <Link to="/$workspace/settings/roles" params={{ workspace: workspace.slug }} className="text-caption text-secondary">
-          ← Roles
-        </Link>
+        <BackLink to="/$workspace/settings/roles" params={{ workspace: workspace.slug }}>
+          Roles
+        </BackLink>
         <h1 className="text-h2">{role.name}</h1>
         <p className="text-body-sm text-secondary">
           {role.member_count} {role.member_count === 1 ? 'member' : 'members'}

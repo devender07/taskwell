@@ -19,7 +19,7 @@ func TestRecord(t *testing.T) {
 	ann, bob, cat, dan := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob"), dbtest.User(t, pool, "Cat"), dbtest.User(t, pool, "Dan")
 	var wsID, issueID string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx,
@@ -217,7 +217,7 @@ func TestChatEmail(t *testing.T) {
 	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
 	var wsID, chatID string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `with w as (select id from workspaces where created_by = $1)

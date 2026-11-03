@@ -2,14 +2,14 @@ import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@tether/shared/button'
 import { Pagination } from '@tether/shared/pagination'
-import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace } from '@/api'
+import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
-import { eventText } from '@/components/issues/event-text'
+import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
-import { groupIssues } from '@/components/issues/view-search'
 import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
@@ -63,7 +63,7 @@ export function NeedsAttention({ workspace, issues }: { workspace: string; issue
           {issues.slice(0, 8).map((i) => (
             <li key={i.id}>
               <IssueLine workspace={workspace} identifier={i.identifier}>
-                <StatusIcon category={i.status.category} label={i.status.name} />
+                <StatusIcon status={i.status} label={i.status.name} />
                 <span className="issue-id flex-noshrink">{i.identifier}</span>
                 <span className="text-label text-primary ellipsis flex-grow">{i.title}</span>
                 <span className={`text-caption flex-noshrink ${overdue(i.due_date, i.status.category) ? 'text-accent' : 'text-secondary'}`}>
@@ -82,7 +82,10 @@ type AssignedProps = { workspace: Workspace; issues: Issue[]; statuses: Status[]
 
 export function AssignedToMe({ workspace, issues, statuses, others }: AssignedProps) {
   const { openCreate } = useShortcuts()
-  const groups = groupIssues(issues, 'status', { statuses, members: [], userId: '' }).filter((g) => g.issues.length > 0)
+  const groups = [...statuses]
+    .sort((a, b) => a.position - b.position)
+    .map((s) => ({ key: s.id, label: s.name, status: s, issues: issues.filter((i) => i.status.id === s.id) }))
+    .filter((g) => g.issues.length > 0)
   return (
     <Card
       title="Assigned to me"
@@ -104,7 +107,7 @@ export function AssignedToMe({ workspace, issues, statuses, others }: AssignedPr
         groups.map((g) => (
           <div key={g.key} role="group" aria-label={`${g.label}, ${g.issues.length}`}>
             <div className="issue-group-header">
-              {g.status ? <StatusIcon category={g.status.category} /> : null}
+              {g.status ? <StatusIcon status={g.status} /> : null}
               <span className="text-label">{g.label}</span>
               <span className="text-caption text-secondary">{g.issues.length}</span>
             </div>
@@ -131,7 +134,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
   const [cleared, setCleared] = useState<NotificationPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const unread = cleared === page ? [] : page.notifications.filter((n) => !n.read).slice(0, 5)
-  const path = `/workspaces/${encodeURIComponent(workspace)}/notifications/read`
+  const path = `${workspacePath(workspace)}/notifications/read`
 
   async function markAll() {
     setCleared(page)
@@ -177,6 +180,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
                 workspace={workspace}
                 {...notificationTarget(n)}
                 actor={n.actor}
+                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}
@@ -258,7 +262,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
     if (p > current && items.length < p * perPage && more && before) {
       setLoading(true)
       try {
-        const next = await api<ActivityPage>(`/workspaces/${encodeURIComponent(workspace)}/activity?before=${encodeURIComponent(before)}`)
+        const next = await api<ActivityPage>(`${workspacePath(workspace)}/activity?before=${encodeURIComponent(before)}`)
         setOlder((o) => [...o, ...next.items])
         setOlderMore(next.has_more)
       } catch (e) {
@@ -293,6 +297,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
                   workspace={workspace}
                   identifier={item.issue.identifier}
                   actor={item.actor}
+                  actorName={item.type === 'event' ? eventActor(item) : undefined}
                   text={text}
                   excerpt={item.type === 'comment' ? item.excerpt : undefined}
                   at={item.created_at}
@@ -326,7 +331,7 @@ export function RecentlyViewed({ workspace, issues }: { workspace: string; issue
             return (
               <li key={r.identifier}>
                 <IssueLine workspace={workspace} identifier={r.identifier}>
-                  {issue ? <StatusIcon category={issue.status.category} label={issue.status.name} /> : null}
+                  {issue ? <StatusIcon status={issue.status} label={issue.status.name} /> : null}
                   <span className="issue-id flex-noshrink">{r.identifier}</span>
                   <span className="text-label text-primary ellipsis flex-grow">{issue?.title ?? r.title}</span>
                 </IssueLine>

@@ -3,6 +3,7 @@ package realtime
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -23,6 +24,9 @@ type Event struct {
 	WorkspaceID string `json:"-"`
 	// Close ends the audience's connections after the event: they re-authenticate, reconnect and re-join.
 	Close bool `json:"-"`
+	// Project is the id of the project a ToWorkspace event is about, if any. When it's private, Publish sends the
+	// event to each person who can see it (ToUser) instead.
+	Project string `json:"-"`
 }
 
 const ToAdmin = "admin"
@@ -32,8 +36,6 @@ func ToWorkspace(id string) string { return "ws:" + id }
 
 // ToUser is every connection of the user with the id.
 func ToUser(id string) string { return "user:" + id }
-
-func toIssue(id string) string { return "issue:" + id }
 
 // maxPayload keeps a NOTIFY payload under Postgres's 8000-byte limit.
 const maxPayload = 7900
@@ -80,7 +82,29 @@ func Project(slug, key string) string { return Workspace(slug) + "/projects/" + 
 
 func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issues" }
 
+// Milestones is the project's milestone list.
+func Milestones(slug, key string) string { return Project(slug, key) + "/milestones" }
+
+// Roadmap is the workspace's roadmap: active projects with their dates, progress, cycles and milestones.
+func Roadmap(slug string) string { return Workspace(slug) + "/roadmap" }
+
+// Cycles is the project's cycle list.
+func Cycles(slug, key string) string { return Project(slug, key) + "/cycles" }
+
+func Cycle(slug, key string, number int) string {
+	return Cycles(slug, key) + "/" + strconv.Itoa(number)
+}
+
+// CycleIssues is the cycle's issue list.
+func CycleIssues(slug, key string, number int) string { return Cycle(slug, key, number) + "/issues" }
+
+// Feedback is the workspace's feedback inbox; its count and an issue's feedback hang off it and the issue.
+func Feedback(slug string) string { return Workspace(slug) + "/feedback" }
+
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
+
+// Watching is the list of issues the caller watches.
+func Watching(slug string) string { return Workspace(slug) + "/watching" }
 
 // Activity is the workspace's activity feed on Home.
 func Activity(slug string) string { return Workspace(slug) + "/activity" }
@@ -88,11 +112,11 @@ func Activity(slug string) string { return Workspace(slug) + "/activity" }
 // ProjectStats is the per-project issue counts on Home.
 func ProjectStats(slug string) string { return Workspace(slug) + "/project-stats" }
 
-// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues, and
-// Home's activity and project counts.
+// IssuePaths are what an issue change touches: its page and timeline, its project's list and board, my issues,
+// watched issues, Home's activity and project counts, and the roadmap's progress.
 func IssuePaths(slug, identifier, key string) []string {
 	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug),
-		Activity(slug), ProjectStats(slug)}
+		Watching(slug), Activity(slug), ProjectStats(slug), Roadmap(slug)}
 }
 
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it

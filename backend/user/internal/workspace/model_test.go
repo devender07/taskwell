@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/devender07/tether/backend/user/internal/db"
 )
 
@@ -75,5 +77,78 @@ func TestTakeInviteSend(t *testing.T) {
 	}
 	if !take(ws1, ann) {
 		t.Error("yesterday's sends still count")
+	}
+}
+
+// TestCreateFirstJoinsInvites: a new user someone invited joins that workspace and gets none of their own; anyone
+// else gets their default workspace.
+func TestCreateFirstJoinsInvites(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := db.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	var ann, cara, dev string
+	if err := pool.QueryRow(ctx, `
+		with a as (insert into users (name, email) values ('Ann', 'ann@join-invited.test') returning id),
+		     c as (insert into users (name, email) values ('Cara', 'cara@join-invited.test') returning id),
+		     d as (insert into users (name, email) values ('Dev', 'dev@join-invited.test') returning id)
+		select a.id::text, c.id::text, d.id::text from a, c, d`).Scan(&ann, &cara, &dev); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `delete from workspaces where id in (select workspace_id from workspace_members m
+			join users u on u.id = m.user_id where u.email like '%@join-invited.test')`); err != nil {
+			t.Error(err)
+		}
+		if _, err := pool.Exec(ctx, `delete from users where email like '%@join-invited.test'`); err != nil {
+			t.Error(err)
+		}
+	})
+	tx := func(f func(pgx.Tx) error) {
+		t.Helper()
+		if err := pgx.BeginFunc(ctx, pool, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var annWS string
+	tx(func(tx pgx.Tx) error {
+		ws, err := create(ctx, tx, ann, "Ann's team", "join-invited-ann")
+		annWS = ws.ID
+		return err
+	})
+	if _, err := pool.Exec(ctx, `insert into workspace_invites (workspace_id, email, token_hash, invited_by, expires_at)
+		values ($1, 'cara@join-invited.test', 'join-invited', $2, now() + interval '1 day')`, annWS, ann); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []struct{ id, name string }{{cara, "Cara"}, {dev, "Dev"}} {
+		tx(func(tx pgx.Tx) error { return CreateFirst(ctx, tx, u.id, u.name, "") })
+	}
+	workspaces := func(user string) []string {
+		t.Helper()
+		rows, _ := pool.Query(ctx, `select w.id::text from workspace_members m join workspaces w on w.id = m.workspace_id
+			where m.user_id = $1`, user)
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	if got := workspaces(cara); len(got) != 1 || got[0] != annWS {
+		t.Errorf("invited Cara is in %v, want only Ann's workspace %s", got, annWS)
+	}
+	if invs, err := (&model{db: pool}).invites(ctx, annWS); err != nil || len(invs) != 0 {
+		t.Errorf("Ann's pending invites after Cara joined: %v %v, want none", invs, err)
+	}
+	if got := workspaces(dev); len(got) != 1 || got[0] == annWS {
+		t.Errorf("Dev is in %v, want just a default workspace of his own", got)
 	}
 }

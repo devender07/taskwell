@@ -65,6 +65,7 @@ Small fixes and follow-ups to a shipped feature don't need a plan or agents.
 backend/            Go workspace (go.work)
   admin/            module github.com/devender07/tether/backend/admin, entry cmd/admin
   user/             module github.com/devender07/tether/backend/user,  entry cmd/user
+  shared/           module github.com/devender07/tether/backend/shared: code every service uses (obs, env)
 frontend/           npm workspaces (shared, admin, user)
   shared/           @tether/shared: src/styles/tokens.css (DESIGN.md), src/components/<name>/<name>.tsx (one folder per component, css alongside)
   admin/            @tether/admin: Vite + React 19 + TanStack Router, port 5174
@@ -72,10 +73,12 @@ frontend/           npm workspaces (shared, admin, user)
 ```
 
 - Go: flat layout, `cmd/<svc>/main.go` wires and runs, logic goes in `internal/`. Manual constructor injection, no DI library. Config via env vars, logs to stdout.
-- Go feature packages (`internal/<feature>/`) split by role: `routes.go` mounts endpoints, `controller.go` holds HTTP handlers (parse, validate, respond, no SQL), `model.go` holds types and every SQL query. Helpers get their own file (e.g. `session.go`, `validate.go`).
+- Go feature packages (`internal/<feature>/`) split by role: `routes.go` mounts endpoints, `controller.go` holds HTTP handlers (parse, validate, respond, no SQL), `model.go` holds types and every SQL query. Helpers get their own file (e.g. `session.go`, `validate.go`). JSON responses, the signed-in handler wrapper and `IsUUID` come from `user/internal/web`; don't copy them into a package.
+- Run the whole backend from `backend/`: `make` (Postgres, Mailpit, Chrome, then user API, AI tester, admin API and MCP server; Ctrl+C stops all). `make build|vet|test|down`.
 - Build/vet from `backend/`: `go build github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/...`
 - Frontend stack is fixed: Vite, React 19, TanStack Router with file-based routes. No UI kit, no CSS framework, no state library, no schema library. Ask before adding any dependency.
 - Imports: `@/` is the app's `src/` (both apps). Use it instead of `../`; same-folder `./` imports stay relative.
+- Icons: import from `@tether/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
 - Styling: utility classes from `@tether/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
 - Frontend commands from `frontend/`: `npm run dev:user`, `npm run dev:admin`, `npm run build` (vite build + tsc per app).
 

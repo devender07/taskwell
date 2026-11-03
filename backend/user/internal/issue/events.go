@@ -8,9 +8,11 @@ import (
 
 // statusSnap and eventRef are the names an event keeps, so the log reads right after renames and deletes.
 type statusSnap struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Category string `json:"category"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Category string  `json:"category"`
+	Icon     *string `json:"icon,omitempty"` // the type's; left out for built-ins, as in events from before types
+	Color    *string `json:"color,omitempty"`
 }
 
 type eventRef struct {
@@ -29,6 +31,14 @@ type snapshot struct {
 	dueDate     *string
 	labels      []Label
 	parent      *eventRef
+	projectID   string
+	cycleID     string     // "" when none
+	cycle       *cycleSnap // nil when none
+}
+
+type cycleSnap struct {
+	Number int    `json:"number"`
+	Name   string `json:"name"`
 }
 
 // event is one activity entry about to be written; data marshals to the kind's JSON.
@@ -69,6 +79,9 @@ func diff(a, b snapshot) []event {
 	}
 	if refID(a.parent) != refID(b.parent) {
 		es = append(es, event{"parent", change[*eventRef]{a.parent, b.parent}})
+	}
+	if a.cycleID != b.cycleID {
+		es = append(es, event{"cycle", change[*cycleSnap]{a.cycle, b.cycle}})
 	}
 	return es
 }

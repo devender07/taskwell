@@ -2,13 +2,14 @@ package chat
 
 import (
 	"encoding/json"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -17,11 +18,6 @@ const (
 	maxMembers    = 50 // a group's people, its creator included
 	maxEmojiLen   = 16 // code points, as the reactions table checks
 )
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
-func isUUID(s string) bool { return uuidRe.MatchString(s) }
 
 // checkName takes a group name trimmed.
 func checkName(s string) string {
@@ -55,13 +51,25 @@ func checkEmoji(s string) string {
 	return ""
 }
 
+// pinDays are the pin lengths offered, in days.
+var pinDays = []int{1, 7, 30}
+
+// checkPinDays reads a pin length that's one of pinDays.
+func checkPinDays(s string) (int, string) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || !slices.Contains(pinDays, n) {
+		return 0, "Choose 1, 7 or 30 days."
+	}
+	return n, ""
+}
+
 // people returns the distinct ids picked, without the user's own, and whether they all look like user ids.
 func people(ids []string, self string) ([]string, bool) {
 	ok := true
 	var out []string
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
-		if !isUUID(id) {
+		if !web.IsUUID(id) {
 			ok = false
 			continue
 		}

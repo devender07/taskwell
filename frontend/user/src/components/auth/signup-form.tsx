@@ -2,11 +2,11 @@ import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Input } from '@tether/shared/input'
-import { email, name, password } from '@tether/shared/validate'
+import { email, name, password, workspaceName } from '@tether/shared/validate'
 import { api, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
-type Values = { name: string; email: string }
+type Values = { name: string; email: string; workspace: string }
 type SignupState = {
   step: 'details' | 'code'
   values: Values
@@ -17,7 +17,7 @@ type SignupState = {
   done?: boolean
 }
 
-async function signupAction(prev: SignupState, form: FormData): Promise<SignupState> {
+async function signupAction(prev: SignupState, form: FormData, invited: boolean): Promise<SignupState> {
   const intent = form.get('intent')
   if (intent === 'change') return { step: 'details', values: prev.values }
   if (intent === 'resend' && prev.signup) {
@@ -30,8 +30,15 @@ async function signupAction(prev: SignupState, form: FormData): Promise<SignupSt
   }
   if (prev.step === 'details') {
     const get = (key: string) => String(form.get(key) ?? '').trim()
-    const values = { name: get('name'), email: get('email') }
-    const errors = { name: name(values.name), email: email(values.email), password: password(String(form.get('password') ?? '')) }
+    const values = { name: get('name'), email: get('email'), workspace: get('workspace_name') }
+    const pw = String(form.get('password') ?? '')
+    const errors = {
+      name: name(values.name),
+      email: email(values.email),
+      workspace_name: invited ? null : workspaceName(values.workspace),
+      password: password(pw),
+      password_confirm: pw === String(form.get('password_confirm') ?? '') ? null : "Passwords don't match.",
+    }
     if (Object.values(errors).some(Boolean)) return { step: 'details', values, errors }
     try {
       await api('/auth/signup', form)
@@ -53,11 +60,12 @@ async function signupAction(prev: SignupState, form: FormData): Promise<SignupSt
 
 export function SignupForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
+  const invited = redirect?.startsWith('/invite') ?? false // they join the inviter's workspace, so no name for their own
   const [state, submit, pending] = useActionState(async (prev: SignupState, form: FormData) => {
-    const next = await signupAction(prev, form)
+    const next = await signupAction(prev, form, invited)
     if (next.done) await navigate({ href: redirect ?? '/' })
     return next
-  }, { step: 'details', values: { name: '', email: '' } })
+  }, { step: 'details', values: { name: '', email: '', workspace: '' } })
   const { values, errors, error } = state
 
   if (state.step === 'code') {
@@ -110,6 +118,16 @@ export function SignupForm({ redirect }: { redirect?: string }) {
         defaultValue={values.email}
         error={errors?.email}
       />
+      {invited ? null : (
+        <Input
+          label="Company or workspace name"
+          name="workspace_name"
+          autoComplete="organization"
+          placeholder="Acme Inc"
+          defaultValue={values.workspace}
+          error={errors?.workspace_name}
+        />
+      )}
       <Input
         label="Password"
         name="password"
@@ -117,6 +135,14 @@ export function SignupForm({ redirect }: { redirect?: string }) {
         autoComplete="new-password"
         placeholder="At least 8 characters"
         error={errors?.password}
+      />
+      <Input
+        label="Confirm password"
+        name="password_confirm"
+        type="password"
+        autoComplete="new-password"
+        placeholder="Type it again"
+        error={errors?.password_confirm}
       />
       <FormError>{error}</FormError>
       <Button type="submit" className="w-full" disabled={pending}>

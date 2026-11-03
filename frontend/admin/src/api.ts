@@ -1,4 +1,7 @@
 import { redirect } from '@tanstack/react-router'
+import { ApiError } from '@tether/shared/api-errors'
+
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
 export type Admin = { id: string; name: string; email: string }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
@@ -21,27 +24,8 @@ export type Stats = {
   signups: Day[]
   issues_created: Day[]
 }
-export type FieldErrors = Record<string, string | null | undefined>
 
 export const PAGE_SIZE = 50
-const FALLBACK = 'Something went wrong. Try again.'
-const OFFLINE = "You're offline. Reconnect and try again."
-const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
-
-export class ApiError extends Error {
-  status: number
-  errors: FieldErrors
-  error: string | null
-
-  constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
-    // Status 0: the request never got a response.
-    const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
-    super(error ?? `HTTP ${status}`)
-    this.status = status
-    this.errors = body?.errors ?? {}
-    this.error = error
-  }
-}
 
 // GET without a body, POST with one. 204 resolves to undefined. A 401 outside /auth/* and /me means the
 // session ended (8h, or 1h unused): back to sign-in, returning here afterwards.
@@ -73,16 +57,8 @@ export async function getMe(): Promise<Admin | null> {
   }
 }
 
-export function safeRedirect(v: unknown): string | undefined {
-  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') ? v : undefined
-}
-
 export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
   if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
-}
-
-export function toFormErrors(e: unknown): { errors: FieldErrors; error: string | null } {
-  return e instanceof ApiError ? { errors: e.errors, error: e.error } : { errors: {}, error: FALLBACK }
 }
 
 export type ListSearch = { q?: string; page?: number }

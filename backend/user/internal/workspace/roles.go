@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -21,7 +23,7 @@ func (h *Handler) roles(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, rs)
+	web.JSON(w, http.StatusOK, rs)
 	return nil
 }
 
@@ -36,13 +38,13 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	role, err := h.model.createRole(r.Context(), ws, userID, name, perms)
 	if errors.Is(err, errNameTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, role)
+	web.JSON(w, http.StatusCreated, role)
 	return nil
 }
 
@@ -67,17 +69,17 @@ func (h *Handler) updateRole(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	updated, err := h.model.updateRole(ctx, ws, userID, role.ID, name, perms)
 	if errors.Is(err, errNameTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errRoleNameTaken})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	if updated == nil {
-		writeErr(w, http.StatusNotFound, errRoleNotFound)
+		web.Err(w, http.StatusNotFound, errRoleNotFound)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, updated)
+	web.JSON(w, http.StatusOK, updated)
 	return nil
 }
 
@@ -91,7 +93,7 @@ func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	if role.Builtin != nil {
-		writeErr(w, http.StatusForbidden, "Built-in roles can't be deleted.")
+		web.Err(w, http.StatusForbidden, "Built-in roles can't be deleted.")
 		return nil
 	}
 	deleted, err := h.model.deleteRole(r.Context(), ws, userID, role.ID)
@@ -99,7 +101,7 @@ func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request, userID stri
 		return err
 	}
 	if !deleted {
-		writeErr(w, http.StatusNotFound, errRoleNotFound)
+		web.Err(w, http.StatusNotFound, errRoleNotFound)
 		return nil
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -112,7 +114,7 @@ func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request, userID stri
 func (h *Handler) existingRole(w http.ResponseWriter, r *http.Request, ws *Workspace, adminMsg string) (*Role, bool, error) {
 	id := r.PathValue("id")
 	if id == "" {
-		writeErr(w, http.StatusNotFound, errRoleNotFound)
+		web.Err(w, http.StatusNotFound, errRoleNotFound)
 		return nil, false, nil
 	}
 	role, err := h.model.role(r.Context(), ws.ID, id)
@@ -120,13 +122,13 @@ func (h *Handler) existingRole(w http.ResponseWriter, r *http.Request, ws *Works
 	case err != nil:
 		return nil, false, err
 	case role == nil:
-		writeErr(w, http.StatusNotFound, errRoleNotFound)
+		web.Err(w, http.StatusNotFound, errRoleNotFound)
 		return nil, false, nil
 	case role.Builtin != nil && *role.Builtin == roleAdmin:
-		writeErr(w, http.StatusForbidden, adminMsg)
+		web.Err(w, http.StatusForbidden, adminMsg)
 		return nil, false, nil
 	case !subset(role.Permissions, ws.Permissions):
-		writeErr(w, http.StatusForbidden, errRoleAbove)
+		web.Err(w, http.StatusForbidden, errRoleAbove)
 		return nil, false, nil
 	}
 	return role, true, nil
@@ -145,11 +147,11 @@ func readRoleForm(w http.ResponseWriter, r *http.Request, ws *Workspace, checkNa
 		errs["permissions"] = "Unknown permission."
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return "", nil, false
 	}
 	if !subset(perms, ws.Permissions) {
-		writeErr(w, http.StatusForbidden, errEscalation)
+		web.Err(w, http.StatusForbidden, errEscalation)
 		return "", nil, false
 	}
 	return name, perms, true

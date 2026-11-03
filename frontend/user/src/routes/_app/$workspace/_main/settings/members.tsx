@@ -1,17 +1,20 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, type Invite, type Member, type Role } from '@/api'
+import { can, type Role, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { InviteForm, MemberList, PendingInvites } from '@/components/workspace/members'
+import { type MemberPage, memberPagePath } from '@/components/workspace/member-pages'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/members')({
+  validateSearch: (search): { q?: string } => (typeof search.q === 'string' && search.q ? { q: search.q } : {}),
+  loaderDeps: ({ search }) => ({ q: search.q?.trim() ?? '' }),
   loader: async (ctx) => {
-    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}`
+    const path = `${workspacePath(ctx.params.workspace)}`
     trackPath(ctx, `${path}/invites`) // the members response lists invites too
-    const [{ members, invites }, roles] = await Promise.all([
-      loaderApi<{ members: Member[]; invites: Invite[] }>(ctx, `${path}/members`),
+    const [page, roles] = await Promise.all([
+      loaderApi<MemberPage>(ctx, memberPagePath(ctx.params.workspace, ctx.deps.q)),
       loaderApi<Role[]>(ctx, `${path}/roles`),
     ])
-    return { members, invites, roles }
+    return { page, roles }
   },
   component: MembersSettings,
 })
@@ -19,10 +22,12 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/members')(
 function MembersSettings() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { user } = Route.useRouteContext()
-  const { members, invites, roles } = Route.useLoaderData()
+  const { page, roles } = Route.useLoaderData()
+  const { q = '' } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const invite = can(workspace, 'members.invite')
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
         <h1 className="text-h2">Members</h1>
         <p className="text-body-sm text-secondary">People in {workspace.name}.</p>
@@ -32,8 +37,15 @@ function MembersSettings() {
           <InviteForm key={workspace.id} workspace={workspace} roles={roles} />
         </section>
       ) : null}
-      <MemberList workspace={workspace} roles={roles} members={members} userId={user.id} />
-      {invite && invites.length > 0 ? <PendingInvites slug={workspace.slug} invites={invites} /> : null}
+      <MemberList
+        workspace={workspace}
+        roles={roles}
+        page={page}
+        userId={user.id}
+        query={q}
+        onQuery={(next) => navigate({ search: next ? { q: next } : {}, replace: true })}
+      />
+      {invite && page.invites.length > 0 ? <PendingInvites slug={workspace.slug} invites={page.invites} /> : null}
     </main>
   )
 }

@@ -1,7 +1,9 @@
-import { useLoaderData, useLocation, useMatch } from '@tanstack/react-router'
+import { useLoaderData, useLocation, useMatch, useParams } from '@tanstack/react-router'
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { Dialog } from '@tether/shared/dialog'
 import { can } from '@/api'
+import { branchName } from '@/components/issues/branch'
+import type { Prefill } from '@/components/issues/issue-form'
 import { CommandPalette, type Mode } from './command-palette'
 import './shortcuts.css'
 
@@ -9,6 +11,7 @@ const QuickCreate = lazy(() => import('./quick-create'))
 
 export const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
 export const paletteKey = isApple ? '⌘K' : 'Ctrl+K'
+const branchKey = isApple ? '⌘⇧.' : 'Ctrl+Shift+.'
 
 const ISSUE_KEYS: Record<string, Mode> = { a: 'assignee', s: 'status', p: 'priority', l: 'labels' }
 const HELP = [
@@ -19,14 +22,16 @@ const HELP = [
   ['A', 'Assign (on an issue)'],
   ['P', 'Set priority (on an issue)'],
   ['L', 'Change labels (on an issue)'],
+  [branchKey, 'Copy branch name (on an issue)'],
+  ['P / F / S', 'Mark passed, failed or skipped (in a manual test run)'],
   ['Enter', 'Send a message (Shift+Enter for a new line)'],
   ['↑', 'Edit your last message (in an empty composer)'],
   ['?', 'Show keyboard shortcuts'],
   ['Esc', 'Close'],
 ]
 
-type Actions = { openPalette: () => void; openCreate: () => void }
-const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {} })
+type Actions = { openPalette: () => void; openCreate: () => void; createPrefilled: (prefill: Prefill) => void }
+const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {}, createPrefilled() {} })
 export const useShortcuts = () => use(ShortcutsContext)
 
 // Single-key shortcuts (C, /, ?, S, A, P, L) can be turned off in Settings → Profile (WCAG 2.1.4); ⌘K stays.
@@ -50,21 +55,33 @@ export const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.
 export function Shortcuts({ children }: { children: ReactNode }) {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const issue = useMatch({ from: '/_app/$workspace/_main/issue/$identifier', shouldThrow: false })?.loaderData
-  const pageProject = useMatch({ from: '/_app/$workspace/_main/projects/$key', shouldThrow: false })?.loaderData?.project.key
+  const pageProject = useParams({ strict: false, select: (p) => p.key })
   const pathname = useLocation({ select: (l) => l.pathname })
   const [palette, setPalette] = useState<Mode | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<{ prefill?: Prefill } | null>(null)
   const [help, setHelp] = useState(false)
+  const [toast, setToast] = useState<{ text: string; at: number } | null>(null)
   const [path, setPath] = useState(pathname)
   const canCreate = can(workspace, 'issues.create')
 
   if (pathname !== path) {
     setPath(pathname)
     setPalette(null)
-    setCreating(false)
+    setCreating(null)
   }
 
-  const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating(true) }), [])
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const say = (text: string) => setToast({ text, at: Date.now() })
+  const copyBranch = issue
+    ? () => navigator.clipboard.writeText(branchName(issue.issue.identifier, issue.issue.title)).then(() => say('Branch name copied'), () => say("Couldn't copy. Try again."))
+    : undefined
+
+  const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating({}), createPrefilled: (prefill) => setCreating({ prefill }) }), [])
 
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return
@@ -75,9 +92,15 @@ export function Shortcuts({ children }: { children: ReactNode }) {
       setPalette((p) => (p ? null : 'root'))
       return
     }
+    if (e.code === 'Period' && e.shiftKey && (isApple ? e.metaKey : e.ctrlKey) && !e.altKey) {
+      if (open || !copyBranch) return
+      e.preventDefault()
+      copyBranch()
+      return
+    }
     if (open || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || !singleKeyShortcuts()) return
     const mode = ISSUE_KEYS[e.key]
-    if (e.key === 'c' && canCreate) setCreating(true)
+    if (e.key === 'c' && canCreate) setCreating({})
     else if (e.key === '/') setPalette('root')
     else if (e.key === '?') setHelp(true)
     else if (mode && issue?.issue.can_edit) setPalette(mode)
@@ -97,23 +120,26 @@ export function Shortcuts({ children }: { children: ReactNode }) {
         workspace={workspace}
         mode={palette}
         issue={issue}
+        projectKey={pageProject ?? issue?.issue.project.key}
+        copyBranch={copyBranch && { run: copyBranch, key: branchKey }}
         onCreate={
           canCreate
             ? () => {
                 setPalette(null)
-                setCreating(true)
+                setCreating({})
               }
             : undefined
         }
         onClose={() => setPalette(null)}
       />
       {canCreate ? (
-        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue">
-          <Suspense fallback={<p className="text-body-sm text-secondary">Loading…</p>}>
-            <QuickCreate workspace={workspace} projectKey={pageProject ?? issue?.issue.project.key} />
+        <Dialog open={creating !== null} onClose={() => setCreating(null)} title="New issue" wide>
+          <Suspense fallback={<p className="text-body-sm text-secondary" style={{ minHeight: 548 }}>Loading…</p>}>
+            <QuickCreate workspace={workspace} projectKey={pageProject ?? issue?.issue.project.key} prefill={creating?.prefill} />
           </Suspense>
         </Dialog>
       ) : null}
+      <p role="status" className="toast z-modal">{toast?.text}</p>
       <Dialog open={help} onClose={() => setHelp(false)} title="Keyboard shortcuts">
         <dl className="grid gap-3 m-0">
           {HELP.map(([key, label]) => (

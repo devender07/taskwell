@@ -67,3 +67,20 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 4px;
 }
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 8px 16px;
+  color: var(--text);
+  font: 400 14px/21px var(--font);
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: rgba(0, 0, 0, 0.6) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 4px 4px 0px;
+  pointer-events: none;
+}
+.toast:empty { padding: 0; border: 0; box-shadow: none; }

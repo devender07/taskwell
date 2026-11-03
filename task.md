@@ -28,7 +28,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] List view with grouping (status, assignee, priority) and sorting
 - [x] Kanban board with drag between columns (pointer events: mouse and touch, edge auto-scroll)
 - [x] Filters by assignee, status, label, priority, kept in the URL so they can be shared
-- [x] "My issues" view
+- [x] "My issues" view, with an Assigned / Watching switch
 
 ## Phase 4: Collaboration
 
@@ -36,7 +36,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Comments on issues (rich text, reusing the shared editor; edit and delete; `comments.create` / `comments.manage`)
 - [x] Activity log (status changes, reassignments, edits)
 - [x] `@mentions` in comments and descriptions, notified by email
-- [x] Image and file attachments in descriptions and comments (local disk under `UPLOAD_DIR`; paste, drop or the attach button)
+- [x] Image and file attachments in descriptions and comments (S3 or compatible, configured in `system_config` `s3_*`, served by presigned redirect; paste, drop or the attach button)
 
 ## Phase 5: Keyboard-first
 
@@ -65,6 +65,37 @@ Legend: `[x]` done, `[ ]` to do.
 
 - [x] Inbox is the workspace chat: workspace chat and personal notes by default, direct messages, private groups, @person and #issue mentions, attachments, reactions, threads, edit/delete, typing, unread counts, live; notifications live on as Activity; chat mentions and unread DMs notify and email
 
+## Testing
+
+Plan: `docs/ai-testing-plan.md`.
+
+- [x] Phase A: test cases saved on issues (add, edit, reorder, delete), manual test runs (pass / fail / skip with a note), test history, "Create bug" from a failed result
+- [x] Phase B: AI test runs: Claude writes cases and drives a sandboxed Chrome against registered test sites, live screenshots, monthly spend limit, sealed test-account passwords
+
+## Cycles
+
+Plan: `docs/cycles-plan.md`.
+
+- [x] Cycles per project: numbered, start/end dates, no overlaps; current/upcoming/past from today's date; `cycles.manage` permission
+- [x] Cycles page and cycle page (list/board, live progress), cycle on issues (picker, New issue preset, activity), `cycle` filter, move a past cycle's open issues to another cycle, "Go to current cycle" in the palette
+
+## PR linking
+
+Plan: `docs/pr-linking-plan.md`.
+
+- [x] GitHub / GitLab webhooks (Settings → Integrations, `integrations.manage`): PRs mentioning an issue ID link to it; opening and merging move the issue to the chosen statuses; PR list on the issue page; "Copy branch name" (`⌘⇧.`)
+
+## MCP server
+
+Plan: `docs/mcp-plan.md`.
+
+- [x] Personal API tokens (Settings → API tokens): create (shown once, with the `claude mcp add` command), list with last used, revoke; `Authorization: Bearer tth_…` signs any `/api` request in as that user, except auth, password and token endpoints
+- [x] MCP server (`backend/mcp`, `/mcp`, streamable HTTP, stateless): list workspaces / projects / options, search, list (filters), my issues, get, create, update, comment; names instead of ids; forwards the caller's token to the API
+- [x] MCP tools for every feature: AI testing (test cases, AI runs with wait, manual runs marked by the client, sites, accounts, usage), projects, cycles, issue links/watch/delete, comments, activity, labels, statuses, chat, inbox, invites
+- [x] Tests view (MCP Apps) for `get_test_run` and `list_test_cases` in Claude Desktop / claude.ai: results, notes, reproduction steps, screenshots on demand, open in Tether
+- [x] Recorded tests (`docs/recorded-tests-plan.md`): MCP clients save browser steps (and their playwright-cli Playwright code) on test cases; "Run recorded tests" replays them in the sandboxed Chrome without Claude or the AI limit; `assert_text` / `assert_no_text` steps; "Download Playwright" exports `<ID>.spec.ts` for developers
+- [x] Test accounts tied to a test site (Settings → AI testing, MCP `save_test_account` `site`): the password is typed only on that site's host
+
 ## Admin app (alongside, as each phase needs it)
 
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
@@ -74,12 +105,10 @@ Legend: `[x]` done, `[ ]` to do.
 
 ## Later
 
-- Cycles / sprints
-- GitHub / GitLab PR linking (an issue moves when its PR merges)
 - Slack
-- Roadmap view
-- Customer feedback intake
-- Public API and webhooks
+- [x] Roadmap view: project start/target dates, milestones, timeline with cycles (docs/roadmap-plan.md)
+- [x] Customer feedback intake (docs/feedback-plan.md): public form link per workspace, Feedback inbox (new / linked / archived), link to or create an issue, customer feedback on the issue page, `feedback.manage`
+- [x] Public API and webhooks (docs/webhooks-plan.md): API reference at `/docs/api`; signed outbound webhooks for issue.created / issue.updated / issue.deleted / comment.created with retries, delivery log and redeliver (Settings → Webhooks, `integrations.manage`)
 - Billing (Stripe, per seat)
 
 ## Not building until a customer asks
@@ -89,3 +118,4 @@ Time tracking, gantt, resource planning, custom fields, permission matrices, SSO
 ## Next up
 
 Phases 1–6 and the admin app are built. Next: pick from Later (cycles, PR linking, Slack, roadmap) once real users ask.
+

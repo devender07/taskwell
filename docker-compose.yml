@@ -25,6 +25,48 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
+  # Uploads: an S3 API on :9000 matching the system_config s3_* defaults. No identities configured, so it accepts any
+  # credentials; `make up` creates the tether bucket.
+  s3:
+    image: chrislusf/seaweedfs:3.97
+    container_name: tether-s3
+    command: server -dir=/data -s3 -ip.bind=0.0.0.0
+    ports:
+      - "127.0.0.1:9000:8333"
+    volumes:
+      - tether-s3:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8333/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # AI test runs in dev (docker compose --profile ai up -d chrome): the tester runs on the host with go run and
+  # listens on :3128, and Chrome sends every request through it. Unlike production this Chrome isn't on an internal
+  # network (it couldn't reach the host or publish its port), so the proxy flag is the only fence.
+  chrome:
+    profiles: ["ai"]
+    image: chromedp/headless-shell:156.0.8078.48
+    container_name: tether-chrome
+    shm_size: 1gb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - --proxy-server=http://host.docker.internal:3128
+      - --proxy-bypass-list=<-loopback>
+      - --force-webrtc-ip-handling-policy=disable_non_proxied_udp
+      - --disable-background-networking
+      - --disable-component-update
+      - --disable-sync
+      - --disable-default-apps
+      - --disable-domain-reliability
+      - --no-pings
+      - --disable-features=AutofillServerCommunication,OptimizationHints,MediaRouter,Translate
+    ports:
+      - "127.0.0.1:9222:9222"
+
 volumes:
   tether-pgdata:
     name: tether-pgdata
+  tether-s3:
+    name: tether-s3

@@ -27,6 +27,9 @@ const (
 	purposeVerify = "email_verify"
 	// purposePasswordSet is the code a signed-in account without a password needs to add one.
 	purposePasswordSet = "password_set"
+	// An email change needs both: a code sent to the current address and one sent to the new address.
+	purposeEmailOld = "email_change_old"
+	purposeEmailNew = "email_change_new"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -49,7 +52,7 @@ type model struct {
 	db *pgxpool.Pool
 	// onCreated runs in the transaction that creates or first verifies an account (it creates the default
 	// workspace), so a failure leaves no half-made account.
-	onCreated func(ctx context.Context, tx pgx.Tx, userID, name string) error
+	onCreated func(ctx context.Context, tx pgx.Tx, userID, name, workspaceName string) error
 }
 
 // --- users ---
@@ -58,7 +61,7 @@ type model struct {
 // keeps the existing unverified one) and stores the code's hash with the name and password hash to apply once it is
 // verified. Older pending codes stay usable: each is bound to the browser that asked for it. Returns errEmailTaken
 // when a verified account has the email.
-func (m *model) startSignup(ctx context.Context, name, email, passwordHash string, tokenHash []byte, minutes int) error {
+func (m *model) startSignup(ctx context.Context, name, email, passwordHash, workspaceName string, tokenHash []byte, minutes int) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var userID string
 		var verified, inserted bool
@@ -72,9 +75,9 @@ func (m *model) startSignup(ctx context.Context, name, email, passwordHash strin
 			return errEmailTaken
 		}
 		if _, err := tx.Exec(ctx, `
-			insert into auth_tokens (user_id, purpose, token_hash, expires_at, name, password_hash)
-			values ($1, $2, $3, now() + make_interval(mins => $4), $5, $6)`,
-			userID, purposeVerify, tokenHash, minutes, name, passwordHash); err != nil {
+			insert into auth_tokens (user_id, purpose, token_hash, expires_at, name, password_hash, workspace_name)
+			values ($1, $2, $3, now() + make_interval(mins => $4), $5, $6, nullif($7, ''))`,
+			userID, purposeVerify, tokenHash, minutes, name, passwordHash, workspaceName); err != nil {
 			return err
 		}
 		if inserted {
@@ -96,13 +99,13 @@ func (m *model) startSignup(ctx context.Context, name, email, passwordHash strin
 func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var tokenID, userID, name, ph string
+		var tokenID, userID, name, ph, wsName string
 		err := tx.QueryRow(ctx, `
-			select t.id::text, u.id::text, t.name, t.password_hash
+			select t.id::text, u.id::text, t.name, t.password_hash, coalesce(t.workspace_name, '')
 			from auth_tokens t join users u on u.id = t.user_id
 			where u.email = $1 and u.email_verified_at is null and t.purpose = $2 and t.token_hash = $3
 			  and t.used_at is null and t.expires_at > now()
-			for update of t, u`, email, purposeVerify, tokenHash).Scan(&tokenID, &userID, &name, &ph)
+			for update of t, u`, email, purposeVerify, tokenHash).Scan(&tokenID, &userID, &name, &ph, &wsName)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -119,7 +122,7 @@ func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte
 			return err
 		}
 		u = &got
-		if err := m.onCreated(ctx, tx, got.ID, got.Name); err != nil {
+		if err := m.onCreated(ctx, tx, got.ID, got.Name, wsName); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
@@ -287,7 +290,7 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			if first, err := markVerified(ctx, tx, &u, name); err != nil || !first {
 				return err
 			}
-			return m.onCreated(ctx, tx, u.ID, u.Name)
+			return m.onCreated(ctx, tx, u.ID, u.Name, "")
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -296,7 +299,7 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
 			return err
 		}
-		if err := m.onCreated(ctx, tx, u.ID, u.Name); err != nil {
+		if err := m.onCreated(ctx, tx, u.ID, u.Name, ""); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminUsers(u.ID))
@@ -380,7 +383,7 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *
 			return err
 		}
 		if first {
-			if err := m.onCreated(ctx, tx, cand.ID, cand.Name); err != nil {
+			if err := m.onCreated(ctx, tx, cand.ID, cand.Name, ""); err != nil {
 				return err
 			}
 		}
@@ -420,6 +423,84 @@ func (m *model) useUserCode(ctx context.Context, userID, purpose string, codeHas
 		return nil
 	})
 	return ok, err
+}
+
+// startEmailChange voids the user's pending email change and stores the codes for their current address (oldHash) and
+// for newEmail (newHash), both remembering newEmail.
+func (m *model) startEmailChange(ctx context.Context, userID, newEmail string, oldHash, newHash []byte, minutes int) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now()
+			where user_id = $1 and purpose in ($2, $3) and used_at is null`, userID, purposeEmailOld, purposeEmailNew); err != nil {
+			return fmt.Errorf("void email change: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `insert into auth_tokens (user_id, purpose, token_hash, expires_at, new_email)
+			select $1, p, h, now() + make_interval(mins => $6), $7 from unnest(array[$2, $3], array[$4::bytea, $5::bytea]) as t(p, h)`,
+			userID, purposeEmailOld, purposeEmailNew, oldHash, newHash, minutes, newEmail); err != nil {
+			return fmt.Errorf("store email change: %w", err)
+		}
+		return nil
+	})
+}
+
+// changeEmail checks both codes of the user's pending email change. When both match it uses them, moves the account
+// to the new address (verified: the code proves it), signs out every other session (all refresh tokens but the family
+// of keepTokenHash) and returns the old and new addresses. A wrong code counts an attempt on it and is named in bad
+// (old_code, new_code); no pending change makes both bad. errEmailTaken when the address was taken meanwhile.
+func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash, keepTokenHash []byte) (from, to string, bad []string, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		type code struct {
+			field, purpose, id, email string
+			hash, given               []byte
+		}
+		codes := []*code{{field: "old_code", purpose: purposeEmailOld, given: oldHash}, {field: "new_code", purpose: purposeEmailNew, given: newHash}}
+		for _, c := range codes {
+			err := tx.QueryRow(ctx, `select id::text, token_hash, new_email from auth_tokens
+				where user_id = $1 and purpose = $2 and used_at is null and expires_at > now() and attempts < $3
+				order by created_at desc limit 1 for update`, userID, c.purpose, maxAttempts).Scan(&c.id, &c.hash, &c.email)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("find email code: %w", err)
+			}
+			if c.id == "" || subtle.ConstantTimeCompare(c.hash, c.given) != 1 {
+				bad = append(bad, c.field)
+				if c.id != "" {
+					if _, err := tx.Exec(ctx, `update auth_tokens set attempts = attempts + 1 where id = $1`, c.id); err != nil {
+						return fmt.Errorf("count attempt: %w", err)
+					}
+				}
+			}
+		}
+		if len(bad) > 0 || codes[0].email != codes[1].email {
+			if len(bad) == 0 {
+				bad = []string{"old_code", "new_code"} // from different requests: start over
+			}
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = any($1::uuid[])`,
+			[]string{codes[0].id, codes[1].id}); err != nil {
+			return fmt.Errorf("use email codes: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `update users u set email = $2, email_verified_at = coalesce(email_verified_at, now())
+			from (select email from users where id = $1) old where u.id = $1 returning old.email, u.email`,
+			userID, codes[1].email).Scan(&from, &to); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`delete from refresh_tokens where user_id = $1 and family_id is distinct from
+			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, userID, keepTokenHash); err != nil {
+			return fmt.Errorf("sign out other sessions: %w", err)
+		}
+		if err := realtime.Publish(ctx, tx, realtime.SessionRevoked(userID)); err != nil {
+			return err
+		}
+		return realtime.PublishProfile(ctx, tx, userID)
+	})
+	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return "", "", nil, errEmailTaken
+	}
+	if err != nil {
+		return "", "", nil, fmt.Errorf("change email: %w", err)
+	}
+	return from, to, bad, nil
 }
 
 // resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and
@@ -533,4 +614,87 @@ func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
 		return fmt.Errorf("revoke refresh tokens: %w", err)
 	}
 	return nil
+}
+
+// --- personal API tokens ---
+
+const maxAPITokens = 25
+
+var errTooManyTokens = errors.New("api token limit reached")
+
+// APIToken is a personal API token as the token endpoints return it; the secret itself is never stored.
+type APIToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+}
+
+// apiTokenUser returns the user ID of the token with the hash, or "" when it is unknown, revoked or its user is
+// suspended. It marks the token used, at most once a minute.
+func (m *model) apiTokenUser(ctx context.Context, tokenHash []byte) (string, error) {
+	var userID string
+	err := m.db.QueryRow(ctx, `
+		with t as (select a.id, a.user_id from api_tokens a join users u on u.id = a.user_id
+		           where a.token_hash = $1 and u.suspended_at is null),
+		     touch as (update api_tokens set last_used_at = now()
+		               where id = (select id from t) and (last_used_at is null or last_used_at < now() - interval '1 minute'))
+		select user_id::text from t`, tokenHash).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find api token: %w", err)
+	}
+	return userID, nil
+}
+
+// apiTokens returns the user's tokens, newest first.
+func (m *model) apiTokens(ctx context.Context, userID string) ([]APIToken, error) {
+	rows, err := m.db.Query(ctx, `
+		select id::text, name, created_at, last_used_at from api_tokens where user_id = $1 order by created_at desc, id desc`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens: %w", err)
+	}
+	tokens, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (APIToken, error) {
+		var t APIToken
+		err := row.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.LastUsedAt)
+		t.CreatedAt = t.CreatedAt.UTC()
+		if t.LastUsedAt != nil {
+			u := t.LastUsedAt.UTC()
+			t.LastUsedAt = &u
+		}
+		return t, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens: %w", err)
+	}
+	return tokens, nil
+}
+
+// insertAPIToken stores a token's hash; errTooManyTokens when the user already has maxAPITokens.
+// ponytail: two concurrent creates can both pass the count; lock the user row if the cap ever has to be exact.
+func (m *model) insertAPIToken(ctx context.Context, userID, name string, tokenHash []byte) (*APIToken, error) {
+	t := APIToken{Name: name}
+	err := m.db.QueryRow(ctx, `
+		insert into api_tokens (user_id, name, token_hash)
+		select $1, $2, $3 where (select count(*) from api_tokens where user_id = $1) < $4
+		returning id::text, created_at`, userID, name, tokenHash, maxAPITokens).Scan(&t.ID, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, errTooManyTokens
+	}
+	if err != nil {
+		return nil, fmt.Errorf("insert api token: %w", err)
+	}
+	t.CreatedAt = t.CreatedAt.UTC()
+	return &t, nil
+}
+
+// deleteAPIToken revokes the user's token; false when they have no token with the id.
+func (m *model) deleteAPIToken(ctx context.Context, userID, id string) (bool, error) {
+	tag, err := m.db.Exec(ctx, `delete from api_tokens where id = $1 and user_id = $2`, id, userID)
+	if err != nil {
+		return false, fmt.Errorf("delete api token: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }

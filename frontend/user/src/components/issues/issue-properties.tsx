@@ -2,11 +2,12 @@ import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { DatePicker } from '@tether/shared/date-picker'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { api, issuePath, avatarSrc, toFormErrors, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
-import { reloadPage } from '@/realtime'
+import { filterOptions } from '@tether/shared/match'
+import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
+import { api, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
+import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
@@ -19,6 +20,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
   const found = useRef(new Map<string, IssueRef>())
+  const foundCycles = useRef(new Map<string, CycleRef>())
 
   const [error, save] = useActionState(async (_prev: string | null, { form, next }: Patch) => {
     apply(next)
@@ -47,6 +49,14 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
     const refs = await searchIssues(workspace, saved.identifier, saved.project.key)(q, signal)
     for (const r of refs) found.current.set(r.identifier, r)
     return [...(q ? [] : [{ value: '', label: 'No parent' }]), ...refs.map(refOption)]
+  }
+
+  // This project's upcoming and current cycles, plus the issue's own even when it's past.
+  async function loadCycles(q: string, signal: AbortSignal) {
+    const all = await listCycles(workspace.slug, saved.project.key, signal)
+    const shown = all.filter((c) => c.state !== 'past' || c.id === issue.cycle?.id)
+    for (const c of shown) foundCycles.current.set(c.id, c)
+    return filterOptions([{ value: '', label: 'No cycle' }, ...shown.map(cycleOption)], q)
   }
 
   return (
@@ -100,6 +110,18 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
               }}
             />
           ) : null}
+          <SmartAutocomplete
+            label="Cycle"
+            placeholder="No cycle"
+            loadOptions={loadCycles}
+            subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
+            value={issue.cycle ? cycleOption(issue.cycle) : null}
+            onChange={(o) => {
+              const id = o?.value ?? ''
+              if (id === (issue.cycle?.id ?? '')) return
+              update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
+            }}
+          />
           <div className="grid gap-2">
             <span className="text-label text-secondary">Labels</span>
             <LabelsPicker
@@ -114,7 +136,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
         <>
           <Property label="Status">
             <span className="flex items-center gap-2">
-              <StatusIcon category={issue.status.category} />
+              <StatusIcon status={issue.status} />
               {issue.status.name}
             </span>
           </Property>
@@ -143,6 +165,18 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
               )}
             </Property>
           ) : null}
+          <Property label="Cycle">
+            {issue.cycle ? (
+              <Link
+                to="/$workspace/projects/$key/cycles/$number"
+                params={{ workspace: workspace.slug, key: issue.project.key, number: String(issue.cycle.number) }}
+              >
+                {issue.cycle.name}
+              </Link>
+            ) : (
+              <span className="text-secondary">No cycle</span>
+            )}
+          </Property>
           <Property label="Labels">
             {issue.labels.length ? <LabelChips labels={issue.labels} /> : <span className="text-secondary">No labels</span>}
           </Property>
@@ -157,6 +191,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
     </section>
   )
 }
+
+const cycleOption = (c: CycleRef): Option => ({ value: c.id, label: c.name, hint: formatRange(c) })
 
 function Property({ label, children }: { label: string; children: ReactNode }) {
   return (

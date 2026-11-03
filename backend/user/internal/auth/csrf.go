@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // CheckOrigin rejects cross-site writes to /api: a request other than GET, HEAD or OPTIONS passes only when the
@@ -23,11 +25,11 @@ func (h *Handler) CheckOrigin(next http.Handler) http.Handler {
 		base, err := h.cfg.Get(r.Context(), "app_base_url")
 		if err != nil {
 			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			writeErr(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+			web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 			return
 		}
 		if !sameOrigin(r, base) {
-			writeErr(w, http.StatusForbidden, "Cross-site request blocked.")
+			web.Err(w, http.StatusForbidden, "Cross-site request blocked.")
 			return
 		}
 		next.ServeHTTP(w, r)

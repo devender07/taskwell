@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useFieldError } from '../input/field-error'
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons/icons'
 import { Popover } from '../popover/popover'
 import { addDays, addMonths, monthGrid, parseISO, sameMonth, toISO } from './calendar'
 import '../input/input.css'
@@ -46,7 +47,7 @@ export function DatePicker({ label, 'aria-label': ariaLabel, value, onChange, na
             <span className={date ? 'ellipsis' : 'ellipsis text-secondary'}>
               {date ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : placeholder}
             </span>
-            <CalendarIcon />
+            <CalendarIcon size={16} className="date-picker-icon" />
           </button>
         )}
       >
@@ -101,11 +102,11 @@ function Calendar({ value, onPick }: { value: string; onPick: (value: string) =>
     <div className="date-picker">
       <div className="date-picker-header">
         <button type="button" className="date-picker-nav" aria-label="Previous month" onClick={() => setFocused(addMonths(focused, -1))}>
-          <Chevron flip />
+          <ChevronLeftIcon size={16} />
         </button>
         <span className="text-label" aria-live="polite">{title}</span>
         <button type="button" className="date-picker-nav" aria-label="Next month" onClick={() => setFocused(addMonths(focused, 1))}>
-          <Chevron />
+          <ChevronRightIcon size={16} />
         </button>
       </div>
       <div ref={gridRef} role="grid" aria-label={title} className="date-picker-grid" onKeyDown={onKeyDown}>
@@ -135,24 +136,5 @@ function Calendar({ value, onPick }: { value: string; onPick: (value: string) =>
         {value ? <button type="button" className="date-picker-link" onClick={() => onPick('')}>Clear</button> : null}
       </div>
     </div>
-  )
-}
-
-const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const
-
-function CalendarIcon() {
-  return (
-    <svg {...iconProps} className="date-picker-icon">
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M16 3v4M8 3v4M3 10h18" />
-    </svg>
-  )
-}
-
-function Chevron({ flip }: { flip?: boolean }) {
-  return (
-    <svg {...iconProps} style={flip ? { transform: 'scaleX(-1)' } : undefined}>
-      <path d="m9 6 6 6-6 6" />
-    </svg>
   )
 }

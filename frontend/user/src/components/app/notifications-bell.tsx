@@ -1,7 +1,9 @@
 import { useParams } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Popover } from '@tether/shared/popover'
-import { api, toFormErrors, type NotificationPage } from '@/api'
+import { BellIcon } from '@tether/shared/icons'
+import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, notificationText, notificationTarget } from '@/components/inbox/feed-row'
 import { subscribePaths } from '@/realtime'
 import { useUnread } from './unread'
@@ -19,7 +21,7 @@ export function NotificationsBell() {
       className="notifications"
       trigger={(props) => (
         <button type="button" className="navbar-bell" aria-label={count ? `Notifications, ${count} unread` : 'Notifications'} {...props}>
-          <BellIcon />
+          <BellIcon size={20} />
           {count ? <span className="navbar-badge" aria-hidden>{count > 9 ? '9+' : count}</span> : null}
         </button>
       )}
@@ -34,7 +36,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
   const { count, refresh } = useUnread()
   const [page, setPage] = useState<NotificationPage | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const path = `/workspaces/${encodeURIComponent(slug)}/notifications`
+  const path = `${workspacePath(slug)}/notifications`
 
   useEffect(() => {
     const load = () => api<NotificationPage>(path).then(setPage, (e) => setError(toFormErrors(e).error))
@@ -79,6 +81,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
                 workspace={slug}
                 {...notificationTarget(n)}
                 actor={n.actor}
+                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}
@@ -96,11 +99,3 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
   )
 }
 
-function BellIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-    </svg>
-  )
-}

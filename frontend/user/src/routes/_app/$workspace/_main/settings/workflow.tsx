@@ -1,25 +1,33 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, type Status } from '@/api'
+import { can, statusTypesPath, type Status, type StatusType, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
-import { AddStatus, StatusList } from '@/components/workflow/statuses'
+import { AddType, Workflow } from '@/components/workflow/statuses'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/workflow')({
-  loader: (ctx) => loaderApi<Status[]>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}/statuses`),
+  loader: async (ctx) => {
+    const [statuses, types] = await Promise.all([
+      loaderApi<Status[]>(ctx, `${workspacePath(ctx.params.workspace)}/statuses`),
+      loaderApi<StatusType[]>(ctx, statusTypesPath(ctx.params.workspace)),
+    ])
+    return { statuses, types }
+  },
   component: WorkflowSettings,
 })
 
 function WorkflowSettings() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const statuses = Route.useLoaderData()
+  const { statuses, types } = Route.useLoaderData()
   const manage = can(workspace, 'workflow.manage')
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
-      <header className="grid gap-2">
-        <h1 className="text-h2">Workflow</h1>
-        <p className="text-body-sm text-secondary">The statuses issues move through, in order.</p>
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
+      <header className="flex flex-wrap items-end gap-4">
+        <div className="grid gap-2 flex-grow" style={{ flexBasis: 320 }}>
+          <h1 className="text-h2">Workflow</h1>
+          <p className="text-body-sm text-secondary">The statuses issues move through, grouped by type.</p>
+        </div>
+        {manage ? <AddType workspace={workspace} /> : null}
       </header>
-      {manage ? <AddStatus workspace={workspace} statuses={statuses} /> : null}
-      <StatusList workspace={workspace} statuses={statuses} manage={manage} />
+      <Workflow workspace={workspace} statuses={statuses} types={types} manage={manage} />
       {manage ? null : <p className="text-caption text-secondary">You don't have permission to change statuses.</p>}
     </main>
   )

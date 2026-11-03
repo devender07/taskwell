@@ -5,7 +5,8 @@ import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { IconButton } from '@tether/shared/icon-button'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
+import { XIcon } from '@tether/shared/icons'
+import { api, issuePath, avatarSrc, toFormErrors, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { StatusIcon } from './fields'
@@ -15,7 +16,7 @@ export const refOption = (r: IssueRef): Option => ({ value: r.identifier, label:
 
 // Reloads an open issue picker when issues in the workspace change.
 export const subscribeIssues = (workspace: Workspace) => (reload: () => void) => {
-  const ws = `/workspaces/${encodeURIComponent(workspace.slug)}`
+  const ws = `${workspacePath(workspace.slug)}`
   return subscribePaths([`${ws}/issues/`, `${ws}/projects/`], reload)
 }
 
@@ -24,7 +25,7 @@ export function searchIssues(workspace: Workspace, exclude: string, project?: st
   return async (q: string, signal: AbortSignal) => {
     const params = new URLSearchParams({ q })
     if (project) params.set('project', project)
-    const refs = await api<IssueRef[]>(`/workspaces/${encodeURIComponent(workspace.slug)}/issues?${params}`, undefined, 'GET', signal)
+    const refs = await api<IssueRef[]>(`${workspacePath(workspace.slug)}/issues?${params}`, undefined, 'GET', signal)
     return refs.filter((r) => r.identifier !== exclude)
   }
 }
@@ -33,7 +34,7 @@ function RefRow({ workspace, issue, children }: { workspace: string; issue: Issu
   return (
     <li className="flex items-center" style={{ paddingRight: children ? 16 : 0 }}>
       <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row flex-grow" style={{ minWidth: 0 }}>
-        <StatusIcon category={issue.status.category} label={issue.status.name} />
+        <StatusIcon status={issue.status} label={issue.status.name} />
         <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
         <span className="text-label text-primary ellipsis flex-grow">{issue.title}</span>
         <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
@@ -74,7 +75,7 @@ export function SubIssues({ workspace, issue, project, create, statuses, labels,
         </ul>
       )}
       {create ? (
-        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue">
+        <Dialog open={creating} onClose={() => setCreating(false)} title="New issue" wide>
           <CreateIssueForm workspace={workspace} project={project} parent={issue} statuses={statuses} labels={labels} members={members} />
         </Dialog>
       ) : null}
@@ -115,10 +116,8 @@ export function Relations({ workspace, issue }: { workspace: Workspace; issue: I
             {g.refs.map((r) => (
               <RefRow key={r.id} workspace={workspace.slug} issue={r}>
                 {issue.can_edit ? (
-                  <IconButton aria-label={`Remove link to ${r.identifier}`} disabled={removing} onClick={() => startTransition(() => remove(r.identifier))}>
-                    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
+                  <IconButton aria-label={`Remove link to ${r.identifier}`} tooltip="Remove link" disabled={removing} onClick={() => startTransition(() => remove(r.identifier))}>
+                    <XIcon size={20} strokeWidth={2} />
                   </IconButton>
                 ) : null}
               </RefRow>

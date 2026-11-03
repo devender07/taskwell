@@ -29,12 +29,25 @@ const (
 	PermCommentsCreate = "comments.create"
 	// PermCommentsManage lets a member edit and delete anyone's comments.
 	PermCommentsManage = "comments.manage"
+	// PermCyclesManage gates creating, editing, deleting and rolling over cycles.
+	PermCyclesManage = "cycles.manage"
+	// PermAITestsRun gates starting and cancelling AI test runs.
+	PermAITestsRun = "ai_tests.run"
+	// PermTestsManage gates editing an issue's test cases and running them by hand.
+	PermTestsManage = "tests.manage"
+	// PermAITestsManage gates the workspace's test sites and test accounts.
+	PermAITestsManage = "ai_tests.manage"
+	// PermIntegrationsManage gates connecting GitHub and GitLab and managing outbound webhooks.
+	PermIntegrationsManage = "integrations.manage"
+	// PermFeedbackManage gates the public feedback form and archiving and deleting feedback.
+	PermFeedbackManage = "feedback.manage"
 )
 
 // catalog is every permission in display order.
 var catalog = []Permission{
 	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
+	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},
@@ -42,8 +55,13 @@ var catalog = []Permission{
 	{PermIssuesCreate, "Issues", "Create issues", true},
 	{PermIssuesEditAny, "Issues", "Edit and delete anyone's issues", true},
 	{PermWorkflowManage, "Issues", "Manage statuses and labels", true},
+	{PermCyclesManage, "Cycles", "Create, edit and delete cycles", true},
 	{PermCommentsCreate, "Comments", "Comment on issues", true},
 	{PermCommentsManage, "Comments", "Edit and delete anyone's comments", true},
+	{PermAITestsRun, "Testing", "Run AI tests on issues", true},
+	{PermTestsManage, "Testing", "Edit test cases and run tests manually", true},
+	{PermAITestsManage, "Testing", "Manage test sites and test accounts", true},
+	{PermFeedbackManage, "Feedback", "Manage the feedback form, archive and delete feedback", true},
 }
 
 func allPermissions() []string {

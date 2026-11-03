@@ -4,10 +4,11 @@ import type { ActivityPage, Issue, NotificationPage, Project, ProjectStats, Stat
 import { clearNotice, loaderApi, readNotice } from '@/realtime'
 import { Activity, AssignedToMe, Inbox, NeedsAttention, Projects, RecentlyViewed } from '@/components/home/blocks'
 import { greeting, splitMine } from '@/components/home/home'
+import { workspacePath } from '@/api'
 
 export const Route = createFileRoute('/_app/$workspace/_main/')({
   loader: async (ctx) => {
-    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}`
+    const path = `${workspacePath(ctx.params.workspace)}`
     const [issues, statuses, notifications, activity, projects, stats] = await Promise.all([
       loaderApi<Issue[]>(ctx, `${path}/my-issues`),
       loaderApi<Status[]>(ctx, `${path}/statuses`),

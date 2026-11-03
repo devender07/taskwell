@@ -1,5 +1,8 @@
 import { redirect } from '@tanstack/react-router'
 import type { Doc } from '@tether/shared/rich-editor'
+import { ApiError, FALLBACK } from '@tether/shared/api-errors'
+
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
 export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null }
 export type RoleRef = { id: string; name: string }
@@ -8,12 +11,30 @@ export type Member = { id: string; name: string; email: string; role: RoleRef }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; created_at: string }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
+export type Milestone = { id: string; name: string; date: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
-// type: the workspace's own label for the category ("Reopen"); missing = the category's name. Only on /statuses.
-export type Status = { id: string; name: string; category: StatusCategory; position: number; type?: string }
+// icon/color: its custom type's look (null = the category's icon). type: the custom type, only on /statuses.
+export type Status = {
+  id: string
+  name: string
+  category: StatusCategory
+  position: number
+  icon: string | null
+  color: string | null
+  type?: { id: string; name: string } | null
+}
+export type StatusType = { id: string; name: string; category: StatusCategory; icon: string; color: string | null; status_count: number }
 export type Label = { id: string; name: string; color: string }
+export type CycleState = 'upcoming' | 'current' | 'past'
+export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
+export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date'> & {
+  progress: { total: number; completed: number; canceled: number }
+  milestones: Milestone[]
+  cycles: Omit<CycleRef, 'id'>[]
+}
+export type Cycle = CycleRef & { custom_name: string | null; progress: { total: number; started: number; completed: number; canceled: number } }
 export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
 export type SearchIssue = IssueRef & { project: { key: string; name: string }; match: 'title' | 'description' | 'identifier' | null }
 export type SearchResult = { issues: SearchIssue[]; projects: Pick<Project, 'key' | 'name' | 'archived'>[] }
@@ -35,11 +56,36 @@ export type Issue = {
   can_edit: boolean
   can_delete: boolean
   watching: boolean
+  watchers?: PersonRef[]
   parent: IssueRef | null
+  cycle: CycleRef | null
   sub_issues?: IssueRef[]
   blocks?: IssueRef[]
   blocked_by?: IssueRef[]
+  pull_requests?: PullRequest[]
 }
+export type Provider = 'github' | 'gitlab'
+export type PullRequest = {
+  provider: Provider
+  repo: string
+  number: number
+  url: string
+  title: string
+  branch: string
+  author: string
+  state: 'draft' | 'open' | 'merged' | 'closed'
+  closes: boolean
+  updated_at: string
+}
+export type Integration = {
+  provider: Provider
+  connected: boolean
+  webhook_url: string | null
+  open_status: Status | null
+  merge_status: Status | null
+  last_delivery_at: string | null
+}
+export type ApiToken = { id: string; name: string; created_at: string; last_used_at: string | null }
 export type Comment = {
   id: string
   author: PersonRef | null
@@ -49,19 +95,23 @@ export type Comment = {
   can_edit: boolean
   can_delete: boolean
 }
-type StatusSnap = Pick<Status, 'id' | 'name' | 'category'>
+type StatusSnap = Pick<Status, 'id' | 'name' | 'category'> & Partial<Pick<Status, 'icon' | 'color'>>
 type EventRef = Pick<IssueRef, 'id' | 'identifier' | 'title'>
 type Change<T> = { from: T; to: T }
 export type IssueEvent = { id: string; actor: PersonRef | null; created_at: string } & (
   | { kind: 'created' | 'description'; data: Record<string, never> }
   | { kind: 'title'; data: Change<string> }
-  | { kind: 'status'; data: Change<StatusSnap> }
+  | { kind: 'status'; data: Change<StatusSnap> & { via?: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'url'> } }
   | { kind: 'assignee'; data: Change<PersonRef | null> }
   | { kind: 'priority'; data: Change<number> }
   | { kind: 'due_date'; data: Change<string | null> }
   | { kind: 'labels'; data: { added: Label[]; removed: Label[] } }
   | { kind: 'parent'; data: Change<EventRef | null> }
+  | { kind: 'cycle'; data: Change<Pick<CycleRef, 'number' | 'name'> | null> }
   | { kind: 'link'; data: { type: 'blocks' | 'blocked_by'; issue: EventRef; removed: boolean } }
+  | { kind: 'test_run'; data: { run_id: string; kind: RunKind; status: string; passed: number; failed: number; skipped: number; error: number } }
+  | { kind: 'test_cases_regenerated'; data: { run_id: string } }
+  | { kind: 'pr_linked' | 'pr_unlinked'; data: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'title' | 'url'> }
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
@@ -93,19 +143,22 @@ export type Message = {
   reactions: Reaction[]
   can_edit: boolean
   can_delete: boolean
+  pinned_until: string | null
+  pinned_by: PersonRef | null
 }
-// Oldest first; `?before=` the first message's id fetches the page before it.
-export type MessagePage = { messages: Message[]; has_more: boolean }
+// Oldest first; `?before=` the first message's id fetches the page before it. `pinned` is the chat's pins, newest first.
+export type MessagePage = { messages: Message[]; has_more: boolean; pinned: Message[] }
 export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string
   actor: PersonRef | null
-  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider } }
   read: boolean
   created_at: string
 } & (
-  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null }
-  | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string } }
+  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
+  | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
+  | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
 )
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
@@ -122,41 +175,137 @@ export type NotificationSettings = {
   chat: boolean
   timezone: string | null // null until chosen
 }
-export type FieldErrors = Record<string, string | null | undefined>
+
+export type FeedbackState = 'new' | 'linked' | 'archived'
+// issue: null when unlinked, or when it's in a private project the caller can't see.
+export type Feedback = {
+  id: string
+  body: string
+  email: string | null
+  name: string | null
+  source: 'form' | 'member'
+  issue: { identifier: string; title: string; status: Pick<Status, 'name' | 'color' | 'category'> } | null
+  archived: boolean
+  created_by: PersonRef | null
+  created_at: string
+}
+// Newest first; `&before=` the last item's id fetches the next page.
+export type FeedbackPage = { items: Feedback[]; has_more: boolean }
+export type FeedbackForm = { enabled: boolean; token: string | null }
+
+export const feedbackPath = (workspace: string) => `${workspacePath(workspace)}/feedback`
+export const feedbackListPath = (workspace: string, state: FeedbackState, q: string) => `${feedbackPath(workspace)}?${new URLSearchParams({ state, q })}`
+export const feedbackFormPath = (workspace: string) => `${workspacePath(workspace)}/feedback-form`
+export const updateFeedback = (workspace: string, id: string, fields: Record<string, string>) => {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.set(k, v)
+  return api<Feedback>(`${feedbackPath(workspace)}/${encodeURIComponent(id)}`, form)
+}
+export const deleteFeedback = (workspace: string, id: string) => api(`${feedbackPath(workspace)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
-  `/workspaces/${encodeURIComponent(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
+  `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
 
-const FALLBACK = 'Something went wrong. Try again.'
-const OFFLINE = "You're offline. Reconnect and try again."
-const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
-
-export class ApiError extends Error {
-  status: number
-  errors: FieldErrors
-  error: string | null
-
-  constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
-    // Field errors stand on their own; no response at all (status 0) says offline or unreachable; anything else
-    // (no body, proxy 500) gets the generic message.
-    const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
-    super(error ?? `HTTP ${status}`)
-    this.status = status
-    this.errors = body?.errors ?? {}
-    this.error = error
-  }
+export const projectPath = (workspace: string, project: string) => `${workspacePath(workspace)}/projects/${encodeURIComponent(project)}`
+// Everyone who can see the project, for its assignee and mention pickers: the whole workspace for a public project.
+export const projectPeoplePath = (workspace: string, project: string) => `${projectPath(workspace, project)}/people`
+export function addProjectMembers(workspace: string, project: string, ids: string[]) {
+  const form = new FormData()
+  for (const id of ids) form.append('user_ids', id)
+  return api<Project>(`${projectPath(workspace, project)}/members`, form)
 }
+export const removeProjectMember = (workspace: string, project: string, userId: string) =>
+  api<Project>(`${projectPath(workspace, project)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export const roadmapPath = (workspace: string) => `${workspacePath(workspace)}/roadmap`
+export const milestonesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/milestones`
+const milestonePath = (workspace: string, project: string, id: string) => `${milestonesPath(workspace, project)}/${encodeURIComponent(id)}`
+export const listMilestones = (workspace: string, project: string) => api<Milestone[]>(milestonesPath(workspace, project))
+export const saveMilestone = (workspace: string, project: string, form: FormData, id?: string) =>
+  api<Milestone>(id ? milestonePath(workspace, project, id) : milestonesPath(workspace, project), form)
+export const deleteMilestone = (workspace: string, project: string, id: string) => api(milestonePath(workspace, project, id), undefined, 'DELETE')
+
+export const cyclesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/cycles`
+const cyclePath = (workspace: string, project: string, number: number) => `${cyclesPath(workspace, project)}/${number}`
+
+export const listCycles = (workspace: string, project: string, signal?: AbortSignal) => api<Cycle[]>(cyclesPath(workspace, project), undefined, 'GET', signal)
+export const createCycle = (workspace: string, project: string, form: FormData) => api<Cycle>(cyclesPath(workspace, project), form)
+export const updateCycle = (workspace: string, project: string, number: number, form: FormData) => api<Cycle>(cyclePath(workspace, project, number), form)
+export const deleteCycle = (workspace: string, project: string, number: number) => api(cyclePath(workspace, project, number), undefined, 'DELETE')
+export function rolloverCycle(workspace: string, project: string, number: number, to: number) {
+  const form = new FormData()
+  form.set('to', String(to))
+  return api<{ moved: number; cycle: Cycle }>(`${cyclePath(workspace, project, number)}/rollover`, form)
+}
+
+export const statusTypesPath = (workspace: string) => `${workspacePath(workspace)}/status-types`
+const statusTypePath = (workspace: string, id: string) => `${statusTypesPath(workspace)}/${encodeURIComponent(id)}`
+export const saveStatusType = (workspace: string, form: FormData, id?: string) => api<StatusType>(id ? statusTypePath(workspace, id) : statusTypesPath(workspace), form)
+export const deleteStatusType = (workspace: string, id: string) => api(statusTypePath(workspace, id), undefined, 'DELETE')
+
+export const integrationsPath = (workspace: string) => `${workspacePath(workspace)}/integrations`
+const integrationPath = (workspace: string, provider: Provider) => `${integrationsPath(workspace)}/${provider}`
+
+export const connectIntegration = (workspace: string, provider: Provider) =>
+  api<{ integration: Integration; secret: string }>(integrationPath(workspace, provider), new FormData())
+export const updateIntegration = (workspace: string, provider: Provider, form: FormData) => api<Integration>(`${integrationPath(workspace, provider)}/settings`, form)
+export const disconnectIntegration = (workspace: string, provider: Provider) => api(integrationPath(workspace, provider), undefined, 'DELETE')
+
+export type WebhookEvent = 'issue.created' | 'issue.updated' | 'issue.deleted' | 'comment.created'
+export type DeliveryStatus = 'pending' | 'delivered' | 'failed'
+export type Webhook = {
+  id: string
+  url: string
+  events: WebhookEvent[]
+  active: boolean
+  created_at: string
+  last_delivery: { status: DeliveryStatus; response_code: number | null; created_at: string } | null
+}
+export type WebhookDelivery = {
+  id: string
+  event: WebhookEvent | 'ping'
+  status: DeliveryStatus
+  attempts: number
+  response_code: number | null
+  response_error: string | null
+  created_at: string
+  delivered_at: string | null
+  next_at: string
+  payload: unknown
+}
+
+export const webhooksPath = (workspace: string) => `${workspacePath(workspace)}/webhooks`
+export const webhookPath = (workspace: string, id: string) => `${webhooksPath(workspace)}/${encodeURIComponent(id)}`
+export const deliveriesPath = (workspace: string, id: string) => `${webhookPath(workspace, id)}/deliveries`
+export const createWebhook = (workspace: string, form: FormData) => api<{ webhook: Webhook; secret: string }>(webhooksPath(workspace), form)
+export const updateWebhook = (workspace: string, id: string, form: FormData) => api<Webhook>(webhookPath(workspace, id), form)
+export const rollWebhookSecret = (workspace: string, id: string) => api<{ secret: string }>(`${webhookPath(workspace, id)}/secret`, new FormData())
+export const testWebhook = (workspace: string, id: string) => api(`${webhookPath(workspace, id)}/test`, new FormData())
+export const deleteWebhook = (workspace: string, id: string) => api(webhookPath(workspace, id), undefined, 'DELETE')
+export const redeliver = (workspace: string, id: string, delivery: string) =>
+  api(`${deliveriesPath(workspace, id)}/${encodeURIComponent(delivery)}/redeliver`, new FormData())
+
+export const tokensPath = '/me/tokens'
+export function createToken(name: string) {
+  const form = new FormData()
+  form.set('name', name)
+  return api<{ token: ApiToken; secret: string }>(tokensPath, form)
+}
+export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURIComponent(id)}`, undefined, 'DELETE')
+
+// The /auth/ calls that need a session (they sit under /auth/ for the refresh cookie), so a 401 refreshes like any other.
+const SIGNED_IN_AUTH = ['/auth/password/change', '/auth/email/code', '/auth/email/change']
 
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
-// A 401 outside /auth/* (except password change, which needs a session) refreshes the access token once and retries.
+// A 401 outside /auth/* (except SIGNED_IN_AUTH) refreshes the access token once and retries.
 // A failed refresh in a signed-in tab means the session ended: it goes to sign-in and the call never settles.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
   let res = await send(path, body, method, signal)
-  if (res.status === 401 && (!path.startsWith('/auth/') || path === '/auth/password/change')) {
+  if (res.status === 401 && (!path.startsWith('/auth/') || SIGNED_IN_AUTH.includes(path))) {
     if ((await refreshAccess()).status === 401 && signedIn) {
       sessionEnded()
       return new Promise<never>(() => {})
@@ -194,7 +343,7 @@ export async function uploadFile(workspace: string, file: File) {
   const form = new FormData()
   form.set('file', file)
   try {
-    return await api<UploadedFile>(`/workspaces/${encodeURIComponent(workspace)}/files`, form)
+    return await api<UploadedFile>(`${workspacePath(workspace)}/files`, form)
   } catch (e) {
     throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
   }
@@ -242,18 +391,97 @@ export async function getMe(): Promise<User | null> {
   }
 }
 
-// An in-app path to return to after signing in. Anything else (another origin, "//x", "/\x", control characters
-// that browsers strip, such as "/\t/x") is dropped.
-export function safeRedirect(v: unknown): string | undefined {
-  return typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !/[\\\x00-\x1f\x7f]/.test(v) ? v : undefined
-}
-
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.
 export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
   if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
 }
 
-// Any thrown value → { errors, error } for a form's state.
-export function toFormErrors(e: unknown): { errors: FieldErrors; error: string | null } {
-  return e instanceof ApiError ? { errors: e.errors, error: e.error } : { errors: {}, error: FALLBACK }
+export type RunKind = 'ai' | 'manual' | 'replay'
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error'
+export type RunStatus = 'queued' | 'generating' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled' | 'limit_reached'
+export type TestCase = {
+  id: string
+  position: number
+  title: string
+  steps: string[]
+  expected: string
+  source: 'ai' | 'manual'
+  updated_at: string
+  last_result: { status: TestStatus; run_id: string; kind: RunKind; at: string } | null
+  recorded: boolean
 }
+export type TestStep = { position: number; action: string; url: string | null; screenshot_url: string | null }
+export type TestResult = {
+  id: string
+  case_id: string
+  title: string
+  steps: string[]
+  expected: string
+  status: TestStatus
+  summary: string | null
+  reproduction: string[] | null
+  marked_by: PersonRef | null
+  marked_at: string | null
+  log: TestStep[] | null
+}
+export type TestRun = {
+  id: string
+  kind: RunKind
+  issue: { identifier: string; title: string }
+  status: RunStatus
+  error: string | null
+  started_by: PersonRef | null
+  created_at: string
+  finished_at: string | null
+  cost_usd: number | null
+  results: TestResult[]
+  latest_screenshot_url: string | null
+}
+// The contract doesn't spell the summary out: the run without results, with per-status counts when the API sends them.
+export type TestRunSummary = Omit<TestRun, 'results' | 'latest_screenshot_url'> & { counts?: Partial<Record<TestStatus, number>> }
+export type TestSite = { id: string; base_url: string; host: string }
+export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
+export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
+
+export const workspacePath = (workspace: Workspace | string) => `/workspaces/${encodeURIComponent(typeof workspace === 'string' ? workspace : workspace.slug)}`
+export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`
+export const testRunsPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-runs`
+export const testRunPath = (workspace: Workspace, id: string) => `${workspacePath(workspace)}/test-runs/${encodeURIComponent(id)}`
+export const testSitesPath = (workspace: Workspace) => `${workspacePath(workspace)}/test-sites`
+export const testAccountsPath = (workspace: Workspace) => `${workspacePath(workspace)}/test-accounts`
+
+const caseForm = (c: Pick<TestCase, 'title' | 'steps' | 'expected'>) => {
+  const form = new FormData()
+  form.set('title', c.title)
+  for (const s of c.steps) form.append('steps', s)
+  form.set('expected', c.expected)
+  return form
+}
+
+export const saveTestCase = (workspace: Workspace, identifier: string, c: Pick<TestCase, 'title' | 'steps' | 'expected'>, id?: string) =>
+  api<TestCase>(id ? `${workspacePath(workspace)}/test-cases/${encodeURIComponent(id)}` : testCasesPath(workspace, identifier), caseForm(c))
+
+export const deleteTestCase = (workspace: Workspace, id: string) => api(`${workspacePath(workspace)}/test-cases/${encodeURIComponent(id)}`, undefined, 'DELETE')
+
+export function orderTestCases(workspace: Workspace, identifier: string, ids: string[]) {
+  const form = new FormData()
+  for (const id of ids) form.append('ids', id)
+  return api<TestCase[]>(`${testCasesPath(workspace, identifier)}/order`, form)
+}
+
+export function startTestRun(workspace: Workspace, identifier: string, kind: RunKind, regenerate = false, caseId?: string) {
+  const form = new FormData()
+  form.set('kind', kind)
+  if (regenerate) form.set('regenerate', 'true')
+  if (caseId) form.set('case_id', caseId)
+  return api<TestRun>(testRunsPath(workspace, identifier), form)
+}
+
+export function markTestResult(workspace: Workspace, run: string, result: string, status: 'passed' | 'failed' | 'skipped', note: string) {
+  const form = new FormData()
+  form.set('status', status)
+  form.set('note', note)
+  return api<TestRun>(`${testRunPath(workspace, run)}/results/${encodeURIComponent(result)}`, form)
+}
+
+export const cancelTestRun = (workspace: Workspace, run: string) => api<TestRun>(`${testRunPath(workspace, run)}/cancel`, new FormData())

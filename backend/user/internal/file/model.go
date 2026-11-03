@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,17 +24,16 @@ type File struct {
 
 	workspaceID *string
 	uploaderID  string
-	createdAt   time.Time
 }
 
 // create inserts the file's row and calls store with the new id inside the same transaction, so a row only
-// commits once its bytes are on disk.
+// commits once its bytes are stored.
 func (m *model) create(ctx context.Context, f *File, store func(id string) error) error {
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx,
 			`insert into files (workspace_id, uploader_id, name, content_type, size) values ($1, $2, $3, $4, $5)
-			 returning id::text, created_at`,
-			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size).Scan(&f.ID, &f.createdAt)
+			 returning id::text`,
+			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size).Scan(&f.ID)
 		if err != nil {
 			return fmt.Errorf("insert file: %w", err)
 		}
@@ -56,10 +54,10 @@ func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
 func (m *model) find(ctx context.Context, id, userID string) (*File, error) {
 	f := File{ID: id}
 	err := m.db.QueryRow(ctx,
-		`select f.name, f.content_type, f.size, f.created_at from files f
+		`select f.name, f.content_type, f.size from files f
 		 where f.id = $1 and (f.workspace_id is null or exists (
 		   select 1 from workspace_members m where m.workspace_id = f.workspace_id and m.user_id = $2))`, id, userID).
-		Scan(&f.Name, &f.ContentType, &f.Size, &f.createdAt)
+		Scan(&f.Name, &f.ContentType, &f.Size)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

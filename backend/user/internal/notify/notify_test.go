@@ -119,3 +119,14 @@ func TestChatEmails(t *testing.T) {
 		t.Errorf("digest: %q", body)
 	}
 }
+
+func TestProjectAddedEmail(t *testing.T) {
+	m := message{kind: "project_added", actor: "Maya", workspace: "Acme", slug: "acme", projectKey: "LEAD", projectName: "Leadership"}
+	subject, body := instantEmail(m, "http://app/")
+	if subject != "Maya added you to Leadership" || !strings.Contains(body, "http://app/acme/projects/LEAD") {
+		t.Errorf("%q\n%s", subject, body)
+	}
+	if _, body := digestEmail([]message{m}, "http://app"); !strings.Contains(body, "- Maya added you to Leadership: http://app/acme/projects/LEAD") {
+		t.Errorf("digest:\n%s", body)
+	}
+}

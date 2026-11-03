@@ -1,7 +1,9 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { filterOptions, type Option } from '@tether/shared/match'
-import { api, toFormErrors, type Chat, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace } from '@/api'
+import { CheckIcon } from '@tether/shared/icons'
+import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import './shortcuts.css'
@@ -9,7 +11,15 @@ import './shortcuts.css'
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
 export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
 
-type Props = { workspace: Workspace; mode: Mode | null; issue?: IssueContext; onCreate?: () => void; onClose: () => void }
+type Props = {
+  workspace: Workspace
+  mode: Mode | null
+  issue?: IssueContext
+  projectKey?: string
+  copyBranch?: { run: () => void; key: string }
+  onCreate?: () => void
+  onClose: () => void
+}
 type Item = { id: string; label: string; lead?: ReactNode; hint?: ReactNode; checked?: boolean; run: () => void }
 type Group = { label: string; items: Item[] }
 
@@ -20,7 +30,7 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
   priority: ['Set priority…', 'P'],
   labels: ['Change labels…', 'L'],
 }
-const SETTINGS = ['Profile', 'Notifications', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
+const SETTINGS = ['Profile', 'Notifications', 'API tokens', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -34,7 +44,7 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
     } else if (!mode && dialog.open) dialog.close()
   }, [mode])
 
-  return (
+  return createPortal(
     <dialog
       ref={ref}
       className="dialog palette"
@@ -46,11 +56,12 @@ export function CommandPalette({ mode, onClose, ...rest }: Props) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       {mode ? <PaletteBody initial={mode} onClose={onClose} {...rest} /> : null}
-    </dialog>
+    </dialog>,
+    document.body,
   )
 }
 
-function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
+function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, onCreate, onClose }: Omit<Props, 'mode'> & { initial: Mode }) {
   const id = useId()
   const navigate = useNavigate()
   const router = useRouter()
@@ -63,13 +74,14 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   const [version, setVersion] = useState(0)
   const [labelIds, setLabelIds] = useState(() => ctx?.issue.labels.map((l) => l.id) ?? [])
   const [chats, setChats] = useState<Chat[]>([])
+  const [cycles, setCycles] = useState<{ key: string; list: Cycle[] } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const q = query.trim()
   const slug = workspace.slug
 
   useEffect(() => {
     if (mode !== 'root') return
-    const ws = `/workspaces/${encodeURIComponent(slug)}`
+    const ws = `${workspacePath(slug)}`
     return subscribePaths([`${ws}/search`, `${ws}/issues/`, `${ws}/projects`, `${ws}/projects/`], () => setVersion((v) => v + 1))
   }, [mode, slug])
 
@@ -77,7 +89,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     if (mode !== 'root') return
     const ctrl = new AbortController()
     const t = setTimeout(() => {
-      api<SearchResult>(`/workspaces/${encodeURIComponent(slug)}/search?q=${encodeURIComponent(q)}`, undefined, 'GET', ctrl.signal).then(
+      api<SearchResult>(`${workspacePath(slug)}/search?q=${encodeURIComponent(q)}`, undefined, 'GET', ctrl.signal).then(
         (data) => setFound({ q, data }),
         () => !ctrl.signal.aborted && setFound({ q, data: { issues: [], projects: [] } }),
       )
@@ -91,9 +103,16 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   useEffect(() => {
     if (mode !== 'root') return
     const ctrl = new AbortController()
-    api<Chat[]>(`/workspaces/${encodeURIComponent(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
+    api<Chat[]>(`${workspacePath(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
     return () => ctrl.abort()
   }, [mode, slug])
+
+  useEffect(() => {
+    if (mode !== 'root' || !projectKey) return
+    const ctrl = new AbortController()
+    listCycles(slug, projectKey, ctrl.signal).then((list) => setCycles({ key: projectKey, list }), () => {})
+    return () => ctrl.abort()
+  }, [mode, slug, projectKey])
 
   async function save(field: string, values: string[], stay = false) {
     if (!ctx) return
@@ -102,7 +121,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     for (const v of values) form.append(field, v)
     setError(null)
     try {
-      await api<Issue>(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}`, form)
+      await api<Issue>(`${workspacePath(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}`, form)
     } catch (e) {
       const { errors, error } = toFormErrors(e)
       setError(Object.values(errors).find(Boolean) ?? error)
@@ -136,7 +155,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
           label: i.title,
           lead: (
             <>
-              <StatusIcon category={i.status.category} />
+              <StatusIcon status={i.status} />
               <span className="issue-id flex-noshrink">{i.identifier}</span>
             </>
           ),
@@ -161,11 +180,23 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
     if (onCreate) actions.push({ value: 'create', label: 'Create issue', hint: 'C', run: onCreate })
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
+    actions.push({ value: 'roadmap', label: 'Go to Roadmap', run: () => go('roadmap') })
+    const current = cycles?.key === projectKey ? cycles?.list.find((c) => c.state === 'current') : undefined
+    if (current) {
+      actions.push({
+        value: 'current-cycle',
+        label: 'Go to current cycle',
+        run: () => go(`projects/${encodeURIComponent(cycles!.key)}/cycles/${current.number}`),
+      })
+    }
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
+    actions.push({ value: 'feedback', label: 'Go to Feedback', run: () => go('feedback') })
+    actions.push({ value: 'add-feedback', label: 'Add feedback', run: () => go('feedback?add=true') })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
     actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
-    for (const name of SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase()}`) })
+    for (const name of can(workspace, 'integrations.manage') ? [...SETTINGS, 'Integrations'] : SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase().replaceAll(' ', '-')}`) })
+    if (can(workspace, 'feedback.manage')) actions.push({ value: 'Feedback form', label: 'Go to settings → Feedback form', run: () => go('settings/feedback') })
     if (ctx) {
       if (ctx.issue.can_edit) {
         for (const m of ['status', 'assignee', 'priority', 'labels'] as const) {
@@ -177,7 +208,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
         value: 'watch',
         label: watching ? 'Unwatch issue' : 'Watch issue',
         run: () =>
-          api(`/workspaces/${encodeURIComponent(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
+          api(`${workspacePath(slug)}/issues/${encodeURIComponent(ctx.issue.identifier)}/watch`, undefined, watching ? 'DELETE' : 'POST').then(
             () => {
               onClose()
               reloadPage(router)
@@ -189,6 +220,17 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
         navigator.clipboard.writeText(text).then(onClose, () => setError("Couldn't copy. Try again."))
       actions.push({ value: 'copy-link', label: 'Copy issue link', run: copy(`${location.origin}/${slug}/issue/${ctx.issue.identifier}`) })
       actions.push({ value: 'copy-id', label: 'Copy issue ID', run: copy(ctx.issue.identifier) })
+      if (copyBranch) {
+        actions.push({
+          value: 'copy-branch',
+          label: 'Copy branch name',
+          hint: copyBranch.key,
+          run: () => {
+            onClose()
+            copyBranch.run()
+          },
+        })
+      }
     }
     const matched = filterOptions(actions, q) as typeof actions
     if (matched.length) {
@@ -205,7 +247,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
         label: 'Status',
         items: opts.map((o) => {
           const status = ctx.statuses.find((s) => s.id === o.value)!
-          return { id: o.value, label: o.label, lead: <StatusIcon category={status.category} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
+          return { id: o.value, label: o.label, lead: <StatusIcon status={status} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
         }),
       })
     } else if (mode === 'assignee') {
@@ -340,7 +382,7 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
                       {item.label}
                     </span>
                     {item.hint ? <span className="palette-hint">{item.hint}</span> : null}
-                    {item.checked ? <CheckIcon /> : null}
+                    {item.checked ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
                   </div>
                 )
               })}
@@ -352,10 +394,3 @@ function PaletteBody({ workspace, initial, issue: ctx, onCreate, onClose }: Omit
   )
 }
 
-function CheckIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="flex-noshrink">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  )
-}

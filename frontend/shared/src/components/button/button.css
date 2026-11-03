@@ -41,9 +41,9 @@
 }
 .button-ghost:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 
-/* Destructive actions. Dark text on pink keeps contrast above 4.5:1. */
+/* Destructive actions. White text needs a pink a shade darker than --accent for 4.5:1 (5.0:1 here, 4.7:1 on hover). */
 .button-danger {
-  color: var(--bg);
-  background: var(--accent);
+  color: #fff;
+  background: #d61470;
 }
-.button-danger:hover:not(:disabled) { background: rgba(249, 24, 128, 0.85); }
+.button-danger:hover:not(:disabled) { background: #e0156f; }

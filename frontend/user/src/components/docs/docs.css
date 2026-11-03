@@ -1,0 +1,54 @@
+.docs-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100vh; background: var(--bg); }
+.docs-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: 56px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.docs-header a:focus-visible { outline: 2px solid var(--link); outline-offset: 4px; border-radius: 6px; }
+.docs-nav { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 24px 16px 0; }
+.docs-nav a { color: var(--text-2); font: 400 14px/21px var(--font); text-decoration: none; padding: 4px 0; }
+.docs-nav a:hover { color: var(--text); }
+.docs-nav a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 4px; }
+.docs-nav-sub { display: none; }
+.docs-main { padding: 32px 16px 96px; max-width: 880px; }
+.docs-section { scroll-margin-top: 80px; }
+.docs-mono { font: 400 14px/21px var(--mono); }
+.docs-pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font: 400 14px/21px var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.docs-list { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+.docs-table { width: 100%; border-collapse: collapse; font: 400 14px/21px var(--font); }
+.docs-table th { color: var(--text-2); font: 510 13px/19.5px var(--font); text-align: left; }
+.docs-table th, .docs-table td { padding: 8px 12px 8px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+.docs-table td:first-child { white-space: nowrap; }
+.docs-table tr:last-child td { border-bottom: 0; }
+
+@media (min-width: 640px) {
+  .docs-nav { padding: 24px 24px 0; }
+  .docs-main { padding: 40px 24px 96px; }
+}
+@media (min-width: 1024px) {
+  .docs-layout { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: 56px 1fr; }
+  .docs-header { grid-column: 1 / -1; }
+  .docs-nav {
+    position: sticky;
+    top: 56px;
+    align-self: start;
+    display: grid;
+    gap: 2px;
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
+    padding: 40px 12px 40px 24px;
+  }
+  .docs-nav a.docs-nav-sub { display: block; padding-left: 12px; }
+  .docs-main { padding: 40px 48px 96px; }
+}

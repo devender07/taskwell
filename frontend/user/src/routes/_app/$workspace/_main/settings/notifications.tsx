@@ -19,7 +19,7 @@ const modes: { value: NotificationSettings['email']; label: string }[] = [
 ]
 const kinds: { value: Kind; label: string }[] = [
   { value: 'mentions', label: 'Mentions' },
-  { value: 'assignments', label: 'Assigned to me' },
+  { value: 'assignments', label: 'Assigned to me or added to a project' },
   { value: 'status', label: 'Status changes on issues I watch' },
   { value: 'comments', label: 'Comments on issues I watch' },
   { value: 'chat', label: 'Direct messages and chat mentions' },
@@ -67,7 +67,7 @@ function NotificationSettingsPage() {
   }
 
   return (
-    <main className="grid gap-6 w-full px-6 py-10" style={{ maxWidth: 720, alignContent: 'start' }}>
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="grid gap-2">
         <h1 className="text-h2">Notifications</h1>
         <p className="text-body-sm text-secondary">Activity always gets every notification. These settings choose what is emailed to you, in every workspace.</p>

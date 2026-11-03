@@ -2,9 +2,10 @@ import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
+import { ColorPicker } from '@tether/shared/color-picker'
 import { Input } from '@tether/shared/input'
 import { labelColor, labelName } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors, type Label, type Workspace } from '@/api'
+import { api, toFormErrors, type FieldErrors, type Label, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelDot } from '@/components/issues/fields'
@@ -13,7 +14,7 @@ type State = { errors?: FieldErrors; error?: string | null }
 
 const DEFAULT_COLOR = '#5e6ad2'
 
-const labelsPath = (workspace: Workspace) => `/workspaces/${encodeURIComponent(workspace.slug)}/labels`
+const labelsPath = (workspace: Workspace) => `${workspacePath(workspace.slug)}/labels`
 
 // Create (no label) or edit a label.
 function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?: Label; onDone?: () => void }) {
@@ -41,8 +42,8 @@ function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?:
   return (
     <form action={submit} noValidate className="grid gap-2">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="flex-noshrink" style={{ width: 56 }}>
-          <Input aria-label="Color" type="color" value={color} onChange={(e) => setColor(e.target.value)} error={errors?.color} style={{ padding: 4, cursor: 'pointer' }} />
+        <div className="flex-noshrink" style={{ width: 152 }}>
+          <ColorPicker aria-label="Color" value={color} onChange={setColor} error={errors?.color} />
         </div>
         <div className="flex-grow" style={{ minWidth: 160 }}>
           <Input aria-label="Label name" placeholder="Bug" autoComplete="off" autoFocus={Boolean(label)} value={name} onChange={(e) => setName(e.target.value)} error={errors?.name} />

@@ -1,5 +1,5 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useActionState, useMemo, useState } from 'react'
+import { useActionState, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
 import { DatePicker } from '@tether/shared/date-picker'
 import { Dialog } from '@tether/shared/dialog'
@@ -8,20 +8,23 @@ import type { Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, issuePath, toFormErrors, uploadFile, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace } from '@/api'
-import { reloadPage } from '@/realtime'
+import { api, feedbackPath, issuePath, toFormErrors, updateFeedback, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { refetchPaths, reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChecklist, assigneeOptions, priorityOptions, statusOptions } from './fields'
+import { LabelSelect, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
-type CreateProps = { workspace: Workspace; project: Project; parent?: IssueRef; statuses: Status[]; labels: Label[]; members: Member[] }
+// Quick-create filled in from elsewhere (a failed test's "Create bug", a feedback's "Create issue"); `blocks` links the
+// new issue as blocking that one, `feedback` links that feedback to the new issue.
+export type Prefill = { title: string; description: Doc; blocks?: string; feedback?: string }
 
-// Labels are checkboxes here, not the labels popover: a popover can't render above a modal dialog.
-export function CreateIssueForm({ workspace, project, parent, statuses, labels, members }: CreateProps) {
+type CreateProps = { workspace: Workspace; project: Project; projectPicker?: ReactNode; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
+
+export function CreateIssueForm({ workspace, project, projectPicker, parent, cycle, prefill, statuses, labels, members }: CreateProps) {
   const navigate = useNavigate()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: null, length: 0 })
+  const [title, setTitle] = useState(prefill?.title ?? '')
+  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
   const [statusId, setStatusId] = useState(statuses[0]?.id ?? '')
   const [priority, setPriority] = useState('0')
   const [assigneeId, setAssigneeId] = useState('')
@@ -43,34 +46,56 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
     if (parent) form.set('parent', parent.identifier)
+    if (cycle) form.set('cycle', cycle.id)
     let issue: Issue
     try {
-      issue = await api<Issue>(`/workspaces/${encodeURIComponent(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
+      issue = await api<Issue>(`${workspacePath(workspace.slug)}/projects/${encodeURIComponent(project.key)}/issues`, form)
     } catch (e) {
       return toFormErrors(e)
+    }
+    if (prefill?.blocks) {
+      const link = new FormData()
+      link.set('type', 'blocks')
+      link.set('issue', prefill.blocks)
+      await api(`${issuePath(workspace, issue.identifier)}/links`, link).catch(() => {})
+    }
+    if (prefill?.feedback) {
+      await updateFeedback(workspace.slug, prefill.feedback, { issue: issue.identifier }).catch(() => {})
+      refetchPaths([feedbackPath(workspace.slug), `${feedbackPath(workspace.slug)}/count`])
     }
     await navigate({ to: '/$workspace/issue/$identifier', params: { workspace: workspace.slug, identifier: issue.identifier } })
     return {}
   }, {})
 
   return (
-    <form action={submit} noValidate className="grid gap-4">
-      {parent ? (
-        <div className="grid gap-1">
-          <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
-          <FormError>{errors?.parent}</FormError>
-        </div>
-      ) : null}
-      <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
-      <RichEditor
-        label="Description"
-        placeholder="Add a description… Type @ to mention someone"
-        mentions={mentions}
-        onChange={(doc, length) => setDescription({ doc, length })}
-        error={errors?.description}
-        upload={(file) => uploadFile(workspace.slug, file)}
-      />
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+    <form action={submit} noValidate className="issue-form">
+      <div className="issue-form-main">
+        {parent ? (
+          <div className="grid gap-1">
+            <p className="text-body-sm text-secondary m-0">Sub-issue of {parent.identifier}</p>
+            <FormError>{errors?.parent}</FormError>
+          </div>
+        ) : null}
+        {cycle ? (
+          <div className="grid gap-1">
+            <p className="text-body-sm text-secondary m-0">In {cycle.name}</p>
+            <FormError>{errors?.cycle}</FormError>
+          </div>
+        ) : null}
+        <Input label="Title" placeholder="Issue title" autoComplete="off" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} error={errors?.title} />
+        <RichEditor
+          label="Description"
+          placeholder="Add a description… Type @ to mention someone"
+          mentions={mentions}
+          minHeight={280}
+          content={prefill?.description}
+          onChange={(doc, length) => setDescription({ doc, length })}
+          error={errors?.description}
+          upload={(file) => uploadFile(workspace.slug, file)}
+        />
+      </div>
+      <div className="grid gap-4" style={{ alignContent: 'start' }}>
+        {projectPicker}
         <SmartAutocomplete
           label="Status"
           options={statusOpts}
@@ -94,16 +119,14 @@ export function CreateIssueForm({ workspace, project, parent, statuses, labels, 
           error={errors?.assignee_id}
         />
         <DatePicker label="Due date" placeholder="No due date" value={due} onChange={setDue} error={errors?.due_date} />
+        <LabelSelect labels={labels} value={labelIds} onChange={setLabelIds} error={errors?.label_ids} />
       </div>
-      <fieldset className="grid gap-3 m-0 p-0" style={{ border: 0 }}>
-        <legend className="text-label text-secondary mb-2 p-0">Labels</legend>
-        <LabelChecklist labels={labels} value={labelIds} onChange={setLabelIds} />
-        <FormError>{errors?.label_ids}</FormError>
-      </fieldset>
-      <FormError>{error}</FormError>
-      <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? 'Creating issue…' : 'Create issue'}
-      </Button>
+      <div className="issue-form-footer">
+        <FormError>{error}</FormError>
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Creating issue…' : 'Create issue'}
+        </Button>
+      </div>
     </form>
   )
 }
@@ -159,7 +182,7 @@ export function DeleteIssue({ workspace, issue }: { workspace: Workspace; issue:
 
   return (
     <>
-      <Button variant="ghost" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
+      <Button variant="ghost" style={{ justifySelf: 'start', color: 'var(--accent)' }} onClick={() => setOpen(true)}>
         Delete issue
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Delete ${issue.identifier}?`} description="This can't be undone.">

@@ -9,10 +9,12 @@ import { RichText, type Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { commentBody } from '@tether/shared/validate'
-import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace } from '@/api'
+import { MoreIcon } from '@tether/shared/icons'
+import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { eventText } from './event-text'
+import { eventActor, eventText } from './event-text'
+import { ProviderIcon } from './pull-requests'
 import { StatusIcon } from './fields'
 
 type Mentions = { id: string; name: string }[]
@@ -38,7 +40,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
       setOlder(NONE)
       setOlderMore(null)
     } else if (older !== NONE) {
-      // Enough new activity to push items off the newest page: keep them, so there's no gap above the older pages.
+      // Enough new activity to push items off the newest page: keep them, so there's no gap before the older pages.
       const edge = Math.min(...[...timeline.comments, ...timeline.events].map(at))
       setOlder({
         comments: [...older.comments, ...newest.comments.filter((c) => at(c) < edge)],
@@ -55,7 +57,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
       ...timeline.events.map((e) => ({ at: e.created_at, comment: null, event: e })),
       ...older.comments.filter(seen).map((c) => ({ at: c.created_at, comment: c, event: null })),
       ...older.events.filter(seen).map((e) => ({ at: e.created_at, comment: null, event: e })),
-    ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   }, [timeline, older])
 
   // An edit or delete refetches only the newest page; a comment on an older one is patched here.
@@ -66,7 +68,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
   )
 
   const [loadError, loadOlder, loading] = useActionState(async () => {
-    const before = items[0]?.at
+    const before = items.at(-1)?.at
     if (!before) return null
     try {
       const page = await api<TimelineData>(`${issuePath(workspace, issue.identifier)}/timeline?before=${encodeURIComponent(before)}`)
@@ -81,14 +83,7 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
   return (
     <section className="grid gap-4" aria-labelledby="activity-heading">
       <h2 id="activity-heading" className="text-label">Activity</h2>
-      {(olderMore ?? timeline.has_more) ? (
-        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
-          <Button type="submit" variant="ghost" disabled={loading}>
-            {loading ? 'Loading…' : 'Show older activity'}
-          </Button>
-          <FormError>{loadError}</FormError>
-        </form>
-      ) : null}
+      {can(workspace, 'comments.create') && !project.archived ? <Composer workspace={workspace} issue={issue} mentions={mentions} /> : null}
       <ol className="grid gap-3 m-0 p-0" style={{ listStyle: 'none' }}>
         {items.map(({ comment, event }) =>
           comment ? (
@@ -100,7 +95,14 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
           ) : null,
         )}
       </ol>
-      {can(workspace, 'comments.create') && !project.archived ? <Composer workspace={workspace} issue={issue} mentions={mentions} /> : null}
+      {(olderMore ?? timeline.has_more) ? (
+        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          <Button type="submit" variant="ghost" disabled={loading}>
+            {loading ? 'Loading…' : 'Show older activity'}
+          </Button>
+          <FormError>{loadError}</FormError>
+        </form>
+      ) : null}
     </section>
   )
 }
@@ -132,11 +134,17 @@ function IssueLink({ workspace, issue }: { workspace: string; issue: { identifie
 function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }) {
   const text = eventText(event, (issue) => <IssueLink workspace={workspace} issue={issue} />)
   if (!text) return null
-  const actor = event.actor?.name ?? 'Someone'
+  const actor = eventActor(event)
   return (
     <li className="flex items-start gap-2 text-caption text-secondary" style={{ paddingInline: 16 }}>
       <span className="inline-grid place-center flex-noshrink" style={{ width: 20, height: 20 }}>
-        {event.kind === 'status' ? <StatusIcon category={event.data.to.category} /> : <Avatar name={actor} size={20} src={event.actor && avatarSrc(event.actor.id)} />}
+        {event.kind === 'status' ? (
+          <StatusIcon status={event.data.to} />
+        ) : event.kind === 'pr_linked' || event.kind === 'pr_unlinked' ? (
+          <ProviderIcon provider={event.data.provider} />
+        ) : (
+          <Avatar name={actor} size={20} src={event.actor && avatarSrc(event.actor.id)} />
+        )}
       </span>
       <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
         <span className="text-primary">{actor}</span> {text} · <Time at={event.created_at} />
@@ -167,12 +175,8 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
               aria-label="Comment actions"
               placement="bottom-end"
               trigger={(props) => (
-                <IconButton aria-label="Comment actions" style={{ width: 44, height: 44 }} {...props}>
-                  <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <circle cx={5} cy={12} r={1.75} />
-                    <circle cx={12} cy={12} r={1.75} />
-                    <circle cx={19} cy={12} r={1.75} />
-                  </svg>
+                <IconButton aria-label="Comment actions" tooltip="Comment actions" style={{ width: 44, height: 44 }} {...props}>
+                  <MoreIcon size={20} />
                 </IconButton>
               )}
             >
@@ -212,7 +216,7 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
   )
 }
 
-const commentPath = (workspace: Workspace, id: string) => `/workspaces/${encodeURIComponent(workspace.slug)}/comments/${encodeURIComponent(id)}`
+const commentPath = (workspace: Workspace, id: string) => `${workspacePath(workspace.slug)}/comments/${encodeURIComponent(id)}`
 
 function useSaveComment(path: string, draft: Draft, done: (saved: Comment) => void) {
   const router = useRouter()

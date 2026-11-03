@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/devender07/tether/backend/user/internal/mail"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 const (
@@ -38,7 +38,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, ws)
+	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
 
@@ -49,13 +49,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	ws, err := h.model.create(r.Context(), userID, name, slug)
 	if errors.Is(err, errTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, ws)
+	web.JSON(w, http.StatusCreated, ws)
 	return nil
 }
 
@@ -65,10 +65,10 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 		return err
 	}
 	if ws == nil {
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil
 	}
-	writeJSON(w, http.StatusOK, ws)
+	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
 
@@ -83,14 +83,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	err = h.model.update(r.Context(), ws, userID, name, slug)
 	if errors.Is(err, errTaken) {
-		writeFields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
+		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	ws.Name, ws.Slug = name, slug
-	writeJSON(w, http.StatusOK, ws)
+	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
 
@@ -102,10 +102,10 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 	case err != nil:
 		return nil, false, err
 	case ws == nil:
-		writeErr(w, http.StatusNotFound, errNotFound)
+		web.Err(w, http.StatusNotFound, errNotFound)
 		return nil, false, nil
 	case perm != "" && !Has(ws.Permissions, perm):
-		writeErr(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil
 	}
 	return ws, true, nil
@@ -127,7 +127,7 @@ func readForm(w http.ResponseWriter, r *http.Request) (name, slug string, ok boo
 		errs["slug"] = msg
 	}
 	if len(errs) > 0 {
-		writeFields(w, http.StatusBadRequest, errs)
+		web.Fields(w, http.StatusBadRequest, errs)
 		return "", "", false
 	}
 	return name, slug, true
@@ -136,20 +136,6 @@ func readForm(w http.ResponseWriter, r *http.Request) (name, slug string, ok boo
 func normSlug(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 // --- responses ---
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func writeFields(w http.ResponseWriter, status int, errs map[string]string) {
-	writeJSON(w, status, map[string]map[string]string{"errors": errs})
-}
 
 // remove deletes the workspace with its members, roles and invites.
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -165,6 +151,6 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 }
 
 func (h *Handler) permissions(w http.ResponseWriter, _ *http.Request, _ string) error {
-	writeJSON(w, http.StatusOK, catalog)
+	web.JSON(w, http.StatusOK, catalog)
 	return nil
 }

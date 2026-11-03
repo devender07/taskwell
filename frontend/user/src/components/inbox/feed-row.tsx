@@ -10,7 +10,11 @@ type FeedRowProps = {
   identifier?: string
   // A chat notification links to its chat (scrolled to the message) instead of an issue.
   chat?: { id: string; message?: string }
+  // A project notification links to the project.
+  project?: string
   actor: PersonRef | null
+  // Shown instead of "Someone" when there's no actor (e.g. "GitHub").
+  actorName?: string
   text: ReactNode
   excerpt?: string
   at: string
@@ -19,8 +23,8 @@ type FeedRowProps = {
 }
 
 // One line of who did what to which issue or chat, linking to it: the notifications popover and Home's blocks.
-export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt, at, unread, onClick }: FeedRowProps) {
-  const name = actor?.name ?? 'Someone'
+export function FeedRow({ workspace, identifier = '', chat, project, actor, actorName, text, excerpt, at, unread, onClick }: FeedRowProps) {
+  const name = actor?.name ?? actorName ?? 'Someone'
   const body = (
     <>
       <Avatar name={name} size={24} src={actor && avatarSrc(actor.id)} />
@@ -38,6 +42,12 @@ export function FeedRow({ workspace, identifier = '', chat, actor, text, excerpt
       ) : null}
     </>
   )
+  if (project)
+    return (
+      <Link to="/$workspace/projects/$key" params={{ workspace, key: project }} className="inbox-link" onClick={onClick}>
+        {body}
+      </Link>
+    )
   if (chat)
     return (
       <Link
@@ -66,6 +76,7 @@ export function IssueName({ issue }: { issue: { identifier: string; title: strin
 }
 
 export function notificationText(n: Notification): ReactNode {
+  if (n.kind === 'project_added') return <>added you to <span className="text-primary font-510">{n.project.name}</span></>
   if (n.issue === null) return n.kind === 'chat_mention' ? <>mentioned you in <span className="text-primary font-510">{n.chat.name}</span></> : <>sent you a message</>
   const issue = <IssueName issue={n.issue} />
   switch (n.kind) {
@@ -86,4 +97,8 @@ export function notificationText(n: Notification): ReactNode {
 
 // Where a notification's row links: its issue, or its chat scrolled to the message.
 export const notificationTarget = (n: Notification) =>
-  n.issue === null ? { chat: { id: n.chat.id, message: n.data.message_id } } : { identifier: n.issue.identifier }
+  n.kind === 'project_added'
+    ? { project: n.project.key }
+    : n.issue === null
+      ? { chat: { id: n.chat.id, message: n.data.message_id } }
+      : { identifier: n.issue.identifier }

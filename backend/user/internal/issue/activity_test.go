@@ -22,10 +22,10 @@ func TestActivity(t *testing.T) {
 	ann, out := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Out")
 	var wsID, slug, live, archived string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
-		if err := workspace.CreateDefault(ctx, tx, out, "Out"); err != nil { // Out's own workspace, whose activity mustn't leak
+		if err := workspace.CreateFirst(ctx, tx, out, "Out", ""); err != nil { // Out's own workspace, whose activity mustn't leak
 			return err
 		}
 		return tx.QueryRow(ctx, `with w as (select id, slug from workspaces where created_by = $1),

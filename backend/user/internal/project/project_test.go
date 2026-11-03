@@ -23,6 +23,13 @@ func TestValidation(t *testing.T) {
 		{checkDescription(strings.Repeat("a", 10001)), "Description must be 10,000 characters or fewer."},
 		{checkDescription(strings.Repeat("a", 10000)), ""},
 		{checkDescription(""), ""},
+		{checkDate("2030-01-31"), ""},
+		{checkDate("2030-02-30"), "Enter a valid date."},
+		{checkDate("2030-1-5"), "Enter a valid date."},
+		{checkDate("0000-01-01"), "Enter a valid date."},
+		{checkMilestoneName(""), "Milestone name is required."},
+		{checkMilestoneName(strings.Repeat("é", 61)), "Milestone name must be 60 characters or fewer."},
+		{checkMilestoneName(strings.Repeat("é", 60)), ""},
 	}
 	for i, c := range cases {
 		if c.got != c.want {

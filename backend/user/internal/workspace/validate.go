@@ -3,8 +3,8 @@ package workspace
 import (
 	"regexp"
 	"slices"
-	"strings"
-	"unicode/utf16"
+
+	"github.com/devender07/tether/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
@@ -12,23 +12,16 @@ import (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// isUUID reports whether s is a uuid as Postgres prints it, so comparing it to a uuid column can't fail.
-func isUUID(s string) bool { return uuidRe.MatchString(s) }
-
 // reserved are top-level app paths and likely future ones.
 var reserved = []string{"api", "admin", "app", "signin", "signup", "signout", "forgot-password", "reset-password",
 	"new-workspace", "settings", "account", "invite", "invites", "join", "help", "support", "docs", "status", "about",
 	"pricing", "blog", "www", "mail", "static", "assets"}
 
-func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
-
 func checkName(s string) string {
 	if s == "" {
 		return "Workspace name is required."
 	}
-	if jsLen(s) > 50 {
+	if doc.Len(s) > 50 {
 		return "Workspace name must be 50 characters or fewer."
 	}
 	return ""
@@ -38,7 +31,7 @@ func checkRoleName(s string) string {
 	if s == "" {
 		return "Role name is required."
 	}
-	if jsLen(s) > 40 {
+	if doc.Len(s) > 40 {
 		return "Role name must be 40 characters or fewer."
 	}
 	return ""
@@ -48,7 +41,7 @@ func checkSlug(s string) string {
 	switch {
 	case s == "":
 		return "Workspace URL is required."
-	case jsLen(s) < 3 || jsLen(s) > 32:
+	case doc.Len(s) < 3 || doc.Len(s) > 32:
 		return "Workspace URL must be 3 to 32 characters."
 	case !slugRe.MatchString(s):
 		return "Use lowercase letters, numbers and single hyphens."
@@ -59,17 +52,3 @@ func checkSlug(s string) string {
 }
 
 // checkEmail and normEmail are copies of auth's.
-var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-
-func checkEmail(v string) string {
-	s := strings.TrimSpace(v)
-	if s == "" {
-		return "Email is required."
-	}
-	if jsLen(s) > 254 || !emailRe.MatchString(s) {
-		return "Enter a valid email address."
-	}
-	return ""
-}
-
-func normEmail(s string) string { return strings.ToLower(strings.TrimSpace(s)) }

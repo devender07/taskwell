@@ -1,5 +1,5 @@
 import { Outlet, createFileRoute, notFound } from '@tanstack/react-router'
-import { ApiError, type Workspace } from '@/api'
+import { ApiError, type Workspace, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { Shortcuts } from '@/components/app/shortcuts'
 
@@ -7,7 +7,7 @@ import { Shortcuts } from '@/components/app/shortcuts'
 export const Route = createFileRoute('/_app/$workspace')({
   loader: async (ctx) => {
     try {
-      return await loaderApi<Workspace>(ctx, `/workspaces/${encodeURIComponent(ctx.params.workspace)}`)
+      return await loaderApi<Workspace>(ctx, `${workspacePath(ctx.params.workspace)}`)
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e

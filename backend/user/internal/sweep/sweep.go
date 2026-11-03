@@ -1,22 +1,19 @@
 // Package sweep deletes what the app no longer needs: spent sign-in tokens, old read notifications, given-up email,
 // stale presence, and uploads nothing references. One instance at a time runs it, under an advisory lock.
 //
-// sweep.go runs it and removes files from disk; model.go owns every query.
+// sweep.go runs it and removes files from storage; model.go owns every query.
 package sweep
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/tether/backend/user/internal/storage"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 // fileGrace is how long an upload may stay unreferenced (a draft not yet saved) before it's deleted.
@@ -26,11 +23,11 @@ const fileGrace = 24 * time.Hour
 const sweepLock = 7292
 
 type Sweeper struct {
-	db  *pgxpool.Pool
-	dir string // UPLOAD_DIR: files are <dir>/<id>
+	db    *pgxpool.Pool
+	files *storage.Store
 }
 
-func New(db *pgxpool.Pool, dir string) *Sweeper { return &Sweeper{db: db, dir: dir} }
+func New(db *pgxpool.Pool, files *storage.Store) *Sweeper { return &Sweeper{db: db, files: files} }
 
 // Run sweeps a minute after start (sooner when every is shorter), then every every, until ctx ends.
 // ponytail: each instance sweeps on its own schedule, so N instances sweep N times per interval (the lock only stops
@@ -94,59 +91,46 @@ func (s *Sweeper) Sweep(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		s.remove(id)
+		s.remove(ctx, id)
 	}
-	disk, err := s.sweepDisk(ctx, m)
+	orphans, err := s.sweepBucket(ctx, m)
 	if err != nil {
 		return err
 	}
-	slog.Info("sweep done", append(counts, "files", len(ids), "disk_orphans", disk, "duration_ms", time.Since(start).Milliseconds())...)
+	slog.Info("sweep done", append(counts, "files", len(ids), "orphans", orphans, "duration_ms", time.Since(start).Milliseconds())...)
 	return nil
 }
 
-func (s *Sweeper) remove(id string) {
-	if err := os.Remove(filepath.Join(s.dir, id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+func (s *Sweeper) remove(ctx context.Context, id string) {
+	if err := s.files.Delete(ctx, id); err != nil {
 		slog.Warn("sweep remove file", "id", id, "err", err)
 	}
 }
 
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// sweepDisk removes files on disk older than fileGrace that have no row: their workspace was deleted, or a crash
-// came between deleting a row and its file. Interrupted uploads' temp files go too.
-// ponytail: lists the whole directory each sweep; shard it into subdirectories or move to S3 past ~1M files.
-func (s *Sweeper) sweepDisk(ctx context.Context, m model) (int, error) {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return 0, fmt.Errorf("list uploads: %w", err)
-	}
-	cutoff := time.Now().Add(-fileGrace)
-	var ids []string
+// sweepBucket removes objects older than fileGrace that have no row: their workspace was deleted, or a crash came
+// between deleting a row and its object.
+// ponytail: lists the whole bucket each sweep; fine to ~1M objects, then use S3 inventory or lifecycle rules.
+func (s *Sweeper) sweepBucket(ctx context.Context, m model) (int, error) {
 	removed := 0
-	for _, e := range entries {
-		info, err := e.Info()
-		if err != nil || !info.Mode().IsRegular() || info.ModTime().After(cutoff) {
-			continue
+	err := s.files.Old(ctx, time.Now().Add(-fileGrace), func(keys []string) error {
+		var ids []string
+		for _, k := range keys {
+			if web.IsUUID(k) {
+				ids = append(ids, k)
+			}
 		}
-		switch name := e.Name(); {
-		case uuidRe.MatchString(name):
-			ids = append(ids, name)
-		case strings.HasPrefix(name, ".upload-"):
-			s.remove(name)
-			removed++
+		if len(ids) == 0 {
+			return nil
 		}
-	}
-	for len(ids) > 0 {
-		batch := ids[:min(len(ids), 1000)]
-		ids = ids[len(batch):]
-		gone, err := m.missingFiles(ctx, batch)
+		gone, err := m.missingFiles(ctx, ids)
 		if err != nil {
-			return removed, err
+			return err
 		}
 		for _, id := range gone {
-			s.remove(id)
+			s.remove(ctx, id)
 		}
 		removed += len(gone)
-	}
-	return removed, nil
+		return nil
+	})
+	return removed, err
 }

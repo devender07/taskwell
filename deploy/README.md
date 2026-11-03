@@ -29,6 +29,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | Variable | Service | Default | Notes |
 | --- | --- | --- | --- |
 | `APP_HOST`, `ADMIN_HOST` | caddy | | Public hostnames. `http://name` serves plain HTTP (local testing only) |
+| `S3_ORIGIN` | caddy | | Origin presigned upload links point at, allowed in the CSP for images and media: `https://<bucket>.s3.<region>.amazonaws.com` on AWS, else the `s3_endpoint` origin |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | postgres | `tether` / required / `tether` | Compose builds `DATABASE_URL` from these |
 | `DATABASE_URL` | user, admin | local dev DB | Set by compose |
 | `APP_ENV` | user, admin | `production` | Anything else relaxes production checks |
@@ -36,9 +37,13 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `ADMIN_JWT_SECRET` | admin | | Required. Different from `JWT_SECRET` |
 | `MFA_ENCRYPTION_KEY` | admin | | Required in production, 32+ bytes. Encrypts admins' TOTP secrets (AES-GCM). Changing it makes every stored factor unreadable; then `-reset-mfa` each admin. In dev it falls back to a key derived from `jwt_secret`, with a warning |
 | `ADMIN_ALLOWED_IPS` | admin | empty (any) | Comma-separated IPs and CIDR ranges allowed to use the admin API (403 for others). The client IP is the last `X-Forwarded-For` entry when the peer is a private or loopback address (Caddy), else the peer. Warns at start in production when empty. `Caddyfile` has an equivalent edge rule, commented out |
+| `TEST_SECRET_KEY` | user, tester | | Required in production, 32+ bytes. Seals test account passwords (AES-GCM). Changing it makes saved test account passwords unreadable: save them again |
+| `INTEGRATION_SECRET_KEY` | user | | Required in production, 32+ bytes. Seals GitHub / GitLab webhook secrets (AES-GCM). Changing it breaks connected webhooks: regenerate their secrets in Settings → Integrations. In dev it falls back to a key derived from `jwt_secret`, with a warning |
+| `ANTHROPIC_API_KEY` | tester | | Required by the tester in production. Only the tester reads it; never in `system_config` |
+| `AI_TEST_BROWSERS` | tester | `2` | AI runs one tester runs at once. More throughput: more tester + chrome pairs. `system_config` `ai_test_workspace_concurrency` caps one workspace's running runs, `ai_test_monthly_limit_usd` its monthly Claude spend |
+| `CHROME_URL`, `PROXY_ADDR`, `PROXY_URL` | tester | `http://chrome:9222`, `:3128`, `http://tester:3128` | Set by compose: Chrome's DevTools endpoint, the egress proxy's listen address and how Chrome reaches it |
 | `DB_MAX_CONNS` | user | `20` | Pool size. Admin uses `ADMIN_DB_MAX_CONNS` (default 5) |
 | `DB_STATEMENT_TIMEOUT`, `DB_IDLE_TX_TIMEOUT` | user, admin | `30s`, `2min` | Postgres `statement_timeout` and `idle_in_transaction_session_timeout` for every pooled session |
-| `UPLOAD_DIR` | user | `/data/uploads` | The `uploads` volume. Back it up with the database |
 | `NOTIFY_INTERVAL`, `NOTIFY_SETTLE` | user | `1m`, `30s` | Notification worker cadence, quiet time before an email |
 | `MAIL_TIMEOUT` | user | `20s` | Longest one SMTP send may take, dial to QUIT |
 | `MAIL_RETRY_BASE`, `MAIL_MAX_ATTEMPTS` | user | `30s`, `8` | A failed send retries after `MAIL_RETRY_BASE`, doubling each time (at most 1h), until `MAIL_MAX_ATTEMPTS` sends have failed |
@@ -48,6 +53,10 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `MIGRATE_ON_START` | user | `true` | Compose sets `false`: the `migrate` service runs them |
 | `MIGRATE_LOCK_TIMEOUT` | migrate | `10s` | Postgres `lock_timeout` for each transactional migration |
 | `SWEEP_INTERVAL` | user | `24h` | Retention sweep cadence |
+
+## AI testing
+
+`--profile ai` adds the `tester` (the user image's `tester` command) and a `chrome` container on the internal `browser` network, which only the tester also joins. Chrome sends every request through the tester's egress proxy, which lets out only the workspace's registered test sites on public addresses. The tester checks in every 30s (`system_config` `ai_tester_heartbeat`); without a check-in in the last 90s the API answers "AI testing isn't set up on this server." A tester stopped mid-run ends its runs as "The test runner restarted"; runs a crashed tester left are ended after 15 minutes.
 
 ## Migrations
 
@@ -65,7 +74,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 
 ## Retention
 
-The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures, stale presence and socket rows, and rate-limit buckets untouched for an hour. Uploads that no description, comment, unsaved live edit or avatar references are deleted 24 hours after upload, with their files; so are files on disk without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
+The user service sweeps once a day (`SWEEP_INTERVAL`, one instance at a time under an advisory lock): expired refresh tokens and used ones after 14 days, sign-in codes and reset links a day after use or expiry, read notifications after 90 days, given-up email after 30 days, old auth failures, stale presence and socket rows, and rate-limit buckets untouched for an hour. Uploads that no description, comment, unsaved live edit, avatar or AI test step references are deleted 24 hours after upload, with their objects; so are objects in the bucket without a row (a deleted workspace's). It logs `issue has many live-editing updates` for issues past 1,000 stored updates, which only an editor opening the issue compacts.
 
 ## Email
 
@@ -77,4 +86,8 @@ On SIGTERM both services stop accepting connections, let in-flight requests fini
 
 ## Backups
 
-Two volumes hold state: `pgdata` (`pg_dump` it) and `uploads` (copy the files). `caddy-data` holds certificates and can be recreated.
+The `pgdata` volume holds state (`pg_dump` it); uploads live in the S3 bucket (enable versioning or replicate it). `caddy-data` holds certificates and can be recreated.
+
+## File storage
+
+Uploads, avatars and AI test screenshots go to S3 or an S3-compatible store (R2, MinIO), set in the admin app under Config → Uploads: `s3_endpoint` (empty for AWS), `s3_region`, `s3_bucket`, `s3_access_key_id`, `s3_secret_access_key`. The defaults point at the dev S3 store, so set them before the first upload. Keep the bucket private: the API checks access, then redirects to a presigned URL valid for an hour, so browsers and the MCP server must reach `s3_endpoint`. The key needs `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` and `s3:ListBucket` on the bucket. Moving from the old `uploads` volume: `aws s3 sync <volume dir> s3://<bucket>` (object keys are the file ids).

@@ -1,4 +1,6 @@
-export type Option = { value: string; label: string; hint?: string; disabled?: boolean }
+import type { ReactNode } from 'react'
+
+export type Option = { value: string; label: string; hint?: string; disabled?: boolean; icon?: ReactNode }
 
 // Case-insensitive ranking: label starts with the query, then a word in the label does, then the label
 // contains it, then the hint does. Stable within each rank. An empty query keeps the original order.

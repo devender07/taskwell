@@ -54,3 +54,12 @@ export function typingText(names: string[]) {
 }
 
 export const firstName = (name: string) => name.split(/\s+/)[0] || name
+
+type DocNode = { text?: string; attrs?: { label?: string; mentionSuggestionChar?: string } | null; content?: DocNode[] }
+
+// A message doc's text on one line: text, then @ and # mentions by label.
+export function docText(doc: DocNode | null): string {
+  const walk = (n: DocNode): string =>
+    n.text ?? (n.attrs?.label ? (n.attrs.mentionSuggestionChar ?? '') + n.attrs.label : (n.content ?? []).map(walk).join(' '))
+  return doc ? walk(doc).replace(/\s+/g, ' ').trim() : ''
+}

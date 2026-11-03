@@ -1,9 +1,9 @@
 import { createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
-import { ApiError, type Chat, type MessagePage } from '@/api'
+import { ApiError, type Chat, type MessagePage, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ChatView } from '@/components/chat/chat-view'
 
-type Search = { thread?: string; message?: string }
+type Search = { thread?: string; message?: string; people?: boolean }
 const id = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
 
 export const Route = createFileRoute('/_app/$workspace/_main/inbox/c/$chatId')({
@@ -11,10 +11,11 @@ export const Route = createFileRoute('/_app/$workspace/_main/inbox/c/$chatId')({
     const out: Search = {}
     if (id(search.thread)) out.thread = id(search.thread)
     if (id(search.message)) out.message = id(search.message)
+    if (search.people === true || search.people === 'true') out.people = true
     return out
   },
   loader: async (ctx) => {
-    const path = `/workspaces/${encodeURIComponent(ctx.params.workspace)}/chats/${encodeURIComponent(ctx.params.chatId)}`
+    const path = `${workspacePath(ctx.params.workspace)}/chats/${encodeURIComponent(ctx.params.chatId)}`
     try {
       const [chat, page] = await Promise.all([loaderApi<Chat>(ctx, path), loaderApi<MessagePage>(ctx, `${path}/messages`)])
       return { chat, page }
@@ -29,9 +30,8 @@ export const Route = createFileRoute('/_app/$workspace/_main/inbox/c/$chatId')({
 
 function ChatPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { members } = useLoaderData({ from: '/_app/$workspace/_main/inbox' })
   const { user } = Route.useRouteContext()
   const { chat, page } = Route.useLoaderData()
-  const { thread, message } = Route.useSearch()
-  return <ChatView key={chat.id} slug={workspace.slug} workspaceName={workspace.name} me={user} chat={chat} page={page} members={members} thread={thread} message={message} />
+  const { thread, message, people } = Route.useSearch()
+  return <ChatView key={chat.id} slug={workspace.slug} workspaceName={workspace.name} me={user} chat={chat} page={page} thread={thread} message={message} people={people} />
 }

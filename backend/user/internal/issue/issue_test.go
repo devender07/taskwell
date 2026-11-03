@@ -31,6 +31,8 @@ func TestValidation(t *testing.T) {
 		{checkLabelName(""), "Label name is required."},
 		{checkLabelName(strings.Repeat("a", 31)), "Label name must be 30 characters or fewer."},
 		{checkColor(normColor(" #AABBCC ")), ""},
+		{checkColor("#5e6ad280"), ""},
+		{checkColor("#5e6ad28"), "Choose a color."},
 		{checkColor("#abc"), "Choose a color."},
 		{checkColor("red"), "Choose a color."},
 	}
@@ -42,11 +44,11 @@ func TestValidation(t *testing.T) {
 }
 
 func TestParseIdentifier(t *testing.T) {
-	if key, n, ok := parseIdentifier("eng-142"); !ok || key != "ENG" || n != 142 {
+	if key, n, ok := ParseIdentifier("eng-142"); !ok || key != "ENG" || n != 142 {
 		t.Errorf("eng-142: got %q %d %v", key, n, ok)
 	}
 	for _, s := range []string{"ENG-0", "ENG-01", "E-1", "ENGINE-1", "1EN-1", "ENG", "ENG-1x", "ENG-99999999999"} {
-		if _, _, ok := parseIdentifier(s); ok {
+		if _, _, ok := ParseIdentifier(s); ok {
 			t.Errorf("%s: parsed, want not found", s)
 		}
 	}

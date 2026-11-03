@@ -32,7 +32,7 @@ func TestIssueFlows(t *testing.T) {
 	ann, bob, cat := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob"), dbtest.User(t, pool, "Cat")
 	var wsID, slug string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `with w as (select id, slug from workspaces where created_by = $1),
@@ -170,7 +170,7 @@ func TestIssueFlows(t *testing.T) {
 	seen := map[string]bool{}
 	before := ""
 	for pages := 0; ; pages++ {
-		if pages > 5 {
+		if pages > total {
 			t.Fatal("too many pages")
 		}
 		path := "/issues/ENG-3/timeline"
@@ -215,17 +215,17 @@ func TestTimelineCut(t *testing.T) {
 		es = append(es, Event{ID: fmt.Sprint(s), CreatedAt: at(s)})
 	}
 	_, got, more := timelineCut(nil, slices.Clone(es))
-	if !more || len(got) != timelinePage || got[len(got)-1].CreatedAt != at(101) {
+	if !more || len(got) != timelinePage || got[len(got)-1].CreatedAt != at(201-timelinePage) {
 		t.Fatalf("plain cut: %d items, more %v, oldest %v", len(got), more, got[len(got)-1].CreatedAt)
 	}
-	// The 100th and 101st share a second, so that whole second goes to the next page.
-	cs := []Comment{{ID: "c", CreatedAt: at(101)}}
-	gotC, got, more := timelineCut(cs, slices.Clone(es[:100]))
-	if !more || len(gotC) != 0 || len(got) != 99 {
-		t.Fatalf("tie cut: %d comments, %d events, more %v; want 0, 99, true", len(gotC), len(got), more)
+	// The last event of a page and the next item share a second, so that whole second goes to the next page.
+	cs := []Comment{{ID: "c", CreatedAt: at(201 - timelinePage)}}
+	gotC, got, more := timelineCut(cs, slices.Clone(es[:timelinePage]))
+	if !more || len(gotC) != 0 || len(got) != timelinePage-1 {
+		t.Fatalf("tie cut: %d comments, %d events, more %v; want 0, %d, true", len(gotC), len(got), more, timelinePage-1)
 	}
-	_, got, more = timelineCut(nil, slices.Clone(es[:50]))
-	if more || len(got) != 50 {
+	_, got, more = timelineCut(nil, slices.Clone(es[:timelinePage/2]))
+	if more || len(got) != timelinePage/2 {
 		t.Fatalf("short page: %d, more %v", len(got), more)
 	}
 }

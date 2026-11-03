@@ -3,7 +3,9 @@ package project
 import (
 	"regexp"
 	"strings"
-	"unicode/utf16"
+	"time"
+
+	"github.com/devender07/tether/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
@@ -11,13 +13,11 @@ import (
 
 var keyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,4}$`)
 
-func jsLen(s string) int { return len(utf16.Encode([]rune(s))) }
-
 func checkName(s string) string {
 	if s == "" {
 		return "Project name is required."
 	}
-	if jsLen(s) > 60 {
+	if doc.Len(s) > 60 {
 		return "Project name must be 60 characters or fewer."
 	}
 	return ""
@@ -34,10 +34,33 @@ func checkKey(s string) string {
 }
 
 func checkDescription(s string) string {
-	if jsLen(s) > 10000 {
+	if doc.Len(s) > 10000 {
 		return "Description must be 10,000 characters or fewer."
 	}
 	return ""
 }
+
+func checkMilestoneName(s string) string {
+	if s == "" {
+		return "Milestone name is required."
+	}
+	if doc.Len(s) > 60 {
+		return "Milestone name must be 60 characters or fewer."
+	}
+	return ""
+}
+
+// checkDate takes a YYYY-MM-DD date.
+func checkDate(s string) string {
+	if t, err := time.Parse(time.DateOnly, s); err != nil || t.Year() < 1 {
+		return errDate
+	}
+	return ""
+}
+
+const (
+	errDate      = "Enter a valid date."
+	errDateOrder = "Target date must be on or after the start date."
+)
 
 func normKey(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }

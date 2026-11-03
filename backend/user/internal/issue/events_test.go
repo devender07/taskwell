@@ -6,7 +6,7 @@ import (
 )
 
 func TestDiff(t *testing.T) {
-	todo, doing := statusSnap{"s1", "Todo", "unstarted"}, statusSnap{"s2", "In progress", "started"}
+	todo, doing := statusSnap{ID: "s1", Name: "Todo", Category: "unstarted"}, statusSnap{ID: "s2", Name: "In progress", Category: "started"}
 	maya, demo := &Person{"u1", "Maya"}, &Person{"u2", "Demo"}
 	bug, docs := Label{"l1", "Bug", "#ff0000"}, Label{"l2", "Docs", "#00ff00"}
 	date := func(s string) *string { return &s }

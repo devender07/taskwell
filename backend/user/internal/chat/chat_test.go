@@ -32,7 +32,7 @@ func TestChat(t *testing.T) {
 	ann, bob, cat, out := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob"), dbtest.User(t, pool, "Cat"), dbtest.User(t, pool, "Out")
 	var wsID, slug string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if err := workspace.CreateDefault(ctx, tx, ann, "Ann"); err != nil {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, `select id::text, slug from workspaces where created_by = $1`, ann).Scan(&wsID, &slug)
@@ -282,8 +282,32 @@ func TestChat(t *testing.T) {
 	errOf(cat, "GET", "/messages/"+dm.ID+"/replies", nil, 404)
 	errOf(out, "GET", "/messages/"+root.ID+"/replies", nil, 404)
 
-	// Reactions: twice is once; counts, mine and people.
+	// Pins: anyone in the chat, top-level only, 1/7/30 days, changed only by who pinned; the messages page lists them.
 	var m Message
+	errOf(bob, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"3"}}, 400)
+	errOf(bob, "POST", "/messages/"+reply.ID+"/pin", url.Values{"days": {"7"}}, 404)
+	errOf(out, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"7"}}, 404)
+	do(bob, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"7"}}, 200, &m)
+	if m.PinnedUntil == nil || m.PinnedUntil.Sub(m.CreatedAt).Hours() < 24*7-1 {
+		t.Errorf("pinned until: %v", m.PinnedUntil)
+	}
+	var pins struct{ Pinned []Message }
+	do(cat, "GET", "/chats/"+general+"/messages", nil, 200, &pins)
+	if len(pins.Pinned) != 1 || pins.Pinned[0].ID != root.ID {
+		t.Errorf("pinned: %+v", pins.Pinned)
+	}
+	if !strings.Contains(string(m.PinnedBy), bob) {
+		t.Errorf("pinned by: %s", m.PinnedBy)
+	}
+	errOf(ann, "DELETE", "/messages/"+root.ID+"/pin", nil, 403)
+	errOf(ann, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"1"}}, 403)
+	do(bob, "DELETE", "/messages/"+root.ID+"/pin", nil, 200, &m)
+	if m.PinnedUntil != nil || string(m.PinnedBy) != "null" {
+		t.Errorf("unpinned: %v", m.PinnedUntil)
+	}
+	do(bob, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"1"}}, 200, nil)
+
+	// Reactions: twice is once; counts, mine and people.
 	do(bob, "POST", "/messages/"+root.ID+"/reactions", url.Values{"emoji": {"👍"}}, 200, nil)
 	do(bob, "POST", "/messages/"+root.ID+"/reactions", url.Values{"emoji": {"👍"}}, 200, nil)
 	do(ann, "POST", "/messages/"+root.ID+"/reactions", url.Values{"emoji": {"👍"}}, 200, &m)

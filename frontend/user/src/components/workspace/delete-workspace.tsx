@@ -3,7 +3,7 @@ import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
-import { api, toFormErrors, type Workspace } from '@/api'
+import { api, toFormErrors, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 // Danger zone: deleting needs the workspace name typed back, then sends the user to their next workspace.
@@ -14,7 +14,7 @@ export function DeleteWorkspace({ workspace }: { workspace: Workspace }) {
 
   const [error, remove, pending] = useActionState(async () => {
     try {
-      await api(`/workspaces/${encodeURIComponent(workspace.slug)}`, undefined, 'DELETE')
+      await api(`${workspacePath(workspace.slug)}`, undefined, 'DELETE')
     } catch (e) {
       return toFormErrors(e).error
     }

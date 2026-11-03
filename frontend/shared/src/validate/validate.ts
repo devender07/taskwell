@@ -93,6 +93,13 @@ export const projectKeyFormat: Check = (v) => {
   return null
 }
 
+export const milestoneName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Milestone name is required.'
+  if (s.length > 60) return 'Milestone name must be 60 characters or fewer.'
+  return null
+}
+
 export const projectDescription: Check = (v) => (v.trim().length > 10000 ? 'Description must be 10,000 characters or fewer.' : null)
 
 // A key suggestion from the name: "Mobile app" → "MA", "Engineering" → "ENG". '' when nothing usable.
@@ -141,6 +148,13 @@ const STATUS_CATEGORIES = ['backlog', 'unstarted', 'started', 'completed', 'canc
 
 export const statusCategory: Check = (v) => ((STATUS_CATEGORIES as readonly string[]).includes(v) ? null : 'Choose a category.')
 
+export const statusTypeName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Type name is required.'
+  if (s.length > 30) return 'Type name must be 30 characters or fewer.'
+  return null
+}
+
 export const labelName: Check = (v) => {
   const s = v.trim()
   if (!s) return 'Label name is required.'
@@ -148,7 +162,7 @@ export const labelName: Check = (v) => {
   return null
 }
 
-export const labelColor: Check = (v) => (/^#[0-9a-f]{6}$/.test(v.toLowerCase()) ? null : 'Choose a color.')
+export const labelColor: Check = (v) => (/^#[0-9a-f]{6}([0-9a-f]{2})?$/.test(v.toLowerCase()) ? null : 'Choose a color.')
 
 export const groupName: Check = (v) => {
   const s = v.trim()
@@ -159,3 +173,58 @@ export const groupName: Check = (v) => {
 
 export const messageBody = (empty: boolean, length: number) =>
   empty ? 'Write a message.' : length > 10000 ? 'Message must be 10,000 characters or fewer.' : null
+
+// Test cases and AI testing settings; messages match the API's.
+export const testCaseTitle: Check = (v) => (v.trim() ? null : 'Enter a title.')
+export const testCaseSteps = (steps: string[]) => (steps.length ? null : 'Add at least one step.')
+export const testCaseExpected: Check = (v) => (v.trim() ? null : 'Describe the expected result.')
+export const testNote: Check = (v) => (v.length > 2000 ? 'Note must be 2,000 characters or fewer.' : null)
+
+// http:// passes here for dev sites; the API decides whether this server allows it.
+export const testSiteUrl: Check = (v) => {
+  try {
+    const u = new URL(v.trim())
+    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname ? null : 'Enter a URL starting with https://.'
+  } catch {
+    return 'Enter a URL starting with https://.'
+  }
+}
+export const testAccountLabel: Check = (v) => (v.trim() ? null : 'Enter a label.')
+export const testAccountUsername: Check = (v) => (v.trim() ? null : 'Enter a username.')
+export const testAccountPassword: Check = (v) => (v ? null : 'Enter a password.')
+
+// http:// passes here for dev; the API rejects it in production and checks the address it resolves to.
+export const webhookUrl: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Enter a URL.'
+  let u: URL
+  try {
+    u = new URL(s)
+  } catch {
+    return 'Enter a valid URL.'
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return 'Use an https URL.'
+  return u.hostname && s.length <= 2000 ? null : 'Enter a valid URL.'
+}
+export const webhookEvents = (events: string[]) => (events.length ? null : 'Choose at least one event.')
+
+export const tokenName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Name the token.'
+  if (s.length > 60) return 'Use 60 characters or fewer.'
+  return null
+}
+
+// Customer feedback; messages match the API's. The public form requires an email, a member's entry doesn't.
+export const feedbackBody: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Write the feedback.'
+  if (s.length > 5000) return 'Feedback must be 5,000 characters or fewer.'
+  return null
+}
+export const feedbackEmail = (v: string, needed: boolean) => {
+  const s = v.trim()
+  if (!s) return needed ? 'Enter your email.' : null
+  return s.length > 254 || !EMAIL.test(s) ? 'Enter a valid email.' : null
+}
+export const feedbackName: Check = (v) => (v.trim().length > 80 ? 'Name must be 80 characters or fewer.' : null)
