@@ -1,0 +1,29 @@
+[Unit]
+Description=Tether user API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=tether
+Group=tether
+EnvironmentFile=/etc/tether/user.env
+# Applies pending migrations before the API starts (MIGRATE_ON_START=false in user.env).
+ExecStartPre=/opt/tether/tether-user -migrate
+ExecStart=/opt/tether/tether-user
+Restart=always
+RestartSec=3
+# Shutdown lets requests finish (20s) and closes sockets; keep this above 40s.
+TimeoutStopSec=45
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

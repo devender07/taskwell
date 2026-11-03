@@ -1,0 +1,63 @@
+# /etc/caddy/Caddyfile for the systemd setup: the Go services on 127.0.0.1 (README.md), the built frontends in
+# /var/www/tether/{user,admin}. Replace the two hostnames and S3_ORIGIN (the s3_endpoint origin, e.g. your R2 URL).
+
+(spa) {
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https://S3_ORIGIN; media-src 'self' https://S3_ORIGIN; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		-Server
+	}
+
+	# The API sets its own Cache-Control. flush_interval -1 passes streams (the AI test live view) straight through.
+	handle /api/* {
+		reverse_proxy {args[0]} {
+			flush_interval -1
+		}
+	}
+
+	# Hashed build output: cache forever, and a missing file is a 404, not index.html.
+	handle /assets/* {
+		root * {args[1]}
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else falls back to index.html for client-side routes, revalidated on every load.
+	handle {
+		root * {args[1]}
+		header Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode zstd gzip
+}
+
+tether.ai {
+	handle /mcp {
+		reverse_proxy 127.0.0.1:8095 {
+			flush_interval -1
+		}
+	}
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy 127.0.0.1:8095
+	}
+	handle /.well-known/oauth-authorization-server* {
+		reverse_proxy 127.0.0.1:8090
+	}
+	# / is the static landing page; the app lives at /{workspace}, /signin and the rest.
+	handle / {
+		root * /var/www/tether/user
+		header Cache-Control no-cache
+		rewrite * /landing.html
+		file_server
+	}
+	import spa 127.0.0.1:8090 /var/www/tether/user
+}
+
+admin.tether.ai {
+	import spa 127.0.0.1:8080 /var/www/tether/admin
+}

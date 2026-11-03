@@ -1,0 +1,60 @@
+# /etc/caddy/Caddyfile while there's no domain yet: plain HTTP on the server's IP, the app on port 80 and the admin app
+# on 8081. Set system_config app_base_url to http://185.67.20.135 (and APP_URL in mcp.env) so sign-in cookies work
+# without HTTPS. Switch to Caddyfile (domains, automatic HTTPS) once you have one.
+
+(spa) {
+	header {
+		# 'self' also allows the realtime socket (ws://) on this host.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy {args[0]} {
+			flush_interval -1
+		}
+	}
+
+	handle /assets/* {
+		root * {args[1]}
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		root * {args[1]}
+		header Cache-Control no-cache
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode zstd gzip
+}
+
+http://185.67.20.135 {
+	handle /mcp {
+		reverse_proxy 127.0.0.1:8095 {
+			flush_interval -1
+		}
+	}
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy 127.0.0.1:8095
+	}
+	handle /.well-known/oauth-authorization-server* {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle / {
+		root * /var/www/tether/user
+		header Cache-Control no-cache
+		rewrite * /landing.html
+		file_server
+	}
+	import spa 127.0.0.1:8090 /var/www/tether/user
+}
+
+http://185.67.20.135:8081 {
+	import spa 127.0.0.1:8080 /var/www/tether/admin
+}
