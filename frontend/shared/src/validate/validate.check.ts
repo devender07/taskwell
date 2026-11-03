@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types shared/src/validate/validate.check.ts
 import { assert } from '../check.ts'
-import { commentBody, dueDate, email, issueDescription, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, statusTypeName, username, workspaceName, workspaceSlug } from './validate.ts'
+import { commentBody, feedbackBody, feedbackEmail, feedbackName, dueDate, email, issueDescription, issueTitle, labelColor, labelName, name, password, projectDescription, projectKey, projectKeyFormat, projectName, required, roleName, slugify, statusCategory, statusName, statusTypeName, username, webhookEvents, webhookUrl, workspaceName, workspaceSlug } from './validate.ts'
 
 assert.equal(email(' a@b.co '), null)
 assert.ok(email(''))
@@ -82,4 +82,18 @@ assert.equal(labelColor('red'), 'Choose a color.')
 assert.equal(commentBody(false, 20000), null)
 assert.equal(commentBody(true, 0), 'Write a comment.')
 assert.equal(commentBody(false, 20001), 'Comment must be 20,000 characters or fewer.')
+assert.equal(feedbackBody('  '), 'Write the feedback.')
+assert.equal(feedbackBody('x'.repeat(5001)), 'Feedback must be 5,000 characters or fewer.')
+assert.equal(feedbackEmail('', true), 'Enter your email.')
+assert.equal(feedbackEmail('', false), null)
+assert.equal(feedbackEmail('a@b', false), 'Enter a valid email.')
+assert.equal(feedbackName('x'.repeat(81)), 'Name must be 80 characters or fewer.')
+assert.equal(webhookUrl(' https://example.com/hook '), null)
+assert.equal(webhookUrl('http://localhost:8080/hook'), null)
+assert.equal(webhookUrl(''), 'Enter a URL.')
+assert.equal(webhookUrl('example.com'), 'Enter a valid URL.')
+assert.equal(webhookUrl('ftp://example.com'), 'Use an https URL.')
+assert.equal(webhookUrl('https://example.com/' + 'x'.repeat(2000)), 'Enter a valid URL.')
+assert.equal(webhookEvents([]), 'Choose at least one event.')
+assert.equal(webhookEvents(['issue.created']), null)
 console.log('validate: ok')

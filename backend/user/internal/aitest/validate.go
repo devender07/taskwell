@@ -2,7 +2,6 @@ package aitest
 
 import (
 	"fmt"
-	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
@@ -10,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/tether/backend/user/internal/netguard"
 )
 
 // Lengths count UTF-16 units to match JS String.length.
@@ -76,20 +76,11 @@ func checkBaseURL(raw string, allowHTTP, allowPrivate bool) (base, host, msg str
 	if host == "" || len(raw) > 2000 {
 		return "", "", msgScheme
 	}
-	if !allowPrivate && privateHost(host) {
+	if !allowPrivate && netguard.PrivateHost(host) {
 		return "", "", "Enter a public address, not a private or local one."
 	}
 	u.Host, u.RawQuery, u.Fragment, u.Scheme = strings.ToLower(u.Host), "", "", strings.ToLower(u.Scheme)
 	return strings.TrimSuffix(u.String(), "/"), host, ""
-}
-
-// privateHost reports whether host is localhost or an IP literal the proxy would refuse.
-func privateHost(host string) bool {
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return true
-	}
-	a, err := netip.ParseAddr(strings.Trim(host, "[]"))
-	return err == nil && blockedAddr(a)
 }
 
 func checkAccount(label, username, password string, passwordRequired bool) map[string]string {

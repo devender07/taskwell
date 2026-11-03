@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon } from '@tether/shared/icons'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon } from '@tether/shared/icons'
 import { useState } from 'react'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
@@ -32,6 +32,11 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <InboxIcon />
         Inbox
         {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
+      </Link>
+      <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
+        <FeedbackIcon />
+        Feedback
+        {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
       </Link>
       <Link to="/$workspace/my-issues" params={{ workspace }} aria-current={current('my-issues')}>
         <UserIcon />

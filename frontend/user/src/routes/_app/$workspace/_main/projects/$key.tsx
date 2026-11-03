@@ -4,12 +4,12 @@ import { useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { LockIcon } from '@tether/shared/icons'
-import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Issue, type Label, type Member, type Project, type Status, workspacePath } from '@/api'
+import { ApiError, can, cyclesPath, projectPeoplePath, type Cycle, type Label, type Member, type Project, type Status, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
-import { validateViewSearch, type ViewSearch } from '@/components/issues/view-search'
+import { hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
 import { ProjectMilestones } from '@/components/projects/milestones'
 import { ArchiveProject, DeleteProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
@@ -18,14 +18,16 @@ import '@/components/projects/projects.css'
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
   // edit: opens the edit dialog (the roadmap's "Set dates").
   validateSearch: (search): ViewSearch & { edit?: true } => ({ ...validateViewSearch(search), ...(search.edit === true ? { edit: true as const } : {}) }),
+  loaderDeps: ({ search }) => ({ query: issuePageQuery(search) }),
   loader: async (ctx) => {
     const { params } = ctx
     const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
+    const source = `${projectPath}/issues`
     trackPath(ctx, `${path}/members`)
-    const [project, issues, cycles, statuses, labels, members] = await Promise.all([
+    const [project, page, cycles, statuses, labels, members] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
-      loaderApi<Issue[]>(ctx, `${projectPath}/issues`),
+      loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
@@ -37,14 +39,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     if (project.key !== params.key) {
       throw redirect({ to: '/$workspace/projects/$key', params: { workspace: params.workspace, key: project.key }, replace: true })
     }
-    return { project, issues, cycles, statuses, labels, members }
+    return { project, page, source, cycles, statuses, labels, members }
   },
   component: ProjectPage,
 })
 
 function ProjectPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, issues, cycles, statuses, labels, members } = Route.useLoaderData()
+  const { project, page, source, cycles, statuses, labels, members } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -53,6 +55,7 @@ function ProjectPage() {
   const manage = can(workspace, 'projects.manage')
   const create = can(workspace, 'issues.create') && !project.archived
   const current = cycles.find((c) => c.state === 'current')
+  const empty = page.total === 0 && !hasFilters(search)
 
   function stopEditing() {
     setEditing(false)
@@ -116,15 +119,15 @@ function ProjectPage() {
       <section className="grid gap-4" aria-labelledby="issues-heading">
         <div className="flex items-center justify-between gap-4">
           <h2 id="issues-heading" className="text-label">Issues</h2>
-          {create && issues.length > 0 ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
+          {create && !empty ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
         </div>
-        {issues.length === 0 ? (
+        {empty ? (
           <div className="grid gap-4 p-6 bg-surface border rounded-lg justify-items-center text-center">
             <p className="text-body-sm text-secondary">No issues yet.</p>
             {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
           </div>
         ) : (
-          <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} cycles={cycles} />
+          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} cycles={cycles} />
         )}
       </section>
       {manage ? (

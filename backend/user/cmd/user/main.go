@@ -25,6 +25,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/chat"
 	"github.com/devender07/tether/backend/user/internal/cycle"
 	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/tether/backend/user/internal/feedback"
 	"github.com/devender07/tether/backend/user/internal/file"
 	"github.com/devender07/tether/backend/user/internal/gitlink"
 	"github.com/devender07/tether/backend/user/internal/issue"
@@ -34,6 +35,7 @@ import (
 	"github.com/devender07/tether/backend/user/internal/realtime"
 	"github.com/devender07/tether/backend/user/internal/sweep"
 	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/tether/backend/user/internal/webhook"
 	"github.com/devender07/tether/backend/user/internal/workspace"
 )
 
@@ -127,12 +129,16 @@ func main() {
 	}
 	gitlink.New(pool, gitKey, func(ctx context.Context) (string, error) { return cfg.Get(ctx, "app_base_url") },
 		authenticate, wsH.Member).Register(mux)
+	feedback.New(pool, authenticate, wsH.Member).Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		obs.Fatal(err.Error())
 	}
-	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: !prod && os.Getenv("AI_TEST_ALLOW_PRIVATE") == "true"},
+	allowPrivate := !prod && os.Getenv("AI_TEST_ALLOW_PRIVATE") == "true" // dev only: URLs on this machine or the LAN
+	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: allowPrivate},
 		authenticate, wsH.Member).Register(mux)
+	webhookH := webhook.New(pool, webhook.Options{Key: gitKey, AllowHTTP: !prod, AllowPrivate: allowPrivate}, authenticate, wsH.Member)
+	webhookH.Register(mux)
 	// Background work stops after the server has drained (see shutdown), so it's on its own context.
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -173,6 +179,7 @@ func main() {
 		notifyH.Run(work, duration("NOTIFY_INTERVAL", time.Minute), duration("NOTIFY_SETTLE", 30*time.Second))
 	})
 	wg.Go(func() { mailer.Run(work) })
+	wg.Go(func() { webhookH.Run(work) })
 	uploadDir := env.Get("UPLOAD_DIR", "./uploads")
 	fileH, err := file.New(pool, uploadDir, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })

@@ -48,6 +48,9 @@ const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clie
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 const PIN_DAYS = [1, 7, 30]
+// A pin in place is only its pinner's to change (anyone's when the pinner is unknown).
+const ownsPin = (m: Message, me: string) => !m.pinned_by || m.pinned_by.id === me
+const unpinMessage = (slug: string, id: string) => api(`${messagePath(slug, id)}/pin`, undefined, 'DELETE')
 
 // One chat: header, messages (newest at the bottom, older pages load on scroll up), typing line and composer, and the
 // thread panel when `thread` is set. Keyed by chat id.
@@ -397,8 +400,22 @@ function ChatHeader({ workspaceName }: { workspaceName: string }) {
 // The chat's pinned messages under the header; picking one jumps to it.
 // ponytail: jumping only finds messages on the loaded pages; load around the message if pins get old.
 function PinnedBar({ pinned }: { pinned: Message[] }) {
+  const ctx = use(ChatContext)
   const navigate = useNavigate({ from: FROM })
+  const [error, setError] = useState<string | null>(null)
   const latest = pinned[0]!
+
+  async function unpin(id: string) {
+    setError(null)
+    try {
+      await unpinMessage(ctx.slug, id)
+    } catch (e) {
+      setError(toFormErrors(e).error)
+      return
+    }
+    await ctx.refresh()
+  }
+
   return (
     <Popover
       aria-label="Pinned messages"
@@ -415,20 +432,26 @@ function PinnedBar({ pinned }: { pinned: Message[] }) {
     >
       {(close) => (
         <ul className="chat-pinned-list" aria-label="Pinned messages">
+          {error ? <li role="alert" className="text-caption text-accent px-3 py-2">{error}</li> : null}
           {pinned.map((m) => (
-            <li key={m.id}>
+            <li key={m.id} className="flex items-center gap-1">
               <button
                 type="button"
                 className="popover-item"
-                style={{ display: 'grid', gap: 4, height: 'auto', paddingBlock: 8 }}
+                style={{ display: 'grid', gap: 4, height: 'auto', paddingBlock: 8, minWidth: 0 }}
                 onClick={() => (close(), navigate({ search: (prev) => ({ ...prev, message: m.id, thread: undefined }) }))}
               >
                 <span className="flex items-baseline gap-2">
                   <span className="text-label text-primary ellipsis">{m.author?.name ?? 'Someone'}</span>
-                  <span className="text-caption text-secondary flex-noshrink">until {shortDate(m.pinned_until!)}</span>
+                  <span className="text-caption text-secondary flex-noshrink">{m.pinned_by ? `pinned by ${firstName(m.pinned_by.name)} · ` : ''}until {shortDate(m.pinned_until!)}</span>
                 </span>
                 <span className="text-caption text-secondary ellipsis-2">{docText(m.body)}</span>
               </button>
+              {ownsPin(m, ctx.me.id) ? (
+                <IconButton aria-label="Unpin" tooltip="Unpin" className="chat-icon-button flex-noshrink" onClick={() => unpin(m.id)}>
+                  <CloseIcon />
+                </IconButton>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -444,7 +467,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
   const [pinning, setPinning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const editing = ctx.editing === msg.id
-  const pinnable = !msg.parent_id
+  const pinnable = !msg.parent_id && (!msg.pinned_until || ownsPin(msg, ctx.me.id))
   const name = msg.author?.name ?? 'Someone'
   const openThread = () => navigate({ search: (prev) => ({ ...prev, thread: msg.id, message: undefined }) })
 
@@ -469,7 +492,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
   async function unpin() {
     setError(null)
     try {
-      await api(`${messagePath(ctx.slug, msg.id)}/pin`, undefined, 'DELETE')
+      await unpinMessage(ctx.slug, msg.id)
     } catch (e) {
       setError(toFormErrors(e).error)
       return
@@ -500,7 +523,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
         {msg.pinned_until ? (
           <span className="flex items-center gap-1 text-caption text-secondary" title={`Pinned until ${fullTime(msg.pinned_until)}`}>
             <PinIcon size={14} />
-            Pinned until {shortDate(msg.pinned_until)}
+            Pinned{msg.pinned_by ? ` by ${msg.pinned_by.id === ctx.me.id ? 'you' : msg.pinned_by.name}` : ''} until {shortDate(msg.pinned_until)}
           </span>
         ) : null}
         {editing ? (

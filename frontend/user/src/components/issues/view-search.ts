@@ -17,7 +17,9 @@ export type ViewSearch = {
   cycle?: string
 }
 
-export type IssueGroup = { key: string; label: string; issues: Issue[]; status?: Status }
+export type PageGroup = { key: string; count: number; issues: Issue[]; has_more: boolean }
+export type IssuePage = { total: number; groups: PageGroup[] }
+export type IssueGroup = PageGroup & { label: string; status?: Status }
 
 const GROUPS = ['assignee', 'priority', 'none'] as const
 const SORTS = ['updated', 'created', 'due'] as const
@@ -53,64 +55,54 @@ export function filterValues(search: Record<string, unknown>, key: FilterKey): s
   return [...new Set(String(v).split(',').filter(Boolean))]
 }
 
+// The group the view shows: the board never ungrouped, My issues never by assignee.
+export function viewGroup(search: ViewSearch, mine?: boolean): GroupBy {
+  const wanted = search.group ?? 'status'
+  const allowed = mine && wanted === 'assignee' ? 'status' : wanted
+  return search.view === 'board' && allowed === 'none' ? 'status' : allowed
+}
+
+// First-page query for the issue endpoints: 50 per group, the view's group, sort and filters. My issues ignores the
+// assignee and cycle filters (it has neither).
+export function issuePageQuery(search: ViewSearch, mine?: boolean) {
+  const q = new URLSearchParams({ limit: '50', group: viewGroup(search, mine), sort: search.sort ?? 'priority' })
+  for (const key of pageFilters(mine)) if (search[key] !== undefined) q.set(key, String(search[key]))
+  return q.toString()
+}
+
+const pageFilters = (mine?: boolean) => (mine ? FILTER_KEYS.filter((k) => k !== 'assignee' && k !== 'cycle') : FILTER_KEYS)
+
+export const hasFilters = (search: ViewSearch, mine?: boolean) => pageFilters(mine).some((k) => search[k] !== undefined)
+
 export function filterParam(values: string[]) {
   if (values.length === 0) return undefined
   const v = values.join(',')
   return /^\d+$/.test(v) ? Number(v) : v
 }
 
-// OR within a filter, AND across filters.
-export function filterIssues(issues: Issue[], search: ViewSearch, userId: string) {
-  const status = filterValues(search, 'status')
-  const assignee = filterValues(search, 'assignee')
-  const label = filterValues(search, 'label')
-  const priority = filterValues(search, 'priority')
-  const cycle = filterValues(search, 'cycle')
-  return issues.filter(
-    (i) =>
-      (!status.length || status.includes(i.status.id)) &&
-      (!assignee.length ||
-        assignee.some((a) => (a === 'none' ? !i.assignee : a === 'me' ? i.assignee?.id === userId : i.assignee?.id === a))) &&
-      (!label.length || i.labels.some((l) => label.includes(l.id))) &&
-      (!priority.length || priority.includes(String(i.priority))) &&
-      (!cycle.length || cycle.includes(i.cycle?.id ?? 'none')),
-  )
-}
-
-const time = (s: string) => Date.parse(s)
-const priorityRank = (p: number) => (p === 0 ? 5 : p)
-
-// Ties fall back to the newest issue number.
-export function sortIssues(issues: Issue[], sort: SortBy) {
-  const by: Record<SortBy, (a: Issue, b: Issue) => number> = {
-    priority: (a, b) => priorityRank(a.priority) - priorityRank(b.priority),
-    updated: (a, b) => time(b.updated_at) - time(a.updated_at),
-    created: (a, b) => time(b.created_at) - time(a.created_at),
-    due: (a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'),
-  }
-  return [...issues].sort((a, b) => by[sort](a, b) || b.number - a.number)
-}
-
 export const PRIORITY_ORDER = [1, 2, 3, 4, 0]
 const PRIORITY_NAMES = ['No priority', 'Urgent', 'High', 'Medium', 'Low']
 
-// Every group in display order, empty ones included (the board shows them, the list hides them).
-export function groupIssues(issues: Issue[], group: GroupBy, ctx: { statuses: Status[]; members: Member[]; userId: string }): IssueGroup[] {
-  const of = (key: (i: Issue) => string) => (k: string) => issues.filter((i) => key(i) === k)
-  if (group === 'status') {
-    const take = of((i) => i.status.id)
-    return [...ctx.statuses].sort((a, b) => a.position - b.position).map((s) => ({ key: s.id, label: s.name, status: s, issues: take(s.id) }))
-  }
-  if (group === 'priority') {
-    const take = of((i) => String(i.priority))
-    return PRIORITY_ORDER.map((p) => ({ key: String(p), label: PRIORITY_NAMES[p]!, issues: take(String(p)) }))
-  }
+// Every group in display order with the server's first page (or more) of it; empty groups get count 0 (the board shows
+// them, the list hides them).
+export function orderGroups(page: IssuePage, group: GroupBy, ctx: { statuses: Status[]; members: Member[]; userId: string }): IssueGroup[] {
+  const byKey = new Map(page.groups.map((g) => [g.key, g]))
+  const fill = (key: string, label: string, status?: Status): IssueGroup => ({
+    count: 0,
+    issues: [],
+    has_more: false,
+    ...byKey.get(key),
+    key,
+    label,
+    ...(status ? { status } : {}),
+  })
+  if (group === 'status') return [...ctx.statuses].sort((a, b) => a.position - b.position).map((s) => fill(s.id, s.name, s))
+  if (group === 'priority') return PRIORITY_ORDER.map((p) => fill(String(p), PRIORITY_NAMES[p]!))
   if (group === 'assignee') {
-    const take = of((i) => i.assignee?.id ?? '')
     const people = new Map(ctx.members.map((m) => [m.id, m.name]))
-    for (const i of issues) if (i.assignee && !people.has(i.assignee.id)) people.set(i.assignee.id, i.assignee.name)
+    for (const g of page.groups) for (const i of g.issues) if (i.assignee && !people.has(i.assignee.id)) people.set(i.assignee.id, i.assignee.name)
     const ordered = [...people].sort(([a, an], [b, bn]) => Number(b === ctx.userId) - Number(a === ctx.userId) || an.localeCompare(bn))
-    return [...ordered.map(([id, name]) => ({ key: id, label: name, issues: take(id) })), { key: '', label: 'No assignee', issues: take('') }]
+    return [...ordered.map(([id, name]) => fill(id, name)), fill('none', 'No assignee')]
   }
-  return [{ key: 'all', label: 'All issues', issues }]
+  return [fill('all', 'All issues')]
 }

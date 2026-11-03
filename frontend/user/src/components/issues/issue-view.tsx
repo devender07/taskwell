@@ -20,6 +20,7 @@ import { Checkbox } from '@tether/shared/checkbox'
 import { Popover } from '@tether/shared/popover'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { Tabs } from '@tether/shared/tabs'
+import { ChevronDownIcon, ChevronRightIcon } from '@tether/shared/icons'
 import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Member, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -27,22 +28,25 @@ import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fiel
 import {
   FILTER_KEYS,
   PRIORITY_ORDER,
-  filterIssues,
   filterParam,
   filterValues,
-  groupIssues,
-  sortIssues,
+  issuePageQuery,
+  orderGroups,
+  viewGroup,
   type FilterKey,
   type GroupBy,
   type IssueGroup,
+  type IssuePage,
   type SortBy,
   type ViewSearch,
 } from './view-search'
+import { useIssuePages, usePageEnd } from './issue-pages'
 import './issues.css'
 
 type Props = {
   workspace: Workspace
-  issues: Issue[]
+  page: IssuePage
+  source: string
   statuses: Status[]
   labels: Label[]
   members: Member[]
@@ -53,10 +57,33 @@ type Props = {
 }
 type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
 // A board move shown before the loader data has it; `settled` once the save and its reload finished.
-type Override = { id: string; next: Partial<Issue>; key: string; by: GroupBy; settled: boolean }
+type Override = { issue: Issue; next: Partial<Issue>; key: string; by: GroupBy; settled: boolean }
 type Move = { issue: Issue; form: FormData; override: Override }
 
-const groupKey = (i: Issue, by: GroupBy) => (by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? '') : String(i.priority))
+const groupKey = (i: Issue, by: GroupBy) => (by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? 'none') : String(i.priority))
+
+// Moves each overridden card into its new group, at the top unless that group has loaded it (then it's patched in
+// place). Counts follow a card that moved between loaded groups; one not loaded anywhere is already counted there.
+function applyOverrides(groups: IssueGroup[], overrides: Override[], by: GroupBy) {
+  let out = groups
+  for (const o of overrides) {
+    if (o.by !== by) continue
+    const id = o.issue.id
+    const from = out.find((g) => g.issues.some((i) => i.id === id))
+    if (from?.key === o.key) {
+      out = out.map((g) => (g === from ? { ...g, issues: g.issues.map((i) => (i.id === id ? { ...i, ...o.next } : i)) } : g))
+      continue
+    }
+    out = out.map((g) =>
+      g === from
+        ? { ...g, count: g.count - 1, issues: g.issues.filter((i) => i.id !== id) }
+        : g.key === o.key
+          ? { ...g, count: g.count + (from ? 1 : 0), issues: [o.issue, ...g.issues] }
+          : g,
+    )
+  }
+  return out
+}
 
 const views = [
   { value: 'list', label: 'List' },
@@ -69,23 +96,22 @@ const sortOptions: Option[] = [
   { value: 'due', label: 'Due date' },
 ]
 
-// Toolbar plus list or board for an issue array; display options and filters live in the URL.
-export function IssueView({ workspace, issues: saved, statuses, labels, members, userId, search, mine, cycles }: Props) {
+// Toolbar plus list or board for the issues at `source`, starting from its first page (`page`, per group); display
+// options and filters live in the URL and the server applies them.
+export function IssueView({ workspace, page, source, statuses, labels, members, userId, search, mine, cycles }: Props) {
   const navigate = useNavigate()
   const router = useRouter()
   const [overrides, setOverrides] = useState<Override[]>([])
-  const [seen, setSeen] = useState(saved)
-  if (saved !== seen) {
-    setSeen(saved)
-    // Kept until fresh data has the move, so the card never shows in its old column in between. A settled move the
-    // data still disagrees with (someone else moved it meanwhile) gives way to the data.
-    const left = overrides.filter((o) => !o.settled && saved.some((i) => i.id === o.id && groupKey(i, o.by) !== o.key))
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const [seen, setSeen] = useState(page)
+  if (page !== seen) {
+    setSeen(page)
+    // Kept until fresh data has the move, so the card never shows in its old column in between. A settled move gives
+    // way to the data (which may have it further down its new column, or somewhere else if someone moved it meanwhile).
+    const loaded = page.groups.flatMap((g) => g.issues)
+    const left = overrides.filter((o) => !o.settled && !loaded.some((i) => i.id === o.issue.id && groupKey(i, o.by) === o.key))
     if (left.length !== overrides.length) setOverrides(left)
   }
-  const issues = useMemo(
-    () => (overrides.length ? saved.map((i) => overrides.reduce((cur, o) => (o.id === i.id ? { ...cur, ...o.next } : cur), i)) : saved),
-    [saved, overrides],
-  )
   const [error, move] = useActionState(async (_prev: string | null, { issue, form, override }: Move) => {
     const mine = (o: Override) => o === override
     try {
@@ -101,10 +127,13 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
   }, null)
 
   const view = search.view ?? 'list'
-  const wanted = search.group ?? 'status'
-  const allowed = mine && wanted === 'assignee' ? 'status' : wanted
-  const group: GroupBy = view === 'board' && allowed === 'none' ? 'status' : allowed
+  const group = viewGroup(search, mine)
   const sort: SortBy = search.sort ?? 'priority'
+  const pages = useIssuePages(page, source, issuePageQuery(search, mine))
+  const groups = useMemo(
+    () => applyOverrides(orderGroups(pages.page, group, { statuses, members, userId }), overrides, group),
+    [pages.page, group, statuses, members, userId, overrides],
+  )
   const setSearch = (next: ViewSearch) => navigate({ to: '.', search: next })
 
   const choices: Choice[] = [
@@ -131,10 +160,6 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
   const active = choices
     .map((c) => ({ ...c, values: filterValues(search, c.key).filter((v) => c.options.some((o) => o.value === v)) }))
     .filter((c) => c.values.length > 0)
-  const effective: ViewSearch = Object.fromEntries(active.map((c) => [c.key, filterParam(c.values)]))
-
-  const shown = sortIssues(filterIssues(issues, effective, userId), sort)
-  const groups = groupIssues(shown, group, { statuses, members, userId })
 
   const setFilter = (key: FilterKey, values: string[]) => setSearch({ ...search, [key]: filterParam(values) })
   const clearFilters = () => setSearch(Object.fromEntries(Object.entries(search).filter(([k]) => !FILTER_KEYS.includes(k as FilterKey))))
@@ -156,14 +181,14 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
       next = { status }
     } else if (group === 'assignee') {
       const m = members.find((m) => m.id === key)
-      form.set('assignee_id', key)
+      form.set('assignee_id', key === 'none' ? '' : key)
       next = { assignee: m ? { id: m.id, name: m.name } : null }
     } else {
       form.set('priority', key)
       next = { priority: Number(key) }
     }
-    const override: Override = { id: issue.id, next, key, by: group, settled: false }
-    setOverrides((list) => [...list.filter((o) => o.id !== issue.id), override])
+    const override: Override = { issue: { ...issue, ...next }, next, key, by: group, settled: false }
+    setOverrides((list) => [...list.filter((o) => o.issue.id !== issue.id), override])
     startTransition(() => move({ issue, form, override }))
   }
 
@@ -191,7 +216,7 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
         />
         <FilterMenu choices={choices} search={search} onChange={setFilter} />
         <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>
-          {shown.length} {shown.length === 1 ? 'issue' : 'issues'}
+          {page.total} {page.total === 1 ? 'issue' : 'issues'}
         </span>
       </div>
       {active.length > 0 ? (
@@ -209,30 +234,51 @@ export function IssueView({ workspace, issues: saved, statuses, labels, members,
       ) : null}
       <FormError>{error}</FormError>
       {view === 'board' ? (
-        <Board workspace={workspace.slug} groups={groups} by={group} onMove={onMove} />
-      ) : shown.length === 0 ? (
+        <Board workspace={workspace.slug} groups={groups} by={group} onMove={onMove} more={pages.more} errorOf={pages.error} />
+      ) : page.total === 0 ? (
         <p className="text-body-sm text-secondary p-6 bg-surface border rounded-lg text-center">No issues match these filters.</p>
       ) : (
         groups
-          .filter((g) => g.issues.length > 0)
-          .map((g) => (
-            <section key={g.key} className="bg-surface border rounded-lg overflow-hidden" aria-label={group === 'none' ? 'Issues' : g.label}>
-              {group === 'none' ? null : (
-                <header className="issue-group-header">
-                  <GroupIcon group={g} by={group} />
-                  <span className="text-label">{g.label}</span>
-                  <span className="text-caption text-secondary">{g.issues.length}</span>
-                </header>
-              )}
-              <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
-                {g.issues.map((issue) => (
-                  <li key={issue.id}>
-                    <IssueRow workspace={workspace.slug} issue={issue} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))
+          .filter((g) => g.count > 0 || g.issues.length > 0)
+          .map((g) => {
+            const open = group === 'none' || !collapsed.has(`${group}:${g.key}`)
+            return (
+              <section key={g.key} className="bg-surface border rounded-lg overflow-hidden" aria-label={group === 'none' ? 'Issues' : g.label}>
+                {group === 'none' ? null : (
+                  <h2 className="m-0">
+                    <button
+                      type="button"
+                      className="issue-group-header issue-group-toggle"
+                      aria-expanded={open}
+                      onClick={() =>
+                        setCollapsed((prev) => {
+                          const next = new Set(prev)
+                          const key = `${group}:${g.key}`
+                          if (!next.delete(key)) next.add(key)
+                          return next
+                        })
+                      }
+                    >
+                      {open ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+                      <GroupIcon group={g} by={group} />
+                      <span className="text-label">{g.label}</span>
+                      <span className="text-caption text-secondary">{g.count}</span>
+                    </button>
+                  </h2>
+                )}
+                {open ? (
+                  <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
+                    {g.issues.map((issue) => (
+                      <li key={issue.id}>
+                        <IssueRow workspace={workspace.slug} issue={issue} />
+                      </li>
+                    ))}
+                    <GroupEnd group={g} more={pages.more} error={pages.error(g.key)} />
+                  </ul>
+                ) : null}
+              </section>
+            )
+          })
       )}
     </div>
   )
@@ -293,9 +339,18 @@ function FilterMenu({ choices, search, onChange }: { choices: Choice[]; search: 
   )
 }
 
+// The end of a group while it has more: loads the next page as it scrolls into view (the board's column scrolls on its
+// own, the list with the window).
+function GroupEnd({ group, more, error, scroller }: { group: IssueGroup; more: (key: string) => void; error?: string; scroller?: boolean }) {
+  const ref = usePageEnd<HTMLLIElement>(group.has_more && !error ? more : null, group.key, group.issues.length, scroller)
+  if (error) return <li role="alert" className="page-end text-caption text-accent">{error}</li>
+  if (!group.has_more) return null
+  return <li ref={ref} className="page-end text-caption text-secondary">Loading more…</li>
+}
+
 function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
   if (group.status) return <StatusIcon status={group.status} />
-  if (by === 'assignee' && group.key) return <Avatar name={group.label} size={20} src={avatarSrc(group.key)} />
+  if (by === 'assignee' && group.key !== 'none') return <Avatar name={group.label} size={20} src={avatarSrc(group.key)} />
   return null
 }
 
@@ -378,7 +433,16 @@ const EDGE_PX = 56 // dragging this close to the board's side scrolls it, so off
 // Columns are drop targets ([data-column]); cards drag with pointer events so mouse, pen and touch all work.
 // Touch needs a short hold first, so a swipe still scrolls the board. From the keyboard, Shift+←/→ on a focused card
 // moves it to the next column, announced in a live region. Cards are memoized, so a drag re-renders only the columns.
-function Board({ workspace, groups, by, onMove }: { workspace: string; groups: IssueGroup[]; by: GroupBy; onMove: (issue: Issue, key: string) => void }) {
+type BoardProps = {
+  workspace: string
+  groups: IssueGroup[]
+  by: GroupBy
+  onMove: (issue: Issue, key: string) => void
+  more: (key: string) => void
+  errorOf: (key: string) => string | undefined
+}
+
+function Board({ workspace, groups, by, onMove, more, errorOf }: BoardProps) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const boardRef = useRef<HTMLDivElement>(null)
@@ -537,7 +601,7 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
           <header className="flex items-center gap-2 px-2">
             <GroupIcon group={g} by={by} />
             <span className="text-label ellipsis">{g.label}</span>
-            <span className="text-caption text-secondary">{g.issues.length}</span>
+            <span className="text-caption text-secondary">{g.count}</span>
           </header>
           <ul className="board-cards">
             {g.issues.map((issue) => (
@@ -545,6 +609,7 @@ function Board({ workspace, groups, by, onMove }: { workspace: string; groups: I
                 <BoardCard workspace={workspace} issue={issue} column={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={handlers} />
               </li>
             ))}
+            <GroupEnd group={g} more={more} error={errorOf(g.key)} scroller />
           </ul>
         </section>
       ))}

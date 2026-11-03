@@ -107,8 +107,8 @@ Plan: `docs/mcp-plan.md`.
 
 - Slack
 - [x] Roadmap view: project start/target dates, milestones, timeline with cycles (docs/roadmap-plan.md)
-- Customer feedback intake
-- Public API and webhooks
+- [x] Customer feedback intake (docs/feedback-plan.md): public form link per workspace, Feedback inbox (new / linked / archived), link to or create an issue, customer feedback on the issue page, `feedback.manage`
+- [x] Public API and webhooks (docs/webhooks-plan.md): API reference at `/docs/api`; signed outbound webhooks for issue.created / issue.updated / issue.deleted / comment.created with retries, delivery log and redeliver (Settings → Webhooks, `integrations.manage`)
 - Billing (Stripe, per seat)
 
 ## Not building until a customer asks

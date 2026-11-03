@@ -72,6 +72,14 @@
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border);
 }
+/* A list group's header is a button that collapses it. */
+.issue-group-toggle { width: 100%; min-height: 44px; padding-left: 16px; color: var(--text); font: inherit; text-align: left; border: 0; cursor: pointer; }
+.issue-group-toggle[aria-expanded='true'] { border-bottom: 1px solid var(--border); }
+.issue-group-toggle > svg:first-child { color: var(--text-2); }
+.issue-group-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (hover: hover) {
+  .issue-group-toggle:hover { background: rgba(255, 255, 255, 0.04); }
+}
 
 .filter-chip {
   display: inline-flex;
@@ -100,13 +108,15 @@
   flex-shrink: 0;
   width: 280px;
   min-height: 0;
-  padding: 12px 8px;
+  padding: 12px 0 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 .board-column[data-over] { border-color: var(--link); }
-.board-cards { display: grid; align-content: start; gap: 8px; min-height: 0; margin: 0; padding: 2px; overflow-y: auto; list-style: none; }
+.board-column > header { margin-inline: 8px; }
+.board-cards { display: grid; align-content: start; gap: 8px; min-height: 0; margin: 0; padding: 2px 8px 12px; overflow-y: auto; list-style: none; }
+.page-end { min-height: 1px; padding: 8px; text-align: center; }
 .board-card {
   display: grid;
   gap: 8px;

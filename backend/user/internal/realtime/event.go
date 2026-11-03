@@ -95,6 +95,12 @@ func Cycle(slug, key string, number int) string {
 	return Cycles(slug, key) + "/" + strconv.Itoa(number)
 }
 
+// CycleIssues is the cycle's issue list.
+func CycleIssues(slug, key string, number int) string { return Cycle(slug, key, number) + "/issues" }
+
+// Feedback is the workspace's feedback inbox; its count and an issue's feedback hang off it and the issue.
+func Feedback(slug string) string { return Workspace(slug) + "/feedback" }
+
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
 // Activity is the workspace's activity feed on Home.

@@ -10,7 +10,6 @@ import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
 import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
-import { groupIssues } from '@/components/issues/view-search'
 import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
@@ -83,7 +82,10 @@ type AssignedProps = { workspace: Workspace; issues: Issue[]; statuses: Status[]
 
 export function AssignedToMe({ workspace, issues, statuses, others }: AssignedProps) {
   const { openCreate } = useShortcuts()
-  const groups = groupIssues(issues, 'status', { statuses, members: [], userId: '' }).filter((g) => g.issues.length > 0)
+  const groups = [...statuses]
+    .sort((a, b) => a.position - b.position)
+    .map((s) => ({ key: s.id, label: s.name, status: s, issues: issues.filter((i) => i.status.id === s.id) }))
+    .filter((g) => g.issues.length > 0)
   return (
     <Card
       title="Assigned to me"

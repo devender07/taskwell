@@ -7,6 +7,7 @@ import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { PullRequests } from '@/components/issues/pull-requests'
+import { IssueFeedback } from '@/components/feedback/issue-feedback'
 import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
 import { TestsSection } from '@/components/tests/tests'
@@ -90,6 +91,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           )}
           <Relations key={issue.id} workspace={workspace} issue={issue} />
           <PullRequests issue={issue} />
+          <IssueFeedback key={`feedback-${issue.id}`} workspace={workspace} identifier={issue.identifier} />
           <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} members={members} />
         </article>
         <aside className="issue-aside grid gap-4">

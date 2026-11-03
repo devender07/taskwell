@@ -38,6 +38,8 @@ type msgRef struct {
 	id, parentID string
 	mine         bool // the caller wrote it
 	deleted      bool
+	pinnedBy     string // who pinned it while the pin lasts; "" when unpinned or they're gone
+	pinned       bool
 	chat         ref
 }
 
@@ -454,6 +456,7 @@ type Message struct {
 	CanEdit     bool            `json:"can_edit"`
 	CanDelete   bool            `json:"can_delete"`
 	PinnedUntil *time.Time      `json:"pinned_until"`
+	PinnedBy    json.RawMessage `json:"pinned_by"`
 }
 
 // msgCols selects a Message m as the user $1 sees it.
@@ -468,12 +471,13 @@ const msgCols = `m.id::text, m.chat_id::text, m.parent_id::text,
 	          json_agg(case when x.user_id = $1 then 'You' else u.name end order by x.created_at, u.id) people
 	        from message_reactions x join users u on u.id = x.user_id where x.message_id = m.id group by x.emoji) e), '[]'),
 	coalesce(m.author_id = $1 and m.deleted_at is null, false),
-	case when m.pinned_until > now() and m.deleted_at is null then m.pinned_until end`
+	case when m.pinned_until > now() and m.deleted_at is null then m.pinned_until end,
+	(select json_build_object('id', u.id, 'name', u.name) from users u where u.id = m.pinned_by and m.pinned_until > now())`
 
 func scanMessage(row pgx.CollectableRow) (Message, error) {
 	var msg Message
 	err := row.Scan(&msg.ID, &msg.ChatID, &msg.ParentID, &msg.Author, &msg.Body, &msg.Deleted, &msg.CreatedAt, &msg.EditedAt,
-		&msg.ReplyCount, &msg.LastReplyAt, &msg.Repliers, &msg.Reactions, &msg.CanEdit, &msg.PinnedUntil)
+		&msg.ReplyCount, &msg.LastReplyAt, &msg.Repliers, &msg.Reactions, &msg.CanEdit, &msg.PinnedUntil, &msg.PinnedBy)
 	msg.CanDelete, msg.CreatedAt = msg.CanEdit, msg.CreatedAt.UTC()
 	for _, t := range []**time.Time{&msg.EditedAt, &msg.LastReplyAt, &msg.PinnedUntil} {
 		if *t != nil {
@@ -555,10 +559,11 @@ func (m *model) messageRef(ctx context.Context, userID, wsID, id string) (*msgRe
 	var r msgRef
 	err := m.db.QueryRow(ctx,
 		`select m.id::text, coalesce(m.parent_id::text, ''), coalesce(m.author_id = $1, false), m.deleted_at is not null,
+		        coalesce(m.pinned_until > now(), false), case when m.pinned_until > now() then coalesce(m.pinned_by::text, '') else '' end,
 		        c.id::text, c.kind, coalesce(c.created_by::text, '')
 		 from messages m join chats c on c.id = m.chat_id
 		 where m.id = $2 and c.workspace_id = $3 and `+access, userID, id, wsID).
-		Scan(&r.id, &r.parentID, &r.mine, &r.deleted, &r.chat.id, &r.chat.kind, &r.chat.createdBy)
+		Scan(&r.id, &r.parentID, &r.mine, &r.deleted, &r.pinned, &r.pinnedBy, &r.chat.id, &r.chat.kind, &r.chat.createdBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -719,8 +724,8 @@ func (m *model) deleteMessage(ctx context.Context, sc scope, r msgRef) error {
 // pin pins the message for days, or unpins it when days is 0.
 func (m *model) pin(ctx context.Context, sc scope, r msgRef, days int) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `update messages set pinned_until = case when $2 > 0 then now() + make_interval(days => $2) end
-			where id = $1`, r.id, days); err != nil {
+		if _, err := tx.Exec(ctx, `update messages set pinned_until = case when $2 > 0 then now() + make_interval(days => $2) end,
+			pinned_by = case when $2 > 0 then $3::uuid end where id = $1`, r.id, days, sc.userID); err != nil {
 			return err
 		}
 		return messageChanged(ctx, tx, sc, r.chat, r.root())

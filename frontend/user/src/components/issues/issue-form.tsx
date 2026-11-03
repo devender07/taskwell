@@ -8,15 +8,16 @@ import type { Doc } from '@tether/shared/rich-text'
 import { RichEditor } from './rich-editor'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { dueDate, issueDescription, issueTitle } from '@tether/shared/validate'
-import { api, issuePath, toFormErrors, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
-import { reloadPage } from '@/realtime'
+import { api, feedbackPath, issuePath, toFormErrors, updateFeedback, uploadFile, type CycleRef, type FieldErrors, type Issue, type IssueRef, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { refetchPaths, reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelSelect, assigneeOptions, priorityOptions, statusOptions } from './fields'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
-// Quick-create filled in from elsewhere (a failed test's "Create bug"); `blocks` links the new issue as blocking that one.
-export type Prefill = { title: string; description: Doc; blocks?: string }
+// Quick-create filled in from elsewhere (a failed test's "Create bug", a feedback's "Create issue"); `blocks` links the
+// new issue as blocking that one, `feedback` links that feedback to the new issue.
+export type Prefill = { title: string; description: Doc; blocks?: string; feedback?: string }
 
 type CreateProps = { workspace: Workspace; project: Project; projectPicker?: ReactNode; parent?: IssueRef; cycle?: CycleRef; prefill?: Prefill; statuses: Status[]; labels: Label[]; members: Member[] }
 
@@ -57,6 +58,10 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
       link.set('type', 'blocks')
       link.set('issue', prefill.blocks)
       await api(`${issuePath(workspace, issue.identifier)}/links`, link).catch(() => {})
+    }
+    if (prefill?.feedback) {
+      await updateFeedback(workspace.slug, prefill.feedback, { issue: issue.identifier }).catch(() => {})
+      refetchPaths([feedbackPath(workspace.slug), `${feedbackPath(workspace.slug)}/count`])
     }
     await navigate({ to: '/$workspace/issue/$identifier', params: { workspace: workspace.slug, identifier: issue.identifier } })
     return {}

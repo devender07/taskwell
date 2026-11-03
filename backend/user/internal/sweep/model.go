@@ -25,6 +25,7 @@ var retention = []struct{ table, where string }{
 	{"auth_tokens", `coalesce(used_at, expires_at) < now() - interval '1 day'`},
 	{"notifications", `read_at < now() - interval '90 days'`},
 	{"outbound_mail", `failed_at < now() - interval '30 days'`},
+	{"webhook_deliveries", `created_at < now() - interval '30 days'`},
 	// The longest failure window is an hour; sign-in attempts also prune them as they go.
 	{"auth_failures", `at < now() - interval '1 day'`},
 	// Presence prunes rows past 90s every 30s while any instance runs; this catches the rest.

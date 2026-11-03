@@ -3,10 +3,8 @@ package gitlink
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -93,7 +91,7 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request, userID string)
 	if !ok || err != nil {
 		return err
 	}
-	token, plain := randomToken(), randomToken()
+	token, plain := web.RandomToken(), web.RandomToken()
 	sealed, err := secret.Seal(h.key, sealAD(ws.ID, provider), plain)
 	if err != nil {
 		return err
@@ -321,13 +319,6 @@ func notConnected(provider string) string { return providerNames[provider] + " i
 func changed(ws *workspace.Workspace, userID string) realtime.Event {
 	return realtime.Event{Kind: "integrations.changed", Workspace: ws.Slug, Actor: userID, Audience: realtime.ToWorkspace(ws.ID),
 		Paths: []string{integrationsPath(ws.Slug)}}
-}
-
-// randomToken is 32 random bytes, base64url.
-func randomToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b) // crypto/rand.Read never returns an error (Go 1.24+)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

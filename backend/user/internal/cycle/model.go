@@ -352,7 +352,7 @@ func publish(ctx context.Context, tx pgx.Tx, e realtime.Event, p *project, numbe
 	e.Paths = []string{realtime.Project(e.Workspace, key), realtime.ProjectIssues(e.Workspace, key), realtime.Cycles(e.Workspace, key),
 		realtime.Roadmap(e.Workspace)}
 	for _, n := range numbers {
-		e.Paths = append(e.Paths, realtime.Cycle(e.Workspace, key, n))
+		e.Paths = append(e.Paths, realtime.Cycle(e.Workspace, key, n), realtime.CycleIssues(e.Workspace, key, n))
 	}
 	for _, id := range issues {
 		e.Paths = append(e.Paths, realtime.IssuePaths(e.Workspace, id, key)...)

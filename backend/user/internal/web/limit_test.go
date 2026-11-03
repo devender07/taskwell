@@ -1,4 +1,4 @@
-package auth
+package web_test
 
 import (
 	"context"
@@ -9,18 +9,19 @@ import (
 	"time"
 
 	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/tether/backend/user/internal/web"
 )
 
 func TestLimiter(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := t.Context()
-	l := limiter{pool, dbtest.Name("test"), 3, time.Minute}
+	l := web.Limiter{pool, dbtest.Name("test"), 3, time.Minute}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `delete from rate_limits where key like $1`, l.name+":%")
+		_, _ = pool.Exec(context.Background(), `delete from rate_limits where key like $1`, l.Name+":%")
 	})
 	take := func(key string) time.Duration {
 		t.Helper()
-		wait, err := l.take(ctx, key)
+		wait, err := l.Take(ctx, key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -29,7 +30,7 @@ func TestLimiter(t *testing.T) {
 	// age moves key's bucket d into the past, as if d had gone by.
 	age := func(key string, d time.Duration) {
 		t.Helper()
-		if _, err := pool.Exec(ctx, `update rate_limits set at = at - make_interval(secs => $2) where key = $1`, l.name+":"+key, d.Seconds()); err != nil {
+		if _, err := pool.Exec(ctx, `update rate_limits set at = at - make_interval(secs => $2) where key = $1`, l.Name+":"+key, d.Seconds()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,15 +71,15 @@ func TestLimiter(t *testing.T) {
 // TestLimiterConcurrent checks the upsert is atomic: of many simultaneous takes, exactly burst succeed.
 func TestLimiterConcurrent(t *testing.T) {
 	pool := dbtest.Pool(t)
-	l := limiter{pool, dbtest.Name("test"), 5, time.Hour}
+	l := web.Limiter{pool, dbtest.Name("test"), 5, time.Hour}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `delete from rate_limits where key like $1`, l.name+":%")
+		_, _ = pool.Exec(context.Background(), `delete from rate_limits where key like $1`, l.Name+":%")
 	})
 	var ok atomic.Int32
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Go(func() {
-			wait, err := l.take(t.Context(), "k")
+			wait, err := l.Take(t.Context(), "k")
 			if err != nil {
 				t.Error(err)
 			}
@@ -107,37 +108,8 @@ func TestClientIP(t *testing.T) {
 		if tc.xff != "" {
 			r.Header.Set("X-Forwarded-For", tc.xff)
 		}
-		if got := clientIP(r); got != tc.want {
+		if got := web.ClientIP(r); got != tc.want {
 			t.Errorf("%s xff %q: got %s, want %s", tc.remote, tc.xff, got, tc.want)
-		}
-	}
-}
-
-func TestSameOrigin(t *testing.T) {
-	const base = "https://app.tether.so/"
-	for _, tc := range []struct {
-		name, site, origin string
-		want               bool
-	}{
-		{"same origin", "same-origin", "https://app.tether.so", true},
-		{"typed in", "none", "", true},
-		{"cross site", "cross-site", "https://evil.example", false},
-		{"sibling subdomain", "same-site", "https://evil.tether.so", false},
-		{"API on its own subdomain", "same-site", "https://app.tether.so", true},
-		{"old browser, our origin", "", "https://app.tether.so", true},
-		{"old browser, other origin", "", "https://evil.example", false},
-		{"opaque origin", "cross-site", "null", false},
-		{"not a browser", "", "", true},
-	} {
-		r := httptest.NewRequest("POST", "/api/auth/signin", nil)
-		if tc.site != "" {
-			r.Header.Set("Sec-Fetch-Site", tc.site)
-		}
-		if tc.origin != "" {
-			r.Header.Set("Origin", tc.origin)
-		}
-		if got := sameOrigin(r, base); got != tc.want {
-			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

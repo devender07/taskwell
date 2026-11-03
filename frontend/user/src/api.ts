@@ -143,6 +143,7 @@ export type Message = {
   can_edit: boolean
   can_delete: boolean
   pinned_until: string | null
+  pinned_by: PersonRef | null
 }
 // Oldest first; `?before=` the first message's id fetches the page before it. `pinned` is the chat's pins, newest first.
 export type MessagePage = { messages: Message[]; has_more: boolean; pinned: Message[] }
@@ -173,6 +174,33 @@ export type NotificationSettings = {
   chat: boolean
   timezone: string | null // null until chosen
 }
+
+export type FeedbackState = 'new' | 'linked' | 'archived'
+// issue: null when unlinked, or when it's in a private project the caller can't see.
+export type Feedback = {
+  id: string
+  body: string
+  email: string | null
+  name: string | null
+  source: 'form' | 'member'
+  issue: { identifier: string; title: string; status: Pick<Status, 'name' | 'color' | 'category'> } | null
+  archived: boolean
+  created_by: PersonRef | null
+  created_at: string
+}
+// Newest first; `&before=` the last item's id fetches the next page.
+export type FeedbackPage = { items: Feedback[]; has_more: boolean }
+export type FeedbackForm = { enabled: boolean; token: string | null }
+
+export const feedbackPath = (workspace: string) => `${workspacePath(workspace)}/feedback`
+export const feedbackListPath = (workspace: string, state: FeedbackState, q: string) => `${feedbackPath(workspace)}?${new URLSearchParams({ state, q })}`
+export const feedbackFormPath = (workspace: string) => `${workspacePath(workspace)}/feedback-form`
+export const updateFeedback = (workspace: string, id: string, fields: Record<string, string>) => {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.set(k, v)
+  return api<Feedback>(`${feedbackPath(workspace)}/${encodeURIComponent(id)}`, form)
+}
+export const deleteFeedback = (workspace: string, id: string) => api(`${feedbackPath(workspace)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
   `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
@@ -224,6 +252,40 @@ export const connectIntegration = (workspace: string, provider: Provider) =>
   api<{ integration: Integration; secret: string }>(integrationPath(workspace, provider), new FormData())
 export const updateIntegration = (workspace: string, provider: Provider, form: FormData) => api<Integration>(`${integrationPath(workspace, provider)}/settings`, form)
 export const disconnectIntegration = (workspace: string, provider: Provider) => api(integrationPath(workspace, provider), undefined, 'DELETE')
+
+export type WebhookEvent = 'issue.created' | 'issue.updated' | 'issue.deleted' | 'comment.created'
+export type DeliveryStatus = 'pending' | 'delivered' | 'failed'
+export type Webhook = {
+  id: string
+  url: string
+  events: WebhookEvent[]
+  active: boolean
+  created_at: string
+  last_delivery: { status: DeliveryStatus; response_code: number | null; created_at: string } | null
+}
+export type WebhookDelivery = {
+  id: string
+  event: WebhookEvent | 'ping'
+  status: DeliveryStatus
+  attempts: number
+  response_code: number | null
+  response_error: string | null
+  created_at: string
+  delivered_at: string | null
+  next_at: string
+  payload: unknown
+}
+
+export const webhooksPath = (workspace: string) => `${workspacePath(workspace)}/webhooks`
+export const webhookPath = (workspace: string, id: string) => `${webhooksPath(workspace)}/${encodeURIComponent(id)}`
+export const deliveriesPath = (workspace: string, id: string) => `${webhookPath(workspace, id)}/deliveries`
+export const createWebhook = (workspace: string, form: FormData) => api<{ webhook: Webhook; secret: string }>(webhooksPath(workspace), form)
+export const updateWebhook = (workspace: string, id: string, form: FormData) => api<Webhook>(webhookPath(workspace, id), form)
+export const rollWebhookSecret = (workspace: string, id: string) => api<{ secret: string }>(`${webhookPath(workspace, id)}/secret`, new FormData())
+export const testWebhook = (workspace: string, id: string) => api(`${webhookPath(workspace, id)}/test`, new FormData())
+export const deleteWebhook = (workspace: string, id: string) => api(webhookPath(workspace, id), undefined, 'DELETE')
+export const redeliver = (workspace: string, id: string, delivery: string) =>
+  api(`${deliveriesPath(workspace, id)}/${encodeURIComponent(delivery)}/redeliver`, new FormData())
 
 export const tokensPath = '/me/tokens'
 export function createToken(name: string) {

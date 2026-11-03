@@ -207,7 +207,8 @@ func (n names) event(kind, actorID string, paths ...string) realtime.Event {
 		Project: n.projectID}
 }
 
-// relatedPaths are the pages of the issue's parent, sub-issues and linked issues, and its cycle's (which count it).
+// relatedPaths are the pages of the issue's parent, sub-issues and linked issues, and its cycle's (which count and
+// list it).
 // ponytail: a linked issue in another private project isn't told (the event's audience is this issue's project), so
 // its page shows this one stale until reloaded; publish per related project if that matters.
 func (n names) relatedPaths() []string {
@@ -216,7 +217,8 @@ func (n names) relatedPaths() []string {
 		ps[i] = realtime.Issue(n.slug, r)
 	}
 	if n.cycle != nil {
-		ps = append(ps, realtime.Cycles(n.slug, n.key), realtime.Cycle(n.slug, n.key, *n.cycle))
+		ps = append(ps, realtime.Cycles(n.slug, n.key), realtime.Cycle(n.slug, n.key, *n.cycle),
+			realtime.CycleIssues(n.slug, n.key, *n.cycle))
 	}
 	return ps
 }
@@ -247,9 +249,9 @@ func (m *model) projectID(ctx context.Context, workspaceID, key, viewerID string
 	return id, nil
 }
 
-// maxList caps a list's issues.
-// ponytail: newest maxList only, older ones are unreachable; add keyset pagination (number / created_at, id) when
-// a project or assignee gets near it.
+// maxList caps an unpaged list's issues (the app pages them: see page).
+// ponytail: newest maxList only, older ones are unreachable to unpaged callers (the MCP server); have them page
+// when a project or assignee gets near it.
 const maxList = 2000
 
 // inCycle returns the cycle's issues, newest first.
@@ -279,6 +281,129 @@ func (m *model) issues(ctx context.Context, where string, args ...any) ([]Issue,
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	return is, nil
+}
+
+// pageQuery is a paged list request (see readPage): the first limit issues of every group, or with in set the next
+// limit after offset of that group only. Empty filters match everything.
+type pageQuery struct {
+	limit, offset                       int
+	group, sort                         string
+	in                                  *string
+	statuses, assignees, labels, cycles []string
+	priorities                          []int
+	noAssignee, noCycle                 bool
+}
+
+// Group is one group of a paged list: its key, how many issues it has and a page of them.
+type Group struct {
+	Key     string  `json:"key"`
+	Count   int     `json:"count"`
+	Issues  []Issue `json:"issues"`
+	HasMore bool    `json:"has_more"`
+}
+
+// groupBy and sortBy are the SQL for pageQuery's group and sort; their keys are the only valid values.
+var (
+	groupBy = map[string]string{"status": `i.status_id::text`, "assignee": `coalesce(i.assignee_id::text, 'none')`,
+		"priority": `i.priority::text`, "none": `'all'`}
+	sortBy = map[string]string{"priority": `i.priority = 0, i.priority`, "updated": `i.updated_at desc`,
+		"created": `i.created_at desc`, "due": `i.due_date nulls last`}
+)
+
+func (m *model) listPage(ctx context.Context, projectID string, q pageQuery) ([]Group, error) {
+	return m.page(ctx, q, `i.project_id = $1`, projectID)
+}
+
+func (m *model) assignedPage(ctx context.Context, workspaceID, userID string, q pageQuery) ([]Group, error) {
+	return m.page(ctx, q, `i.workspace_id = $1 and i.assignee_id = $2 and p.archived_at is null and can_see_project(p.id, $2)`,
+		workspaceID, userID)
+}
+
+func (m *model) cyclePage(ctx context.Context, cycleID string, q pageQuery) ([]Group, error) {
+	return m.page(ctx, q, `i.cycle_id = $1`, cycleID)
+}
+
+// page returns q's groups (only non-empty ones, by key) of the issues matching where and q's filters, each issue
+// in q's sort order (ties: newest number, then id).
+// ponytail: offset paging shifts by one when issues move between groups mid-scroll (a duplicate the client drops, or
+// a skipped issue until the next reload); keyset paging on the sort key, number and id when that matters.
+func (m *model) page(ctx context.Context, q pageQuery, where string, args ...any) ([]Group, error) {
+	arg := func(v any) string {
+		args = append(args, v)
+		return "$" + strconv.Itoa(len(args))
+	}
+	// oneOf adds "(col = any(ids) or col is null)", leaving out the side that's empty.
+	oneOf := func(col, typ string, ids any, n int, none bool) {
+		var or []string
+		if n > 0 {
+			or = append(or, col+` = any(`+arg(ids)+`::`+typ+`[])`)
+		}
+		if none {
+			or = append(or, col+` is null`)
+		}
+		if len(or) > 0 {
+			where += ` and (` + strings.Join(or, ` or `) + `)`
+		}
+	}
+	oneOf(`i.status_id`, `uuid`, q.statuses, len(q.statuses), false)
+	oneOf(`i.assignee_id`, `uuid`, q.assignees, len(q.assignees), q.noAssignee)
+	oneOf(`i.priority`, `int`, q.priorities, len(q.priorities), false)
+	oneOf(`i.cycle_id`, `uuid`, q.cycles, len(q.cycles), q.noCycle)
+	if len(q.labels) > 0 {
+		where += ` and exists(select 1 from issue_labels il where il.issue_id = i.id and il.label_id = any(` + arg(q.labels) + `::uuid[]))`
+	}
+	group := groupBy[q.group]
+	if q.in != nil {
+		where += ` and ` + group + ` = ` + arg(*q.in)
+	}
+	rows, err := m.db.Query(ctx, `with g as (
+		  select i.id, `+group+` k, count(*) over (partition by `+group+`) n,
+		         row_number() over (partition by `+group+` order by `+sortBy[q.sort]+`, i.number desc, i.id) rn
+		  from issues i join projects p on p.id = i.project_id where `+where+`)
+		select g.k, g.n, `+listCols+` join g on g.id = i.id
+		where g.rn > `+arg(q.offset)+` and g.rn <= `+arg(q.offset+q.limit)+` order by g.k, g.rn`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("page issues: %w", err)
+	}
+	defer rows.Close()
+	gs := []Group{}
+	for rows.Next() {
+		var key string
+		var count int
+		i, err := scanIssue(prefixed{rows, []any{&key, &count}})
+		if err != nil {
+			return nil, fmt.Errorf("page issues: %w", err)
+		}
+		if len(gs) == 0 || gs[len(gs)-1].Key != key {
+			gs = append(gs, Group{Key: key, Count: count, HasMore: count > q.offset+q.limit})
+		}
+		gs[len(gs)-1].Issues = append(gs[len(gs)-1].Issues, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("page issues: %w", err)
+	}
+	return gs, nil
+}
+
+// prefixed scans head's columns, then the ones its caller asks for.
+type prefixed struct {
+	pgx.Row
+	head []any
+}
+
+func (p prefixed) Scan(dest ...any) error { return p.Row.Scan(append(p.head, dest...)...) }
+
+// cycleID returns the id of the project's cycle with the number; "" when there's none.
+func (m *model) cycleID(ctx context.Context, projectID string, number int) (string, error) {
+	var id string
+	err := m.db.QueryRow(ctx, `select id::text from cycles where project_id = $1 and number = $2`, projectID, number).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find cycle: %w", err)
+	}
+	return id, nil
 }
 
 // get returns the issue with the project key and number; nil when there's none or the viewer can't see it.

@@ -3,6 +3,7 @@ import { IssueDetail, loadIssue } from '@/components/issues/issue-detail'
 import { RunPanel } from '@/components/tests/run-panel'
 
 export const Route = createFileRoute('/_app/$workspace/_main/issue/$identifier')({
+  preload: false, // long lists and boards: hovering cards mustn't fetch an issue each
   validateSearch: (search): { run?: string } => (typeof search.run === 'string' && search.run ? { run: search.run } : {}),
   loader: async (ctx) => {
     const data = await loadIssue(ctx, ctx.params.workspace, ctx.params.identifier)

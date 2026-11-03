@@ -67,7 +67,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	email = web.NormEmail(email)
-	if stop, err := limited(w, r, h.lim.send, email); err != nil || stop {
+	if stop, err := web.Limited(w, r, h.lim.send, email); err != nil || stop {
 		return err
 	}
 	if ok, err := h.mail.Configured(ctx); err != nil {
@@ -172,7 +172,7 @@ func (h *Handler) locked(w http.ResponseWriter, r *http.Request, key string) (bo
 	if err != nil || n < maxFails {
 		return false, err
 	}
-	return tooMany(w, failWindow), nil
+	return web.TooMany(w, failWindow), nil
 }
 
 func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
@@ -220,7 +220,7 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 		web.Fields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
-	if stop, err := limited(w, r, h.lim.send, web.NormEmail(email)); err != nil || stop {
+	if stop, err := web.Limited(w, r, h.lim.send, web.NormEmail(email)); err != nil || stop {
 		return err
 	}
 	code, err := newCode()
@@ -239,7 +239,7 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 		web.Fields(w, http.StatusBadRequest, map[string]string{"email": msg})
 		return nil
 	}
-	if stop, err := limited(w, r, h.lim.send, web.NormEmail(email)); err != nil || stop {
+	if stop, err := web.Limited(w, r, h.lim.send, web.NormEmail(email)); err != nil || stop {
 		return err
 	}
 	token := secret.NewToken()
@@ -365,7 +365,7 @@ func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
 		web.Err(w, http.StatusUnauthorized, errSignedOut)
 		return nil
 	}
-	if stop, err := limited(w, r, h.lim.send, p.Email); err != nil || stop {
+	if stop, err := web.Limited(w, r, h.lim.send, p.Email); err != nil || stop {
 		return err
 	}
 	code, err := newCode()
@@ -477,7 +477,7 @@ func (h *Handler) emailCode(w http.ResponseWriter, r *http.Request) error {
 		web.Fields(w, http.StatusConflict, map[string]string{"email": errEmailInUse})
 		return nil
 	}
-	if stop, err := limited(w, r, h.lim.send, p.Email); err != nil || stop {
+	if stop, err := web.Limited(w, r, h.lim.send, p.Email); err != nil || stop {
 		return err
 	}
 	if ok, err := h.mail.Configured(ctx); err != nil {

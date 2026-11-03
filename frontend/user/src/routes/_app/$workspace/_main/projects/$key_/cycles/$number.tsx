@@ -14,23 +14,26 @@ import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components
 import { formatRange } from '@/components/issues/fields'
 import { CreateIssueForm } from '@/components/issues/issue-form'
 import { IssueView } from '@/components/issues/issue-view'
-import { validateViewSearch } from '@/components/issues/view-search'
+import { issuePageQuery, validateViewSearch, type IssuePage } from '@/components/issues/view-search'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/$number')({
   validateSearch: validateViewSearch,
+  loaderDeps: ({ search }) => ({ query: issuePageQuery(search) }),
   loader: async (ctx) => {
     const { params } = ctx
     if (!/^\d+$/.test(params.number)) throw notFound()
     const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const list = cyclesPath(params.workspace, params.key)
+    const source = `${list}/${params.number}/issues`
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
     trackPath(ctx, `${path}/members`)
-    const [project, { cycle, issues }, cycles, statuses, labels, members] = await Promise.all([
+    const [project, { cycle, issues }, page, cycles, statuses, labels, members] = await Promise.all([
       loaderApi<Project>(ctx, projectPath),
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
+      loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
@@ -47,14 +50,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
         replace: true,
       })
     }
-    return { project, cycle, issues, cycles, statuses, labels, members }
+    return { project, cycle, issues, page, source, cycles, statuses, labels, members }
   },
   component: CyclePage,
 })
 
 function CyclePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, cycle, issues, cycles, statuses, labels, members } = Route.useLoaderData()
+  const { project, cycle, issues, page, source, cycles, statuses, labels, members } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [dialog, setDialog] = useState<'edit' | 'delete' | 'issue' | null>(null)
@@ -114,7 +117,7 @@ function CyclePage() {
           <p className="text-body-sm text-secondary">No issues in this cycle.</p>
         </div>
       ) : (
-        <IssueView workspace={workspace} issues={issues} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
       )}
       {create ? (
         <Dialog open={dialog === 'issue'} onClose={close} title="New issue" wide>

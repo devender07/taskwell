@@ -1,11 +1,14 @@
 package issue
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,6 +33,7 @@ const (
 	errCommentNotFound = "Comment not found."
 	errArchivedProject = "This project is archived."
 	errCycleNotFound   = "Cycle not found."
+	errNoPage          = "That page doesn't exist."
 )
 
 type Handler struct {
@@ -61,6 +65,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return nil
 	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return h.model.listPage(ctx, projectID, q)
+		})
+	}
 	is, err := h.model.list(r.Context(), projectID)
 	if err != nil {
 		return err
@@ -77,6 +86,11 @@ func (h *Handler) myIssues(w http.ResponseWriter, r *http.Request, userID string
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
 		return err
+	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return h.model.assignedPage(ctx, ws.ID, userID, q)
+		})
 	}
 	is, err := h.model.assigned(r.Context(), ws.ID, userID)
 	if err != nil {
@@ -126,6 +140,131 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
+}
+
+// cycleIssues lists the cycle's issues like list does the project's.
+func (h *Handler) cycleIssues(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	projectID, err := h.model.projectID(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	if err != nil {
+		return err
+	}
+	if projectID == "" {
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+		return nil
+	}
+	cycleID := ""
+	if n, err := strconv.Atoi(r.PathValue("number")); err == nil && n > 0 {
+		if cycleID, err = h.model.cycleID(r.Context(), projectID, n); err != nil {
+			return err
+		}
+	}
+	if cycleID == "" {
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
+		return nil
+	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return h.model.cyclePage(ctx, cycleID, q)
+		})
+	}
+	is, err := h.CycleIssues(r.Context(), cycleID, userID, ws.Permissions)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, is)
+	return nil
+}
+
+// paged answers a paged list request (one with limit) with fetch's groups: every group's first page, or with in
+// that group's next page only. A bad limit, offset, group or sort is a 400.
+func paged(w http.ResponseWriter, r *http.Request, userID string, perms []string,
+	fetch func(context.Context, pageQuery) ([]Group, error)) error {
+	q, ok := readPage(r.URL.Query(), userID)
+	if !ok {
+		web.Err(w, http.StatusBadRequest, errNoPage)
+		return nil
+	}
+	gs, err := fetch(r.Context(), q)
+	if err != nil {
+		return err
+	}
+	total := 0
+	for g := range gs {
+		total += gs[g].Count
+		for i := range gs[g].Issues {
+			allow(&gs[g].Issues[i], userID, perms)
+		}
+	}
+	if q.in != nil {
+		page := map[string]any{"issues": []Issue{}, "has_more": false}
+		if len(gs) > 0 {
+			page["issues"], page["has_more"] = gs[0].Issues, gs[0].HasMore
+		}
+		web.JSON(w, http.StatusOK, page)
+		return nil
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"total": total, "groups": gs})
+	return nil
+}
+
+// readPage parses a paged list's query; ok=false for a bad limit (1-100), offset, group or sort. Filter values that
+// can't match (not an id, a priority out of range) are dropped; "me" is the user.
+func readPage(v url.Values, userID string) (pageQuery, bool) {
+	q := pageQuery{group: cmp.Or(v.Get("group"), "status"), sort: cmp.Or(v.Get("sort"), "priority")}
+	limit, err := strconv.Atoi(v.Get("limit"))
+	_, okGroup := groupBy[q.group]
+	_, okSort := sortBy[q.sort]
+	if err != nil || limit < 1 || limit > 100 || !okGroup || !okSort {
+		return q, false
+	}
+	q.limit = limit
+	if v.Has("in") {
+		in := v.Get("in")
+		q.in = &in
+		if v.Has("offset") {
+			if q.offset, err = strconv.Atoi(v.Get("offset")); err != nil || q.offset < 0 {
+				return q, false
+			}
+		}
+	}
+	split := func(k string) []string { return strings.Split(v.Get(k), ",") }
+	for _, s := range split("status") {
+		if web.IsUUID(s) {
+			q.statuses = append(q.statuses, s)
+		}
+	}
+	for _, s := range split("assignee") {
+		switch {
+		case s == "me":
+			q.assignees = append(q.assignees, userID)
+		case s == "none":
+			q.noAssignee = true
+		case web.IsUUID(s):
+			q.assignees = append(q.assignees, s)
+		}
+	}
+	for _, s := range split("label") {
+		if web.IsUUID(s) {
+			q.labels = append(q.labels, s)
+		}
+	}
+	for _, s := range split("priority") {
+		if p, err := strconv.Atoi(s); err == nil && p >= 0 && p <= 4 {
+			q.priorities = append(q.priorities, p)
+		}
+	}
+	for _, s := range split("cycle") {
+		if s == "none" {
+			q.noCycle = true
+		} else if web.IsUUID(s) {
+			q.cycles = append(q.cycles, s)
+		}
+	}
+	return q, true
 }
 
 // CycleIssues returns the cycle's issues as the user sees them, like a project's list.

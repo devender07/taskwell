@@ -364,7 +364,8 @@ func (h *Handler) unpin(w http.ResponseWriter, r *http.Request, userID string) e
 	return h.setPin(w, r, userID, 0)
 }
 
-// setPin pins (days > 0) or unpins a top-level message that isn't deleted.
+// setPin pins (days > 0) or unpins a top-level message that isn't deleted; a pin in place is only its pinner's to
+// change.
 func (h *Handler) setPin(w http.ResponseWriter, r *http.Request, userID string, days int) error {
 	sc, m, err := h.message(w, r, userID)
 	if m == nil || err != nil {
@@ -372,6 +373,10 @@ func (h *Handler) setPin(w http.ResponseWriter, r *http.Request, userID string, 
 	}
 	if m.deleted || m.parentID != "" {
 		web.Err(w, http.StatusNotFound, errNoMessage)
+		return nil
+	}
+	if m.pinned && m.pinnedBy != "" && m.pinnedBy != userID {
+		web.Err(w, http.StatusForbidden, "Only the person who pinned this message can change its pin.")
 		return nil
 	}
 	if err := h.model.pin(r.Context(), sc, *m, days); err != nil {

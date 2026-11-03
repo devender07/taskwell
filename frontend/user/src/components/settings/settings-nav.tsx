@@ -1,10 +1,11 @@
 import { Link, useLoaderData } from '@tanstack/react-router'
-import { BellIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WorkflowIcon } from '@tether/shared/icons'
+import { BellIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@tether/shared/icons'
 import { can } from '@/api'
 import './settings.css'
 
 export function SettingsNav({ workspace }: { workspace: string }) {
-  const integrations = can(useLoaderData({ from: '/_app/$workspace' }), 'integrations.manage')
+  const ws = useLoaderData({ from: '/_app/$workspace' })
+  const integrations = can(ws, 'integrations.manage')
   return (
     <nav className="settings-nav" aria-label="Settings">
       <h2 className="settings-nav-title">Settings</h2>
@@ -48,6 +49,18 @@ export function SettingsNav({ workspace }: { workspace: string }) {
         <Link to="/$workspace/settings/integrations" params={{ workspace }}>
           <PlugIcon />
           Integrations
+        </Link>
+      ) : null}
+      {integrations ? (
+        <Link to="/$workspace/settings/webhooks" params={{ workspace }}>
+          <WebhookIcon />
+          Webhooks
+        </Link>
+      ) : null}
+      {can(ws, 'feedback.manage') ? (
+        <Link to="/$workspace/settings/feedback" params={{ workspace }}>
+          <FeedbackIcon />
+          Feedback form
         </Link>
       ) : null}
     </nav>

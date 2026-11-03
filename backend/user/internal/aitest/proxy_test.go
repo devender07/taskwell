@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"net/url"
 	"testing"
+
+	"github.com/devender07/tether/backend/user/internal/netguard"
 )
 
 func TestAllowed(t *testing.T) {
@@ -48,8 +50,8 @@ func TestAllowed(t *testing.T) {
 		{"93.184.216.34", false},
 		{"2606:4700::1111", false},
 	} {
-		if got := blockedAddr(netip.MustParseAddr(c.ip)); got != c.want {
-			t.Errorf("blockedAddr(%s) = %v, want %v", c.ip, got, c.want)
+		if got := netguard.Blocked(netip.MustParseAddr(c.ip)); got != c.want {
+			t.Errorf("netguard.Blocked(%s) = %v, want %v", c.ip, got, c.want)
 		}
 	}
 	for _, c := range []struct{ raw, msg string }{

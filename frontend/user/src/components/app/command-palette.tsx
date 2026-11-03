@@ -191,9 +191,12 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     }
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
+    actions.push({ value: 'feedback', label: 'Go to Feedback', run: () => go('feedback') })
+    actions.push({ value: 'add-feedback', label: 'Add feedback', run: () => go('feedback?add=true') })
     actions.push({ value: 'new-message', label: 'New message', run: () => go('inbox?new=message') })
     actions.push({ value: 'new-group', label: 'New group', run: () => go('inbox?new=group') })
     for (const name of can(workspace, 'integrations.manage') ? [...SETTINGS, 'Integrations'] : SETTINGS) actions.push({ value: name, label: `Go to settings → ${name}`, run: () => go(`settings/${name.toLowerCase().replaceAll(' ', '-')}`) })
+    if (can(workspace, 'feedback.manage')) actions.push({ value: 'Feedback form', label: 'Go to settings → Feedback form', run: () => go('settings/feedback') })
     if (ctx) {
       if (ctx.issue.can_edit) {
         for (const m of ['status', 'assignee', 'priority', 'labels'] as const) {

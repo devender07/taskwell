@@ -282,7 +282,7 @@ func TestChat(t *testing.T) {
 	errOf(cat, "GET", "/messages/"+dm.ID+"/replies", nil, 404)
 	errOf(out, "GET", "/messages/"+root.ID+"/replies", nil, 404)
 
-	// Pins: anyone in the chat, top-level only, 1/7/30 days; the chat's messages page lists them.
+	// Pins: anyone in the chat, top-level only, 1/7/30 days, changed only by who pinned; the messages page lists them.
 	var m Message
 	errOf(bob, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"3"}}, 400)
 	errOf(bob, "POST", "/messages/"+reply.ID+"/pin", url.Values{"days": {"7"}}, 404)
@@ -296,8 +296,13 @@ func TestChat(t *testing.T) {
 	if len(pins.Pinned) != 1 || pins.Pinned[0].ID != root.ID {
 		t.Errorf("pinned: %+v", pins.Pinned)
 	}
-	do(ann, "DELETE", "/messages/"+root.ID+"/pin", nil, 200, &m)
-	if m.PinnedUntil != nil {
+	if !strings.Contains(string(m.PinnedBy), bob) {
+		t.Errorf("pinned by: %s", m.PinnedBy)
+	}
+	errOf(ann, "DELETE", "/messages/"+root.ID+"/pin", nil, 403)
+	errOf(ann, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"1"}}, 403)
+	do(bob, "DELETE", "/messages/"+root.ID+"/pin", nil, 200, &m)
+	if m.PinnedUntil != nil || string(m.PinnedBy) != "null" {
 		t.Errorf("unpinned: %v", m.PinnedUntil)
 	}
 	do(bob, "POST", "/messages/"+root.ID+"/pin", url.Values{"days": {"1"}}, 200, nil)

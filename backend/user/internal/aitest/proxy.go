@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/devender07/tether/backend/user/internal/netguard"
 )
 
 // Proxy is the egress proxy Chrome sends every request through (--proxy-server). A request is let out only for a
@@ -227,21 +228,14 @@ func (p *Proxy) dial(ctx context.Context, run *proxyRun, addr string) (net.Conn,
 		p.block(run, host)
 		return nil, blockedError{host}
 	}
-	var ips []netip.Addr
-	if ip, err := netip.ParseAddr(host); err == nil {
-		ips = []netip.Addr{ip}
-	} else if ips, err = p.resolve(ctx, host); err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", host, err)
+	ips, err := netguard.Addrs(ctx, p.resolve, host, p.allowPrivate)
+	if errors.As(err, new(netguard.PrivateError)) {
+		slog.Warn("proxy refused a private address", "host", host)
+		p.block(run, host)
+		return nil, blockedError{host}
 	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("resolve %s: no addresses", host)
-	}
-	for _, ip := range ips {
-		if !p.allowPrivate && blockedAddr(ip) {
-			slog.Warn("proxy refused a private address", "host", host, "ip", ip.String())
-			p.block(run, host)
-			return nil, blockedError{host}
-		}
+	if err != nil {
+		return nil, err
 	}
 	d := net.Dialer{Timeout: 10 * time.Second}
 	return d.DialContext(ctx, "tcp", net.JoinHostPort(ips[0].Unmap().String(), port))
@@ -252,32 +246,6 @@ func allowedHost(host string, sites []string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.Trim(host, "[]"), "."))
 	for _, s := range sites {
 		if host == s || strings.HasSuffix(host, "."+s) {
-			return true
-		}
-	}
-	return false
-}
-
-var blockedPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"), // CGNAT
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("64:ff9b::/96"), // NAT64 can reach IPv4 private ranges
-	netip.MustParsePrefix("2002::/16"),    // 6to4 likewise
-}
-
-// blockedAddr reports whether a is loopback, private, link-local, CGNAT, multicast, unspecified, IPv6 ULA or
-// otherwise not a public unicast address.
-func blockedAddr(a netip.Addr) bool {
-	a = a.Unmap()
-	if !a.IsValid() || a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
-		a.IsInterfaceLocalMulticast() || a.IsMulticast() || a.IsUnspecified() {
-		return true
-	}
-	for _, p := range blockedPrefixes {
-		if p.Contains(a) {
 			return true
 		}
 	}

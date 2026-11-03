@@ -2,6 +2,8 @@
 package web
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"maps"
@@ -97,3 +99,10 @@ var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 // IsUUID reports whether s is a lowercase UUID, as Postgres prints them.
 func IsUUID(s string) bool { return uuidRe.MatchString(s) }
+
+// RandomToken is 32 random bytes, base64url: an unguessable token for a URL.
+func RandomToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error (Go 1.24+)
+	return base64.RawURLEncoding.EncodeToString(b)
+}

@@ -17,9 +17,12 @@ import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
+import { Route as DocsApiRouteImport } from './routes/docs.api'
+import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as LiveWorkspaceRunRouteImport } from './routes/live.$workspace.$run'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
+import { Route as AppWorkspaceMainFeedbackRouteImport } from './routes/_app/$workspace/_main/feedback'
 import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$workspace/_main/inbox'
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
 import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$workspace/_main/roadmap'
@@ -32,6 +35,7 @@ import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
 import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
+import { Route as AppWorkspaceMainSettingsFeedbackRouteImport } from './routes/_app/$workspace/_main/settings/feedback'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
 import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
@@ -43,6 +47,8 @@ import { Route as AppWorkspaceMainInboxCChatIdRouteImport } from './routes/_app/
 import { Route as AppWorkspaceMainSettingsRolesIndexRouteImport } from './routes/_app/$workspace/_main/settings/roles/index'
 import { Route as AppWorkspaceMainSettingsRolesRoleIdRouteImport } from './routes/_app/$workspace/_main/settings/roles/$roleId'
 import { Route as AppWorkspaceMainSettingsRolesNewRouteImport } from './routes/_app/$workspace/_main/settings/roles/new'
+import { Route as AppWorkspaceMainSettingsWebhooksIndexRouteImport } from './routes/_app/$workspace/_main/settings/webhooks/index'
+import { Route as AppWorkspaceMainSettingsWebhooksIdRouteImport } from './routes/_app/$workspace/_main/settings/webhooks/$id'
 import { Route as AppWorkspaceMainProjectsKeyCyclesIndexRouteImport } from './routes/_app/$workspace/_main/projects/$key_/cycles/index'
 import { Route as AppWorkspaceMainProjectsKeyCyclesNumberRouteImport } from './routes/_app/$workspace/_main/projects/$key_/cycles/$number'
 
@@ -85,6 +91,16 @@ const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
   path: '/$workspace',
   getParentRoute: () => AppRoute,
 } as any)
+const DocsApiRoute = DocsApiRouteImport.update({
+  id: '/docs/api',
+  path: '/docs/api',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FTokenRoute = FTokenRouteImport.update({
+  id: '/f/$token',
+  path: '/f/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppWorkspaceMainRoute = AppWorkspaceMainRouteImport.update({
   id: '/_main',
   getParentRoute: () => AppWorkspaceRoute,
@@ -99,6 +115,12 @@ const AppWorkspaceMainIndexRoute = AppWorkspaceMainIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
+const AppWorkspaceMainFeedbackRoute =
+  AppWorkspaceMainFeedbackRouteImport.update({
+    id: '/feedback',
+    path: '/feedback',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainInboxRoute = AppWorkspaceMainInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -169,6 +191,12 @@ const AppWorkspaceMainSettingsApiTokensRoute =
     path: '/api-tokens',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
+const AppWorkspaceMainSettingsFeedbackRoute =
+  AppWorkspaceMainSettingsFeedbackRouteImport.update({
+    id: '/feedback',
+    path: '/feedback',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
 const AppWorkspaceMainSettingsIntegrationsRoute =
   AppWorkspaceMainSettingsIntegrationsRouteImport.update({
     id: '/integrations',
@@ -235,6 +263,18 @@ const AppWorkspaceMainSettingsRolesNewRoute =
     path: '/roles/new',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
+const AppWorkspaceMainSettingsWebhooksIndexRoute =
+  AppWorkspaceMainSettingsWebhooksIndexRouteImport.update({
+    id: '/webhooks/',
+    path: '/webhooks/',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
+const AppWorkspaceMainSettingsWebhooksIdRoute =
+  AppWorkspaceMainSettingsWebhooksIdRouteImport.update({
+    id: '/webhooks/$id',
+    path: '/webhooks/$id',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
 const AppWorkspaceMainProjectsKeyCyclesIndexRoute =
   AppWorkspaceMainProjectsKeyCyclesIndexRouteImport.update({
     id: '/projects/$key_/cycles/',
@@ -256,7 +296,10 @@ export interface FileRoutesByFullPath {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/docs/api': typeof DocsApiRoute
+  '/f/$token': typeof FTokenRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
+  '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
@@ -267,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -280,7 +324,9 @@ export interface FileRoutesByFullPath {
   '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/$workspace/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
   '/$workspace/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/$workspace/settings/webhooks/': typeof AppWorkspaceMainSettingsWebhooksIndexRoute
   '/$workspace/projects/$key/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
   '/$workspace/projects/$key/cycles/': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
@@ -291,8 +337,11 @@ export interface FileRoutesByTo {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
+  '/docs/api': typeof DocsApiRoute
+  '/f/$token': typeof FTokenRoute
   '/': typeof AppIndexRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
+  '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
@@ -300,6 +349,7 @@ export interface FileRoutesByTo {
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -313,7 +363,9 @@ export interface FileRoutesByTo {
   '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/$workspace/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
   '/$workspace/settings/roles': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/$workspace/settings/webhooks': typeof AppWorkspaceMainSettingsWebhooksIndexRoute
   '/$workspace/projects/$key/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
   '/$workspace/projects/$key/cycles': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
@@ -326,9 +378,12 @@ export interface FileRoutesById {
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/docs/api': typeof DocsApiRoute
+  '/f/$token': typeof FTokenRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
+  '/_app/$workspace/_main/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/_app/$workspace/_main/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/roadmap': typeof AppWorkspaceMainRoadmapRoute
@@ -339,6 +394,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/_app/$workspace/_main/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
@@ -352,7 +408,9 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
   '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
+  '/_app/$workspace/_main/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
   '/_app/$workspace/_main/settings/roles/': typeof AppWorkspaceMainSettingsRolesIndexRoute
+  '/_app/$workspace/_main/settings/webhooks/': typeof AppWorkspaceMainSettingsWebhooksIndexRoute
   '/_app/$workspace/_main/projects/$key_/cycles/$number': typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
   '/_app/$workspace/_main/projects/$key_/cycles/': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
@@ -366,7 +424,10 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/docs/api'
+    | '/f/$token'
     | '/live/$workspace/$run'
+    | '/$workspace/feedback'
     | '/$workspace/inbox'
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
@@ -377,6 +438,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
+    | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
@@ -390,7 +452,9 @@ export interface FileRouteTypes {
     | '/$workspace/inbox/c/$chatId'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
+    | '/$workspace/settings/webhooks/$id'
     | '/$workspace/settings/roles/'
+    | '/$workspace/settings/webhooks/'
     | '/$workspace/projects/$key/cycles/$number'
     | '/$workspace/projects/$key/cycles/'
   fileRoutesByTo: FileRoutesByTo
@@ -401,8 +465,11 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/docs/api'
+    | '/f/$token'
     | '/'
     | '/live/$workspace/$run'
+    | '/$workspace/feedback'
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
     | '/$workspace/inbox/tether'
@@ -410,6 +477,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
+    | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
@@ -423,7 +491,9 @@ export interface FileRouteTypes {
     | '/$workspace/inbox/c/$chatId'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
+    | '/$workspace/settings/webhooks/$id'
     | '/$workspace/settings/roles'
+    | '/$workspace/settings/webhooks'
     | '/$workspace/projects/$key/cycles/$number'
     | '/$workspace/projects/$key/cycles'
   id:
@@ -435,9 +505,12 @@ export interface FileRouteTypes {
     | '/(auth)/signin'
     | '/(auth)/signup'
     | '/_app/$workspace'
+    | '/docs/api'
+    | '/f/$token'
     | '/_app/'
     | '/_app/$workspace/_main'
     | '/live/$workspace/$run'
+    | '/_app/$workspace/_main/feedback'
     | '/_app/$workspace/_main/inbox'
     | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/roadmap'
@@ -448,6 +521,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
+    | '/_app/$workspace/_main/settings/feedback'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
     | '/_app/$workspace/_main/settings/members'
@@ -461,7 +535,9 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/inbox/c/$chatId'
     | '/_app/$workspace/_main/settings/roles/$roleId'
     | '/_app/$workspace/_main/settings/roles/new'
+    | '/_app/$workspace/_main/settings/webhooks/$id'
     | '/_app/$workspace/_main/settings/roles/'
+    | '/_app/$workspace/_main/settings/webhooks/'
     | '/_app/$workspace/_main/projects/$key_/cycles/$number'
     | '/_app/$workspace/_main/projects/$key_/cycles/'
   fileRoutesById: FileRoutesById
@@ -473,6 +549,8 @@ export interface RootRouteChildren {
   authResetPasswordRoute: typeof authResetPasswordRoute
   authSigninRoute: typeof authSigninRoute
   authSignupRoute: typeof authSignupRoute
+  DocsApiRoute: typeof DocsApiRoute
+  FTokenRoute: typeof FTokenRoute
   LiveWorkspaceRunRoute: typeof LiveWorkspaceRunRoute
 }
 
@@ -534,6 +612,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/docs/api': {
+      id: '/docs/api'
+      path: '/docs/api'
+      fullPath: '/docs/api'
+      preLoaderRoute: typeof DocsApiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/f/$token': {
+      id: '/f/$token'
+      path: '/f/$token'
+      fullPath: '/f/$token'
+      preLoaderRoute: typeof FTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/$workspace/_main': {
       id: '/_app/$workspace/_main'
       path: ''
@@ -553,6 +645,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/$workspace/'
       preLoaderRoute: typeof AppWorkspaceMainIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/feedback': {
+      id: '/_app/$workspace/_main/feedback'
+      path: '/feedback'
+      fullPath: '/$workspace/feedback'
+      preLoaderRoute: typeof AppWorkspaceMainFeedbackRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/inbox': {
@@ -639,6 +738,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsApiTokensRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
+    '/_app/$workspace/_main/settings/feedback': {
+      id: '/_app/$workspace/_main/settings/feedback'
+      path: '/feedback'
+      fullPath: '/$workspace/settings/feedback'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsFeedbackRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
     '/_app/$workspace/_main/settings/integrations': {
       id: '/_app/$workspace/_main/settings/integrations'
       path: '/integrations'
@@ -716,6 +822,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsRolesNewRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
+    '/_app/$workspace/_main/settings/webhooks/': {
+      id: '/_app/$workspace/_main/settings/webhooks/'
+      path: '/webhooks'
+      fullPath: '/$workspace/settings/webhooks/'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsWebhooksIndexRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
+    '/_app/$workspace/_main/settings/webhooks/$id': {
+      id: '/_app/$workspace/_main/settings/webhooks/$id'
+      path: '/webhooks/$id'
+      fullPath: '/$workspace/settings/webhooks/$id'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsWebhooksIdRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
     '/_app/$workspace/_main/projects/$key_/cycles/': {
       id: '/_app/$workspace/_main/projects/$key_/cycles/'
       path: '/projects/$key/cycles'
@@ -753,6 +873,7 @@ const AppWorkspaceMainInboxRouteWithChildren =
 interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
   AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
+  AppWorkspaceMainSettingsFeedbackRoute: typeof AppWorkspaceMainSettingsFeedbackRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
   AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
@@ -763,7 +884,9 @@ interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsIndexRoute: typeof AppWorkspaceMainSettingsIndexRoute
   AppWorkspaceMainSettingsRolesRoleIdRoute: typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   AppWorkspaceMainSettingsRolesNewRoute: typeof AppWorkspaceMainSettingsRolesNewRoute
+  AppWorkspaceMainSettingsWebhooksIdRoute: typeof AppWorkspaceMainSettingsWebhooksIdRoute
   AppWorkspaceMainSettingsRolesIndexRoute: typeof AppWorkspaceMainSettingsRolesIndexRoute
+  AppWorkspaceMainSettingsWebhooksIndexRoute: typeof AppWorkspaceMainSettingsWebhooksIndexRoute
 }
 
 const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildren =
@@ -772,6 +895,8 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
       AppWorkspaceMainSettingsAiTestingRoute,
     AppWorkspaceMainSettingsApiTokensRoute:
       AppWorkspaceMainSettingsApiTokensRoute,
+    AppWorkspaceMainSettingsFeedbackRoute:
+      AppWorkspaceMainSettingsFeedbackRoute,
     AppWorkspaceMainSettingsIntegrationsRoute:
       AppWorkspaceMainSettingsIntegrationsRoute,
     AppWorkspaceMainSettingsLabelsRoute: AppWorkspaceMainSettingsLabelsRoute,
@@ -788,8 +913,12 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
       AppWorkspaceMainSettingsRolesRoleIdRoute,
     AppWorkspaceMainSettingsRolesNewRoute:
       AppWorkspaceMainSettingsRolesNewRoute,
+    AppWorkspaceMainSettingsWebhooksIdRoute:
+      AppWorkspaceMainSettingsWebhooksIdRoute,
     AppWorkspaceMainSettingsRolesIndexRoute:
       AppWorkspaceMainSettingsRolesIndexRoute,
+    AppWorkspaceMainSettingsWebhooksIndexRoute:
+      AppWorkspaceMainSettingsWebhooksIndexRoute,
   }
 
 const AppWorkspaceMainSettingsRouteWithChildren =
@@ -798,6 +927,7 @@ const AppWorkspaceMainSettingsRouteWithChildren =
   )
 
 interface AppWorkspaceMainRouteChildren {
+  AppWorkspaceMainFeedbackRoute: typeof AppWorkspaceMainFeedbackRoute
   AppWorkspaceMainInboxRoute: typeof AppWorkspaceMainInboxRouteWithChildren
   AppWorkspaceMainMyIssuesRoute: typeof AppWorkspaceMainMyIssuesRoute
   AppWorkspaceMainRoadmapRoute: typeof AppWorkspaceMainRoadmapRoute
@@ -811,6 +941,7 @@ interface AppWorkspaceMainRouteChildren {
 }
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
+  AppWorkspaceMainFeedbackRoute: AppWorkspaceMainFeedbackRoute,
   AppWorkspaceMainInboxRoute: AppWorkspaceMainInboxRouteWithChildren,
   AppWorkspaceMainMyIssuesRoute: AppWorkspaceMainMyIssuesRoute,
   AppWorkspaceMainRoadmapRoute: AppWorkspaceMainRoadmapRoute,
@@ -859,6 +990,8 @@ const rootRouteChildren: RootRouteChildren = {
   authResetPasswordRoute: authResetPasswordRoute,
   authSigninRoute: authSigninRoute,
   authSignupRoute: authSignupRoute,
+  DocsApiRoute: DocsApiRoute,
+  FTokenRoute: FTokenRoute,
   LiveWorkspaceRunRoute: LiveWorkspaceRunRoute,
 }
 export const routeTree = rootRouteImport

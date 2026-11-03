@@ -150,6 +150,14 @@ export const PlugIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const WebhookIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2" />
+    <path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06" />
+    <path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8" />
+  </Icon>
+)
+
 export const LockIcon = (props: IconProps) => (
   <Icon {...props}>
     <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -309,6 +317,13 @@ export const SmileIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
     <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" />
+  </Icon>
+)
+
+export const FeedbackIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <path d="M12 7v4M12 14h.01" />
   </Icon>
 )
 

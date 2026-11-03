@@ -37,15 +37,17 @@ const (
 	PermTestsManage = "tests.manage"
 	// PermAITestsManage gates the workspace's test sites and test accounts.
 	PermAITestsManage = "ai_tests.manage"
-	// PermIntegrationsManage gates connecting GitHub and GitLab webhooks.
+	// PermIntegrationsManage gates connecting GitHub and GitLab and managing outbound webhooks.
 	PermIntegrationsManage = "integrations.manage"
+	// PermFeedbackManage gates the public feedback form and archiving and deleting feedback.
+	PermFeedbackManage = "feedback.manage"
 )
 
 // catalog is every permission in display order.
 var catalog = []Permission{
 	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
-	{PermIntegrationsManage, "Workspace", "Connect GitHub and GitLab", true},
+	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},
@@ -59,6 +61,7 @@ var catalog = []Permission{
 	{PermAITestsRun, "Testing", "Run AI tests on issues", true},
 	{PermTestsManage, "Testing", "Edit test cases and run tests manually", true},
 	{PermAITestsManage, "Testing", "Manage test sites and test accounts", true},
+	{PermFeedbackManage, "Feedback", "Manage the feedback form, archive and delete feedback", true},
 }
 
 func allPermissions() []string {

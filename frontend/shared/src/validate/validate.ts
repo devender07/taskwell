@@ -193,9 +193,38 @@ export const testAccountLabel: Check = (v) => (v.trim() ? null : 'Enter a label.
 export const testAccountUsername: Check = (v) => (v.trim() ? null : 'Enter a username.')
 export const testAccountPassword: Check = (v) => (v ? null : 'Enter a password.')
 
+// http:// passes here for dev; the API rejects it in production and checks the address it resolves to.
+export const webhookUrl: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Enter a URL.'
+  let u: URL
+  try {
+    u = new URL(s)
+  } catch {
+    return 'Enter a valid URL.'
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return 'Use an https URL.'
+  return u.hostname && s.length <= 2000 ? null : 'Enter a valid URL.'
+}
+export const webhookEvents = (events: string[]) => (events.length ? null : 'Choose at least one event.')
+
 export const tokenName: Check = (v) => {
   const s = v.trim()
   if (!s) return 'Name the token.'
   if (s.length > 60) return 'Use 60 characters or fewer.'
   return null
 }
+
+// Customer feedback; messages match the API's. The public form requires an email, a member's entry doesn't.
+export const feedbackBody: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Write the feedback.'
+  if (s.length > 5000) return 'Feedback must be 5,000 characters or fewer.'
+  return null
+}
+export const feedbackEmail = (v: string, needed: boolean) => {
+  const s = v.trim()
+  if (!s) return needed ? 'Enter your email.' : null
+  return s.length > 254 || !EMAIL.test(s) ? 'Enter a valid email.' : null
+}
+export const feedbackName: Check = (v) => (v.trim().length > 80 ? 'Name must be 80 characters or fewer.' : null)
