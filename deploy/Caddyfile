@@ -52,6 +52,13 @@
 	handle /.well-known/oauth-authorization-server* {
 		reverse_proxy user:8090
 	}
+	# / is the static landing page (built from frontend/user/landing.html); the app lives at /{workspace}, /signin and the rest.
+	handle / {
+		root * /srv/user
+		header Cache-Control no-cache
+		rewrite * /landing.html
+		file_server
+	}
 	import spa user:8090 /srv/user
 }
 

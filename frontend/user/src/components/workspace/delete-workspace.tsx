@@ -3,7 +3,7 @@ import { useActionState, useState } from 'react'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { Input } from '@tether/shared/input'
-import { api, toFormErrors, type Workspace, workspacePath } from '@/api'
+import { api, homePath, toFormErrors, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 // Danger zone: deleting needs the workspace name typed back, then sends the user to their next workspace.
@@ -18,7 +18,7 @@ export function DeleteWorkspace({ workspace }: { workspace: Workspace }) {
     } catch (e) {
       return toFormErrors(e).error
     }
-    await navigate({ to: '/', replace: true }) // opens the most recent remaining workspace, or asks to create one
+    await navigate({ href: await homePath(), replace: true }) // the most recent remaining workspace, or creating one
     return null
   }, null)
 

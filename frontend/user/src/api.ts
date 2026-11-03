@@ -410,7 +410,13 @@ export async function getMe(): Promise<User | null> {
 
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.
 export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
-  if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
+  if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? (await homePath()) })
+}
+
+// Where a signed-in user starts: their most recently opened workspace, or creating one when they have none.
+export async function homePath() {
+  const [last] = await api<Workspace[]>('/workspaces')
+  return last ? `/${encodeURIComponent(last.slug)}` : '/new-workspace'
 }
 
 export type RunKind = 'ai' | 'manual' | 'replay'

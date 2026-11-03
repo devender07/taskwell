@@ -15,8 +15,8 @@ import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-p
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
-import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
+import { Route as AppNewWorkspaceRouteImport } from './routes/_app/new-workspace'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as authOauthAuthorizeRouteImport } from './routes/(auth)/oauth.authorize'
@@ -84,14 +84,14 @@ const authSignupRoute = authSignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppIndexRoute = AppIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
   id: '/$workspace',
   path: '/$workspace',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNewWorkspaceRoute = AppNewWorkspaceRouteImport.update({
+  id: '/new-workspace',
+  path: '/new-workspace',
   getParentRoute: () => AppRoute,
 } as any)
 const DocsApiRoute = DocsApiRouteImport.update({
@@ -308,13 +308,14 @@ const AppWorkspaceMainProjectsKeyCyclesNumberRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof AppIndexRoute
+  '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/new-workspace': typeof AppNewWorkspaceRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -353,15 +354,16 @@ export interface FileRoutesByFullPath {
   '/$workspace/projects/$key/cycles/': typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
+  '/new-workspace': typeof AppNewWorkspaceRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
-  '/': typeof AppIndexRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
@@ -403,9 +405,9 @@ export interface FileRoutesById {
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/_app/new-workspace': typeof AppNewWorkspaceRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
-  '/_app/': typeof AppIndexRoute
   '/(auth)/oauth/authorize': typeof authOauthAuthorizeRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
@@ -452,6 +454,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/new-workspace'
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
@@ -490,15 +493,16 @@ export interface FileRouteTypes {
     | '/$workspace/projects/$key/cycles/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/invite'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/new-workspace'
     | '/docs/api'
     | '/f/$token'
-    | '/'
     | '/oauth/authorize'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
@@ -539,9 +543,9 @@ export interface FileRouteTypes {
     | '/(auth)/signin'
     | '/(auth)/signup'
     | '/_app/$workspace'
+    | '/_app/new-workspace'
     | '/docs/api'
     | '/f/$token'
-    | '/_app/'
     | '/(auth)/oauth/authorize'
     | '/_app/$workspace/_main'
     | '/live/$workspace/$run'
@@ -636,18 +640,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authSignupRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/': {
-      id: '/_app/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof AppIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/$workspace': {
       id: '/_app/$workspace'
       path: '/$workspace'
       fullPath: '/$workspace'
       preLoaderRoute: typeof AppWorkspaceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/new-workspace': {
+      id: '/_app/new-workspace'
+      path: '/new-workspace'
+      fullPath: '/new-workspace'
+      preLoaderRoute: typeof AppNewWorkspaceRouteImport
       parentRoute: typeof AppRoute
     }
     '/docs/api': {
@@ -1036,12 +1040,12 @@ const AppWorkspaceRouteWithChildren = AppWorkspaceRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppWorkspaceRoute: typeof AppWorkspaceRouteWithChildren
-  AppIndexRoute: typeof AppIndexRoute
+  AppNewWorkspaceRoute: typeof AppNewWorkspaceRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceRoute: AppWorkspaceRouteWithChildren,
-  AppIndexRoute: AppIndexRoute,
+  AppNewWorkspaceRoute: AppNewWorkspaceRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Logo } from '@tether/shared/logo'
 import { REFERENCE, type Endpoint } from './reference'
@@ -130,9 +129,9 @@ export function ApiDocs() {
   return (
     <div className="docs-layout">
       <header className="docs-header flex items-center gap-4 px-6">
-        <Link to="/" aria-label="Tether home" className="flex">
+        <a href="/" aria-label="Tether home" className="flex">
           <Logo size={24} />
-        </Link>
+        </a>
         <span className="text-secondary text-body-sm">API reference</span>
       </header>
       <nav className="docs-nav" aria-label="On this page">

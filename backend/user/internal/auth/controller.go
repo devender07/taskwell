@@ -740,12 +740,13 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// safeRedirect returns v when it is a path on this site ("/invite?token=…"), else "/". It refuses "//host" and
-// "/\host" (browsers treat both as another host) and control characters. Mirrors the frontend's safeRedirect.
+// safeRedirect returns v when it is a path on this site ("/invite?token=…"), else "/signin", which sends a signed-in
+// user on to their workspace. It refuses "//host" and "/\host" (browsers treat both as another host) and control
+// characters. Mirrors the frontend's safeRedirect.
 func safeRedirect(v string) string {
 	if len(v) > 2048 || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") ||
 		strings.ContainsFunc(v, func(c rune) bool { return c == '\\' || c < 0x20 || c == 0x7f }) {
-		return "/"
+		return "/signin"
 	}
 	return v
 }

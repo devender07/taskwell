@@ -3,9 +3,9 @@ import { Dialog } from '@tether/shared/dialog'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { readNotice } from '@/realtime'
 
-// Opens the most recently used workspace. A user with none (their default workspace failed to be created)
-// gets a create dialog they can't dismiss.
-export const Route = createFileRoute('/_app/')({
+// Where a user with no workspace lands (their default one failed to be created, or they left their last): a create
+// dialog they can't dismiss. Anyone with a workspace goes to their most recent one.
+export const Route = createFileRoute('/_app/new-workspace')({
   beforeLoad: ({ context }) => {
     const last = context.workspaces[0]
     if (last) throw redirect({ to: '/$workspace', params: { workspace: last.slug } })

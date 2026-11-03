@@ -4,7 +4,7 @@ import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
 import { Input } from '@tether/shared/input'
 import { email as checkEmail } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors } from '@/api'
+import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
 type OtpState = { step: 'email' | 'code'; email: string; resent?: boolean; remember?: boolean; errors?: FieldErrors; error?: string | null; done?: boolean }
@@ -41,7 +41,7 @@ export function OtpForm({ redirect }: { redirect?: string }) {
   const [state, submit, pending] = useActionState(async (prev: OtpState, form: FormData) => {
     const next = await otpAction(prev, form)
     if (next.done) {
-      await navigate({ href: redirect ?? '/' })
+      await navigate({ href: redirect ?? (await homePath()) })
     }
     return next
   }, { step: 'email', email: '' })

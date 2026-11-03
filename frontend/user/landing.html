@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tether: project management for software teams</title>
     <meta name="description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
-    <link rel="icon" type="image/svg+xml" href="../frontend/user/public/favicon.svg" />
-    <link rel="stylesheet" href="../frontend/shared/src/styles/tokens.css" />
-    <link rel="stylesheet" href="../frontend/shared/src/styles/utilities.css" />
-    <link rel="stylesheet" href="../frontend/shared/src/components/button/button.css" />
-    <link rel="stylesheet" href="landing.css" />
-    <script src="landing.js" defer></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tether: project management for software teams" />
+    <meta property="og:description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
+    <meta name="twitter:card" content="summary" />
+    <script type="module" src="/src/landing/landing.ts"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -18,7 +18,7 @@
     <header class="site-header">
       <div class="container flex items-center justify-between gap-6 site-header-inner">
         <a href="#top" class="brand" aria-label="Tether home">
-          <img src="../frontend/user/public/favicon.svg" alt="" width="28" height="28" />
+          <img src="/favicon.svg" alt="" width="28" height="28" />
           <span>Tether</span>
         </a>
         <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
@@ -30,8 +30,9 @@
           <a href="#ai">AI testing</a>
           <a href="#integrations">Integrations</a>
           <span class="site-nav-actions">
-            <a href="/signin" class="button button-ghost">Sign in</a>
-            <a href="/signup" class="button button-secondary">Get started</a>
+            <a href="/signin" class="button button-ghost" data-signed-out>Sign in</a>
+            <a href="/signup" class="button button-secondary" data-signed-out>Get started</a>
+            <a href="/signin" class="button button-secondary" data-signed-in hidden>Go to dashboard</a>
           </span>
         </nav>
       </div>
@@ -40,14 +41,15 @@
     <main id="main">
       <section id="top" class="hero">
         <div class="container hero-inner">
-          <p class="eyebrow reveal"><span class="dot" aria-hidden="true"></span> Built for SaaS teams that ship weekly</p>
+          <p class="eyebrow reveal"><span class="dot" aria-hidden="true"></span> <span id="greeting">Built for SaaS teams that ship weekly</span></p>
           <h1 class="display reveal">Plan it, build it, test it.<br /><span class="text-secondary">All in one place.</span></h1>
           <p class="lead reveal">
             Tether keeps issues, cycles, docs, chat and AI testing in one fast, keyboard-first workspace, so your team spends less time
             updating tools and more time shipping.
           </p>
           <div class="flex flex-wrap gap-3 justify-center reveal">
-            <a href="/signup" class="button button-secondary button-lg">Start for free</a>
+            <a href="/signup" class="button button-secondary button-lg" data-signed-out>Start for free</a>
+            <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
             <a href="#features" class="button button-primary button-lg">See how it works</a>
           </div>
           <p class="text-caption text-secondary reveal">Press <kbd>C</kbd> anywhere in the app to create an issue.</p>
@@ -212,14 +214,15 @@
         <div class="container grid gap-6 justify-items-center text-center reveal">
           <h2 class="display-sm">Bring your team together today</h2>
           <p class="lead">Create a workspace in under a minute. Invite your team when you're ready.</p>
-          <a href="/signup" class="button button-secondary button-lg">Get started</a>
+          <a href="/signup" class="button button-secondary button-lg" data-signed-out>Get started</a>
+          <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
       <div class="container flex flex-wrap items-center justify-between gap-4">
-        <a href="#top" class="brand"><img src="../frontend/user/public/favicon.svg" alt="" width="24" height="24" /><span>Tether</span></a>
+        <a href="#top" class="brand"><img src="/favicon.svg" alt="" width="24" height="24" /><span>Tether</span></a>
         <p class="text-caption text-secondary m-0">© <span id="year"></span> Tether. Made for teams that ship.</p>
       </div>
     </footer>

@@ -2,7 +2,7 @@ import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-r
 import { useEffect } from 'react'
 import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
 import { createSocket } from '@tether/shared/socket'
-import { api, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
+import { api, homePath, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches
 // the ones it has loaded; it also carries live description editing and who's viewing an issue.
@@ -101,7 +101,7 @@ function onEvent(e: RealtimeEvent) {
     const name = app?.workspaces?.find((w) => w.slug === workspace)?.name ?? workspace
     notice = `You no longer have access to ${name}.`
     workspace = undefined
-    void router.navigate({ to: '/' })
+    void homePath().then((href) => router?.navigate({ href }))
     return
   }
   push(paths)

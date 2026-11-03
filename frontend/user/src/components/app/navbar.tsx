@@ -12,10 +12,11 @@ import { NotificationsBell } from './notifications-bell'
 import './navbar.css'
 
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
+  const home = useParams({ strict: false }).workspace ?? workspaces[0]?.slug
   return (
     <header className="navbar sticky top-0 z-sticky flex items-center justify-between px-4">
       <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-        <Link to="/" aria-label="Tether home" className="navbar-home">
+        <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Tether home" className="navbar-home">
           <Logo size={24} />
         </Link>
         <WorkspaceSwitcher workspaces={workspaces} canCreate={user.can_create_workspaces} />

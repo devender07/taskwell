@@ -151,7 +151,7 @@ h3 { margin: 0; font: 590 16px/24px var(--font); }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-selected='true'] { color: var(--text); background: rgba(255, 255, 255, 0.08); }
 .panel { display: grid; gap: 16px; padding: 32px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
-.panel[hidden] { display: none; }
+[hidden] { display: none !important; }
 .panel h3 { font-size: 20px; line-height: 26.6px; }
 
 .checks { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font: 400 14px/21px var(--font); }

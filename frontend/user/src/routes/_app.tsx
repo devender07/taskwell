@@ -6,7 +6,7 @@ import { UnreadProvider } from '@/components/app/unread'
 import { keepSession, useRealtime } from '@/realtime'
 
 // Pathless layout: everything under _app/ needs a session and gets the navbar.
-// The workspace list lives in context (not a loader) so the `/` redirect can read it without a second request.
+// The workspace list lives in context (not a loader) so pages and the navbar read it without a second request.
 let last: { user: User; workspaces: Workspace[] } | null = null
 
 export const Route = createFileRoute('/_app')({
@@ -15,7 +15,7 @@ export const Route = createFileRoute('/_app')({
     const workspaces = api<Workspace[]>('/workspaces') // in parallel with /me; both share one token refresh
     workspaces.catch(() => {}) // signed out: getMe decides, don't surface this rejection
     const user = await getMe()
-    if (!user) throw redirect({ to: '/signin', search: { redirect: location.href === '/' ? undefined : safeRedirect(location.href) } })
+    if (!user) throw redirect({ to: '/signin', search: { redirect: safeRedirect(location.href) } })
     last = { user, workspaces: await workspaces }
     return last
   },

@@ -36,7 +36,7 @@ function InvitePage() {
       <AuthCard
         title="Invite unavailable"
         subtitle="Ask whoever invited you to send a new link."
-        footer={<Link to="/" className="auth-link">Go to Tether</Link>}
+        footer={<Link to="/signin" className="auth-link">Go to Tether</Link>}
       >
         <FormError>This invite link is invalid or has expired.</FormError>
       </AuthCard>

@@ -8,7 +8,7 @@ import { LeaveIcon, UserMinusIcon } from '@tether/shared/icons'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
 import { email as checkEmail } from '@tether/shared/validate'
-import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
+import { api, avatarSrc, can, homePath, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { type MemberPage, useMemberPages } from './member-pages'
 import '@/components/analytics/analytics.css'
@@ -123,7 +123,7 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
       return toFormErrors(e).error
     }
     setConfirming(false)
-    if (self) await navigate({ to: '/', replace: true })
+    if (self) await navigate({ href: await homePath(), replace: true })
     else await router.invalidate()
     return null
   }, null)

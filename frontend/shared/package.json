@@ -10,6 +10,7 @@
     "./input": "./src/components/input/input.tsx",
     "./textarea": "./src/components/textarea/textarea.tsx",
     "./button": "./src/components/button/button.tsx",
+    "./button.css": "./src/components/button/button.css",
     "./validate": "./src/validate/validate.ts",
     "./time": "./src/time/relative.ts",
     "./logo": "./src/components/logo/logo.tsx",

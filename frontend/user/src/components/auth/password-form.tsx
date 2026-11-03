@@ -4,7 +4,7 @@ import { Button } from '@tether/shared/button'
 import { Checkbox } from '@tether/shared/checkbox'
 import { Input } from '@tether/shared/input'
 import { email as checkEmail, required } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors } from '@/api'
+import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
 type PasswordState = { email: string; remember: boolean; errors?: FieldErrors; error?: string | null }
@@ -21,7 +21,7 @@ export function PasswordForm({ redirect }: { redirect?: string }) {
     } catch (e) {
       return { email, remember, ...toFormErrors(e) }
     }
-    await navigate({ href: redirect ?? '/' })
+    await navigate({ href: redirect ?? (await homePath()) })
     return { email, remember }
   }, { email: '', remember: false })
 
