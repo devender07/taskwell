@@ -27,6 +27,11 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: backend/go.work, cache-dependency-path: backend/*/go.sum }
       - run: go vet github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/...
+      # The S3 store the s3_* defaults point at (as in docker-compose.yml), for the storage and upload tests.
+      - run: |
+          docker run -d --name s3 -p 9000:8333 chrislusf/seaweedfs:3.97 server -dir=/data -s3 -ip.bind=0.0.0.0
+          curl -sf --retry 60 --retry-all-errors --retry-delay 1 http://localhost:9000/healthz
+          echo 's3.bucket.create -name tether' | docker exec -i s3 weed shell -master=localhost:9333
       - run: go test -race github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/...
       # Built with the toolchain go.work selects (else it can't type-check that stdlib); it only takes per-module patterns.
       - run: GOTOOLCHAIN=$(go env GOVERSION) go install golang.org/x/vuln/cmd/govulncheck@latest
