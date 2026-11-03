@@ -100,9 +100,11 @@ type Issue struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 	// DescriptionGeneration counts REST writes of the description; the collab ready frame carries it too, so an
 	// editor that was offline across one drops its stale document instead of merging it back.
-	DescriptionGeneration int  `json:"description_generation"`
-	CanEdit               bool `json:"can_edit"`
-	CanDelete             bool `json:"can_delete"`
+	DescriptionGeneration int    `json:"description_generation"`
+	Rank                  string `json:"rank"` // its place in its project's manual order (byte order)
+	CanEdit               bool   `json:"can_edit"`
+	CanDelete             bool   `json:"can_delete"`
+	projectID             string
 }
 
 // IssueDetail is a single issue with its relations.
@@ -153,7 +155,7 @@ const (
 	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
-	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation
+	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation, i.rank, i.project_id::text
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
 )
@@ -163,7 +165,8 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
-		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
+		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration,
+		&i.Rank, &i.projectID)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
 	}
@@ -225,9 +228,8 @@ func (n names) relatedPaths() []string {
 }
 
 // publishIssue publishes kind about the issue as named before and after the change: its pages, lists and the
-// pages of the issues related to it.
-func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, ns ...names) error {
-	var paths []string
+// pages of the issues related to it, plus paths.
+func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, paths []string, ns ...names) error {
 	for _, n := range ns {
 		paths = slices.Concat(paths, realtime.IssuePaths(n.slug, n.identifier, n.key), n.relatedPaths())
 	}
@@ -255,14 +257,22 @@ func (m *model) projectID(ctx context.Context, workspaceID, key, viewerID string
 // when a project or assignee gets near it.
 const maxList = 2000
 
-// inCycle returns the cycle's issues, newest first.
-func (m *model) inCycle(ctx context.Context, cycleID string) ([]Issue, error) {
-	return m.issues(ctx, `i.cycle_id = $1 order by i.number desc`, cycleID)
+// inCycle returns the cycle's issues in the sort's order (a sortBy key), newest first without one.
+func (m *model) inCycle(ctx context.Context, cycleID, sort string) ([]Issue, error) {
+	return m.issues(ctx, `i.cycle_id = $1 order by `+orderBy(sort), cycleID)
 }
 
-// list returns the project's issues, newest first.
-func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
-	return m.issues(ctx, `i.project_id = $1 order by i.number desc`, projectID)
+// list returns the project's issues in the sort's order (a sortBy key), newest first without one.
+func (m *model) list(ctx context.Context, projectID, sort string) ([]Issue, error) {
+	return m.issues(ctx, `i.project_id = $1 order by `+orderBy(sort), projectID)
+}
+
+// orderBy is an unpaged list's order: the sort's (ties as page's), or newest first for "".
+func orderBy(sort string) string {
+	if sort == "" {
+		return `i.number desc`
+	}
+	return sortBy[sort] + `, i.number desc, i.id`
 }
 
 // assigned returns the user's assigned issues in the workspace's active projects they can see, newest first.
@@ -308,7 +318,7 @@ var (
 	groupBy = map[string]string{"status": `i.status_id::text`, "assignee": `coalesce(i.assignee_id::text, 'none')`,
 		"priority": `i.priority::text`, "none": `'all'`}
 	sortBy = map[string]string{"priority": `i.priority = 0, i.priority`, "updated": `i.updated_at desc`,
-		"created": `i.created_at desc`, "due": `i.due_date nulls last`}
+		"created": `i.created_at desc`, "due": `i.due_date nulls last`, "manual": `i.rank`}
 )
 
 func (m *model) listPage(ctx context.Context, projectID string, q pageQuery) ([]Group, error) {
@@ -596,10 +606,11 @@ func (m *model) checkRefs(ctx context.Context, workspaceID, key, keep string, f 
 	return errs, nil
 }
 
-// create adds an issue numbered after the project's last one and returns its id; "" when there's no project with
-// the key. Returns errArchived when the project is archived. Bumping issue_seq locks the project row, so concurrent
-// creates get distinct numbers.
-func (m *model) create(ctx context.Context, workspaceID, key, userID string, f fields) (string, error) {
+// create adds an issue numbered after the project's last one, placed right after the issue afterID or before beforeID
+// (see place), last without either, and returns its id; "" when there's no project with the key. Returns errArchived
+// when the project is archived. Bumping issue_seq locks the project row, so concurrent creates get distinct numbers
+// and ranks.
+func (m *model) create(ctx context.Context, workspaceID, key, userID string, f fields, afterID, beforeID string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var projectID string
@@ -617,15 +628,19 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		if err := checkCycle(ctx, tx, projectID, f.cycleID); err != nil {
 			return err
 		}
+		rank, err := place(ctx, tx, projectID, "", afterID, beforeID)
+		if err != nil {
+			return err
+		}
 		if err := tx.QueryRow(ctx,
 			`insert into issues (workspace_id, project_id, number, title, description, description_text, status_id, assignee_id, priority,
-			   due_date, created_by, cycle_id)
+			   due_date, created_by, cycle_id, rank)
 			 values ($1, $2, $3, $4, $5, $11,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
-			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid)
+			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid, $13)
 			 returning id::text`,
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
-			doc.PlainText(f.description), f.cycleID).Scan(&id); err != nil {
+			doc.PlainText(f.description), f.cycleID, rank).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -669,7 +684,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 // update changes the issue's non-nil fields, sets updated_at, and logs each real change as the actor's event, with
 // its notifications. When it sets the description it also drops the issue's live-editing updates.
 func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return apply(ctx, tx, workspaceID, id, actorID, f, nil) })
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return apply(ctx, tx, workspaceID, id, actorID, f, nil, "issue.updated") })
 	if errors.Is(err, errNoCycle) || errors.As(err, new(parentError)) {
 		return err
 	}
@@ -682,14 +697,15 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 // SetStatus moves the issue to the status (one of its workspace's) in tx like a manual change, with no actor; the
 // status event's data gains via (what moved it, e.g. a merged pull request).
 func SetStatus(ctx context.Context, tx pgx.Tx, issueID, statusID string, via any) error {
-	if err := apply(ctx, tx, "", issueID, "", fields{statusID: &statusID}, via); err != nil {
+	if err := apply(ctx, tx, "", issueID, "", fields{statusID: &statusID}, via, "issue.updated"); err != nil {
 		return fmt.Errorf("set issue status: %w", err)
 	}
 	return nil
 }
 
-// apply is update in tx; actorID "" is no actor. A non-nil via is added to the status event's data.
-func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fields, via any) error {
+// apply is update in tx, publishing kind ("" publishes nothing: the caller does); actorID "" is no actor. A non-nil
+// via is added to the status event's data.
+func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fields, via any, kind string) error {
 	before, err := snap(ctx, tx, id)
 	if err != nil {
 		return err
@@ -770,11 +786,96 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 	if err := notify.Record(ctx, tx, c); err != nil {
 		return err
 	}
+	if kind == "" {
+		return nil
+	}
 	namedAfter, err := issueNames(ctx, tx, id)
 	if err != nil {
 		return err
 	}
-	return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
+	return publishIssue(ctx, tx, kind, actorID, nil, namedBefore, namedAfter)
+}
+
+// move places the issue right after the issue afterID, else right before beforeID (see place), first applying f's
+// status, assignee and priority when it sets any (update's rules, events and notifications), and marks the project
+// as ordered by hand.
+func (m *model) move(ctx context.Context, workspaceID, projectID, id, actorID, afterID, beforeID string, f fields) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// Locks the project row too: moves and creates in a project take turns.
+		if _, err := tx.Exec(ctx, `update projects set manual_order = true where id = $1`, projectID); err != nil {
+			return err
+		}
+		before, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if f.statusID != nil || f.assigneeID != nil || f.priority != nil {
+			if err := apply(ctx, tx, workspaceID, id, actorID, f, nil, ""); err != nil {
+				return err
+			}
+		}
+		rank, err := place(ctx, tx, projectID, id, afterID, beforeID)
+		if err != nil {
+			return err
+		}
+		if rank != "" {
+			if _, err := tx.Exec(ctx, `update issues set rank = $2 where id = $1`, id, rank); err != nil {
+				return err
+			}
+		}
+		after, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return publishIssue(ctx, tx, "issue.moved", actorID, []string{realtime.Project(after.slug, after.key)}, before, after)
+	})
+	if err != nil {
+		return fmt.Errorf("move issue: %w", err)
+	}
+	return nil
+}
+
+// place returns the rank that puts an issue of the project right after the issue afterID, else (afterID "") right
+// before beforeID, else last; exclude is the issue being placed ("" on create), left out of the neighbours. Returns
+// "" when exclude is already there or is the issue it'd go next to. A rank over maxRank characters rebalances the
+// project first. The caller holds the project row's lock, so no other placement reads the same neighbours.
+func place(ctx context.Context, tx pgx.Tx, projectID, exclude, afterID, beforeID string) (string, error) {
+	if exclude != "" && (afterID == exclude || afterID == "" && beforeID == exclude) {
+		return "", nil
+	}
+	for {
+		var lo, hi, cur string
+		err := tx.QueryRow(ctx,
+			`with n as (select (select rank from issues where id = $3::uuid and project_id = $1) a,
+			                   (select rank from issues where id = $4::uuid and project_id = $1) b)
+			 select coalesce(case when n.a is not null then n.a
+			          when n.b is not null then (select max(rank) from issues where project_id = $1 and rank < n.b and id is distinct from $2::uuid)
+			          else (select max(rank) from issues where project_id = $1 and id is distinct from $2::uuid) end, ''),
+			        coalesce(case when n.a is not null then (select min(rank) from issues
+			                                                 where project_id = $1 and rank > n.a and id is distinct from $2::uuid)
+			          else n.b end, ''),
+			        coalesce((select rank from issues where id = $2::uuid), '')
+			 from n`, projectID, nullable(exclude), nullable(afterID), nullable(beforeID)).Scan(&lo, &hi, &cur)
+		if err != nil {
+			return "", fmt.Errorf("read neighbours: %w", err)
+		}
+		if cur != "" && cur > lo && (hi == "" || cur < hi) {
+			return "", nil
+		}
+		if r := rankBetween(lo, hi); len(r) <= maxRank {
+			return r, nil
+		}
+		// Renumber the project evenly (rankAt) in one statement; its ranks pass through duplicates on the way.
+		if _, err := tx.Exec(ctx, `set constraints issues_project_id_rank_key deferred`); err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx,
+			`update issues i set rank = lpad(o.rn::text, 10, '0') || 'V'
+			 from (select id, row_number() over (order by rank) rn from issues where project_id = $1) o where o.id = i.id`,
+			projectID); err != nil {
+			return "", fmt.Errorf("rebalance ranks: %w", err)
+		}
+	}
 }
 
 // snap reads the issue's logged fields, locking it.
@@ -1007,7 +1108,7 @@ func (m *model) delete(ctx context.Context, id, actorID string) error {
 		if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
 			return err
 		}
-		if err := publishIssue(ctx, tx, "issue.deleted", actorID, n); err != nil {
+		if err := publishIssue(ctx, tx, "issue.deleted", actorID, nil, n); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))

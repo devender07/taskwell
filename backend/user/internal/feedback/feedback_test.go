@@ -33,8 +33,8 @@ func TestFeedback(t *testing.T) {
 			p as (insert into projects (workspace_id, name, key, private)
 			      select id, n, k, pr from w, (values ('Web', 'WEB', false), ('Leadership', 'LEAD', true)) v(n, k, pr) returning id, key),
 			s as (select id from statuses where workspace_id = (select id from w) order by position limit 1),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s) from p returning id)
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s), 'V' from p returning id)
 			select id::text, slug from w`, ann).Scan(&wsID, &slug)
 	}); err != nil {
 		t.Fatal(err)

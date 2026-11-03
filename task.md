@@ -27,6 +27,7 @@ Legend: `[x]` done, `[ ]` to do.
 
 - [x] List view with grouping (status, assignee, priority) and sorting
 - [x] Kanban board with drag between columns (pointer events: mouse and touch, edge auto-scroll)
+- [x] Manual issue order (`docs/issue-order-plan.md`): Manual sort, drag to reorder in list and board (across columns too), Alt+↑/↓, shared and live; MCP `reorder_issues`, `list_issues` sort, `create_issue` after/before
 - [x] Filters by assignee, status, label, priority, kept in the URL so they can be shared
 - [x] "My issues" view, with an Assigned / Watching switch
 

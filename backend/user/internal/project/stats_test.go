@@ -27,8 +27,9 @@ func TestStats(t *testing.T) {
 			p as (insert into projects (workspace_id, name, key, archived_at)
 			      select id, n, k, a from w, (values ('Web', 'WEB', null::timestamptz), ('Api', 'API', null), ('Old', 'OLD', now())) v(n, k, a)
 			      returning id, key),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id, due_date)
-			      select (select id from w), p.id, row_number() over (partition by p.id), 'x', s.id, v.due
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, due_date, rank)
+			      select (select id from w), p.id, row_number() over (partition by p.id), 'x', s.id, v.due,
+			             (row_number() over (partition by p.id))::text
 			      from p, (values ('Backlog', current_date - 1), ('Todo', current_date), ('In progress', null::date),
 			                      ('Done', current_date - 5), ('Cancelled', current_date - 5)) v(st, due)
 			      join statuses s on s.name = v.st and s.workspace_id = (select id from w)

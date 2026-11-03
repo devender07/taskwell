@@ -14,7 +14,10 @@ const tabs = [
 ] as const
 
 export const Route = createFileRoute('/_app/$workspace/_main/my-issues')({
-  validateSearch: (search): Search => ({ ...validateViewSearch(search), ...(search.watching === true ? { watching: true as const } : {}) }),
+  validateSearch: (search): Search => {
+    const { sort, ...view } = validateViewSearch(search)
+    return { ...view, ...(sort && sort !== 'manual' ? { sort } : {}), ...(search.watching === true ? { watching: true as const } : {}) }
+  },
   loaderDeps: ({ search }) => ({ watching: !!search.watching, query: issuePageQuery(search, !search.watching) }),
   loader: async (ctx) => {
     const { params } = ctx

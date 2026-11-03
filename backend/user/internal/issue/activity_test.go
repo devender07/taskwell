@@ -33,8 +33,8 @@ func TestActivity(t *testing.T) {
 			      select id, n, k, a from w, (values ('Engineering', 'ENG', null::timestamptz), ('Old', 'OLD', now())) v(n, k, a)
 			      returning id, key),
 			s as (select id from statuses where workspace_id = (select id from w) order by position limit 1),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s) from p returning id, title)
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s), 'V' from p returning id, title)
 			select (select id::text from w), (select slug from w),
 			       (select id::text from i where title = 'ENG issue'), (select id::text from i where title = 'OLD issue')`, ann).
 			Scan(&wsID, &slug, &live, &archived)

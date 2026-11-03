@@ -9,7 +9,7 @@ import { loaderApi } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
-import { hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
+import { defaultSort, hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
 import { ProjectMilestones } from '@/components/projects/milestones'
 import { ArchiveProject, DeleteProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
@@ -18,15 +18,19 @@ import '@/components/projects/projects.css'
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
   // edit: opens the edit dialog (the roadmap's "Set dates").
   validateSearch: (search): ViewSearch & { edit?: true } => ({ ...validateViewSearch(search), ...(search.edit === true ? { edit: true as const } : {}) }),
-  loaderDeps: ({ search }) => ({ query: issuePageQuery(search) }),
+  loaderDeps: ({ search: { edit: _, ...search } }) => ({ search }),
   loader: async (ctx) => {
     const { params } = ctx
     const path = `${workspacePath(params.workspace)}`
     const projectPath = `${path}/projects/${encodeURIComponent(params.key)}`
     const source = `${projectPath}/issues`
+    const projectReq = loaderApi<Project>(ctx, projectPath)
+    // ponytail: without a sort in the URL the issues wait for the project (its default sort); ship the default with
+    // the issue page if that wait shows.
+    const sort = ctx.deps.search.sort ?? projectReq.then(defaultSort)
     const [project, page, cycles, statuses, labels] = await Promise.all([
-      loaderApi<Project>(ctx, projectPath),
-      loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
+      projectReq,
+      Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
       loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
@@ -125,7 +129,7 @@ function ProjectPage() {
             {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
           </div>
         ) : (
-          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cycles} />
+          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cycles} defaultSort={defaultSort(project)} manual />
         )}
       </section>
       {manage ? (

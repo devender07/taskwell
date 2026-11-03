@@ -11,7 +11,7 @@ export type Member = { id: string; name: string; email: string; role: RoleRef }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; manual_order: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
 export type Milestone = { id: string; name: string; date: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
@@ -42,6 +42,7 @@ export type Issue = {
   id: string
   identifier: string
   number: number
+  rank: string
   project: { key: string; name: string }
   title: string
   description: Doc | null

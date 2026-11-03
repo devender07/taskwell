@@ -172,7 +172,7 @@ try {
   await cardEl.waitFor()
   const from = await statusOf()
   const target = nextStatus(from)
-  const col = demo.page.locator(`[data-column="${target.id}"]`)
+  const col = demo.page.locator(`[data-group="${target.id}"]`)
   await col.scrollIntoViewIfNeeded()
   await cardEl.scrollIntoViewIfNeeded()
   const a = await cardEl.boundingBox()
@@ -184,12 +184,12 @@ try {
   await demo.page.mouse.up()
   t.ok('board: drag moves the card to the next column', await waitFor(async () => (await statusOf()) === target.id), `${statuses.find((s) => s.id === from).name} → ${target.name}`)
 
-  await demo.page.locator(`[data-column="${target.id}"] .board-card[data-issue="${issue.id}"]`).focus()
+  await demo.page.locator(`[data-group="${target.id}"] .board-card[data-issue="${issue.id}"]`).focus()
   await demo.page.keyboard.press('Shift+ArrowRight')
   const after = nextStatus(target.id)
   t.ok('board: Shift+→ moves the focused card', await waitFor(async () => (await statusOf()) === after.id), `→ ${after.name}`)
   t.ok('board: move announced', await waitFor(async () => (await demo.page.locator('.board [role=status]').innerText()) === `Moved ${identifier} to ${after.name}.`))
-  t.ok('board: focus follows the card', await waitFor(() => demo.page.evaluate((id) => document.activeElement?.getAttribute('data-issue') === id && !!document.activeElement.closest(`[data-column]`), issue.id)))
+  t.ok('board: focus follows the card', await waitFor(() => demo.page.evaluate((id) => document.activeElement?.getAttribute('data-issue') === id && !!document.activeElement.closest(`[data-group]`), issue.id)))
   await demo.page.keyboard.press('Shift+ArrowLeft')
   t.ok('board: Shift+← moves it back', await waitFor(async () => (await statusOf()) === target.id))
 

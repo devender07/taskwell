@@ -134,8 +134,15 @@
 @media (hover: hover) {
   .board-card:hover { border-color: rgba(255, 255, 255, 0.08); }
 }
-.board-card[data-draggable] { cursor: grab; }
-.board-card[data-dragging] { opacity: 0.4; }
+.board-card[data-draggable], .issue-row[data-draggable] { cursor: grab; }
+.issue-row[data-draggable] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.board-card[data-dragging], .issue-row[data-dragging] { opacity: 0.4; }
+[data-drop] { position: relative; }
+[data-drop]::before { content: ''; position: absolute; inset-inline: 0; z-index: 1; height: 2px; background: var(--link); border-radius: 9999px; pointer-events: none; }
+[data-drop='before']::before { top: -1px; }
+[data-drop='after']::before { bottom: -1px; }
+.board-cards > [data-drop='before']::before { top: -5px; }
+.board-cards > [data-drop='after']::before { bottom: -5px; }
 .board-ghost {
   position: fixed;
   top: 0;

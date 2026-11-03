@@ -28,9 +28,12 @@ import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fiel
 import {
   FILTER_KEYS,
   PRIORITY_ORDER,
+  applyOverrides,
   filterParam,
   filterValues,
+  groupKey,
   issuePageQuery,
+  neighbours,
   orderGroups,
   pageAssignees,
   viewGroup,
@@ -38,10 +41,13 @@ import {
   type GroupBy,
   type IssueGroup,
   type IssuePage,
+  type Neighbours,
+  type Override,
   type SortBy,
   type ViewSearch,
 } from './view-search'
 import { useIssuePages, usePageEnd } from './issue-pages'
+import { dropMark, slotAt, useIssueDrag } from './drag'
 import './issues.css'
 
 type Props = {
@@ -54,42 +60,17 @@ type Props = {
   search: ViewSearch
   mine?: boolean
   cycles?: CycleRef[]
+  defaultSort?: SortBy
+  manual?: boolean
 }
 type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
-// A board move shown before the loader data has it; `settled` once the save and its reload finished.
-type Override = { issue: Issue; next: Partial<Issue>; key: string; by: GroupBy; settled: boolean }
-type Move = { issue: Issue; form: FormData; override: Override }
-
-const groupKey = (i: Issue, by: GroupBy) => (by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? 'none') : String(i.priority))
-
-// Moves each overridden card into its new group, at the top unless that group has loaded it (then it's patched in
-// place). Counts follow a card that moved between loaded groups; one not loaded anywhere is already counted there.
-function applyOverrides(groups: IssueGroup[], overrides: Override[], by: GroupBy) {
-  let out = groups
-  for (const o of overrides) {
-    if (o.by !== by) continue
-    const id = o.issue.id
-    const from = out.find((g) => g.issues.some((i) => i.id === id))
-    if (from?.key === o.key) {
-      out = out.map((g) => (g === from ? { ...g, issues: g.issues.map((i) => (i.id === id ? { ...i, ...o.next } : i)) } : g))
-      continue
-    }
-    out = out.map((g) =>
-      g === from
-        ? { ...g, count: g.count - 1, issues: g.issues.filter((i) => i.id !== id) }
-        : g.key === o.key
-          ? { ...g, count: g.count + (from ? 1 : 0), issues: [o.issue, ...g.issues] }
-          : g,
-    )
-  }
-  return out
-}
-
+type Move = { issue: Issue; path: string; form: FormData; override: Override }
 const views = [
   { value: 'list', label: 'List' },
   { value: 'board', label: 'Board' },
 ] as const
 const sortOptions: Option[] = [
+  { value: 'manual', label: 'Manual' },
   { value: 'priority', label: 'Priority' },
   { value: 'updated', label: 'Last updated' },
   { value: 'created', label: 'Created' },
@@ -98,38 +79,57 @@ const sortOptions: Option[] = [
 
 // Toolbar plus list or board for the issues at `source`, starting from its first page (`page`, per group); display
 // options and filters live in the URL and the server applies them.
-export function IssueView({ workspace, page, source, statuses, labels, userId, search, mine, cycles }: Props) {
+export function IssueView({ workspace, page, source, statuses, labels, userId, search, mine, cycles, defaultSort = 'priority', manual }: Props) {
   const navigate = useNavigate()
   const router = useRouter()
   const [overrides, setOverrides] = useState<Override[]>([])
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const [announcement, setAnnouncement] = useState('')
+  const root = useRef<HTMLDivElement>(null)
+  const refocus = useRef<{ id: string; group: string; until: number } | null>(null)
+  const hint = useId()
   const [seen, setSeen] = useState(page)
   if (page !== seen) {
     setSeen(page)
     // Kept until fresh data has the move, so the card never shows in its old column in between. A settled move gives
     // way to the data (which may have it further down its new column, or somewhere else if someone moved it meanwhile).
     const loaded = page.groups.flatMap((g) => g.issues)
-    const left = overrides.filter((o) => !o.settled && !loaded.some((i) => i.id === o.issue.id && groupKey(i, o.by) === o.key))
+    // A manual place is kept until its own reload, since the data can't show whether it has it yet.
+    const left = overrides.filter(
+      (o) => !o.settled && (o.after !== undefined || !loaded.some((i) => i.id === o.issue.id && groupKey(i, o.by) === o.key)),
+    )
     if (left.length !== overrides.length) setOverrides(left)
   }
-  const [error, move] = useActionState(async (_prev: string | null, { issue, form, override }: Move) => {
-    const mine = (o: Override) => o === override
+  const [error, move] = useActionState(async (_prev: string | null, { path, form, override }: Move) => {
+    const drop = () => setOverrides((list) => list.filter((o) => o !== override))
     try {
-      await api<Issue>(issuePath(workspace, issue.identifier), form)
+      await api<Issue>(path, form)
     } catch (e) {
-      setOverrides((list) => list.filter((o) => !mine(o)))
+      drop()
       const { errors, error } = toFormErrors(e)
       return Object.values(errors).find(Boolean) ?? error
     }
     await reloadPage(router)
     override.settled = true
+    if (override.after !== undefined) drop()
     return null
   }, null)
 
+  // A keyboard move re-mounts the issue (more than once: optimistic, then saved); focus follows it for a few seconds,
+  // unless the user has moved focus elsewhere.
+  useEffect(() => {
+    const want = refocus.current
+    if (!want) return
+    if (Date.now() > want.until) return void (refocus.current = null)
+    const el = root.current?.querySelector<HTMLElement>(`[data-group="${CSS.escape(want.group)}"] [data-issue="${CSS.escape(want.id)}"]`)
+    const lost = !document.activeElement || document.activeElement === document.body
+    if (el && lost) el.focus()
+  })
+
   const view = search.view ?? 'list'
   const group = viewGroup(search, mine)
-  const sort: SortBy = search.sort ?? 'priority'
-  const pages = useIssuePages(page, source, issuePageQuery(search, mine))
+  const sort: SortBy = search.sort === 'manual' && !manual ? 'priority' : (search.sort ?? defaultSort)
+  const ordered = sort === 'manual'
+  const pages = useIssuePages(page, source, issuePageQuery(search, mine, defaultSort))
   const groups = useMemo(
     () => applyOverrides(orderGroups(pages.page, group, { statuses, userId }), overrides, group),
     [pages.page, group, statuses, userId, overrides],
@@ -172,10 +172,14 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
     ...(view === 'list' ? [{ value: 'none', label: 'No grouping' }] : []),
   ]
 
-  function onMove(issue: Issue, key: string) {
+  // Saves a move to group `key`: its field through the update endpoint, or with neighbours through the move endpoint,
+  // which also changes the field when the group differs.
+  function onMove(issue: Issue, key: string, at?: Neighbours) {
     const form = new FormData()
-    let next: Partial<Issue>
-    if (group === 'status') {
+    let next: Partial<Issue> = {}
+    if (key === groupKey(issue, group)) {
+      if (!at) return
+    } else if (group === 'status') {
       const status = statuses.find((s) => s.id === key)
       if (!status) return
       form.set('status_id', key)
@@ -184,17 +188,52 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
       const name = groups.find((g) => g.key === key)?.label
       form.set('assignee_id', key === 'none' ? '' : key)
       next = { assignee: key !== 'none' && name ? { id: key, name } : null }
-    } else {
+    } else if (group === 'priority') {
       form.set('priority', key)
       next = { priority: Number(key) }
     }
-    const override: Override = { issue: { ...issue, ...next }, next, key, by: group, settled: false }
+    let path = issuePath(workspace, issue.identifier)
+    if (at) {
+      path += '/move'
+      form.set('after', at.after?.identifier ?? '')
+      form.set('before', at.before?.identifier ?? '')
+    }
+    const override: Override = { issue: { ...issue, ...next }, next, key, by: group, settled: false, ...(at ? { after: at.after?.id ?? null } : {}) }
     setOverrides((list) => [...list.filter((o) => o.issue.id !== issue.id), override])
-    startTransition(() => move({ issue, form, override }))
+    startTransition(() => move({ issue, path, form, override }))
+  }
+
+  // Puts an issue at slot `index` among group `key`'s other rendered issues; into an empty group it only changes group.
+  function onPlace(issue: Issue, key: string, index: number) {
+    const at = neighbours(groups.find((g) => g.key === key)?.issues ?? [], issue, index)
+    if (at) onMove(issue, key, at.after || at.before ? at : undefined)
+  }
+
+  function keyMove(e: ReactKeyboardEvent<HTMLElement>, issue: Issue, from: string) {
+    if (e.ctrlKey || e.metaKey || !issue.can_edit) return
+    const g = groups.find((g) => g.key === from)
+    if (ordered && e.altKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && g) {
+      e.preventDefault()
+      const up = e.key === 'ArrowUp'
+      const to = g.issues.findIndex((i) => i.id === issue.id) + (up ? -1 : 1)
+      if (to < 0 || to >= g.issues.length) return setAnnouncement(`${issue.identifier} is already ${up ? 'first' : 'last'}.`)
+      refocus.current = { id: issue.id, group: from, until: Date.now() + 3000 }
+      onPlace(issue, from, to)
+      setAnnouncement(`Moved ${issue.identifier} to position ${to + 1} of ${g.count}.`)
+      return
+    }
+    if (view !== 'board' || !e.shiftKey || e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+    e.preventDefault()
+    const at = groups.findIndex((g) => g.key === from)
+    const to = groups[at + (e.key === 'ArrowLeft' ? -1 : 1)]
+    if (!to) return setAnnouncement(`${issue.identifier} is already in the ${e.key === 'ArrowLeft' ? 'first' : 'last'} column.`)
+    refocus.current = { id: issue.id, group: to.key, until: Date.now() + 3000 }
+    onMove(issue, to.key)
+    setAnnouncement(`Moved ${issue.identifier} to ${to.label}.`)
   }
 
   return (
-    <div className="grid gap-4">
+    <div ref={root} className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <Tabs
           aria-label="View"
@@ -211,9 +250,9 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
         />
         <Select
           label="Sort"
-          options={sortOptions}
+          options={manual ? sortOptions : sortOptions.slice(1)}
           value={sort}
-          onChange={(v) => setSearch({ ...search, sort: v === 'priority' ? undefined : (v as ViewSearch['sort']) })}
+          onChange={(v) => setSearch({ ...search, sort: v === defaultSort ? undefined : (v as SortBy) })}
         />
         <FilterMenu choices={choices} search={search} onChange={setFilter} />
         <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>
@@ -235,52 +274,134 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
       ) : null}
       <FormError>{error}</FormError>
       {view === 'board' ? (
-        <Board workspace={workspace.slug} groups={groups} by={group} onMove={onMove} more={pages.more} errorOf={pages.error} />
+        <Board
+          workspace={workspace.slug}
+          groups={groups}
+          by={group}
+          ordered={ordered}
+          hint={hint}
+          onMove={onMove}
+          onPlace={onPlace}
+          onKey={keyMove}
+          more={pages.more}
+          errorOf={pages.error}
+        />
       ) : page.total === 0 ? (
         <p className="text-body-sm text-secondary p-6 bg-surface border rounded-lg text-center">No issues match these filters.</p>
       ) : (
-        groups
-          .filter((g) => g.count > 0 || g.issues.length > 0)
-          .map((g) => {
-            const open = group === 'none' || !collapsed.has(`${group}:${g.key}`)
-            return (
-              <section key={g.key} className="bg-surface border rounded-lg overflow-hidden" aria-label={group === 'none' ? 'Issues' : g.label}>
-                {group === 'none' ? null : (
-                  <h2 className="m-0">
-                    <button
-                      type="button"
-                      className="issue-group-header issue-group-toggle"
-                      aria-expanded={open}
-                      onClick={() =>
-                        setCollapsed((prev) => {
-                          const next = new Set(prev)
-                          const key = `${group}:${g.key}`
-                          if (!next.delete(key)) next.add(key)
-                          return next
-                        })
-                      }
-                    >
-                      {open ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
-                      <GroupIcon group={g} by={group} />
-                      <span className="text-label">{g.label}</span>
-                      <span className="text-caption text-secondary">{g.count}</span>
-                    </button>
-                  </h2>
-                )}
-                {open ? (
-                  <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
-                    {g.issues.map((issue) => (
-                      <li key={issue.id}>
-                        <IssueRow workspace={workspace.slug} issue={issue} />
-                      </li>
-                    ))}
-                    <GroupEnd group={g} more={pages.more} error={pages.error(g.key)} />
-                  </ul>
-                ) : null}
-              </section>
-            )
-          })
+        <IssueList
+          workspace={workspace.slug}
+          groups={groups}
+          by={group}
+          ordered={ordered}
+          hint={hint}
+          onPlace={onPlace}
+          onKey={keyMove}
+          more={pages.more}
+          errorOf={pages.error}
+        />
       )}
+      <p id={hint} className="sr-only">
+        {view === 'board' ? 'Press Shift+Left or Shift+Right to move to another column. ' : ''}
+        {ordered ? 'Press Alt+Up or Alt+Down to move up or down.' : ''}
+      </p>
+      <p className="sr-only" role="status">{announcement}</p>
+    </div>
+  )
+}
+
+type CardHandlers = {
+  press: (e: ReactPointerEvent<HTMLElement>, issue: Issue, from: string) => void
+  key: (e: ReactKeyboardEvent<HTMLElement>, issue: Issue, from: string) => void
+  click: (e: ReactMouseEvent<HTMLElement>) => void
+  contextMenu: (e: ReactMouseEvent<HTMLElement>) => void
+}
+type ViewProps = {
+  workspace: string
+  groups: IssueGroup[]
+  by: GroupBy
+  ordered: boolean
+  hint: string
+  onPlace: (issue: Issue, key: string, index: number) => void
+  onKey: CardHandlers['key']
+  more: (key: string) => void
+  errorOf: (key: string) => string | undefined
+}
+
+// Drag and keyboard handlers that stay the same across renders, so memoized cards and rows skip a drag's re-renders.
+function useHandlers(drag: Omit<CardHandlers, 'key'>, onKey: CardHandlers['key']) {
+  const key = useRef(onKey)
+  key.current = onKey
+  return useMemo<CardHandlers>(() => ({ ...drag, key: (e, issue, from) => key.current(e, issue, from) }), [drag.press, drag.click, drag.contextMenu])
+}
+
+// With manual order, rows drag within their group; a drop line marks the slot.
+function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more, errorOf }: ViewProps) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const list = useRef<HTMLDivElement>(null)
+  const { drag, ghostRef, ...dragHandlers } = useIssueDrag({
+    targetAt: (_x, y, issue, from) => {
+      const section = list.current?.querySelector(`[data-group="${CSS.escape(from)}"]`)
+      return section ? { group: from, index: slotAt(section, y, issue.id) } : null
+    },
+    onDrop: (issue, _from, at) => at.index !== null && onPlace(issue, at.group, at.index),
+  })
+  const on = useHandlers(dragHandlers, onKey)
+
+  return (
+    <div ref={list} className="grid gap-4">
+      {groups
+        .filter((g) => g.count > 0 || g.issues.length > 0)
+        .map((g) => {
+          const open = by === 'none' || !collapsed.has(`${by}:${g.key}`)
+          const mark = dropMark(g.issues, drag, g.key)
+          return (
+            <section key={g.key} data-group={g.key} className="bg-surface border rounded-lg overflow-hidden" aria-label={by === 'none' ? 'Issues' : g.label}>
+              {by === 'none' ? null : (
+                <h2 className="m-0">
+                  <button
+                    type="button"
+                    className="issue-group-header issue-group-toggle"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setCollapsed((prev) => {
+                        const next = new Set(prev)
+                        const key = `${by}:${g.key}`
+                        if (!next.delete(key)) next.add(key)
+                        return next
+                      })
+                    }
+                  >
+                    {open ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+                    <GroupIcon group={g} by={by} />
+                    <span className="text-label">{g.label}</span>
+                    <span className="text-caption text-secondary">{g.count}</span>
+                  </button>
+                </h2>
+              )}
+              {open ? (
+                <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
+                  {g.issues.map((issue) => (
+                    <li key={issue.id} data-drop={mark?.id === issue.id ? mark.side : undefined}>
+                      {ordered ? (
+                        <IssueRow workspace={workspace} issue={issue} group={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={on} />
+                      ) : (
+                        <IssueRow workspace={workspace} issue={issue} />
+                      )}
+                    </li>
+                  ))}
+                  <GroupEnd group={g} more={more} error={errorOf(g.key)} />
+                </ul>
+              ) : null}
+            </section>
+          )
+        })}
+      {drag ? (
+        <div aria-hidden className="issue-row board-ghost" style={{ width: drag.width }} ref={ghostRef}>
+          <span className="issue-id flex-noshrink">{drag.issue.identifier}</span>
+          <span className="text-label text-primary ellipsis">{drag.issue.title}</span>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -355,9 +476,25 @@ function GroupIcon({ group, by }: { group: IssueGroup; by: GroupBy }) {
   return null
 }
 
-export const IssueRow = memo(function IssueRow({ workspace, issue }: { workspace: string; issue: Issue }) {
+type IssueRowProps = { workspace: string; issue: Issue; group?: string; dragging?: boolean; hint?: string; on?: CardHandlers }
+
+export const IssueRow = memo(function IssueRow({ workspace, issue, group = '', dragging, hint, on }: IssueRowProps) {
+  const movable = on && issue.can_edit
   return (
-    <Link to="/$workspace/issue/$identifier" params={{ workspace, identifier: issue.identifier }} className="issue-row">
+    <Link
+      to="/$workspace/issue/$identifier"
+      params={{ workspace, identifier: issue.identifier }}
+      className="issue-row"
+      draggable={on ? false : undefined}
+      data-issue={issue.id}
+      data-draggable={movable ? '' : undefined}
+      data-dragging={dragging ? '' : undefined}
+      aria-describedby={movable ? hint : undefined}
+      onPointerDown={on && ((e) => on.press(e, issue, group))}
+      onKeyDown={on && ((e) => on.key(e, issue, group))}
+      onContextMenu={on?.contextMenu}
+      onClick={on?.click}
+    >
       <StatusIcon status={issue.status} label={issue.status.name} />
       <span className="issue-id flex-noshrink" style={{ minWidth: 64 }}>{issue.identifier}</span>
       {issue.parent ? <span className="issue-id flex-noshrink">↳ {issue.parent.identifier}</span> : null}
@@ -419,43 +556,22 @@ function CardBody({ issue }: { issue: Issue }) {
   )
 }
 
-type Drag = { issue: Issue; over: string | null; width: number }
-type CardHandlers = {
-  press: (e: ReactPointerEvent<HTMLAnchorElement>, issue: Issue, from: string) => void
-  key: (e: ReactKeyboardEvent<HTMLAnchorElement>, issue: Issue, from: string) => void
-  click: (e: ReactMouseEvent<HTMLAnchorElement>) => void
-  contextMenu: (e: ReactMouseEvent<HTMLAnchorElement>) => void
-}
 
-const HOLD_MS = 150
-const SLOP_PX = 6
-const EDGE_PX = 56 // dragging this close to the board's side scrolls it, so off-screen columns are reachable
-
-// Columns are drop targets ([data-column]); cards drag with pointer events so mouse, pen and touch all work.
-// Touch needs a short hold first, so a swipe still scrolls the board. From the keyboard, Shift+←/→ on a focused card
-// moves it to the next column, announced in a live region. Cards are memoized, so a drag re-renders only the columns.
-type BoardProps = {
-  workspace: string
-  groups: IssueGroup[]
-  by: GroupBy
-  onMove: (issue: Issue, key: string) => void
-  more: (key: string) => void
-  errorOf: (key: string) => string | undefined
-}
-
-function Board({ workspace, groups, by, onMove, more, errorOf }: BoardProps) {
-  const [drag, setDrag] = useState<Drag | null>(null)
-  const [announcement, setAnnouncement] = useState('')
+// Columns are drop targets ([data-group]); with manual order a drop line marks the slot in the column, otherwise only
+// the column changes. From the keyboard, Shift+←/→ on a focused card moves it to the next column.
+function Board({ workspace, groups, by, ordered, hint, onMove, onPlace, onKey, more, errorOf }: ViewProps & { onMove: (issue: Issue, key: string) => void }) {
   const boardRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-  const suppressClick = useRef(false)
-  const refocus = useRef<{ id: string; column: string; until: number } | null>(null)
-  const pos = useRef({ x: 0, y: 0 })
-  const ghost = useRef<HTMLDivElement | null>(null)
-  const hint = useId()
-  const place = () => {
-    if (ghost.current) ghost.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`
-  }
+  const { drag, ghostRef, ...dragHandlers } = useIssueDrag({
+    scroller: boardRef,
+    targetAt: (x, y, issue) => {
+      const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-group]')
+      const group = column?.dataset.group
+      if (!column || group === undefined) return null
+      return { group, index: ordered ? slotAt(column, y, issue.id) : null }
+    },
+    onDrop: (issue, from, at) => (at.index === null ? at.group !== from && onMove(issue, at.group) : onPlace(issue, at.group, at.index)),
+  })
+  const on = useHandlers(dragHandlers, onKey)
 
   // The board runs to the bottom of the window, so its horizontal scrollbar sits there and each column scrolls on its
   // own. It's re-measured when the window or the content above it (filters, chips) changes size.
@@ -479,153 +595,30 @@ function Board({ workspace, groups, by, onMove, more, errorOf }: BoardProps) {
     }
   }, [])
 
-  useEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    const block = (e: TouchEvent) => dragging.current && e.preventDefault()
-    board.addEventListener('touchmove', block, { passive: false })
-    return () => board.removeEventListener('touchmove', block)
-  }, [])
-
-  // A keyboard move re-mounts the card in its new column (more than once: optimistic, then saved); focus follows it
-  // there for a few seconds, unless the user has moved focus elsewhere.
-  useEffect(() => {
-    const want = refocus.current
-    if (!want) return
-    if (Date.now() > want.until) return void (refocus.current = null)
-    const el = boardRef.current?.querySelector<HTMLElement>(`[data-column="${CSS.escape(want.column)}"] [data-issue="${CSS.escape(want.id)}"]`)
-    const lost = !document.activeElement || document.activeElement === document.body
-    if (el && lost) el.focus()
-  })
-
-  function keyMove(e: ReactKeyboardEvent<HTMLAnchorElement>, issue: Issue, from: string) {
-    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !issue.can_edit) return
-    e.preventDefault()
-    const at = groups.findIndex((g) => g.key === from)
-    const to = groups[at + (e.key === 'ArrowLeft' ? -1 : 1)]
-    if (!to) return setAnnouncement(`${issue.identifier} is already in the ${e.key === 'ArrowLeft' ? 'first' : 'last'} column.`)
-    refocus.current = { id: issue.id, column: to.key, until: Date.now() + 3000 }
-    onMove(issue, to.key)
-    setAnnouncement(`Moved ${issue.identifier} to ${to.label}.`)
-  }
-
-  function press(e: ReactPointerEvent<HTMLAnchorElement>, issue: Issue, from: string) {
-    suppressClick.current = false
-    if (!issue.can_edit || !e.isPrimary || e.button !== 0) return
-    const { pointerId, pointerType } = e
-    const start = { x: e.clientX, y: e.clientY }
-    const rect = e.currentTarget.getBoundingClientRect()
-    const offset = { x: start.x - rect.left, y: start.y - rect.top }
-    const columnAt = (x: number, y: number) => document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-column]')?.dataset.column ?? null
-    pos.current = { x: rect.left, y: rect.top }
-
-    const begin = () => {
-      dragging.current = true
-      suppressClick.current = true
-      setDrag({ issue, over: from, width: rect.width })
-    }
-    const timer = setTimeout(begin, HOLD_MS)
-    const last = { x: start.x, y: start.y }
-    let frame = 0
-    const autoScroll = () => {
-      const board = boardRef.current
-      frame = 0
-      if (!board || !dragging.current) return
-      const { left, right } = board.getBoundingClientRect()
-      const speed = last.x < left + EDGE_PX ? -12 : last.x > right - EDGE_PX ? 12 : 0
-      if (!speed) return
-      board.scrollLeft += speed
-      const over = columnAt(last.x, last.y)
-      setDrag((d) => (d && d.over !== over ? { ...d, over } : d))
-      frame = requestAnimationFrame(autoScroll)
-    }
-
-    const onMoveEvent = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return
-      if (!dragging.current) {
-        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) <= SLOP_PX) return
-        if (pointerType === 'touch') return end()
-        begin()
-      }
-      pos.current = { x: ev.clientX - offset.x, y: ev.clientY - offset.y }
-      place()
-      last.x = ev.clientX
-      last.y = ev.clientY
-      const over = columnAt(ev.clientX, ev.clientY)
-      setDrag((d) => (d && d.over !== over ? { ...d, over } : d))
-      if (!frame) frame = requestAnimationFrame(autoScroll)
-    }
-    const onUp = (ev: PointerEvent) => {
-      if (ev.pointerId !== pointerId) return
-      if (dragging.current) {
-        const over = columnAt(ev.clientX, ev.clientY)
-        if (over !== null && over !== from) onMove(issue, over)
-      }
-      end()
-    }
-    const onCancel = (ev: PointerEvent) => ev.pointerId === pointerId && end()
-
-    function end() {
-      clearTimeout(timer)
-      cancelAnimationFrame(frame)
-      window.removeEventListener('pointermove', onMoveEvent)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onCancel)
-      if (dragging.current) setDrag(null)
-      dragging.current = false
-    }
-    window.addEventListener('pointermove', onMoveEvent)
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onCancel)
-  }
-
-  const latest = useRef({ press, keyMove })
-  latest.current = { press, keyMove }
-  const handlers = useMemo<CardHandlers>(
-    () => ({
-      press: (e, issue, from) => latest.current.press(e, issue, from),
-      key: (e, issue, from) => latest.current.keyMove(e, issue, from),
-      click: (e) => {
-        if (!suppressClick.current || e.detail === 0) return
-        e.preventDefault()
-        suppressClick.current = false
-      },
-      contextMenu: (e) => dragging.current && e.preventDefault(),
-    }),
-    [],
-  )
-
   return (
     <div ref={boardRef} className="board" aria-label="Board" role="region">
-      {groups.map((g) => (
-        <section key={g.key} data-column={g.key} data-over={drag && drag.over === g.key ? '' : undefined} className="board-column" aria-label={g.label}>
-          <header className="flex items-center gap-2 px-2">
-            <GroupIcon group={g} by={by} />
-            <span className="text-label ellipsis">{g.label}</span>
-            <span className="text-caption text-secondary">{g.count}</span>
-          </header>
-          <ul className="board-cards">
-            {g.issues.map((issue) => (
-              <li key={issue.id}>
-                <BoardCard workspace={workspace} issue={issue} column={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={handlers} />
-              </li>
-            ))}
-            <GroupEnd group={g} more={more} error={errorOf(g.key)} scroller />
-          </ul>
-        </section>
-      ))}
-      <p id={hint} className="sr-only">Press Shift+Left or Shift+Right to move to another column.</p>
-      <p className="sr-only" role="status">{announcement}</p>
+      {groups.map((g) => {
+        const mark = dropMark(g.issues, drag, g.key)
+        return (
+          <section key={g.key} data-group={g.key} data-over={drag?.at?.group === g.key ? '' : undefined} className="board-column" aria-label={g.label}>
+            <header className="flex items-center gap-2 px-2">
+              <GroupIcon group={g} by={by} />
+              <span className="text-label ellipsis">{g.label}</span>
+              <span className="text-caption text-secondary">{g.count}</span>
+            </header>
+            <ul className="board-cards">
+              {g.issues.map((issue) => (
+                <li key={issue.id} data-drop={mark?.id === issue.id ? mark.side : undefined}>
+                  <BoardCard workspace={workspace} issue={issue} column={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={on} />
+                </li>
+              ))}
+              <GroupEnd group={g} more={more} error={errorOf(g.key)} scroller />
+            </ul>
+          </section>
+        )
+      })}
       {drag ? (
-        <div
-          aria-hidden
-          className="board-card board-ghost"
-          style={{ width: drag.width }}
-          ref={(el) => {
-            ghost.current = el
-            place()
-          }}
-        >
+        <div aria-hidden className="board-card board-ghost" style={{ width: drag.width }} ref={ghostRef}>
           <CardBody issue={drag.issue} />
         </div>
       ) : null}

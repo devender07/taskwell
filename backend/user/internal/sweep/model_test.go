@@ -74,8 +74,8 @@ func TestDeleteUnreferencedFiles(t *testing.T) {
 	)
 	desc := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/` + inImage + `/f.png"}},
 		{"type":"paragraph","content":[{"type":"text","text":"see","marks":[{"type":"link","attrs":{"href":"/api/files/` + inLink + `/f.png"}}]}]}]}`
-	issue := one(`insert into issues (workspace_id, project_id, number, title, status_id, created_by, description)
-		values ($1, $2, 1, 'I', $3, $4, $5) returning id::text`, ws, project, status, user, desc)
+	issue := one(`insert into issues (workspace_id, project_id, number, title, status_id, created_by, description, rank)
+		values ($1, $2, 1, 'I', $3, $4, $5, 'V') returning id::text`, ws, project, status, user, desc)
 	one(`insert into comments (issue_id, author_id, body) values ($1, $2, $3) returning id::text`, issue, user,
 		`{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/`+inComment+`/f.png"}}]}`)
 	one(`insert into issue_doc_updates (issue_id, data) values ($1, '\x0102'::bytea || convert_to('/api/files/' || $2 || '/f.png', 'UTF8')) returning id::text`, issue, inLive)

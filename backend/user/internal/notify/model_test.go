@@ -25,8 +25,8 @@ func TestRecord(t *testing.T) {
 		return tx.QueryRow(ctx,
 			`with w as (select id from workspaces where created_by = $1),
 			      p as (insert into projects (workspace_id, name, key) select id, 'P', 'REC' from w returning id, workspace_id)
-			 insert into issues (workspace_id, project_id, number, title, status_id)
-			 select p.workspace_id, p.id, 1, 'T', (select id from statuses where workspace_id = p.workspace_id limit 1) from p
+			 insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			 select p.workspace_id, p.id, 1, 'T', (select id from statuses where workspace_id = p.workspace_id limit 1), 'V' from p
 			 returning workspace_id::text, id::text`, ann).Scan(&wsID, &issueID)
 	}); err != nil {
 		t.Fatal(err)

@@ -45,6 +45,7 @@ type Project struct {
 	StartDate   *string   `json:"start_date"`
 	TargetDate  *string   `json:"target_date"`
 	CreatedAt   time.Time `json:"created_at"`
+	ManualOrder bool      `json:"manual_order"` // someone has ordered its issues by hand: its lists default to manual
 }
 
 // input is a create or update form. A nil date is unchanged on update (unset on create); "" clears it.
@@ -57,14 +58,14 @@ type input struct {
 const cols = `id::text, name, key, description, archived_at is not null, private,
 	coalesce((select json_agg(json_build_object('id', u.id, 'name', u.name) order by lower(u.name), u.id)
 	  from project_members pm join users u on u.id = pm.user_id where pm.project_id = projects.id), '[]'),
-	to_char(start_date, 'YYYY-MM-DD'), to_char(target_date, 'YYYY-MM-DD'), created_at`
+	to_char(start_date, 'YYYY-MM-DD'), to_char(target_date, 'YYYY-MM-DD'), created_at, manual_order`
 
 // visible is the condition that the viewer ($2 unless placed otherwise) can see the project.
 const visible = `can_see_project(id, $2)`
 
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.StartDate, &p.TargetDate, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.StartDate, &p.TargetDate, &p.CreatedAt, &p.ManualOrder)
 	p.CreatedAt = p.CreatedAt.UTC()
 	return p, err
 }

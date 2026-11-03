@@ -1,15 +1,15 @@
 import type { Issue, Status } from '@/api'
 
 export type GroupBy = 'status' | 'assignee' | 'priority' | 'none'
-export type SortBy = 'priority' | 'updated' | 'created' | 'due'
+export type SortBy = 'manual' | 'priority' | 'updated' | 'created' | 'due'
 export type FilterKey = 'status' | 'assignee' | 'label' | 'priority' | 'cycle'
 
-// Defaults (list, status, priority, no filters) are left out of the URL.
+// Defaults (list, status, the page's default sort, no filters) are left out of the URL.
 // A lone priority stays a number: the router JSON-quotes digit-only strings (`"1"`), numbers stay bare.
 export type ViewSearch = {
   view?: 'board'
   group?: Exclude<GroupBy, 'status'>
-  sort?: Exclude<SortBy, 'priority'>
+  sort?: SortBy
   status?: string
   assignee?: string
   label?: string
@@ -22,7 +22,7 @@ export type IssuePage = { total: number; groups: PageGroup[] }
 export type IssueGroup = PageGroup & { label: string; status?: Status }
 
 const GROUPS = ['assignee', 'priority', 'none'] as const
-const SORTS = ['updated', 'created', 'due'] as const
+const SORTS = ['manual', 'priority', 'updated', 'created', 'due'] as const
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const VALID: Record<FilterKey, (v: string) => boolean> = {
   status: (v) => UUID.test(v),
@@ -62,10 +62,13 @@ export function viewGroup(search: ViewSearch, mine?: boolean): GroupBy {
   return search.view === 'board' && allowed === 'none' ? 'status' : allowed
 }
 
-// First-page query for the issue endpoints: 50 per group, the view's group, sort and filters. My issues ignores the
-// assignee and cycle filters (it has neither).
-export function issuePageQuery(search: ViewSearch, mine?: boolean) {
-  const q = new URLSearchParams({ limit: '50', group: viewGroup(search, mine), sort: search.sort ?? 'priority' })
+// Project and cycle pages sort by hand once anyone has ordered the project; everywhere else by priority.
+export const defaultSort = (project?: { manual_order: boolean }): SortBy => (project?.manual_order ? 'manual' : 'priority')
+
+// First-page query for the issue endpoints: 50 per group, the view's group, sort (else the page's default) and
+// filters. My issues ignores the assignee and cycle filters (it has neither).
+export function issuePageQuery(search: ViewSearch, mine?: boolean, fallback: SortBy = 'priority') {
+  const q = new URLSearchParams({ limit: '50', group: viewGroup(search, mine), sort: search.sort ?? fallback })
   for (const key of pageFilters(mine)) if (search[key] !== undefined) q.set(key, String(search[key]))
   return q.toString()
 }
@@ -111,4 +114,49 @@ export function orderGroups(page: IssuePage, group: GroupBy, ctx: { statuses: St
     return [...ordered.map(([id, name]) => fill(id, name)), fill('none', 'No assignee')]
   }
   return [fill('all', 'All issues')]
+}
+
+// A move shown before the loader data has it; `settled` once the save and its reload finished. `after` places it by
+// hand: right after that issue id, or first when null.
+export type Override = { issue: Issue; next: Partial<Issue>; key: string; by: GroupBy; settled: boolean; after?: string | null }
+export type Neighbours = { after?: Issue; before?: Issue }
+
+export const groupKey = (i: Issue, by: GroupBy) =>
+  by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? 'none') : by === 'priority' ? String(i.priority) : 'all'
+
+function insertAfter(list: Issue[], issue: Issue, after: string | null | undefined) {
+  const at = after ? list.findIndex((i) => i.id === after) + 1 : 0
+  return [...list.slice(0, at), issue, ...list.slice(at)]
+}
+
+// Moves each overridden card into its new group, at its manual place or else the top, unless that group has loaded it
+// and it has no manual place (then it's patched in place). Counts follow a card that moved between loaded groups; one
+// not loaded anywhere is already counted there.
+export function applyOverrides(groups: IssueGroup[], overrides: Override[], by: GroupBy) {
+  let out = groups
+  for (const o of overrides) {
+    if (o.by !== by) continue
+    const id = o.issue.id
+    const from = out.find((g) => g.issues.some((i) => i.id === id))
+    if (from?.key === o.key && o.after === undefined) {
+      out = out.map((g) => (g === from ? { ...g, issues: g.issues.map((i) => (i.id === id ? { ...i, ...o.next } : i)) } : g))
+      continue
+    }
+    const issue = { ...(from?.issues.find((i) => i.id === id) ?? o.issue), ...o.next }
+    const moved = from && from.key !== o.key
+    out = out.map((g) => {
+      const issues = g === from ? g.issues.filter((i) => i.id !== id) : g.issues
+      if (g.key === o.key) return { ...g, count: g.count + (moved ? 1 : 0), issues: insertAfter(issues, issue, o.after) }
+      return g === from ? { ...g, count: g.count - 1, issues } : g
+    })
+  }
+  return out
+}
+
+// The neighbours for putting `issue` at slot `index` among the other issues of `list` (its rendered group), or null
+// when that's where it already is.
+export function neighbours(list: Issue[], issue: Issue, index: number): Neighbours | null {
+  if (list.findIndex((i) => i.id === issue.id) === index) return null
+  const rest = list.filter((i) => i.id !== issue.id)
+  return { after: rest[index - 1], before: rest[index] }
 }

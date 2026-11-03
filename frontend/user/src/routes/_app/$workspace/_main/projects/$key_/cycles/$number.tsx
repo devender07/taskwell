@@ -15,13 +15,13 @@ import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components
 import { formatRange } from '@/components/issues/fields'
 import { CreateIssueForm } from '@/components/issues/issue-form'
 import { IssueView } from '@/components/issues/issue-view'
-import { issuePageQuery, validateViewSearch, type IssuePage } from '@/components/issues/view-search'
+import { defaultSort, issuePageQuery, validateViewSearch, type IssuePage } from '@/components/issues/view-search'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/$number')({
   validateSearch: validateViewSearch,
-  loaderDeps: ({ search }) => ({ query: issuePageQuery(search) }),
+  loaderDeps: ({ search }) => ({ search }),
   loader: async (ctx) => {
     const { params } = ctx
     if (!/^\d+$/.test(params.number)) throw notFound()
@@ -30,10 +30,12 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
     const list = cyclesPath(params.workspace, params.key)
     const source = `${list}/${params.number}/issues`
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
+    const projectReq = loaderApi<Project>(ctx, projectPath)
+    const sort = ctx.deps.search.sort ?? projectReq.then(defaultSort)
     const [project, { cycle, issues }, page, cycles, statuses, labels] = await Promise.all([
-      loaderApi<Project>(ctx, projectPath),
+      projectReq,
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
-      loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
+      Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
@@ -116,7 +118,7 @@ function CyclePage() {
           <p className="text-body-sm text-secondary">No issues in this cycle.</p>
         </div>
       ) : (
-        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} defaultSort={defaultSort(project)} manual />
       )}
       {create ? (
         <Dialog open={dialog === 'issue'} onClose={close} title="New issue" wide>

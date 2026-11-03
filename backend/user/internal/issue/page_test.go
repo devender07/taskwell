@@ -32,7 +32,7 @@ func TestPagedLists(t *testing.T) {
 			return err
 		}
 		// number, status, priority, assignee, due date, in the cycle; issue 1 is the newest created, 4 the newest
-		// updated (then 5 and 3, then 6 and 2, then 1).
+		// updated (then 5 and 3, then 6 and 2, then 1). The manual order is 3, 1, 6, 2, 5, 4.
 		_, err := tx.Exec(ctx, `
 			with p as (insert into projects (workspace_id, name, key) values ($1, 'Engineering', 'ENG') returning id),
 			c as (insert into cycles (workspace_id, project_id, number, starts_on, ends_on)
@@ -41,10 +41,11 @@ func TestPagedLists(t *testing.T) {
 			  (1, $2::uuid, 0, true, null::date, true), (2, $2, 1, false, '2026-01-05', false), (3, $2, 3, true, '2026-01-01', true),
 			  (4, $3::uuid, 1, false, null, false), (5, $2, 1, true, null, false), (6, $3, 4, true, '2026-01-03', true))
 			insert into issues (workspace_id, project_id, number, title, status_id, priority, assignee_id, due_date, cycle_id,
-			                    created_at, updated_at)
+			                    created_at, updated_at, rank)
 			select $1, p.id, v.number, 'Issue ' || v.number, v.status_id, v.priority, case when v.mine then $4::uuid end, v.due,
 			       case when v.cycled then c.id end, now() - v.number * interval '1 minute',
-			       now() - abs(v.number - 4) * interval '1 minute'
+			       now() - abs(v.number - 4) * interval '1 minute',
+			       substr('BDAFEC', v.number, 1)
 			from v, p, c`, wsID, s0, s1, ann)
 		if err != nil {
 			return err
@@ -117,6 +118,7 @@ func TestPagedLists(t *testing.T) {
 	in("/projects/ENG/issues?limit=10&group=none&sort=due&in=all", []int{3, 6, 2, 5, 4, 1}, false)
 	in("/projects/ENG/issues?limit=10&group=none&sort=created&in=all", []int{1, 2, 3, 4, 5, 6}, false)
 	in("/projects/ENG/issues?limit=10&group=none&sort=updated&in=all", []int{4, 5, 3, 6, 2, 1}, false)
+	in("/projects/ENG/issues?limit=10&group=none&sort=manual&in=all", []int{3, 1, 6, 2, 5, 4}, false)
 	check("/projects/ENG/issues?limit=1&group=assignee", 6, map[string]string{ann: "4 [5] true", "none": "2 [4] true"})
 	check("/projects/ENG/issues?limit=5&group=priority", 6,
 		map[string]string{"0": "1 [1] false", "1": "3 [5 4 2] false", "3": "1 [3] false", "4": "1 [6] false"})
@@ -138,6 +140,15 @@ func TestPagedLists(t *testing.T) {
 	if !slices.Equal(numbers(all), []int{6, 3, 1}) {
 		t.Errorf("unpaged cycle list: %v", numbers(all))
 	}
+	get("/projects/ENG/issues?sort=manual", 200, &all)
+	if !slices.Equal(numbers(all), []int{3, 1, 6, 2, 5, 4}) || all[0].Rank != "A" {
+		t.Errorf("unpaged manual list: %v", numbers(all))
+	}
+	get("/projects/ENG/cycles/1/issues?sort=manual", 200, &all)
+	if !slices.Equal(numbers(all), []int{3, 1, 6}) {
+		t.Errorf("unpaged manual cycle list: %v", numbers(all))
+	}
+	get("/projects/ENG/issues?sort=title", 400, nil)
 	check("/projects/ENG/cycles/1/issues?limit=5&group=none", 3, map[string]string{"all": "3 [3 6 1] false"})
 	get("/projects/ENG/cycles/2/issues?limit=5", 404, nil)
 	get("/projects/NOPE/cycles/1/issues", 404, nil)

@@ -70,7 +70,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 			return h.model.listPage(ctx, projectID, q)
 		})
 	}
-	is, err := h.model.list(r.Context(), projectID)
+	sort, ok := readSort(w, r)
+	if !ok {
+		return nil
+	}
+	is, err := h.model.list(r.Context(), projectID, sort)
 	if err != nil {
 		return err
 	}
@@ -79,6 +83,17 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 	}
 	web.JSON(w, http.StatusOK, is)
 	return nil
+}
+
+// readSort returns an unpaged list's sort ("" for none), or writes a 400 and returns ok=false when it isn't one of
+// sortBy's.
+func readSort(w http.ResponseWriter, r *http.Request) (string, bool) {
+	sort := r.URL.Query().Get("sort")
+	if _, ok := sortBy[sort]; sort != "" && !ok {
+		web.Err(w, http.StatusBadRequest, errNoPage)
+		return "", false
+	}
+	return sort, true
 }
 
 // myIssues lists the caller's assigned issues across the workspace's active projects.
@@ -122,7 +137,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	key := normKey(r.PathValue("key"))
 	// A project the caller can't see is not found before anything about the form is said.
-	if projectID, err := h.model.projectID(r.Context(), ws.ID, key, userID); err != nil || projectID == "" {
+	projectID, err := h.model.projectID(r.Context(), ws.ID, key, userID)
+	if err != nil || projectID == "" {
 		if err == nil {
 			web.Err(w, http.StatusNotFound, errProjectNotFound)
 		}
@@ -132,7 +148,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
-	id, err := h.model.create(r.Context(), ws.ID, key, userID, f)
+	afterID, beforeID, ok, err := h.readPlace(w, r, ws.ID, projectID, userID)
+	if !ok || err != nil {
+		return err
+	}
+	id, err := h.model.create(r.Context(), ws.ID, key, userID, f, afterID, beforeID)
 	if errors.Is(err, errArchived) {
 		web.Err(w, http.StatusConflict, errArchivedProject)
 		return nil
@@ -183,9 +203,16 @@ func (h *Handler) cycleIssues(w http.ResponseWriter, r *http.Request, userID str
 			return h.model.cyclePage(ctx, cycleID, q)
 		})
 	}
-	is, err := h.CycleIssues(r.Context(), cycleID, userID, ws.Permissions)
+	sort, ok := readSort(w, r)
+	if !ok {
+		return nil
+	}
+	is, err := h.model.inCycle(r.Context(), cycleID, sort)
 	if err != nil {
 		return err
+	}
+	for i := range is {
+		allow(&is[i], userID, ws.Permissions)
 	}
 	web.JSON(w, http.StatusOK, is)
 	return nil
@@ -281,7 +308,7 @@ func readPage(v url.Values, userID string) (pageQuery, bool) {
 
 // CycleIssues returns the cycle's issues as the user sees them, like a project's list.
 func (h *Handler) CycleIssues(ctx context.Context, cycleID, userID string, perms []string) ([]Issue, error) {
-	is, err := h.model.inCycle(ctx, cycleID)
+	is, err := h.model.inCycle(ctx, cycleID, "")
 	for i := range is {
 		allow(&is[i], userID, perms)
 	}
@@ -321,6 +348,62 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// move places the issue in its project's manual order right after the form's after issue, else right before its
+// before issue, applying status_id, assignee_id and priority like update when they're present.
+func (h *Handler) move(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	afterID, beforeID, ok, err := h.readPlace(w, r, ws.ID, i.projectID, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if afterID == "" && beforeID == "" {
+		web.Err(w, http.StatusBadRequest, "Pick where to move the issue.")
+		return nil
+	}
+	keep := ""
+	if i.Assignee != nil {
+		keep = i.Assignee.ID
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, i.Project.Key, keep, false)
+	if !ok || err != nil {
+		return err
+	}
+	f = fields{statusID: f.statusID, assigneeID: f.assigneeID, priority: f.priority}
+	if err := h.model.move(r.Context(), ws.ID, i.projectID, i.ID, userID, afterID, beforeID, f); err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// readPlace returns the ids of the form's after and before issues ("" when absent), which must be in the project, or
+// writes a 400 and returns ok=false.
+func (h *Handler) readPlace(w http.ResponseWriter, r *http.Request, workspaceID, projectID, userID string) (afterID, beforeID string, ok bool, err error) {
+	_ = r.ParseMultipartForm(maxBody)
+	ids, errs := map[string]string{}, map[string]string{}
+	for _, k := range []string{"after", "before"} {
+		v := strings.TrimSpace(r.PostForm.Get(k))
+		if v == "" {
+			continue
+		}
+		i, err := h.find(r.Context(), workspaceID, v, userID)
+		if err != nil {
+			return "", "", false, err
+		}
+		switch {
+		case i == nil:
+			errs[k] = errIssueNotFound
+		case i.projectID != projectID:
+			errs[k] = "Pick an issue in the same project."
+		default:
+			ids[k] = i.ID
+		}
+	}
+	return ids["after"], ids["before"], web.Check(w, errs), nil
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) error {

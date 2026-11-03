@@ -25,8 +25,8 @@ func TestPrivate(t *testing.T) {
 			`with w as (select id from workspaces where created_by = $1),
 			      p as (insert into projects (workspace_id, name, key, private)
 			            select id, k, k, k = 'SEC' from w, (values ('SEC'), ('PUB')) v(k) returning id, key, workspace_id),
-			      i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			            select p.workspace_id, p.id, 1, p.key, (select id from statuses where workspace_id = p.workspace_id limit 1)
+			      i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			            select p.workspace_id, p.id, 1, p.key, (select id from statuses where workspace_id = p.workspace_id limit 1), 'V'
 			            from p returning id, title)
 			 select (select id::text from w), (select id::text from i where title = 'SEC'), (select id::text from i where title = 'PUB')`,
 			ann).Scan(&wsID, &secret, &public)

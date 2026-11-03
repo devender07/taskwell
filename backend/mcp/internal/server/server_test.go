@@ -341,3 +341,59 @@ func TestOAuthDiscovery(t *testing.T) {
 		t.Fatalf("metadata: %d %s", w.Code, w.Body)
 	}
 }
+
+// TestReorderIssues checks that reorder_issues moves each listed issue right after the one before it, in order, and
+// that list_issues asks for the manual order by default.
+func TestReorderIssues(t *testing.T) {
+	const token = "Bearer tth_test"
+	var calls []string
+	var sorts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = r.ParseForm()
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/move"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspaces/acme/issues/"), "/move")
+			calls = append(calls, id+" after="+r.PostForm.Get("after")+" before="+r.PostForm.Get("before"))
+			_, _ = fmt.Fprintf(w, `{"identifier":%q,"title":"x","status":{"id":"s1","name":"Todo"}}`, id)
+		case r.URL.Path == "/api/workspaces/acme/projects/ENG/issues":
+			sorts = append(sorts, r.URL.Query().Get("sort"))
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	cs := connect(t, srv, token)
+
+	text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG",
+		"identifiers": []string{"ENG-3", "ENG-1", "7"}})
+	if isErr {
+		t.Fatalf("tool error: %s", text)
+	}
+	if want := []string{"ENG-1 after=ENG-3 before=", "ENG-7 after=ENG-1 before="}; !slices.Equal(calls, want) {
+		t.Errorf("move calls %q, want %q", calls, want)
+	}
+	var out []issueOut
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out) != 2 || out[0].Identifier != "ENG-1" || out[1].Identifier != "ENG-7" {
+		t.Errorf("result %s: %v", text, err)
+	}
+
+	calls = nil
+	if text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG",
+		"identifier": "ENG-2", "before": "ENG-3"}); isErr {
+		t.Fatalf("tool error: %s", text)
+	}
+	if want := []string{"ENG-2 after= before=ENG-3"}; !slices.Equal(calls, want) {
+		t.Errorf("move calls %q, want %q", calls, want)
+	}
+	if text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG", "identifiers": []string{"ENG-2"}}); !isErr {
+		t.Errorf("one identifier: %s, want an error", text)
+	}
+
+	call(t, cs, "list_issues", map[string]any{"workspace": "acme", "project": "ENG"})
+	call(t, cs, "list_issues", map[string]any{"workspace": "acme", "project": "ENG", "sort": "Priority"})
+	if want := []string{"manual", "priority"}; !slices.Equal(sorts, want) {
+		t.Errorf("list sorts %q, want %q", sorts, want)
+	}
+}
