@@ -1,6 +1,7 @@
-import { Link, useLocation } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon } from '@tether/shared/icons'
+import { Link, useLoaderData, useLocation } from '@tanstack/react-router'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@tether/shared/icons'
 import { useState } from 'react'
+import { can } from '@/api'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
 import './sidebar.css'
@@ -8,6 +9,7 @@ import './sidebar.css'
 // Main navigation inside a workspace. Add a link here when a new workspace section ships.
 export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
+  const team = can(useLoaderData({ from: '/_app/$workspace' }), 'analytics.view')
   const unread = useUnread()
   const count = unread.chats
 
@@ -50,6 +52,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <RoadmapIcon />
         Roadmap
       </Link>
+      {team ? (
+        <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
+          <UsersIcon />
+          Team
+        </Link>
+      ) : null}
       <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
         <SettingsIcon />
         Settings

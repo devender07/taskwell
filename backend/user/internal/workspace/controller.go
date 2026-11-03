@@ -48,6 +48,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	ws, err := h.model.create(r.Context(), userID, name, slug)
+	if errors.Is(err, errNoCreate) {
+		web.Err(w, http.StatusForbidden, "You don't have permission to create workspaces.")
+		return nil
+	}
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil

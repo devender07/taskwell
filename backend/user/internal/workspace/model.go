@@ -22,6 +22,7 @@ var memberDefaults = []string{"issues.create", "comments.create"}
 
 var (
 	errTaken     = errors.New("workspace slug taken")
+	errNoCreate  = errors.New("not allowed to create workspaces")
 	errLastAdmin = errors.New("last admin")
 	errNameTaken = errors.New("role name taken")
 )
@@ -85,9 +86,13 @@ func create(ctx context.Context, conn interface {
 }, userID, name, slug string) (Workspace, error) {
 	ws := Workspace{Name: name, Slug: slug, Role: RoleRef{Name: "Admin"}, Permissions: allPermissions()}
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx,
-			`insert into workspaces (name, slug, created_by) values ($1, $2, $3) returning id::text`,
-			name, slug, userID).Scan(&ws.ID); err != nil {
+		err := tx.QueryRow(ctx,
+			`insert into workspaces (name, slug, created_by) select $1, $2, $3 where can_create_workspace($3) returning id::text`,
+			name, slug, userID).Scan(&ws.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNoCreate
+		}
+		if err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx,

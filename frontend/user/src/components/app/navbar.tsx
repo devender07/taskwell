@@ -18,7 +18,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         <Link to="/" aria-label="Tether home" className="navbar-home">
           <Logo size={24} />
         </Link>
-        <WorkspaceSwitcher workspaces={workspaces} />
+        <WorkspaceSwitcher workspaces={workspaces} canCreate={user.can_create_workspaces} />
       </div>
       <div className="flex items-center gap-2">
         <NotificationsBell />
@@ -31,7 +31,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
             </button>
           )}
         >
-          <AccountMenu user={user} />
+          {(close) => <AccountMenu user={user} onNavigate={close} />}
         </Popover>
       </div>
     </header>
@@ -39,7 +39,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
 }
 
 // Only inside /$workspace routes; an unknown slug (not found) shows no switcher either.
-function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
+function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Workspace[]; canCreate: boolean }) {
   const slug = useParams({ strict: false }).workspace
   const current = workspaces.find((w) => w.slug === slug)
   const [creating, setCreating] = useState(false)
@@ -79,9 +79,11 @@ function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
             <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
               Workspace settings
             </Link>
-            <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
-              Create workspace
-            </button>
+            {canCreate ? (
+              <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
+                Create workspace
+              </button>
+            ) : null}
           </nav>
         )}
       </Popover>
@@ -92,8 +94,9 @@ function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
   )
 }
 
-function AccountMenu({ user }: { user: User }) {
+function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
   const navigate = useNavigate()
+  const slug = useParams({ strict: false }).workspace
   const [error, signOut, pending] = useActionState(async () => {
     try {
       await endSession()
@@ -114,6 +117,11 @@ function AccountMenu({ user }: { user: User }) {
         </div>
       </div>
       <hr className="popover-divider" />
+      {slug ? (
+        <Link to="/$workspace/members/$id" params={{ workspace: slug, id: user.id }} className="popover-item" onClick={onNavigate}>
+          View your analytics
+        </Link>
+      ) : null}
       <form action={signOut}>
         <button type="submit" className="popover-item" disabled={pending}>
           {pending ? 'Signing out…' : 'Sign out'}

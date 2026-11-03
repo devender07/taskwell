@@ -1,4 +1,4 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useOptimistic, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
@@ -11,6 +11,7 @@ import { email as checkEmail } from '@tether/shared/validate'
 import { api, avatarSrc, can, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { type MemberPage, useMemberPages } from './member-pages'
+import '@/components/analytics/analytics.css'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
 
@@ -133,7 +134,13 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
         <Avatar name={member.name} src={avatarSrc(member.id)} />
         <div className="grid flex-grow" style={{ minWidth: 0 }}>
           <span className="text-label text-primary ellipsis">
-            {member.name}
+            {self || can(workspace, 'analytics.view') ? (
+              <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: member.id }} className="member-link">
+                {member.name}
+              </Link>
+            ) : (
+              member.name
+            )}
             {self ? <span className="text-secondary font-400"> (you)</span> : null}
           </span>
           <span className="text-caption text-secondary ellipsis">{member.email}</span>

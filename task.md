@@ -30,6 +30,8 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Manual issue order (`docs/issue-order-plan.md`): Manual sort, drag to reorder in list and board (across columns too), Alt+↑/↓, shared and live; MCP `reorder_issues`, `list_issues` sort, `create_issue` after/before
 - [x] Filters by assignee, status, label, priority, kept in the URL so they can be shared
 - [x] "My issues" view, with an Assigned / Watching switch
+- [x] Member analytics (`docs/member-analytics-plan.md`): a member page (workload, completed per week, median cycle time, activity, testing, current cycles) and a Team page; own numbers for everyone, others with `analytics.view`; counts only projects the viewer can see
+- [x] Creating workspaces is the role permission `workspaces.create` (group Workspace): allowed when a role in any of the user's workspaces grants it (Admin always), or when they're in no workspace yet; otherwise the Create workspace option is hidden
 
 ## Phase 4: Collaboration
 

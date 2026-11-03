@@ -13,9 +13,11 @@ type Permission struct {
 const (
 	permWorkspaceEdit   = "workspace.edit"
 	permWorkspaceDelete = "workspace.delete"
-	permMembersInvite   = "members.invite"
-	permMembersManage   = "members.manage"
-	permRolesManage     = "roles.manage"
+	// permWorkspacesCreate lets a member create new workspaces; checked in SQL by can_create_workspace.
+	permWorkspacesCreate = "workspaces.create"
+	permMembersInvite    = "members.invite"
+	permMembersManage    = "members.manage"
+	permRolesManage      = "roles.manage"
 
 	// PermProjectsManage gates creating, editing and archiving projects.
 	PermProjectsManage = "projects.manage"
@@ -41,12 +43,15 @@ const (
 	PermIntegrationsManage = "integrations.manage"
 	// PermFeedbackManage gates the public feedback form and archiving and deleting feedback.
 	PermFeedbackManage = "feedback.manage"
+	// PermAnalyticsView lets a member see other members' analytics and the team page.
+	PermAnalyticsView = "analytics.view"
 )
 
 // catalog is every permission in display order.
 var catalog = []Permission{
 	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
+	{permWorkspacesCreate, "Workspace", "Create new workspaces", true},
 	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
@@ -62,6 +67,7 @@ var catalog = []Permission{
 	{PermTestsManage, "Testing", "Edit test cases and run tests manually", true},
 	{PermAITestsManage, "Testing", "Manage test sites and test accounts", true},
 	{PermFeedbackManage, "Feedback", "Manage the feedback form, archive and delete feedback", true},
+	{PermAnalyticsView, "Analytics", "See other members' analytics and the team page", true},
 }
 
 func allPermissions() []string {

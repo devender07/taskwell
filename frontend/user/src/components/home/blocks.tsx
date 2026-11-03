@@ -15,7 +15,7 @@ import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
 
-function Card({ title, action, footer, bodyRef, className = '', children }: { title: string; action?: ReactNode; footer?: ReactNode; bodyRef?: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
+export function Card({ title, action, footer, bodyRef, className = '', children }: { title: string; action?: ReactNode; footer?: ReactNode; bodyRef?: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
   const id = useId()
   return (
     <section aria-labelledby={id} className={`home-card bg-surface border rounded-lg overflow-hidden ${className}`} style={{ minWidth: 0 }}>
@@ -29,7 +29,7 @@ function Card({ title, action, footer, bodyRef, className = '', children }: { ti
   )
 }
 
-function Empty({ text, children }: { text: string; children?: ReactNode }) {
+export function Empty({ text, children }: { text: string; children?: ReactNode }) {
   return (
     <div className="grid gap-4 px-6 py-6" style={{ justifyItems: 'start' }}>
       <p className="text-body-sm text-secondary m-0">{text}</p>

@@ -1,15 +1,16 @@
-import { Link, useRouter } from '@tanstack/react-router'
+import { Link, useRouteContext, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { DatePicker } from '@tether/shared/date-picker'
 import { filterOptions } from '@tether/shared/match'
 import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
+import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
+import '@/components/analytics/analytics.css'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 type Patch = { form: FormData; next: Partial<Issue> }
@@ -17,6 +18,7 @@ type Patch = { form: FormData; next: Partial<Issue> }
 // Each property saves on change with a partial update; read-only text without edit rights.
 export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
+  const { user } = useRouteContext({ from: '/_app' })
   const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const found = useRef(new Map<string, IssueRef>())
@@ -144,7 +146,13 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             {issue.assignee ? (
               <span className="flex items-center gap-2">
                 <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
-                {issue.assignee.name}
+                {canViewMember(workspace, issue.assignee.id, user.id) ? (
+                  <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: issue.assignee.id }} className="member-link">
+                    {issue.assignee.name}
+                  </Link>
+                ) : (
+                  issue.assignee.name
+                )}
               </span>
             ) : (
               <span className="text-secondary">No assignee</span>

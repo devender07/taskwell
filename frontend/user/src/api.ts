@@ -4,7 +4,7 @@ import { ApiError, FALLBACK } from '@tether/shared/api-errors'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
-export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null }
+export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
 export type RoleRef = { id: string; name: string }
 export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
 export type Member = { id: string; name: string; email: string; role: RoleRef }
@@ -209,6 +209,22 @@ export const issuePath = (workspace: Workspace, identifier: string) =>
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
+
+export type AnalyticsWeek = { week: string; completed: number; created: number; comments: number }
+export type MemberAnalytics = {
+  member: Member
+  open: { total: number; by_category: { backlog: number; unstarted: number; started: number }; overdue: number; due_this_week: number }
+  weeks: AnalyticsWeek[]
+  cycle_time_days: number | null
+  completed_30d: number
+  tests: { runs_started_30d: number }
+  current_cycles: { project: { key: string; name: string }; number: number; name: string; assigned: number; completed: number }[]
+}
+export type TeamMember = { id: string; name: string; open: number; overdue: number; completed_30d: number; cycle_time_days: number | null }
+export const memberAnalyticsPath = (workspace: string, id: string) => `${workspacePath(workspace)}/members/${encodeURIComponent(id)}/analytics`
+export const teamAnalyticsPath = (workspace: string) => `${workspacePath(workspace)}/analytics/team`
+// Your own analytics always; anyone else's with analytics.view.
+export const canViewMember = (workspace: Workspace, id: string, me: string) => id === me || can(workspace, 'analytics.view')
 
 export const projectPath = (workspace: string, project: string) => `${workspacePath(workspace)}/projects/${encodeURIComponent(project)}`
 // Everyone who can see the project, for its assignee and mention pickers: the whole workspace for a public project.

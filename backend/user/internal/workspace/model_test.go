@@ -2,12 +2,14 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/tether/backend/user/internal/dbtest"
 )
 
 // TestTakeInviteSend runs against a scratch database, e.g.
@@ -150,5 +152,29 @@ func TestCreateFirstJoinsInvites(t *testing.T) {
 	}
 	if got := workspaces(dev); len(got) != 1 || got[0] == annWS {
 		t.Errorf("Dev is in %v, want just a default workspace of his own", got)
+	}
+}
+
+func TestWorkspaceCreation(t *testing.T) {
+	p := dbtest.Pool(t)
+	ctx := context.Background()
+	alice, bob := dbtest.User(t, p, "Alice"), dbtest.User(t, p, "Bob")
+	ws, err := create(ctx, p, alice, "Alice's", dbtest.Name("a"))
+	if err != nil {
+		t.Fatalf("first workspace: %v", err)
+	}
+	dbtest.Join(t, p, ws.ID, bob, "member")
+	if _, err := create(ctx, p, bob, "Bob's", dbtest.Name("b")); !errors.Is(err, errNoCreate) {
+		t.Fatalf("member without the permission: got %v, want errNoCreate", err)
+	}
+	if _, err := p.Exec(ctx, `update workspace_roles set permissions = permissions || $2::text
+		where workspace_id = $1 and builtin = 'member'`, ws.ID, permWorkspacesCreate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := create(ctx, p, bob, "Bob's", dbtest.Name("b")); err != nil {
+		t.Fatalf("member with the permission: %v", err)
+	}
+	if _, err := create(ctx, p, alice, "Alice's second", dbtest.Name("a")); err != nil {
+		t.Fatalf("admin: %v", err)
 	}
 }

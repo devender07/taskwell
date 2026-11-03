@@ -230,17 +230,19 @@ func (m *model) suspended(ctx context.Context, id string) (bool, error) {
 // Profile is the signed-in user as GET /api/me returns it.
 type Profile struct {
 	User
-	HasPassword bool    `json:"has_password"`
-	AvatarURL   *string `json:"avatar_url"`
+	HasPassword         bool    `json:"has_password"`
+	AvatarURL           *string `json:"avatar_url"`
+	CanCreateWorkspaces bool    `json:"can_create_workspaces"`
 }
 
 // profile returns nil when there is no such user.
 func (m *model) profile(ctx context.Context, id string) (*Profile, error) {
 	var p Profile
 	err := m.db.QueryRow(ctx,
-		`select id::text, name, email, password_hash is not null, '/api/files/' || avatar_file_id || '/avatar'
+		`select id::text, name, email, password_hash is not null, '/api/files/' || avatar_file_id || '/avatar',
+		        can_create_workspace(id)
 		 from users where id = $1`, id).
-		Scan(&p.ID, &p.Name, &p.Email, &p.HasPassword, &p.AvatarURL)
+		Scan(&p.ID, &p.Name, &p.Email, &p.HasPassword, &p.AvatarURL, &p.CanCreateWorkspaces)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

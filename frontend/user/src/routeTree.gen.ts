@@ -28,9 +28,11 @@ import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$worksp
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
 import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$workspace/_main/roadmap'
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
+import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
 import { Route as AppWorkspaceMainInboxTetherRouteImport } from './routes/_app/$workspace/_main/inbox/tether'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
+import { Route as AppWorkspaceMainMembersIdRouteImport } from './routes/_app/$workspace/_main/members/$id'
 import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
 import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$workspace/_main/projects/$key'
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
@@ -149,6 +151,11 @@ const AppWorkspaceMainSettingsRoute =
     path: '/settings',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainTeamRoute = AppWorkspaceMainTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
 const AppWorkspaceMainInboxIndexRoute =
   AppWorkspaceMainInboxIndexRouteImport.update({
     id: '/',
@@ -165,6 +172,12 @@ const AppWorkspaceMainIssueIdentifierRoute =
   AppWorkspaceMainIssueIdentifierRouteImport.update({
     id: '/issue/$identifier',
     path: '/issue/$identifier',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
+const AppWorkspaceMainMembersIdRoute =
+  AppWorkspaceMainMembersIdRouteImport.update({
+    id: '/members/$id',
+    path: '/members/$id',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
 const AppWorkspaceMainProjectsIndexRoute =
@@ -311,9 +324,11 @@ export interface FileRoutesByFullPath {
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
+  '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
   '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
+  '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
@@ -352,8 +367,10 @@ export interface FileRoutesByTo {
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
+  '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
+  '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
@@ -397,9 +414,11 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
+  '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
   '/_app/$workspace/_main/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
+  '/_app/$workspace/_main/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
@@ -442,9 +461,11 @@ export interface FileRouteTypes {
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
     | '/$workspace/settings'
+    | '/$workspace/team'
     | '/$workspace/'
     | '/$workspace/inbox/tether'
     | '/$workspace/issue/$identifier'
+    | '/$workspace/members/$id'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
@@ -483,8 +504,10 @@ export interface FileRouteTypes {
     | '/$workspace/feedback'
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
+    | '/$workspace/team'
     | '/$workspace/inbox/tether'
     | '/$workspace/issue/$identifier'
+    | '/$workspace/members/$id'
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
@@ -527,9 +550,11 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/roadmap'
     | '/_app/$workspace/_main/settings'
+    | '/_app/$workspace/_main/team'
     | '/_app/$workspace/_main/'
     | '/_app/$workspace/_main/inbox/tether'
     | '/_app/$workspace/_main/issue/$identifier'
+    | '/_app/$workspace/_main/members/$id'
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
@@ -702,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/team': {
+      id: '/_app/$workspace/_main/team'
+      path: '/team'
+      fullPath: '/$workspace/team'
+      preLoaderRoute: typeof AppWorkspaceMainTeamRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/inbox/': {
       id: '/_app/$workspace/_main/inbox/'
       path: '/'
@@ -721,6 +753,13 @@ declare module '@tanstack/react-router' {
       path: '/issue/$identifier'
       fullPath: '/$workspace/issue/$identifier'
       preLoaderRoute: typeof AppWorkspaceMainIssueIdentifierRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/members/$id': {
+      id: '/_app/$workspace/_main/members/$id'
+      path: '/members/$id'
+      fullPath: '/$workspace/members/$id'
+      preLoaderRoute: typeof AppWorkspaceMainMembersIdRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/projects/': {
@@ -952,8 +991,10 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainMyIssuesRoute: typeof AppWorkspaceMainMyIssuesRoute
   AppWorkspaceMainRoadmapRoute: typeof AppWorkspaceMainRoadmapRoute
   AppWorkspaceMainSettingsRoute: typeof AppWorkspaceMainSettingsRouteWithChildren
+  AppWorkspaceMainTeamRoute: typeof AppWorkspaceMainTeamRoute
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
+  AppWorkspaceMainMembersIdRoute: typeof AppWorkspaceMainMembersIdRoute
   AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
   AppWorkspaceMainProjectsIndexRoute: typeof AppWorkspaceMainProjectsIndexRoute
   AppWorkspaceMainProjectsKeyCyclesNumberRoute: typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
@@ -966,8 +1007,10 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainMyIssuesRoute: AppWorkspaceMainMyIssuesRoute,
   AppWorkspaceMainRoadmapRoute: AppWorkspaceMainRoadmapRoute,
   AppWorkspaceMainSettingsRoute: AppWorkspaceMainSettingsRouteWithChildren,
+  AppWorkspaceMainTeamRoute: AppWorkspaceMainTeamRoute,
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
   AppWorkspaceMainIssueIdentifierRoute: AppWorkspaceMainIssueIdentifierRoute,
+  AppWorkspaceMainMembersIdRoute: AppWorkspaceMainMembersIdRoute,
   AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,
   AppWorkspaceMainProjectsIndexRoute: AppWorkspaceMainProjectsIndexRoute,
   AppWorkspaceMainProjectsKeyCyclesNumberRoute:

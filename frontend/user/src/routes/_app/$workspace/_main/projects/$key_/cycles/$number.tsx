@@ -47,7 +47,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
       throw redirect({
         to: '/$workspace/projects/$key/cycles/$number',
         params: { workspace: params.workspace, key: project.key, number: params.number },
-        search: (prev) => prev,
+        search: true,
         replace: true,
       })
     }

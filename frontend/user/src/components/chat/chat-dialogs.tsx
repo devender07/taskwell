@@ -1,4 +1,4 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { Link, useLoaderData, useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
@@ -8,10 +8,11 @@ import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { groupName } from '@tether/shared/validate'
 import { XIcon } from '@tether/shared/icons'
-import { api, avatarSrc, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
+import { api, avatarSrc, canViewMember, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { searchMembers, useMemberPages } from '@/components/workspace/member-pages'
 import { reloadRoutes } from '@/realtime'
+import '@/components/analytics/analytics.css'
 import './chat.css'
 
 type State = { errors?: FieldErrors; error?: string | null }
@@ -269,6 +270,7 @@ const NO_PAGE = { members: [], invites: [], total: 0, has_more: false }
 // workspace, whose members page in from the API as you scroll). A group's creator can remove people.
 export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: Chat; me: string; onClose: () => void }) {
   const router = useRouter()
+  const ws = useLoaderData({ from: '/_app/$workspace' })
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -321,7 +323,13 @@ export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: C
               <Avatar name={p.name} size={32} src={avatarSrc(p.id)} />
               <span className="grid flex-grow" style={{ minWidth: 0 }}>
                 <span className="text-body-sm ellipsis">
-                  {p.name}
+                  {canViewMember(ws, p.id, me) ? (
+                    <Link to="/$workspace/members/$id" params={{ workspace: slug, id: p.id }} className="member-link">
+                      {p.name}
+                    </Link>
+                  ) : (
+                    p.name
+                  )}
                   {p.id === me ? <span className="text-secondary"> (you)</span> : null}
                   {chat.kind === 'group' && p.id === chat.created_by ? <span className="text-secondary"> · Created the group</span> : null}
                 </span>
