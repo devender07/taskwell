@@ -1,7 +1,8 @@
-import { Link, useLoaderData, useLocation } from '@tanstack/react-router'
+import { Link, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
 import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@tether/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
+import { useMenu, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
 import './sidebar.css'
@@ -11,6 +12,8 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
   const team = can(useLoaderData({ from: '/_app/$workspace' }), 'analytics.view')
   const unread = useUnread()
+  const [open, setOpen] = useMenu()
+  const { user, workspaces } = useRouteContext({ from: '/_app' })
   const count = unread.chats
 
   // An issue has no section of its own: it stays under the one it was opened from (its project when opened directly).
@@ -20,7 +23,20 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const current = (name: string) => (section === 'issue' && from === name ? 'page' : undefined)
 
   return (
-    <nav className="sidebar" aria-label="Workspace">
+    <nav
+      id="app-sidebar"
+      className="sidebar"
+      aria-label="Workspace"
+      data-open={open}
+      onClick={(e) => {
+        const el = (e.target as Element).closest('a, button')
+        if (el && !el.hasAttribute('aria-expanded')) setOpen(false) // a popover trigger keeps the menu open
+      }}
+      onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+    >
+      <div style={{ marginBottom: 8 }}>
+        <WorkspaceSwitcher workspaces={workspaces} canCreate={user.can_create_workspaces} />
+      </div>
       <button type="button" className="sidebar-group" aria-keyshortcuts={isApple ? 'Meta+K' : 'Control+K'} onClick={openPalette}>
         <SearchIcon />
         Search

@@ -7,7 +7,7 @@ import { IconButton } from '@tether/shared/icon-button'
 import { Input } from '@tether/shared/input'
 import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
 import { groupName } from '@tether/shared/validate'
-import { XIcon } from '@tether/shared/icons'
+import { ArrowLeftIcon, XIcon } from '@tether/shared/icons'
 import { api, avatarSrc, canViewMember, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { searchMembers, useMemberPages } from '@/components/workspace/member-pages'
@@ -296,9 +296,9 @@ export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: C
   return (
     <section className="chat-main" aria-labelledby="chat-people-title">
       <header className="chat-header">
-        <button type="button" className="chat-back chat-back-button text-caption text-secondary" onClick={onClose}>
-          ← Back to chat
-        </button>
+        <IconButton aria-label="Back to chat" className="chat-icon-button chat-back" onClick={onClose}>
+          <ArrowLeftIcon />
+        </IconButton>
         <div className="grid flex-grow" style={{ minWidth: 0 }}>
           <h2 id="chat-people-title" className="chat-title ellipsis">Members</h2>
           <p className="text-caption text-secondary m-0 ellipsis">{workspace && !pages.loaded ? 'Loading…' : `${total} ${total === 1 ? 'person' : 'people'}${q ? ` matching “${q}”` : ` in ${chat.name}`}`}</p>

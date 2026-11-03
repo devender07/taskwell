@@ -278,6 +278,12 @@ export const ChevronDownIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const MenuIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </Icon>
+)
+
 export const XIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M18 6 6 18M6 6l12 12" />

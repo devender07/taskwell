@@ -1,25 +1,45 @@
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useActionState, useState } from 'react'
+import { Link, useMatch, useNavigate, useParams } from '@tanstack/react-router'
+import { createContext, use, useActionState, useState, type ReactNode } from 'react'
 import { Avatar } from '@tether/shared/avatar'
 import { Button } from '@tether/shared/button'
 import { Dialog } from '@tether/shared/dialog'
 import { Logo } from '@tether/shared/logo'
 import { Popover } from '@tether/shared/popover'
-import { CheckIcon, ChevronDownIcon } from '@tether/shared/icons'
+import { CheckIcon, ChevronDownIcon, MenuIcon, XIcon } from '@tether/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { NotificationsBell } from './notifications-bell'
 import './navbar.css'
 
+// Whether the app sidebar is open as the mobile menu; the navbar's button toggles it.
+const MenuContext = createContext<[boolean, (open: boolean) => void]>([false, () => {}])
+export const useMenu = () => use(MenuContext)
+export function MenuProvider({ children }: { children: ReactNode }) {
+  return <MenuContext value={useState(false)}>{children}</MenuContext>
+}
+
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
   const home = useParams({ strict: false }).workspace ?? workspaces[0]?.slug
+  const hasSidebar = useMatch({ from: '/_app/$workspace/_main', shouldThrow: false })
+  const [menuOpen, setMenuOpen] = useMenu()
   return (
     <header className="navbar sticky top-0 z-sticky flex items-center justify-between px-4">
       <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+        {hasSidebar ? (
+          <button
+            type="button"
+            className="navbar-menu"
+            aria-controls="app-sidebar"
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? <XIcon size={20} /> : <MenuIcon size={20} />}
+          </button>
+        ) : null}
         <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Tether home" className="navbar-home">
           <Logo size={24} />
         </Link>
-        <WorkspaceSwitcher workspaces={workspaces} canCreate={user.can_create_workspaces} />
       </div>
       <div className="flex items-center gap-2">
         <NotificationsBell />
@@ -40,7 +60,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
 }
 
 // Only inside /$workspace routes; an unknown slug (not found) shows no switcher either.
-function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Workspace[]; canCreate: boolean }) {
+export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Workspace[]; canCreate: boolean }) {
   const slug = useParams({ strict: false }).workspace
   const current = workspaces.find((w) => w.slug === slug)
   const [creating, setCreating] = useState(false)

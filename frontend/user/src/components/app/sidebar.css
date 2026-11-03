@@ -38,17 +38,19 @@
 @media (max-width: 640px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar {
-    position: static;
-    grid-auto-flow: column;
-    justify-content: start;
+    position: fixed;
+    inset: 56px 0 0;
+    align-self: stretch; /* fill to the bottom: the desktop rule pins it to the top */
+    z-index: 50;
+    display: none;
     min-width: 0;
     min-height: 0;
     padding: 8px 16px;
-    overflow-x: auto;
-    scrollbar-width: none;
+    overflow-y: auto;
+    background: var(--bg);
     border-right: 0;
-    border-bottom: 1px solid var(--border);
   }
+  .sidebar[data-open='true'] { display: grid; }
 }
 
 @media (pointer: coarse) {

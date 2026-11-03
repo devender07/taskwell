@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { LogoMark } from '@tether/shared/logo'
+import { ArrowLeftIcon } from '@tether/shared/icons'
+import '@tether/shared/icon-button' // its CSS, for the back link
 import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
 import { useUnread } from '@/components/app/unread'
 import { PROVIDER_NAME } from '@/components/issues/pull-requests'
@@ -61,8 +63,8 @@ export function TetherBot({ slug, page }: { slug: string; page: NotificationPage
   return (
     <section className="chat-main" aria-label="Tether">
       <header className="chat-header">
-        <Link to="/$workspace/inbox" params={{ workspace: slug }} className="chat-back text-caption text-secondary">
-          Back
+        <Link to="/$workspace/inbox" params={{ workspace: slug }} aria-label="Back to chats" className="icon-button chat-icon-button chat-back">
+          <ArrowLeftIcon />
         </Link>
         <LogoMark size={24} />
         <h1 className="chat-title ellipsis">Tether</h1>

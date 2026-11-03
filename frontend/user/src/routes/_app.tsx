@@ -1,7 +1,7 @@
 import { Outlet, createFileRoute, redirect, useParams } from '@tanstack/react-router'
 import { api, getMe, safeRedirect, type User, type Workspace } from '@/api'
 import { useChatAlerts } from '@/components/app/chat-alert'
-import { Navbar } from '@/components/app/navbar'
+import { MenuProvider, Navbar } from '@/components/app/navbar'
 import { UnreadProvider } from '@/components/app/unread'
 import { keepSession, useRealtime } from '@/realtime'
 
@@ -29,8 +29,10 @@ function AppLayout() {
   useChatAlerts(workspace, user.id)
   return (
     <UnreadProvider>
-      <Navbar user={user} workspaces={workspaces} />
-      <Outlet />
+      <MenuProvider>
+        <Navbar user={user} workspaces={workspaces} />
+        <Outlet />
+      </MenuProvider>
     </UnreadProvider>
   )
 }

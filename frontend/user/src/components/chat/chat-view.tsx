@@ -8,7 +8,7 @@ import { Popover } from '@tether/shared/popover'
 import { RichText, type Doc } from '@tether/shared/rich-text'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { messageBody } from '@tether/shared/validate'
-import { MessageIcon, MoreIcon, PinIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
+import { ArrowLeftIcon, MessageIcon, MoreIcon, PinIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
 import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { useUnread } from '@/components/app/unread'
@@ -339,8 +339,8 @@ function ChatHeader({ workspaceName }: { workspaceName: string }) {
   const extra = chat.members.length - faces.length
   return (
     <header className="chat-header">
-      <Link to="/$workspace/inbox" params={{ workspace: slug }} className="chat-back text-caption text-secondary">
-        ← Chats
+      <Link to="/$workspace/inbox" params={{ workspace: slug }} aria-label="Back to chats" className="icon-button chat-icon-button chat-back">
+        <ArrowLeftIcon />
       </Link>
       <ChatAvatar chat={chat} me={me} workspaceName={workspaceName} size={32} />
       <div className="grid flex-grow" style={{ minWidth: 0 }}>
@@ -952,9 +952,9 @@ function ThreadPanel({ rootId }: { rootId: string }) {
   return (
     <section className="chat-thread" aria-labelledby="chat-thread-title">
       <header className="chat-header">
-        <button type="button" className="chat-back chat-back-button text-caption text-secondary" onClick={close}>
-          ← Back to chat
-        </button>
+        <IconButton aria-label="Back to chat" className="chat-icon-button chat-back" onClick={close}>
+          <ArrowLeftIcon />
+        </IconButton>
         <h2 id="chat-thread-title" ref={heading} tabIndex={-1} className="chat-title flex-grow">
           Thread
         </h2>

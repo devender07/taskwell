@@ -243,7 +243,7 @@ function Editable({
 
   const s = suggest.current
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
       {label ? (
         <span id={`${id}-label`} className="text-label text-secondary" onClick={() => editor?.commands.focus()}>
           {label}
