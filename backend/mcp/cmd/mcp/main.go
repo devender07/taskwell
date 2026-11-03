@@ -24,19 +24,26 @@ func main() {
 	addr := ":" + env.Get("PORT", "8095")
 	apiURL := env.Get("TETHER_API_URL", "http://localhost:8090")
 	appURL := env.Get("APP_URL", "http://localhost:5173")
+	// Where clients reach /mcp, and the user API's public URL (the authorization server). Unset in production, both
+	// are on the app's host.
+	mcpURL, authURL := "http://localhost"+addr, "http://localhost:8090"
+	if os.Getenv("APP_ENV") == "production" {
+		mcpURL, authURL = appURL, appURL
+	}
+	mcpURL, authURL = env.Get("MCP_URL", mcpURL), env.Get("AUTH_URL", authURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.Handle("/mcp", server.Handler(apiURL, appURL, &http.Client{Timeout: 30 * time.Second}))
-	mux.Handle("GET /.well-known/oauth-protected-resource/mcp", server.Metadata(appURL))
-	mux.Handle("GET /.well-known/oauth-protected-resource", server.Metadata(appURL))
+	mux.Handle("/mcp", server.Handler(apiURL, appURL, mcpURL, &http.Client{Timeout: 30 * time.Second}))
+	mux.Handle("GET /.well-known/oauth-protected-resource/mcp", server.Metadata(mcpURL, authURL))
+	mux.Handle("GET /.well-known/oauth-protected-resource", server.Metadata(mcpURL, authURL))
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	slog.Info("mcp listening", "addr", addr, "tether_api_url", apiURL, "app_url", appURL)
+	slog.Info("mcp listening", "addr", addr, "tether_api_url", apiURL, "app_url", appURL, "mcp_url", mcpURL, "auth_url", authURL)
 	select {
 	case err := <-errc:
 		slog.Error("server", "err", err)

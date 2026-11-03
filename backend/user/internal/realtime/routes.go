@@ -40,6 +40,8 @@ type Handler struct {
 	// ChatAudience, when set, returns who sees the chat with the id (ToWorkspace or ToUser audiences), or nil when the
 	// user can't open it. Typing frames go to that audience.
 	ChatAudience func(ctx context.Context, userID, chatID string) ([]string, error)
+	// AppOrigin, when set, returns the web app's origin, whose tabs may open sockets from their own subdomain.
+	AppOrigin func(*http.Request) string
 }
 
 // New takes the auth handler's Session and Alive (the sign-in wasn't revoked and its user isn't suspended), member (the id of the workspace with the slug when the user is in it,

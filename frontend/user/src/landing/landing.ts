@@ -2,6 +2,7 @@ import '@tether/shared/tokens.css'
 import '@tether/shared/utilities.css'
 import '@tether/shared/button.css'
 import './landing.css'
+import { apiUrl } from '@tether/shared/api-url'
 
 document.documentElement.classList.add('js')
 
@@ -93,9 +94,10 @@ document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => 
 
 // Signed in (the access cookie, or one refresh of it): swap sign-up buttons for a way back into the app.
 async function currentUser() {
-  const me = () => fetch('/api/me')
+  const get = (path: string, init?: RequestInit) => fetch(apiUrl(path), { credentials: 'include', ...init })
+  const me = () => get('/api/me')
   let res = await me()
-  if (res.status === 401 && (await fetch('/api/auth/refresh', { method: 'POST' })).ok) res = await me()
+  if (res.status === 401 && (await get('/api/auth/refresh', { method: 'POST' })).ok) res = await me()
   return res.ok ? ((await res.json()) as { name: string }) : null
 }
 currentUser()
@@ -103,7 +105,7 @@ currentUser()
     if (!user) return
     document.querySelectorAll<HTMLElement>('[data-signed-out]').forEach((el) => (el.hidden = true))
     document.querySelectorAll<HTMLElement>('[data-signed-in]').forEach((el) => (el.hidden = false))
-    fetch('/api/workspaces')
+    fetch(apiUrl('/api/workspaces'), { credentials: 'include' })
       .then((res) => (res.ok ? (res.json() as Promise<{ slug: string }[]>) : []))
       .then(([last]) => {
         const href = last ? `/${encodeURIComponent(last.slug)}` : '/new-workspace'

@@ -22,8 +22,8 @@ import (
 // Handler serves /mcp: stateless streamable HTTP, a server per request whose tools call apiURL with that request's
 // Authorization header. A request without a personal API token gets 401 before reaching the SDK, pointing OAuth
 // clients at the protected resource metadata (see Metadata).
-func Handler(apiURL, appURL string, client *http.Client) http.Handler {
-	challenge := `Bearer resource_metadata="` + strings.TrimRight(appURL, "/") + `/.well-known/oauth-protected-resource/mcp"`
+func Handler(apiURL, appURL, mcpURL string, client *http.Client) http.Handler {
+	challenge := `Bearer resource_metadata="` + strings.TrimRight(mcpURL, "/") + `/.well-known/oauth-protected-resource/mcp"`
 	cache := mcp.NewSchemaCache()
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		t := &tools{api: &api{base: strings.TrimRight(apiURL, "/"), auth: r.Header.Get("Authorization"), client: client},
@@ -43,10 +43,11 @@ func Handler(apiURL, appURL string, client *http.Client) http.Handler {
 	})
 }
 
-// Metadata serves the RFC 9728 protected resource metadata for /mcp: Tether's app is its authorization server.
-func Metadata(appURL string) http.HandlerFunc {
-	app := strings.TrimRight(appURL, "/")
-	body, _ := json.Marshal(map[string]any{"resource": app + "/mcp", "authorization_servers": []string{app},
+// Metadata serves the RFC 9728 protected resource metadata for /mcp at mcpURL: the user API at authURL is its
+// authorization server.
+func Metadata(mcpURL, authURL string) http.HandlerFunc {
+	body, _ := json.Marshal(map[string]any{"resource": strings.TrimRight(mcpURL, "/") + "/mcp",
+		"authorization_servers":    []string{strings.TrimRight(authURL, "/")},
 		"bearer_methods_supported": []string{"header"}, "scopes_supported": []string{"tether"}})
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

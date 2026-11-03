@@ -1,15 +1,6 @@
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { createLogger, defineConfig, type Plugin } from 'vite'
-
-// A tab that reloads or closes mid-message resets its proxied WebSocket; Vite logs that as an error with a stack
-// trace. The tab reconnects on its own, so drop just those two codes.
-const logger = createLogger()
-const logError = logger.error
-logger.error = (msg, options) => {
-  if (msg.includes('ws proxy socket error') && /\b(ECONNRESET|EPIPE)\b/.test(msg)) return
-  logError(msg, options)
-}
+import { defineConfig, type Plugin } from 'vite'
 
 // / is the static landing page (landing.html, for search engines); every other path is the app. Caddy does the same
 // in production.
@@ -24,7 +15,6 @@ function toLanding(req: { url?: string }, _res: unknown, next: () => void) {
 }
 
 export default defineConfig({
-  customLogger: logger,
   cacheDir: '../node_modules/.vite/user', // keep Vite's cache out of the app folder
   plugins: [
     // Must run before react(): generates src/routeTree.gen.ts and splits each route's component/loader into its own chunk.
@@ -49,14 +39,5 @@ export default defineConfig({
       },
     },
   },
-  server: {
-    host: true,
-    port: 5173,
-    proxy: {
-      '/api': { target: 'http://localhost:8090', ws: true },
-      '/mcp': 'http://localhost:8095',
-      '/.well-known/oauth-protected-resource': 'http://localhost:8095',
-      '/.well-known/oauth-authorization-server': 'http://localhost:8090',
-    },
-  },
+  server: { host: true, port: 5173 },
 })

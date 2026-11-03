@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/tether/backend/shared/cors"
 	"github.com/devender07/tether/backend/shared/env"
 	"github.com/devender07/tether/backend/shared/obs"
 	"github.com/devender07/tether/backend/user/internal/aitest"
@@ -106,7 +107,13 @@ func main() {
 		obs.Fatal("MAIL_MAX_ATTEMPTS must be a number of at least 1")
 	}
 	mailer := mail.New(pool, cfg, duration("MAIL_TIMEOUT", 20*time.Second), duration("MAIL_RETRY_BASE", 30*time.Second), maxAttempts)
+	// The API's public URL when the web app is on another host; unset in production, app_base_url's host serves it.
+	apiURL := os.Getenv("API_URL")
+	if apiURL == "" && !prod {
+		apiURL = "http://localhost" + addr
+	}
 	authH := auth.New(pool, cfg, mailer, secret, workspace.CreateFirst)
+	authH.APIURL = apiURL
 	authH.Register(mux)
 	// Every handler but auth's own signs requests in through this, so the access log knows the user.
 	authenticate := func(r *http.Request) (string, error) {
@@ -134,7 +141,9 @@ func main() {
 		authenticate, wsH.Member).Register(mux)
 	feedback.New(pool, authenticate, wsH.Member).Register(mux)
 	analytics.New(pool, authenticate, wsH.Member).Register(mux)
-	oauth.New(pool, cfg, authenticate).Register(mux)
+	oauthH := oauth.New(pool, cfg, authenticate)
+	oauthH.APIURL = apiURL
+	oauthH.Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		obs.Fatal(err.Error())
@@ -172,6 +181,7 @@ func main() {
 		realtime.MaxConnsPerUser = n
 	}
 	rtH.ConfigChanged = cfg.Invalidate
+	rtH.AppOrigin = authH.AppOrigin
 	chatH := chat.New(pool, authenticate, wsH.Member)
 	chatH.Register(mux)
 	rtH.ChatAudience = chatH.Audience
@@ -216,7 +226,7 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux)))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }

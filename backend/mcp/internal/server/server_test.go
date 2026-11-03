@@ -330,13 +330,13 @@ func TestBrowserSession(t *testing.T) {
 // TestOAuthDiscovery checks that /mcp without a token points at the protected resource metadata, and what that says.
 func TestOAuthDiscovery(t *testing.T) {
 	w := httptest.NewRecorder()
-	Handler("http://api.test", "https://app.test/", http.DefaultClient).ServeHTTP(w, httptest.NewRequest("POST", "/mcp", nil))
-	if want := `Bearer resource_metadata="https://app.test/.well-known/oauth-protected-resource/mcp"`; w.Code != 401 || w.Header().Get("WWW-Authenticate") != want {
+	Handler("http://api.test", "https://app.test/", "https://api.app.test/", http.DefaultClient).ServeHTTP(w, httptest.NewRequest("POST", "/mcp", nil))
+	if want := `Bearer resource_metadata="https://api.app.test/.well-known/oauth-protected-resource/mcp"`; w.Code != 401 || w.Header().Get("WWW-Authenticate") != want {
 		t.Fatalf("no token: %d %q", w.Code, w.Header().Get("WWW-Authenticate"))
 	}
 	w = httptest.NewRecorder()
-	Metadata("https://app.test/")(w, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp", nil))
-	want := `{"authorization_servers":["https://app.test"],"bearer_methods_supported":["header"],"resource":"https://app.test/mcp","scopes_supported":["tether"]}`
+	Metadata("https://api.app.test/", "https://api.app.test")(w, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp", nil))
+	want := `{"authorization_servers":["https://api.app.test"],"bearer_methods_supported":["header"],"resource":"https://api.app.test/mcp","scopes_supported":["tether"]}`
 	if w.Code != 200 || w.Body.String() != want {
 		t.Fatalf("metadata: %d %s", w.Code, w.Body)
 	}

@@ -44,6 +44,9 @@ type Handler struct {
 	secret []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
 	lim    limits
 	alive  *aliveCache
+
+	// APIURL is the API's public URL, where Google sends the browser back; "" means app_base_url's host serves it.
+	APIURL string
 }
 
 // New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run inside the transaction that
@@ -751,7 +754,7 @@ func safeRedirect(v string) string {
 	return v
 }
 
-// googleConfig reads the OAuth client from system_config; the redirect URI is derived from app_base_url.
+// googleConfig reads the OAuth client from system_config; the redirect URI is on APIURL (or app_base_url).
 func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error) {
 	base, err := h.cfg.Get(ctx, "app_base_url")
 	if err != nil {
@@ -766,7 +769,11 @@ func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error
 	if err != nil {
 		return googleConfig{}, "", err
 	}
-	return googleConfig{clientID: id, clientSecret: clientSecret, redirectURI: base + "/api/auth/google/callback"}, base, nil
+	api := base
+	if h.APIURL != "" {
+		api = strings.TrimRight(h.APIURL, "/")
+	}
+	return googleConfig{clientID: id, clientSecret: clientSecret, redirectURI: api + "/api/auth/google/callback"}, base, nil
 }
 
 // updateMe changes the signed-in user's name; the email changes through emailCode and changeEmail.

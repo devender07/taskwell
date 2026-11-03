@@ -1,6 +1,7 @@
 import { redirect } from '@tanstack/react-router'
 import type { Doc } from '@tether/shared/rich-editor'
 import { ApiError, FALLBACK } from '@tether/shared/api-errors'
+import { apiUrl } from '@tether/shared/api-url'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
@@ -340,7 +341,7 @@ export const setClient = (id: string) => (client = id)
 
 async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal) {
   try {
-    return await fetch(`/api${path}`, { method, body, signal, headers: client ? { 'X-Tether-Client': client } : undefined })
+    return await fetch(apiUrl(`/api${path}`), { method, body, signal, credentials: 'include', headers: client ? { 'X-Tether-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }
@@ -370,6 +371,9 @@ export async function uploadFile(workspace: string, file: File) {
 const avatarVersions = new Map<string, number>()
 export const avatarSrc = (userId: string) => `/api/users/${encodeURIComponent(userId)}/avatar${avatarVersions.has(userId) ? `?v=${avatarVersions.get(userId)}` : ''}`
 export const bumpAvatar = (userId: string) => avatarVersions.set(userId, Date.now())
+
+// Where AI tools connect: the MCP server, beside the API.
+export const mcpUrl = (): string => import.meta.env.VITE_MCP_URL ?? `${location.origin}/mcp`
 
 // True once this tab has seen a session; a failed refresh or another tab's sign-out then sends it to sign-in.
 let signedIn = false

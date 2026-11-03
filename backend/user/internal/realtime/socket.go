@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -134,7 +135,13 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer h.release(r.Context(), connID)
-	ws, err := websocket.Accept(w, r, nil)
+	var opts *websocket.AcceptOptions
+	if h.AppOrigin != nil {
+		if u, err := url.Parse(h.AppOrigin(r)); err == nil && u.Host != "" {
+			opts = &websocket.AcceptOptions{OriginPatterns: []string{u.Host}}
+		}
+	}
+	ws, err := websocket.Accept(w, r, opts)
 	if err != nil {
 		return // Accept has written the error response
 	}

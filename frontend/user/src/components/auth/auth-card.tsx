@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Button } from '@tether/shared/button'
 import { LogoMark } from '@tether/shared/logo'
+import { apiUrl } from '@tether/shared/api-url'
 import './auth.css'
 
 const line = { height: 1, background: 'rgba(255, 255, 255, 0.08)' }
@@ -40,7 +41,7 @@ export function FormError({ children }: { children?: string | null }) {
 // Full-page navigation: the API redirects to Google and back. Google sign-ins are remembered.
 export function GoogleButton() {
   return (
-    <Button variant="secondary" className="w-full" onClick={() => location.assign('/api/auth/google?' + new URLSearchParams({ remember: '1', redirect: new URLSearchParams(location.search).get('redirect') ?? '/signin' }))}>
+    <Button variant="secondary" className="w-full" onClick={() => location.assign(apiUrl('/api/auth/google?') + new URLSearchParams({ remember: '1', redirect: new URLSearchParams(location.search).get('redirect') ?? '/signin' }))}>
       <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden>
         <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.8 6C12.3 13.5 17.7 9.5 24 9.5z" />
         <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.5 5.8c4.4-4 6.8-10 6.8-17.2z" />

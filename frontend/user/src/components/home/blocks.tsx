@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@tether/shared/button'
 import { Pagination } from '@tether/shared/pagination'
-import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath } from '@/api'
+import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath, mcpUrl } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
@@ -397,7 +397,7 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
 }
 
 export function ConnectClaude() {
-  const url = `${location.origin}/mcp`
+  const url = mcpUrl()
   const command = `claude mcp add --transport http tether ${url}`
   return (
     <Card title="Connect Claude">

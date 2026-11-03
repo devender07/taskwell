@@ -1,4 +1,5 @@
 import { startTransition, useActionState, useEffect, useEffectEvent, useState } from 'react'
+import { apiUrl } from '@tether/shared/api-url'
 import { Button } from '@tether/shared/button'
 import { IconButton } from '@tether/shared/icon-button'
 import { Textarea } from '@tether/shared/textarea'
@@ -231,7 +232,7 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
           </div>
         </div>
       ) : null}
-      {shot ? <img src={shot} alt={picked !== null && pickedShot ? `Screenshot after step ${picked}` : 'Latest screenshot'} className="test-screenshot" /> : null}
+      {shot ? <img src={apiUrl(shot)} alt={picked !== null && pickedShot ? `Screenshot after step ${picked}` : 'Latest screenshot'} className="test-screenshot" /> : null}
       {log.length ? (
         <div className="grid gap-1">
           <h4 className="text-caption text-secondary m-0">Step log</h4>

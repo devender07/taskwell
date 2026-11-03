@@ -31,6 +31,9 @@ type Handler struct {
 	auth  web.Authenticator
 	mu    sync.Mutex
 	conns map[*conn]struct{}
+
+	// AppHost, when set, is the admin app's host[:port], whose tabs may open sockets from their own subdomain.
+	AppHost string
 }
 
 // conn is one admin tab. The hub queues events on events; a writer goroutine drains it.
@@ -60,7 +63,11 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		web.WriteErr(w, http.StatusUnauthorized, "Not signed in.")
 		return
 	}
-	ws, err := websocket.Accept(w, r, nil)
+	var opts *websocket.AcceptOptions
+	if h.AppHost != "" {
+		opts = &websocket.AcceptOptions{OriginPatterns: []string{h.AppHost}}
+	}
+	ws, err := websocket.Accept(w, r, opts)
 	if err != nil {
 		return // Accept has written the error response
 	}

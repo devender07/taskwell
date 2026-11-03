@@ -10,3 +10,6 @@ bin/
 .DS_Store
 .claude
 .codegraph
+# Public, non-secret build settings for the frontend apps
+!frontend/*/.env.development
+!frontend/*/.env.production

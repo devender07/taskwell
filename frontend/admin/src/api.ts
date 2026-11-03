@@ -1,5 +1,6 @@
 import { redirect } from '@tanstack/react-router'
 import { ApiError } from '@tether/shared/api-errors'
+import { apiUrl } from '@tether/shared/api-url'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
 
@@ -36,7 +37,7 @@ export const setClient = (id: string) => (client = id)
 export async function api<T = void>(path: string, body?: FormData): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', body, headers: client ? { 'X-Tether-Client': client } : undefined })
+    res = await fetch(apiUrl(`/api${path}`), { method: body ? 'POST' : 'GET', body, credentials: 'include', headers: client ? { 'X-Tether-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }

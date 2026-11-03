@@ -22,6 +22,9 @@ type Handler struct {
 	cfg          *sysconfig.Store
 	lim          web.Limiter
 	authenticate func(*http.Request) (string, error)
+
+	// APIURL is the API's public URL, the authorization server's; "" means app_base_url's host serves the API.
+	APIURL string
 }
 
 // New takes the auth handler's Authenticate.
@@ -36,12 +39,15 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	app := strings.TrimRight(base, "/")
+	app, api := strings.TrimRight(base, "/"), strings.TrimRight(h.APIURL, "/")
+	if api == "" {
+		api = app
+	}
 	web.JSON(w, http.StatusOK, map[string]any{
-		"issuer":                                app,
-		"authorization_endpoint":                app + "/oauth/authorize",
-		"token_endpoint":                        app + "/api/oauth/token",
-		"registration_endpoint":                 app + "/api/oauth/register",
+		"issuer":                                api,
+		"authorization_endpoint":                app + "/oauth/authorize", // the consent page, in the web app
+		"token_endpoint":                        api + "/api/oauth/token",
+		"registration_endpoint":                 api + "/api/oauth/register",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code"},
 		"code_challenge_methods_supported":      []string{"S256"},

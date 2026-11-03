@@ -11,7 +11,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import { IconButton } from '../icon-button/icon-button'
 import { useFieldError } from '../input/field-error'
 import { filterOptions, type Option } from '../smart-autocomplete/match'
-import { FILE_URL, imageSrc, isAllowedHref, measure, type Doc } from './doc'
+import { FILE_URL, filePath, imageSrc, isAllowedHref, measure, type Doc } from './doc'
 import { RichText } from './rich-text'
 import { PathIcon } from '../icons/icons'
 import '../input/input.css'
@@ -50,8 +50,8 @@ const Image = Node.create({
   group: 'block',
   atom: true,
   draggable: true,
-  addAttributes: () => ({ src: { default: null }, alt: { default: '' } }),
-  parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(el.getAttribute('src') ?? '') && null }],
+  addAttributes: () => ({ src: { default: null, parseHTML: (el) => filePath(el.getAttribute('src') ?? '') }, alt: { default: '' } }),
+  parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(filePath(el.getAttribute('src') ?? '')) && null }],
   renderHTML: ({ HTMLAttributes }) => ['img', { ...HTMLAttributes, src: imageSrc(HTMLAttributes.src) }],
 })
 

@@ -25,6 +25,7 @@ import (
 	"github.com/devender07/tether/backend/admin/internal/realtime"
 	"github.com/devender07/tether/backend/admin/internal/stats"
 	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/tether/backend/shared/cors"
 	"github.com/devender07/tether/backend/shared/env"
 	"github.com/devender07/tether/backend/shared/obs"
 )
@@ -57,6 +58,12 @@ func main() {
 	if prod && len(mfaSecret) < 32 {
 		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
 	}
+	// The admin app's URL when it's on another host than this API (its own subdomain of the same domain).
+	appURL := os.Getenv("ADMIN_APP_URL")
+	if appURL == "" && !prod {
+		appURL = "http://localhost:5174"
+	}
+	appOrigin := cors.Origin(appURL)
 	allowed, err := web.ParseAllowlist(os.Getenv("ADMIN_ALLOWED_IPS"))
 	if err != nil {
 		obs.Fatal("ADMIN_ALLOWED_IPS", "err", err)
@@ -136,6 +143,9 @@ func main() {
 	stats.New(pool, authenticate).Register(mux)
 	audit.New(pool, authenticate).Register(mux)
 	rtH := realtime.New(pool, authenticate)
+	if u, err := url.Parse(appOrigin); err == nil {
+		rtH.AppHost = u.Host
+	}
 	rtH.Register(mux)
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -159,7 +169,8 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(web.AllowIPs(allowed, withTimeouts(web.SameOrigin(realtime.WithOrigin(mux))))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(web.AllowIPs(allowed, cors.Allow(func(*http.Request) string { return appOrigin },
+		withTimeouts(web.SameOrigin(appOrigin, realtime.WithOrigin(mux)))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }

@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { apiUrl } from '@tether/shared/api-url'
 import { useEffect, useState } from 'react'
 import type { TestRun } from '@/api'
 import { RunStatusPill, formatCost, runFinished, useLive } from '@/components/tests/tests'
@@ -63,7 +64,7 @@ function LiveView() {
         {streaming && !broken ? (
           <img
             key={attempt}
-            src={`/api${path}/live`}
+            src={apiUrl(`/api${path}/live`)}
             alt="Live view of the test browser"
             onError={() => setBroken(true)}
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 8, border: '1px solid var(--border)' }}
@@ -72,7 +73,7 @@ function LiveView() {
           <div className="grid gap-3" style={{ placeItems: 'center', maxHeight: '100%', minHeight: 0 }}>
             <p className="text-body-sm text-secondary m-0">{message}</p>
             <img
-              src={run.latest_screenshot_url}
+              src={apiUrl(run.latest_screenshot_url)}
               alt="Last screenshot"
               style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 140px)', objectFit: 'contain', borderRadius: 8, border: '1px solid var(--border)' }}
             />
