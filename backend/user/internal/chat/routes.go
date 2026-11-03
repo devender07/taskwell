@@ -33,6 +33,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+ws+"/messages/{id}/replies", h.wrap(h.replies))
 	mux.HandleFunc("POST "+ws+"/messages/{id}", h.wrap(h.editMessage))
 	mux.HandleFunc("DELETE "+ws+"/messages/{id}", h.wrap(h.deleteMessage))
+	mux.HandleFunc("POST "+ws+"/messages/{id}/pin", h.wrap(h.pin))
+	mux.HandleFunc("DELETE "+ws+"/messages/{id}/pin", h.wrap(h.unpin))
 	mux.HandleFunc("POST "+ws+"/messages/{id}/reactions", h.wrap(h.react))
 	mux.HandleFunc("DELETE "+ws+"/messages/{id}/reactions", h.wrap(h.unreact))
 }

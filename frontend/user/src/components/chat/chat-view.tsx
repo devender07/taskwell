@@ -8,13 +8,13 @@ import { Popover } from '@tether/shared/popover'
 import { RichText, type Doc } from '@tether/shared/rich-text'
 import { fullTime, relativeTime } from '@tether/shared/time'
 import { messageBody } from '@tether/shared/validate'
-import { MessageIcon, MoreIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
+import { MessageIcon, MoreIcon, PinIcon, SendIcon, SmileIcon } from '@tether/shared/icons'
 import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { useUnread } from '@/components/app/unread'
 import { RichEditor } from '@/components/issues/rich-editor'
 import { onTyping, reloadRoutes, sendTyping, subscribePaths } from '@/realtime'
-import { firstName, firstUnread, groupMessages, typingText } from './chat'
+import { docText, firstName, firstUnread, groupMessages, typingText } from './chat'
 import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog, PeoplePanel, RenameDialog, chatsPath } from './chat-dialogs'
 import { ChatAvatar } from './chat-list'
 import { searchMembers } from '@/components/workspace/member-pages'
@@ -46,6 +46,8 @@ const messagePath = (slug: string, id: string) => `${workspacePath(slug)}/messag
 const suggesting = () => !!document.querySelector('.rich-editor-mentions')
 const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+const PIN_DAYS = [1, 7, 30]
 
 // One chat: header, messages (newest at the bottom, older pages load on scroll up), typing line and composer, and the
 // thread panel when `thread` is set. Keyed by chat id.
@@ -132,14 +134,17 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
     } else setPill(true)
   }, [items, lastId, me.id])
 
-  // Images load after the first scroll; stay pinned to the bottom while they do.
+  // Images loading and the composer's editor mounting change sizes after the first scroll; stay at the bottom while
+  // they do.
   useEffect(() => {
     const el = scroller.current
-    if (!el) return
-    const onLoad = () => atBottom.current && (el.scrollTop = el.scrollHeight)
-    el.addEventListener('load', onLoad, true)
-    return () => el.removeEventListener('load', onLoad, true)
-  }, [])
+    const list = el?.querySelector('.chat-messages')
+    if (!el || !list) return
+    const ro = new ResizeObserver(() => atBottom.current && (el.scrollTop = el.scrollHeight))
+    ro.observe(el)
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [people])
 
   const loadOlder = useEffectEvent(async () => {
     const first = items[0]
@@ -237,7 +242,10 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
           />
         ) : (
           <section className="chat-main" aria-label={chat.name}>
-            <ChatHeader workspaceName={workspaceName} />
+            <div>
+              <ChatHeader workspaceName={workspaceName} />
+              {page.pinned?.length ?<PinnedBar pinned={page.pinned} /> : null}
+            </div>
             <div className="chat-scroll-wrap">
               <div ref={scroller} className="chat-scroll" onScroll={onScroll} onClick={followIssueLink(navigate)}>
                 <div ref={top} aria-hidden style={{ height: 1 }} />
@@ -386,12 +394,57 @@ function ChatHeader({ workspaceName }: { workspaceName: string }) {
   )
 }
 
+// The chat's pinned messages under the header; picking one jumps to it.
+// ponytail: jumping only finds messages on the loaded pages; load around the message if pins get old.
+function PinnedBar({ pinned }: { pinned: Message[] }) {
+  const navigate = useNavigate({ from: FROM })
+  const latest = pinned[0]!
+  return (
+    <Popover
+      aria-label="Pinned messages"
+      placement="bottom-start"
+      trigger={(props) => (
+        <button type="button" className="chat-pinned" {...props}>
+          <PinIcon size={16} className="flex-noshrink" />
+          <span className="text-caption text-primary font-510 flex-noshrink">{pinned.length} pinned</span>
+          <span className="text-caption text-secondary ellipsis">
+            {latest.author?.name ?? 'Someone'}: {docText(latest.body)}
+          </span>
+        </button>
+      )}
+    >
+      {(close) => (
+        <ul className="chat-pinned-list" aria-label="Pinned messages">
+          {pinned.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                className="popover-item"
+                style={{ display: 'grid', gap: 4, height: 'auto', paddingBlock: 8 }}
+                onClick={() => (close(), navigate({ search: (prev) => ({ ...prev, message: m.id, thread: undefined }) }))}
+              >
+                <span className="flex items-baseline gap-2">
+                  <span className="text-label text-primary ellipsis">{m.author?.name ?? 'Someone'}</span>
+                  <span className="text-caption text-secondary flex-noshrink">until {shortDate(m.pinned_until!)}</span>
+                </span>
+                <span className="text-caption text-secondary ellipsis-2">{docText(m.body)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Popover>
+  )
+}
+
 function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; compact: boolean; highlight?: boolean; inThread?: boolean }) {
   const ctx = use(ChatContext)
   const navigate = useNavigate({ from: FROM })
   const [deleting, setDeleting] = useState(false)
+  const [pinning, setPinning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const editing = ctx.editing === msg.id
+  const pinnable = !msg.parent_id
   const name = msg.author?.name ?? 'Someone'
   const openThread = () => navigate({ search: (prev) => ({ ...prev, thread: msg.id, message: undefined }) })
 
@@ -408,6 +461,17 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
     } catch (e) {
       const { errors, error } = toFormErrors(e)
       setError(errors.emoji ?? error)
+      return
+    }
+    await ctx.refresh()
+  }
+
+  async function unpin() {
+    setError(null)
+    try {
+      await api(`${messagePath(ctx.slug, msg.id)}/pin`, undefined, 'DELETE')
+    } catch (e) {
+      setError(toFormErrors(e).error)
       return
     }
     await ctx.refresh()
@@ -433,6 +497,12 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
             </time>
           </header>
         )}
+        {msg.pinned_until ? (
+          <span className="flex items-center gap-1 text-caption text-secondary" title={`Pinned until ${fullTime(msg.pinned_until)}`}>
+            <PinIcon size={14} />
+            Pinned until {shortDate(msg.pinned_until)}
+          </span>
+        ) : null}
         {editing ? (
           <EditMessage msg={msg} />
         ) : msg.deleted || !msg.body ? (
@@ -516,6 +586,11 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
                     Reply in thread
                   </button>
                 )}
+                {pinnable ? (
+                  <button type="button" className="popover-item" onClick={() => (close(), msg.pinned_until ? unpin() : setPinning(true))}>
+                    {msg.pinned_until ? 'Unpin' : 'Pin message…'}
+                  </button>
+                ) : null}
                 {msg.can_edit ? (
                   <button type="button" className="popover-item" onClick={() => (close(), ctx.setEditing(msg.id))}>
                     Edit
@@ -532,6 +607,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
         </div>
       ) : null}
       {msg.can_delete ? <DeleteMessage msg={msg} open={deleting} onClose={() => setDeleting(false)} /> : null}
+      {pinnable ? <PinMessage msg={msg} open={pinning} onClose={() => setPinning(false)} /> : null}
     </article>
   )
 }
@@ -572,6 +648,49 @@ function DeleteMessage({ msg, open, onClose }: { msg: Message; open: boolean; on
         </Button>
         <Button variant="danger" onClick={remove} disabled={state.pending}>
           {state.pending ? 'Deleting…' : 'Delete'}
+        </Button>
+      </div>
+    </Dialog>
+  )
+}
+
+function PinMessage({ msg, open, onClose }: { msg: Message; open: boolean; onClose: () => void }) {
+  const ctx = use(ChatContext)
+  const [days, setDays] = useState(7)
+  const [state, setState] = useState<{ pending?: boolean; error?: string | null }>({})
+  async function pin() {
+    setState({ pending: true })
+    const form = new FormData()
+    form.set('days', String(days))
+    try {
+      await api(`${messagePath(ctx.slug, msg.id)}/pin`, form)
+    } catch (e) {
+      const { errors, error } = toFormErrors(e)
+      setState({ error: errors.days ?? error })
+      return
+    }
+    await ctx.refresh()
+    setState({})
+    onClose()
+  }
+  return (
+    <Dialog open={open} onClose={onClose} title="Pin message" description="Everyone in this chat sees it pinned at the top.">
+      <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }}>
+        <legend className="text-label text-primary mb-2 p-0">Pin for</legend>
+        {PIN_DAYS.map((d) => (
+          <label key={d} className="checkbox" style={{ minHeight: 44 }}>
+            <input type="radio" name={`pin-${msg.id}`} value={d} checked={days === d} onChange={() => setDays(d)} />
+            {d === 1 ? '1 day' : `${d} days`}
+          </label>
+        ))}
+      </fieldset>
+      <FormError>{state.error}</FormError>
+      <div className="flex justify-end gap-3">
+        <Button variant="ghost" onClick={onClose} disabled={state.pending}>
+          Cancel
+        </Button>
+        <Button onClick={pin} disabled={state.pending}>
+          {state.pending ? 'Pinning…' : 'Pin'}
         </Button>
       </div>
     </Dialog>

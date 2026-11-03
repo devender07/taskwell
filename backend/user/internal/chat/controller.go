@@ -244,7 +244,11 @@ func (h *Handler) messages(w http.ResponseWriter, r *http.Request, userID string
 	if err != nil {
 		return err
 	}
-	web.JSON(w, http.StatusOK, map[string]any{"messages": ms, "has_more": more})
+	pinned, err := h.model.pinned(r.Context(), userID, c.id)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"messages": ms, "has_more": more, "pinned": pinned})
 	return nil
 }
 
@@ -345,6 +349,35 @@ func (h *Handler) deleteMessage(w http.ResponseWriter, r *http.Request, userID s
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+func (h *Handler) pin(w http.ResponseWriter, r *http.Request, userID string) error {
+	days, msg := checkPinDays(r.FormValue("days"))
+	if msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"days": msg})
+		return nil
+	}
+	return h.setPin(w, r, userID, days)
+}
+
+func (h *Handler) unpin(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.setPin(w, r, userID, 0)
+}
+
+// setPin pins (days > 0) or unpins a top-level message that isn't deleted.
+func (h *Handler) setPin(w http.ResponseWriter, r *http.Request, userID string, days int) error {
+	sc, m, err := h.message(w, r, userID)
+	if m == nil || err != nil {
+		return err
+	}
+	if m.deleted || m.parentID != "" {
+		web.Err(w, http.StatusNotFound, errNoMessage)
+		return nil
+	}
+	if err := h.model.pin(r.Context(), sc, *m, days); err != nil {
+		return err
+	}
+	return h.respondMessage(w, r, userID, m.id, http.StatusOK)
 }
 
 func (h *Handler) react(w http.ResponseWriter, r *http.Request, userID string) error {

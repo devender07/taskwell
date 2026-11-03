@@ -142,9 +142,10 @@ export type Message = {
   reactions: Reaction[]
   can_edit: boolean
   can_delete: boolean
+  pinned_until: string | null
 }
-// Oldest first; `?before=` the first message's id fetches the page before it.
-export type MessagePage = { messages: Message[]; has_more: boolean }
+// Oldest first; `?before=` the first message's id fetches the page before it. `pinned` is the chat's pins, newest first.
+export type MessagePage = { messages: Message[]; has_more: boolean; pinned: Message[] }
 export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string

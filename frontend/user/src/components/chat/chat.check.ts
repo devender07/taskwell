@@ -1,6 +1,6 @@
 // Run: node --experimental-strip-types user/src/components/chat/chat.check.ts
 import { assert } from '../../../../shared/src/check.ts'
-import { dayLabel, firstUnread, groupMessages, typingText } from './chat.ts'
+import { dayLabel, docText, firstUnread, groupMessages, typingText } from './chat.ts'
 
 const now = new Date(2026, 9, 31, 15)
 const at = (day: number, h: number, m = 0) => new Date(2026, 9, day, h, m).toISOString()
@@ -41,3 +41,15 @@ assert.equal(typingText(['Maya', 'Ravi']), 'Maya and Ravi are typing…')
 assert.equal(typingText(['Maya', 'Ravi', 'Ana']), 'Several people are typing…')
 
 console.log('chat: ok')
+
+assert.equal(
+  docText({
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'hi ' }, { type: 'mention', attrs: { label: 'Ann', mentionSuggestionChar: '@' } }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'ship  it' }] },
+    ],
+  } as never),
+  'hi @Ann ship it',
+)
+assert.equal(docText(null), '')

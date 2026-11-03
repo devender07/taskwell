@@ -81,6 +81,16 @@
 .chat-faces:hover { background: rgba(255, 255, 255, 0.05); }
 .chat-faces:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
+/* Pinned messages: a strip under the header that opens the list. */
+.chat-pinned { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 24px; color: var(--text-2); text-align: left; background: var(--surface); border: 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+.chat-pinned:hover { background: rgba(255, 255, 255, 0.05); }
+.chat-pinned:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.chat-pinned-list { display: grid; width: 320px; max-height: 360px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+@media (max-width: 640px) {
+  .chat-pinned { padding-inline: 16px; }
+  .chat-pinned-list { width: calc(100vw - 32px); }
+}
+
 .chat-scroll-wrap { position: relative; min-height: 0; display: grid; }
 .chat-scroll { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 8px; }
 .chat-main .chat-scroll > :nth-child(2) { margin-top: auto; } /* a short chat sits at the bottom, by the composer */

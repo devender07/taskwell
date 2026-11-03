@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -48,6 +49,18 @@ func checkEmoji(s string) string {
 		return "Choose an emoji."
 	}
 	return ""
+}
+
+// pinDays are the pin lengths offered, in days.
+var pinDays = []int{1, 7, 30}
+
+// checkPinDays reads a pin length that's one of pinDays.
+func checkPinDays(s string) (int, string) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || !slices.Contains(pinDays, n) {
+		return 0, "Choose 1, 7 or 30 days."
+	}
+	return n, ""
 }
 
 // people returns the distinct ids picked, without the user's own, and whether they all look like user ids.
