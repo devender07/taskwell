@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
+import { Button } from '@taskwell/shared/button'
 import { api, signOut, toFormErrors, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 

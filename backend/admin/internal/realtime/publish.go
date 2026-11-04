@@ -68,11 +68,11 @@ type originKey struct{}
 
 var originRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// WithOrigin puts the request's X-Tether-Client header, the id of the tab's realtime connection, into its context so
+// WithOrigin puts the request's X-Taskwell-Client header, the id of the tab's realtime connection, into its context so
 // the events it publishes carry it as origin. Anything that isn't a short token is ignored.
 func WithOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if id := r.Header.Get("X-Tether-Client"); originRe.MatchString(id) {
+		if id := r.Header.Get("X-Taskwell-Client"); originRe.MatchString(id) {
 			r = r.WithContext(context.WithValue(r.Context(), originKey{}, id))
 		}
 		next.ServeHTTP(w, r)

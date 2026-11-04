@@ -1,9 +1,9 @@
 import { redirect } from '@tanstack/react-router'
-import type { Doc } from '@tether/shared/rich-editor'
-import { ApiError, FALLBACK } from '@tether/shared/api-errors'
-import { apiUrl } from '@tether/shared/api-url'
+import type { Doc } from '@taskwell/shared/rich-editor'
+import { ApiError, FALLBACK } from '@taskwell/shared/api-errors'
+import { apiUrl } from '@taskwell/shared/api-url'
 
-export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
 export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
 export type RoleRef = { id: string; name: string }
@@ -341,7 +341,7 @@ export const setClient = (id: string) => (client = id)
 
 async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal) {
   try {
-    return await fetch(apiUrl(`/api${path}`), { method, body, signal, credentials: 'include', headers: client ? { 'X-Tether-Client': client } : undefined })
+    return await fetch(apiUrl(`/api${path}`), { method, body, signal, credentials: 'include', headers: client ? { 'X-Taskwell-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }
@@ -379,7 +379,7 @@ export const mcpUrl = (): string => import.meta.env.VITE_MCP_URL ?? `${location.
 let signedIn = false
 
 // Tells other tabs about sign-in and sign-out: signed-out tabs reload into the app, signed-in ones go to sign-in.
-const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('tether-auth') : null
+const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('taskwell-auth') : null
 if (authChannel) {
   authChannel.onmessage = (e) => {
     if (e.data === 'signout') sessionEnded()

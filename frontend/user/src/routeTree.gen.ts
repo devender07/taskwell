@@ -30,7 +30,7 @@ import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$work
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
-import { Route as AppWorkspaceMainInboxTetherRouteImport } from './routes/_app/$workspace/_main/inbox/tether'
+import { Route as AppWorkspaceMainInboxTaskwellRouteImport } from './routes/_app/$workspace/_main/inbox/taskwell'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
 import { Route as AppWorkspaceMainMembersIdRouteImport } from './routes/_app/$workspace/_main/members/$id'
 import { Route as AppWorkspaceMainProjectsIndexRouteImport } from './routes/_app/$workspace/_main/projects/index'
@@ -162,10 +162,10 @@ const AppWorkspaceMainInboxIndexRoute =
     path: '/',
     getParentRoute: () => AppWorkspaceMainInboxRoute,
   } as any)
-const AppWorkspaceMainInboxTetherRoute =
-  AppWorkspaceMainInboxTetherRouteImport.update({
-    id: '/tether',
-    path: '/tether',
+const AppWorkspaceMainInboxTaskwellRoute =
+  AppWorkspaceMainInboxTaskwellRouteImport.update({
+    id: '/taskwell',
+    path: '/taskwell',
     getParentRoute: () => AppWorkspaceMainInboxRoute,
   } as any)
 const AppWorkspaceMainIssueIdentifierRoute =
@@ -327,7 +327,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
-  '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
+  '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -370,7 +370,7 @@ export interface FileRoutesByTo {
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
-  '/$workspace/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
+  '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -418,7 +418,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
-  '/_app/$workspace/_main/inbox/tether': typeof AppWorkspaceMainInboxTetherRoute
+  '/_app/$workspace/_main/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/_app/$workspace/_main/members/$id': typeof AppWorkspaceMainMembersIdRoute
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
@@ -466,7 +466,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings'
     | '/$workspace/team'
     | '/$workspace/'
-    | '/$workspace/inbox/tether'
+    | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
     | '/$workspace/members/$id'
     | '/$workspace/projects/$key'
@@ -509,7 +509,7 @@ export interface FileRouteTypes {
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
     | '/$workspace/team'
-    | '/$workspace/inbox/tether'
+    | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
     | '/$workspace/members/$id'
     | '/$workspace/projects/$key'
@@ -556,7 +556,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/team'
     | '/_app/$workspace/_main/'
-    | '/_app/$workspace/_main/inbox/tether'
+    | '/_app/$workspace/_main/inbox/taskwell'
     | '/_app/$workspace/_main/issue/$identifier'
     | '/_app/$workspace/_main/members/$id'
     | '/_app/$workspace/_main/projects/$key'
@@ -745,11 +745,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainInboxIndexRouteImport
       parentRoute: typeof AppWorkspaceMainInboxRoute
     }
-    '/_app/$workspace/_main/inbox/tether': {
-      id: '/_app/$workspace/_main/inbox/tether'
-      path: '/tether'
-      fullPath: '/$workspace/inbox/tether'
-      preLoaderRoute: typeof AppWorkspaceMainInboxTetherRouteImport
+    '/_app/$workspace/_main/inbox/taskwell': {
+      id: '/_app/$workspace/_main/inbox/taskwell'
+      path: '/taskwell'
+      fullPath: '/$workspace/inbox/taskwell'
+      preLoaderRoute: typeof AppWorkspaceMainInboxTaskwellRouteImport
       parentRoute: typeof AppWorkspaceMainInboxRoute
     }
     '/_app/$workspace/_main/issue/$identifier': {
@@ -917,13 +917,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppWorkspaceMainInboxRouteChildren {
-  AppWorkspaceMainInboxTetherRoute: typeof AppWorkspaceMainInboxTetherRoute
+  AppWorkspaceMainInboxTaskwellRoute: typeof AppWorkspaceMainInboxTaskwellRoute
   AppWorkspaceMainInboxIndexRoute: typeof AppWorkspaceMainInboxIndexRoute
   AppWorkspaceMainInboxCChatIdRoute: typeof AppWorkspaceMainInboxCChatIdRoute
 }
 
 const AppWorkspaceMainInboxRouteChildren: AppWorkspaceMainInboxRouteChildren = {
-  AppWorkspaceMainInboxTetherRoute: AppWorkspaceMainInboxTetherRoute,
+  AppWorkspaceMainInboxTaskwellRoute: AppWorkspaceMainInboxTaskwellRoute,
   AppWorkspaceMainInboxIndexRoute: AppWorkspaceMainInboxIndexRoute,
   AppWorkspaceMainInboxCChatIdRoute: AppWorkspaceMainInboxCChatIdRoute,
 }

@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 // TestEmailChange: the email moves only with both codes, a wrong one is named and counted, the codes work once, and an

@@ -1,7 +1,7 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
-import { createSocket } from '@tether/shared/socket'
+import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@taskwell/shared/realtime'
+import { createSocket } from '@taskwell/shared/socket'
 import { api, homePath, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches

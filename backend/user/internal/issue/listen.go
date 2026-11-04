@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
 )
 
 // Live-editing frames cross API instances as notifications on the Postgres channel collab:

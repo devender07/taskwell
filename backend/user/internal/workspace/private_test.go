@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 // TestRemoveMemberLeavesProjects: someone removed from the workspace stops being a member of its private projects,

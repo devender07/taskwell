@@ -1,5 +1,5 @@
 import { createRouter } from '@tanstack/react-router'
-import { ErrorFallback, NotFound, Pending } from '@tether/shared/boundaries'
+import { ErrorFallback, NotFound, Pending } from '@taskwell/shared/boundaries'
 import { routeTree } from './routeTree.gen'
 
 export const router = createRouter({

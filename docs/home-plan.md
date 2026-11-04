@@ -12,7 +12,7 @@ Out of scope: customisable or draggable widgets, charts beyond the project progr
 | Needs attention, Assigned to me | existing `GET /api/workspaces/{slug}/my-issues` (lean list, already live via `/my-issues` events) plus existing statuses |
 | Inbox | existing `GET …/notifications` (first page), filtered to unread on the client, max 5; existing `POST …/notifications/read` with `all=true` |
 | Recent activity | **new** `GET …/activity` |
-| Recently viewed | browser `localStorage` (`tether:recent:<workspace slug>`), written by the issue page |
+| Recently viewed | browser `localStorage` (`taskwell:recent:<workspace slug>`), written by the issue page |
 | Projects | **new** `GET …/project-stats` plus the existing projects list |
 
 ## API contract (new endpoints)

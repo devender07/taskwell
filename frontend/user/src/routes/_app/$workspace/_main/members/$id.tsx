@@ -1,5 +1,5 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import { Avatar } from '@tether/shared/avatar'
+import { Avatar } from '@taskwell/shared/avatar'
 import { ApiError, avatarSrc, memberAnalyticsPath, type MemberAnalytics } from '@/api'
 import { loaderApi } from '@/realtime'
 import { MemberCards, useRefetchEvery } from '@/components/analytics/member-analytics'

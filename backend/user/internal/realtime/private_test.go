@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 // TestPublishPrivate: an event about a private project goes to each person who can see it (its member and the

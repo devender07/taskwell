@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const maxBody = 64 << 10
@@ -51,7 +51,7 @@ func cookieOnly(path string) bool {
 func (h *Handler) wrap(fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := bearer(r); ok && cookieOnly(r.URL.Path) {
-			web.Err(w, http.StatusForbidden, "Use the Tether app for this.")
+			web.Err(w, http.StatusForbidden, "Use the Taskwell app for this.")
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)

@@ -1,11 +1,11 @@
 import { startTransition, useActionState, useEffect, useEffectEvent, useState } from 'react'
-import { apiUrl } from '@tether/shared/api-url'
-import { Button } from '@tether/shared/button'
-import { IconButton } from '@tether/shared/icon-button'
-import { Textarea } from '@tether/shared/textarea'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { testNote } from '@tether/shared/validate'
-import { XIcon } from '@tether/shared/icons'
+import { apiUrl } from '@taskwell/shared/api-url'
+import { Button } from '@taskwell/shared/button'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Textarea } from '@taskwell/shared/textarea'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { testNote } from '@taskwell/shared/validate'
+import { XIcon } from '@taskwell/shared/icons'
 import {
   can,
   cancelTestRun,
@@ -264,7 +264,7 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
 // Opens the live browser view in a popup window; with popups blocked, the link opens it in a new tab instead.
 function WatchLive({ workspace, runId }: { workspace: string; runId: string }) {
   const href = `/live/${encodeURIComponent(workspace)}/${encodeURIComponent(runId)}`
-  const name = `tether-live-${runId}`
+  const name = `taskwell-live-${runId}`
   return (
     <a
       href={href}

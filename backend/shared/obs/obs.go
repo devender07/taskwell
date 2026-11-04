@@ -159,20 +159,20 @@ func WriteHTTP(w io.Writer) {
 		if class == 1 {
 			help = "HTTP requests served, by status class."
 		}
-		Metric(w, "tether_http_requests_total", "counter", help, fmt.Sprintf(`class="%dxx"`, class), float64(requests[class].Load()))
+		Metric(w, "taskwell_http_requests_total", "counter", help, fmt.Sprintf(`class="%dxx"`, class), float64(requests[class].Load()))
 	}
 }
 
 // WritePool writes the connection pool's stats.
 func WritePool(w io.Writer, s *pgxpool.Stat) {
-	Metric(w, "tether_db_pool_max_conns", "gauge", "Largest pool size.", "", float64(s.MaxConns()))
-	Metric(w, "tether_db_pool_total_conns", "gauge", "Open pool connections.", "", float64(s.TotalConns()))
-	Metric(w, "tether_db_pool_acquired_conns", "gauge", "Pool connections in use.", "", float64(s.AcquiredConns()))
-	Metric(w, "tether_db_pool_idle_conns", "gauge", "Idle pool connections.", "", float64(s.IdleConns()))
-	Metric(w, "tether_db_pool_acquires_total", "counter", "Connections acquired from the pool.", "", float64(s.AcquireCount()))
-	Metric(w, "tether_db_pool_empty_acquires_total", "counter", "Acquires that had to wait or open a connection.", "", float64(s.EmptyAcquireCount()))
-	Metric(w, "tether_db_pool_canceled_acquires_total", "counter", "Acquires canceled before getting a connection.", "", float64(s.CanceledAcquireCount()))
-	Metric(w, "tether_db_pool_acquire_seconds_total", "counter", "Time spent acquiring connections.", "", s.AcquireDuration().Seconds())
+	Metric(w, "taskwell_db_pool_max_conns", "gauge", "Largest pool size.", "", float64(s.MaxConns()))
+	Metric(w, "taskwell_db_pool_total_conns", "gauge", "Open pool connections.", "", float64(s.TotalConns()))
+	Metric(w, "taskwell_db_pool_acquired_conns", "gauge", "Pool connections in use.", "", float64(s.AcquiredConns()))
+	Metric(w, "taskwell_db_pool_idle_conns", "gauge", "Idle pool connections.", "", float64(s.IdleConns()))
+	Metric(w, "taskwell_db_pool_acquires_total", "counter", "Connections acquired from the pool.", "", float64(s.AcquireCount()))
+	Metric(w, "taskwell_db_pool_empty_acquires_total", "counter", "Acquires that had to wait or open a connection.", "", float64(s.EmptyAcquireCount()))
+	Metric(w, "taskwell_db_pool_canceled_acquires_total", "counter", "Acquires canceled before getting a connection.", "", float64(s.CanceledAcquireCount()))
+	Metric(w, "taskwell_db_pool_acquire_seconds_total", "counter", "Time spent acquiring connections.", "", s.AcquireDuration().Seconds())
 }
 
 // Healthcheck GETs http://<addr>/readyz, addr being a listen address such as ":9090" (loopback when the host is

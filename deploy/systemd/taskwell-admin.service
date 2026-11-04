@@ -1,13 +1,13 @@
 [Unit]
-Description=Tether admin API
-After=network-online.target docker.service tether-user.service
+Description=Taskwell admin API
+After=network-online.target docker.service taskwell-user.service
 Wants=network-online.target
 
 [Service]
-User=tether
-Group=tether
-EnvironmentFile=/etc/tether/admin.env
-ExecStart=/opt/tether/tether-admin
+User=taskwell
+Group=taskwell
+EnvironmentFile=/etc/taskwell/admin.env
+ExecStart=/opt/taskwell/taskwell-admin
 Restart=always
 RestartSec=3
 # Shutdown lets requests finish (20s) and closes sockets; keep this above 40s.

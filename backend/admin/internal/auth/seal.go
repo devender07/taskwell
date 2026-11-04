@@ -21,7 +21,7 @@ const sealPrefix = "v1:"
 
 // MFAKey derives the AES-256 key from MFA_ENCRYPTION_KEY (or, in dev, the jwt_secret fallback).
 func MFAKey(secret string) []byte {
-	sum := sha256.Sum256([]byte("tether admin mfa\x00" + secret))
+	sum := sha256.Sum256([]byte("taskwell admin mfa\x00" + secret))
 	return sum[:]
 }
 

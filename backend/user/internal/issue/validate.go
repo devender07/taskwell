@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.
@@ -19,7 +19,7 @@ var (
 	dateRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	identifierRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,4})-([1-9][0-9]*)$`)
 	categories   = []string{"backlog", "unstarted", "started", "completed", "canceled"}
-	// typeIcons are the status type icon keys, as @tether/shared/icons draws them.
+	// typeIcons are the status type icon keys, as @taskwell/shared/icons draws them.
 	typeIcons = []string{"circle", "circle-dashed", "circle-half", "circle-check", "circle-x", "eye", "refresh", "pause",
 		"clock", "flag", "star", "bug", "rocket", "alert", "lock", "message"}
 )

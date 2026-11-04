@@ -1,5 +1,5 @@
 import { Link, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@tether/shared/icons'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
 import { useMenu, WorkspaceSwitcher } from './navbar'

@@ -1,5 +1,5 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { Tabs } from '@tether/shared/tabs'
+import { Tabs } from '@taskwell/shared/tabs'
 import type { Label, Status } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IssueView } from '@/components/issues/issue-view'

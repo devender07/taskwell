@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (
@@ -92,9 +92,9 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	nonce := secret.NewToken()
-	subject := "Your Tether verification code: " + code
-	body := fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
-		"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)
+	subject := "Your Taskwell verification code: " + code
+	body := fmt.Sprintf("Your Taskwell verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
+		"It expires in %d minutes. If you didn't sign up for Taskwell, ignore this email.\n", code, minutes)
 	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), wsName, secret.Hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
 		// Answer exactly as for a new address, so sign-up can't tell who has an account; tell the owner instead.
@@ -125,7 +125,7 @@ func (h *Handler) signupTakenMail(ctx context.Context) (subject, body string, er
 	}
 	base = strings.TrimRight(base, "/")
 	return "Someone tried to sign up with your email",
-		fmt.Sprintf("Someone tried to create a Tether account with this email, but you already have one.\n\n"+
+		fmt.Sprintf("Someone tried to create a Taskwell account with this email, but you already have one.\n\n"+
 			"Sign in instead:\n\n%s/signin\n\nForgot your password? Reset it here:\n\n%s/forgot-password\n\n"+
 			"If this wasn't you, you can ignore this email. Your account hasn't changed.\n", base, base), nil
 }
@@ -231,8 +231,8 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return h.sendSecret(w, r, web.NormEmail(email), purposeCode, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
-		return "Your Tether sign-in code: " + code,
-			fmt.Sprintf("Your Tether sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), nil
+		return "Your Taskwell sign-in code: " + code,
+			fmt.Sprintf("Your Taskwell sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), nil
 	})
 }
 
@@ -252,8 +252,8 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 			return "", "", err
 		}
 		link := strings.TrimRight(base, "/") + "/reset-password?token=" + url.QueryEscape(token)
-		return "Reset your Tether password",
-			fmt.Sprintf("Reset your Tether password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), nil
+		return "Reset your Taskwell password",
+			fmt.Sprintf("Reset your Taskwell password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), nil
 	})
 }
 
@@ -376,8 +376,8 @@ func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return h.sendSecret(w, r, p.Email, purposePasswordSet, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
-		return "Your Tether code to add a password: " + code,
-			fmt.Sprintf("Your code to add a password to your Tether account is %s\n\nIt expires in %d minutes. "+
+		return "Your Taskwell code to add a password: " + code,
+			fmt.Sprintf("Your code to add a password to your Taskwell account is %s\n\nIt expires in %d minutes. "+
 				"If you didn't ask for it, someone may be signed in to your account: sign out of every device by "+
 				"resetting your password.\n", code, minutes), nil
 	})
@@ -504,14 +504,14 @@ func (h *Handler) emailCode(w http.ResponseWriter, r *http.Request) error {
 	if err := h.model.startEmailChange(ctx, p.ID, email, secret.Hash(oldCode), secret.Hash(newCodeV), minutes); err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Tether code to change your email: "+oldCode,
-		fmt.Sprintf("Someone asked to change your Tether account's email to %s. Your code to allow it is %s\n\n"+
+	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Taskwell code to change your email: "+oldCode,
+		fmt.Sprintf("Someone asked to change your Taskwell account's email to %s. Your code to allow it is %s\n\n"+
 			"It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your account, "+
 			"so reset your password to sign them out.\n", email, oldCode, minutes)); err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Tether code to confirm this email: "+newCodeV,
-		fmt.Sprintf("Your code to make this your Tether account's email is %s\n\nIt expires in %d minutes. "+
+	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Taskwell code to confirm this email: "+newCodeV,
+		fmt.Sprintf("Your code to make this your Taskwell account's email is %s\n\nIt expires in %d minutes. "+
 			"If you didn't ask for it, you can ignore this email.\n", newCodeV, minutes)); err != nil {
 		return err
 	}
@@ -562,8 +562,8 @@ func (h *Handler) changeEmail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, from, "Your Tether email was changed",
-		fmt.Sprintf("Your Tether account's email was just changed from %s to %s, and other devices were signed out.\n\n"+
+	if err := h.mail.Enqueue(ctx, h.model.db, from, "Your Taskwell email was changed",
+		fmt.Sprintf("Your Taskwell account's email was just changed from %s to %s, and other devices were signed out.\n\n"+
 			"If this wasn't you, contact your workspace admin right away.\n\n%s\n", from, to, strings.TrimRight(base, "/"))); err != nil {
 		return err
 	}
@@ -596,9 +596,9 @@ func (h *Handler) passwordChangedMail(ctx context.Context, email string, added b
 	if err != nil {
 		return err
 	}
-	subject, what := "Your Tether password was changed", "The password for your Tether account was just changed."
+	subject, what := "Your Taskwell password was changed", "The password for your Taskwell account was just changed."
 	if added {
-		subject, what = "A password was added to your Tether account", "A password was just added to your Tether account."
+		subject, what = "A password was added to your Taskwell account", "A password was just added to your Taskwell account."
 	}
 	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
 		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",

@@ -1,5 +1,5 @@
 // Package dbtest gives integration tests a migrated scratch database, TEST_DATABASE_URL (for example
-// postgres://tether:tether@localhost:5433/tether_test?sslmode=disable). Tests that use it are skipped without one.
+// postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable). Tests that use it are skipped without one.
 // Only tests import it.
 package dbtest
 
@@ -16,7 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/db"
 )
 
 var (

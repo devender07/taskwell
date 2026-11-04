@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { LogoMark } from '@tether/shared/logo'
-import { ArrowLeftIcon } from '@tether/shared/icons'
-import '@tether/shared/icon-button' // its CSS, for the back link
+import { LogoMark } from '@taskwell/shared/logo'
+import { ArrowLeftIcon } from '@taskwell/shared/icons'
+import '@taskwell/shared/icon-button' // its CSS, for the back link
 import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
 import { useUnread } from '@/components/app/unread'
 import { PROVIDER_NAME } from '@/components/issues/pull-requests'
@@ -10,9 +10,9 @@ import { FeedRow, notificationTarget, notificationText } from './feed-row'
 
 export const botPath = (slug: string) => `${workspacePath(slug)}/notifications?exclude=chat`
 
-// The Tether direct message: every notification except chat ones (those live in their chats), newest at the bottom.
+// The Taskwell direct message: every notification except chat ones (those live in their chats), newest at the bottom.
 // Opening it reads them, like any chat, and older ones load as you scroll up.
-export function TetherBot({ slug, page }: { slug: string; page: NotificationPage }) {
+export function TaskwellBot({ slug, page }: { slug: string; page: NotificationPage }) {
   const { refresh } = useUnread()
   const [older, setOlder] = useState<NotificationPage | null>(null)
   const ids = new Set(page.notifications.map((n) => n.id))
@@ -61,15 +61,15 @@ export function TetherBot({ slug, page }: { slug: string; page: NotificationPage
   }, [more, lastId, error])
 
   return (
-    <section className="chat-main" aria-label="Tether">
+    <section className="chat-main" aria-label="Taskwell">
       <header className="chat-header">
         <Link to="/$workspace/inbox" params={{ workspace: slug }} aria-label="Back to chats" className="icon-button chat-icon-button chat-back">
           <ArrowLeftIcon />
         </Link>
         <LogoMark size={24} />
-        <h1 className="chat-title ellipsis">Tether</h1>
+        <h1 className="chat-title ellipsis">Taskwell</h1>
       </header>
-      <div ref={scroller} className="tether-bot-scroll">
+      <div ref={scroller} className="taskwell-bot-scroll">
         {items.length === 0 ? <p className="text-body-sm text-secondary text-center m-0 p-8">You're all caught up.</p> : null}
         <ul className="m-0 p-0" style={{ listStyle: 'none' }} aria-label="Notifications">
           {items.map((n) => (

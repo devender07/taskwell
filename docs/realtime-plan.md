@@ -25,7 +25,7 @@ Out of scope: typing indicators in comments, offline queueing of writes, presenc
 
 ## Socket: `GET /api/realtime` (WebSocket)
 
-- Auth is the `tether_access` cookie on the upgrade request. 401 before upgrading when signed out. Origin is checked by `websocket.Accept` defaults.
+- Auth is the `taskwell_access` cookie on the upgrade request. 401 before upgrading when signed out. Origin is checked by `websocket.Accept` defaults.
 - One per tab, opened by the `_app` layout. Text frames, JSON.
 - **Client → server:**
   - `{"type":"subscribe","workspace":"acme"}` is sent on connect and whenever the current workspace changes. The server checks membership (404-style `{"type":"error","error":"Workspace not found."}` frame, no close) and replaces the previous workspace subscription.
@@ -34,7 +34,7 @@ Out of scope: typing indicators in comments, offline queueing of writes, presenc
 - **Server → client:**
   - `{"type":"hello","client":"<connection id>"}` is sent first.
   - Events, as below.
-- **The tab's own changes:** every REST call from that tab carries the header `X-Tether-Client: <connection id>`. The API copies it into the events it publishes as `origin`, and the client skips events whose `origin` is its own id, since the tab already reloads after its own writes.
+- **The tab's own changes:** every REST call from that tab carries the header `X-Taskwell-Client: <connection id>`. The API copies it into the events it publishes as `origin`, and the client skips events whose `origin` is its own id, since the tab already reloads after its own writes.
 - **Membership changes:** when a user is removed from a workspace or loses access, their subscription to it is dropped and they get a `workspace.removed` event. When a member's role changes, they get `workspace.permissions` (see below). Permissions are not re-checked per event, because the hint carries no data.
 - Limits: read limit 4 KiB per frame (clients only send small control frames); a send buffer of 64 events per connection, and a client whose buffer is full is disconnected.
 
@@ -84,7 +84,7 @@ The frame types, seed rules, compaction and storage from `docs/rich-text-plan.md
 
 ## Admin app
 
-- **The admin service** (`backend/admin`) gets its own `GET /api/realtime` socket. Auth is the `tether_admin` cookie; it checks `platform_admin` and not suspended at upgrade time. It carries text events only: no subscribe, no collab, no presence.
+- **The admin service** (`backend/admin`) gets its own `GET /api/realtime` socket. Auth is the `taskwell_admin` cookie; it checks `platform_admin` and not suspended at upgrade time. It carries text events only: no subscribe, no collab, no presence.
 - **Listening:** the admin service LISTENs on the same `realtime` channel and handles only audience `admin`. It sends those events to every admin connection.
 - **Publishing:** both services publish `admin`-audience events in the same transactions as the changes:
 
@@ -97,7 +97,7 @@ The frame types, seed rules, compaction and storage from `docs/rich-text-plan.md
 | Config change | admin | `admin.config` | `/config` |
 
 - **Paths** are the admin API's paths without `/api`.
-- **Origin:** the admin app sends `X-Tether-Client` like the user app, and the admin service honours `origin` the same way.
+- **Origin:** the admin app sends `X-Taskwell-Client` like the user app, and the admin service honours `origin` the same way.
 - **Frontend:** `frontend/admin/src/realtime.ts` works like the user app's: it records the paths each loader loaded, invalidates matches on events, and reconnects with backoff. A 401 on connect sends the tab to `/signin`.
   - `/stats` events are throttled on the client to at most one refetch per 5s.
   - A config row being edited keeps its typed value.
@@ -141,7 +141,7 @@ The **email worker** marking rows as emailed publishes nothing. Inserting notifi
   - `listen.go`: LISTEN on `realtime` with reconnect. After a reconnect it sends every local connection `{"type":"resync"}`, because events may have been missed.
   - `publish.go`: `Publish(ctx, tx pgx.Tx, e Event) error`, which calls `pg_notify` inside the caller's transaction.
   - `event.go`: the `Event` type and the path helpers (`IssuePaths(ws, identifier, key)` and so on), so each feature package builds paths the same way.
-- **Origin:** a tiny middleware or helper reads `X-Tether-Client` (a max-64-char token; anything else is ignored) into the request context, and `Publish` copies it into `origin`.
+- **Origin:** a tiny middleware or helper reads `X-Taskwell-Client` (a max-64-char token; anything else is ignored) into the request context, and `Publish` copies it into `origin`.
 - **Every write in the catalog** calls `Publish` inside its existing transaction. Writes that today are single statements without a transaction become a transaction (`pgx.BeginFunc`).
   - Feature packages depend on `realtime` only through `Publish` and the path helpers.
   - Wiring is manual, in `main.go`.
@@ -173,7 +173,7 @@ The **email worker** marking rows as emailed publishes nothing. Inserting notifi
 
 - **`src/realtime.ts`:**
   - **Connection:** connects to `ws(s)://host/api/realtime` and stores the connection id from `hello`.
-  - **Header:** `api()` sends `X-Tether-Client: <connection id>` once it's known.
+  - **Header:** `api()` sends `X-Taskwell-Client: <connection id>` once it's known.
   - **Subscription:** subscribes to the current workspace whenever the `$workspace` param changes.
   - **Reconnect:** reconnects with backoff from 1s to 10s. If the connection fails before `hello`, it calls `refreshAccess()` first, as `collab.ts` does. After any reconnect it treats the reconnect as a `resync`.
   - **Pings:** every 25s.

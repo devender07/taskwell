@@ -1,15 +1,15 @@
-# Standalone Postgres for Tether on its own server (or next to the app), tuned for 4 vCPU / 4 GB RAM.
+# Standalone Postgres for Taskwell on its own server (or next to the app), tuned for 4 vCPU / 4 GB RAM.
 # Setup, connecting and backups: deploy/postgres/README.md.
-name: tether-db
+name: taskwell-db
 
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: tether-postgres
+    container_name: taskwell-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: tether
-      POSTGRES_DB: tether
+      POSTGRES_USER: taskwell
+      POSTGRES_DB: taskwell
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
     # About 1-1.3 GB of RAM in use; halve the memory settings for a 2 GB server.
@@ -35,16 +35,16 @@ services:
       - pgdata:/var/lib/postgresql
     ports:
       - "127.0.0.1:5432:5432" # this server only; never open 5432 to the internet
-    networks: [tether]
+    networks: [taskwell]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tether -d tether"]
+      test: ["CMD-SHELL", "pg_isready -U taskwell -d taskwell"]
       interval: 5s
       timeout: 3s
       retries: 20
 
 networks:
-  tether:
-    name: tether # app containers join this network and reach the database as tether-postgres:5432
+  taskwell:
+    name: taskwell # app containers join this network and reach the database as taskwell-postgres:5432
 
 volumes:
   pgdata:

@@ -9,7 +9,7 @@ package issue
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // maxBody fits a 50,000-character description even when URL-encoded.

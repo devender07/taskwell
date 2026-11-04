@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { fullTime, relativeTime } from '@tether/shared/time'
+import { Avatar } from '@taskwell/shared/avatar'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { avatarSrc, type Notification, type PersonRef } from '@/api'
 import './inbox.css'
 

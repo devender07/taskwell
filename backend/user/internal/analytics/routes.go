@@ -8,7 +8,7 @@ package analytics
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // Register mounts the API routes on mux.

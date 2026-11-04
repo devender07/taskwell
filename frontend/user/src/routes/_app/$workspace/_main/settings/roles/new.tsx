@@ -1,5 +1,5 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { BackLink } from '@tether/shared/back-link'
+import { BackLink } from '@taskwell/shared/back-link'
 import type { Permission } from '@/api'
 import { loaderApi } from '@/realtime'
 import { RoleForm } from '@/components/roles/role-form'

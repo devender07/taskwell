@@ -18,11 +18,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -626,7 +626,7 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 
 var sessionActions = []string{"navigate", "click", "type", "select", "press", "wait", "fill_password", "assert_text", "assert_no_text", "snapshot"}
 
-// browserSession is an open session in the tester at its URL; token is the tester's X-Tether-Session-Token.
+// browserSession is an open session in the tester at its URL; token is the tester's X-Taskwell-Session-Token.
 type browserSession struct{ id, tester, token string }
 
 // createSession opens a browser on the tester for the issue's test cases, at url or the first test site.

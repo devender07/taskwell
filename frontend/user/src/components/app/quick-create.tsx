@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { api, toFormErrors, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
@@ -11,7 +11,7 @@ type Data = { projects: Project[]; statuses: Status[]; labels: Label[] }
 // The last load per workspace, so reopening shows the form at once (at its full size) while it refetches.
 const cache = new Map<string, Data>()
 
-const storageKey = (slug: string) => `tether:last-project:${slug}`
+const storageKey = (slug: string) => `taskwell:last-project:${slug}`
 
 function lastProject(slug: string) {
   try {

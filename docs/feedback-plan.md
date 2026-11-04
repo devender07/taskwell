@@ -99,12 +99,12 @@ kind `feedback.changed` with paths `…/feedback`, `…/feedback/count`, and for
 ## Frontend (user app)
 
 - `src/api.ts`: `Feedback`, `FeedbackPage`, `FeedbackForm` types.
-- **Sidebar**: "Feedback" after Inbox with a new `FeedbackIcon` in `@tether/shared/icons` and the `new` count as a
+- **Sidebar**: "Feedback" after Inbox with a new `FeedbackIcon` in `@taskwell/shared/icons` and the `new` count as a
   pill (from `…/feedback/count`, live). Command palette: "Go to Feedback", "Add feedback".
 - **Feedback page** `routes/_app/$workspace/_main/feedback.tsx` (`/$workspace/feedback`), parts in
   `components/feedback/`:
   - `validateSearch`: `state: 'new' | 'linked' | 'archived'` (default `new`), `q`.
-  - Header: title "Feedback", tabs New / Linked / Archived (`@tether/shared/tabs`), search input, "Add feedback" button.
+  - Header: title "Feedback", tabs New / Linked / Archived (`@taskwell/shared/tabs`), search input, "Add feedback" button.
   - List of cards: who (name or email, else "Added by {member}"), relative time, source badge ("Form"), body
     (pre-wrap, clamped to 6 lines with "Show more"), linked issue chip (identifier + title, links to the issue).
   - Actions per card: **Link to issue** (popover with issue search, the same search `relations.tsx` uses),
@@ -115,13 +115,13 @@ kind `feedback.changed` with paths `…/feedback`, `…/feedback/count`, and for
   - Loads 50, next page when the end scrolls into view; empty states per tab ("No new feedback", with a pointer to
     Settings → Feedback form on New).
 - **Add feedback dialog**: Message (textarea), Customer email, Customer name. `noValidate`, messages from
-  `@tether/shared/validate` (add a `feedbackBody` validator mirroring the API).
+  `@taskwell/shared/validate` (add a `feedbackBody` validator mirroring the API).
 - **Issue page**: a "Customer feedback" section (count in the heading, then each item's who, time and body clamped
   to 3 lines), shown only when there is any; live on `…/issues/{identifier}/feedback`.
 - **Settings → Feedback form** (`routes/_app/$workspace/_main/settings/feedback.tsx`, nav item shown with
   `feedback.manage`): on/off checkbox, the link (`{origin}/f/{token}`) with Copy, "Create a new link" (confirm: the
   old one stops working).
-- **Public form** `routes/f.$token.tsx` (`/f/$token`, outside `_app`, no sign-in): Tether logo, "Send feedback to
+- **Public form** `routes/f.$token.tsx` (`/f/$token`, outside `_app`, no sign-in): Taskwell logo, "Send feedback to
   {workspace}", fields Email, Name (optional), Message, hidden honeypot `website`, "Send feedback" button; on success
   "Thanks, {workspace} got your feedback." with "Send more". 404 state: "This feedback form isn't available."
 

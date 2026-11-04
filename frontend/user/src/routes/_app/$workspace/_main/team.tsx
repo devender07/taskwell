@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { ChevronDownIcon, ChevronUpIcon } from '@tether/shared/icons'
+import { ChevronDownIcon, ChevronUpIcon } from '@taskwell/shared/icons'
 import { ApiError, teamAnalyticsPath, type TeamMember } from '@/api'
 import { loaderApi } from '@/realtime'
 import { days, sortTeam, validateTeamSearch, type TeamSort } from '@/components/analytics/analytics'

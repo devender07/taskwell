@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { LockIcon } from '@tether/shared/icons'
+import { LockIcon } from '@taskwell/shared/icons'
 import { useLayoutEffect, type CSSProperties, type RefObject } from 'react'
 import type { RoadmapProject, Workspace } from '@/api'
 import { formatDate, formatRange } from '@/components/issues/fields'

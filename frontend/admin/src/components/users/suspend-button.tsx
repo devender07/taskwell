@@ -1,7 +1,7 @@
 import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
 import { api, toFormErrors, type UserRow } from '@/api'
 
 export function SuspendButton({ user }: { user: UserRow }) {

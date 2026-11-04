@@ -34,9 +34,9 @@ func TestPlaywrightSpec(t *testing.T) {
 	}
 	for _, want := range []string{
 		"// VIS-3 Drafts leak\n",
-		"// Exported by Tether from the issue's test cases. Test site: https://app.acme.test\n",
+		"// Exported by Taskwell from the issue's test cases. Test site: https://app.acme.test\n",
 		"// Run: npm i -D @playwright/test && npx playwright test VIS-3.spec.ts\n",
-		`// Passwords come from env vars: TETHER_PASSWORD_QA_USER (test account "QA user").` + "\n",
+		`// Passwords come from env vars: TASKWELL_PASSWORD_QA_USER (test account "QA user").` + "\n",
 		"import { test, expect } from '@playwright/test';\n",
 		`test.describe("VIS-3 Drafts leak", () => {` + "\n",
 		`  test("Sign in", async ({ page }) => {` + "\n",
@@ -44,7 +44,7 @@ func TestPlaywrightSpec(t *testing.T) {
 		"    // 2. Sign in as QA\n", // a newline can't end the comment
 		`    await page.goto("https://app.acme.test/login");` + "\n",
 		`    await page.locator("input[name=\"email\"]").fill("qa@acme.test");` + "\n",
-		`    await page.getByRole("textbox", { name: "Password", exact: true }).fill(process.env.TETHER_PASSWORD_QA_USER ?? '');` + "\n",
+		`    await page.getByRole("textbox", { name: "Password", exact: true }).fill(process.env.TASKWELL_PASSWORD_QA_USER ?? '');` + "\n",
 		`    await page.getByRole("button", { name: "Sign in", exact: true }).click();` + "\n",
 		`    await page.locator("li", { hasText: "Inbox" }).first().click();` + "\n",
 		`    await page.getByRole("button", { name: new RegExp("^Drafts \\d+$") }).click();` + "\n",
@@ -119,7 +119,7 @@ func TestCheckScript(t *testing.T) {
 
 func TestCheckPlaywright(t *testing.T) {
 	tests := []struct{ name, code, want string }{
-		{"env password", "await page.getByLabel('Password').fill(process.env.TETHER_PASSWORD_QA ?? '');", ""},
+		{"env password", "await page.getByLabel('Password').fill(process.env.TASKWELL_PASSWORD_QA ?? '');", ""},
 		{"literal password", "await page.getByRole('textbox', { name: 'Password' }).fill('hunter2');",
 			"Use process.env for passwords, never a literal."},
 		{"template literal", "await page.locator('#password').fill(`x`);", "Use process.env for passwords, never a literal."},

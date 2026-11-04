@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 // apiTokenPrefix starts every personal API token, so leaked ones are easy to spot and Authenticate can tell them

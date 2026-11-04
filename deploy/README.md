@@ -30,7 +30,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | --- | --- | --- | --- |
 | `APP_HOST`, `ADMIN_HOST` | caddy | | Public hostnames. `http://name` serves plain HTTP (local testing only) |
 | `S3_ORIGIN` | caddy | | Origin presigned upload links point at, allowed in the CSP for images and media: `https://<bucket>.s3.<region>.amazonaws.com` on AWS, else the `s3_endpoint` origin |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | postgres | `tether` / required / `tether` | Compose builds `DATABASE_URL` from these |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | postgres | `taskwell` / required / `taskwell` | Compose builds `DATABASE_URL` from these |
 | `DATABASE_URL` | user, admin | local dev DB | Set by compose |
 | `APP_ENV` | user, admin | `production` | Anything else relaxes production checks |
 | `JWT_SECRET` | user | | Required. 32+ random bytes |
@@ -60,7 +60,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 
 ## Migrations
 
-`tether-user -migrate` applies pending migrations (embedded in the binary) and exits; compose runs it as the `migrate` service on every `up`, and `user` and `admin` wait for it to succeed. In production run it as a release step, then start the services with `MIGRATE_ON_START=false` (without it the user service migrates on start, which is the dev default). The admin service refuses to start until the newest migration it needs is applied.
+`taskwell-user -migrate` applies pending migrations (embedded in the binary) and exits; compose runs it as the `migrate` service on every `up`, and `user` and `admin` wait for it to succeed. In production run it as a release step, then start the services with `MIGRATE_ON_START=false` (without it the user service migrates on start, which is the dev default). The admin service refuses to start until the newest migration it needs is applied.
 
 - Each migration runs in its own transaction with `lock_timeout` (`MIGRATE_LOCK_TIMEOUT`), so one stuck behind a long query fails rather than blocking all traffic on that table. Rerun the release once the table is quiet.
 - A file ending `.notx.sql` runs outside a transaction, one statement at a time. Use it for `create index concurrently`, preceded by `drop index concurrently if exists` so a rerun after a failure doesn't keep an invalid index.
@@ -70,7 +70,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 
 - **Logs**: one JSON line per record on stdout. Every request gets an id (the client's `X-Request-Id` when it's a short token, else a new one), returned in `X-Request-Id` and attached to its error logs. One `request` line per request at info: method, path, status, duration, bytes, user id, request id (`/healthz` skipped).
 - **`/readyz`** (on `METRICS_ADDR`): 200 when the database answers within 1s and, for the user service, both LISTEN connections (realtime and collab) are up; 503 with the reason otherwise. `/app -healthcheck` GETs it and exits 0 or 1, which the compose healthchecks use (distroless has no curl). `/healthz` on the public port stays a plain liveness check.
-- **`/metrics`** (Prometheus text, on `METRICS_ADDR`): `tether_http_requests_total{class}`, `tether_db_pool_*` (pool size, in use, idle, acquires, waits), `tether_realtime_sockets`, and on the user service `tether_mail_queued`, `tether_mail_failed`, `tether_mail_oldest_seconds` and `tether_pg_notification_queue_usage`. Alert on mail age growing, NOTIFY usage above ~0.5 and readyz failing.
+- **`/metrics`** (Prometheus text, on `METRICS_ADDR`): `taskwell_http_requests_total{class}`, `taskwell_db_pool_*` (pool size, in use, idle, acquires, waits), `taskwell_realtime_sockets`, and on the user service `taskwell_mail_queued`, `taskwell_mail_failed`, `taskwell_mail_oldest_seconds` and `taskwell_pg_notification_queue_usage`. Alert on mail age growing, NOTIFY usage above ~0.5 and readyz failing.
 
 ## Retention
 

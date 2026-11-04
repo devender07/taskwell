@@ -1,6 +1,6 @@
 import { Suspense, lazy } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { RichText, type Doc } from '@tether/shared/rich-text'
+import { Avatar } from '@taskwell/shared/avatar'
+import { RichText, type Doc } from '@taskwell/shared/rich-text'
 import { avatarSrc, type Issue, type User, type Workspace } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import type { Viewer } from '@/realtime'

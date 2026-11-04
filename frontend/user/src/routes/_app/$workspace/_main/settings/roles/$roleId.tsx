@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
-import { BackLink } from '@tether/shared/back-link'
+import { BackLink } from '@taskwell/shared/back-link'
 import { can, type Permission, type Role, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { DeleteRole, RoleForm } from '@/components/roles/role-form'

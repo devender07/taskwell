@@ -18,7 +18,7 @@ export const Route = createFileRoute('/f/$token')({
 
 function Unavailable() {
   return (
-    <AuthCard title="Feedback form unavailable" subtitle="Ask whoever shared it for a new link." footer={<a href="/" className="auth-link">Go to Tether</a>}>
+    <AuthCard title="Feedback form unavailable" subtitle="Ask whoever shared it for a new link." footer={<a href="/" className="auth-link">Go to Taskwell</a>}>
       <FormError>This feedback form isn't available.</FormError>
     </AuthCard>
   )

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { IconButton } from '@tether/shared/icon-button'
-import { BranchIcon } from '@tether/shared/icons'
-import { Popover } from '@tether/shared/popover'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { BranchIcon } from '@taskwell/shared/icons'
+import { Popover } from '@taskwell/shared/popover'
 import type { Issue } from '@/api'
 import { branchName, commitMessage } from './branch'
 

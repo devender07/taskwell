@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { apiUrl } from '@tether/shared/api-url'
+import { apiUrl } from '@taskwell/shared/api-url'
 import { useEffect, useState } from 'react'
 import type { TestRun } from '@/api'
 import { RunStatusPill, formatCost, runFinished, useLive } from '@/components/tests/tests'
@@ -23,7 +23,7 @@ function LiveView() {
   const done = run?.results.filter((r) => !['pending', 'running'].includes(r.status)).length ?? 0
 
   useEffect(() => {
-    if (run) document.title = `Live: ${run.issue.identifier} · Tether`
+    if (run) document.title = `Live: ${run.issue.identifier} · Taskwell`
   }, [run])
   useEffect(() => {
     if (!broken || !streaming) return

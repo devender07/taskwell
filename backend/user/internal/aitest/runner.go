@@ -15,8 +15,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 const (

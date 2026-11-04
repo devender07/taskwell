@@ -1,4 +1,4 @@
--- Outbound webhooks: a workspace's URLs that Tether POSTs signed JSON to when issues and comments change. Triggers
+-- Outbound webhooks: a workspace's URLs that Taskwell POSTs signed JSON to when issues and comments change. Triggers
 -- queue the deliveries, so every writer is covered; the user service's worker sends them.
 create table webhooks (
   id           uuid primary key default uuidv7(),

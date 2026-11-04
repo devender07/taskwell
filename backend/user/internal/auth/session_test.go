@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 // TestAuthenticateBearer checks that a personal API token signs its user in, and a revoked token, a suspended

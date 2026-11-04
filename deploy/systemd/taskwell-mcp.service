@@ -1,15 +1,13 @@
 [Unit]
-Description=Tether user API
-After=network-online.target docker.service
+Description=Taskwell MCP server
+After=network-online.target taskwell-user.service
 Wants=network-online.target
 
 [Service]
-User=tether
-Group=tether
-EnvironmentFile=/etc/tether/user.env
-# Applies pending migrations before the API starts (MIGRATE_ON_START=false in user.env).
-ExecStartPre=/opt/tether/tether-user -migrate
-ExecStart=/opt/tether/tether-user
+User=taskwell
+Group=taskwell
+EnvironmentFile=/etc/taskwell/mcp.env
+ExecStart=/opt/taskwell/taskwell-mcp
 Restart=always
 RestartSec=3
 # Shutdown lets requests finish (20s) and closes sockets; keep this above 40s.

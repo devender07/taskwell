@@ -1,6 +1,6 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { CategoryGlyph } from '@tether/shared/icons'
+import { CategoryGlyph } from '@taskwell/shared/icons'
 import type { AnalyticsWeek, MemberAnalytics } from '@/api'
 import { reloadRoutes } from '@/realtime'
 import { Card, Empty } from '@/components/home/blocks'

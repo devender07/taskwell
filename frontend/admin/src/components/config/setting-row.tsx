@@ -1,6 +1,6 @@
 import { useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
 import { api, toFormErrors, type FieldErrors, type Setting } from '@/api'
 
 type State = { setting: Setting; value: string; saved?: boolean; errors?: FieldErrors; error?: string | null }

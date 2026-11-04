@@ -72,7 +72,7 @@ Email formats (plain text, sentence case subjects):
 - `status`: "ENG-12 moved to In progress" / "Demo moved ENG-12: title from Todo to In progress\n\nlink"
 - `comment`: "Demo commented on ENG-12" / "Demo commented on ENG-12: title\n\n> excerpt (first 300 chars of comment text)\n\nlink"
 - `mention`: "Demo mentioned you in ENG-12" (as today)
-- digest: "Your Tether digest: N updates"; footer in every email: "Change email settings: {app_base_url}/{slug}/settings/notifications".
+- digest: "Your Taskwell digest: N updates"; footer in every email: "Change email settings: {app_base_url}/{slug}/settings/notifications".
 
 `notify.go`'s direct mention emails are removed in favour of `mention` notifications.
 

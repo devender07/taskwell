@@ -1,4 +1,4 @@
-// Command mcp serves Tether's MCP endpoint at /mcp; its tools call the user service's API as the caller.
+// Command mcp serves Taskwell's MCP endpoint at /mcp; its tools call the user service's API as the caller.
 package main
 
 import (
@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/devender07/tether/backend/mcp/internal/server"
-	"github.com/devender07/tether/backend/shared/env"
+	"github.com/devender07/taskwell/backend/mcp/internal/server"
+	"github.com/devender07/taskwell/backend/shared/env"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 	}
 	slog.SetDefault(slog.New(h))
 	addr := ":" + env.Get("PORT", "8095")
-	apiURL := env.Get("TETHER_API_URL", "http://localhost:8090")
+	apiURL := env.Get("TASKWELL_API_URL", "http://localhost:8090")
 	appURL := env.Get("APP_URL", "http://localhost:5173")
 	// Where clients reach /mcp, and the user API's public URL (the authorization server). Unset in production, both
 	// are on the app's host.
@@ -43,7 +43,7 @@ func main() {
 	defer stop()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	slog.Info("mcp listening", "addr", addr, "tether_api_url", apiURL, "app_url", appURL, "mcp_url", mcpURL, "auth_url", authURL)
+	slog.Info("mcp listening", "addr", addr, "taskwell_api_url", apiURL, "app_url", appURL, "mcp_url", mcpURL, "auth_url", authURL)
 	select {
 	case err := <-errc:
 		slog.Error("server", "err", err)

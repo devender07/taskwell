@@ -96,7 +96,7 @@ ponytail: files uploaded into a private issue stay workspace-scoped by their ung
 
 ## Frontend (user app)
 
-- Icons: `LockIcon` in `@tether/shared/icons`.
+- Icons: `LockIcon` in `@taskwell/shared/icons`.
 - Projects list: a lock icon before a private project's name.
 - Create project dialog: a "Private" checkbox ("Only members and admins can see it"); when checked, a member picker
   (workspace members, multi-select) under it.

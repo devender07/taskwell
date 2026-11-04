@@ -7,7 +7,7 @@ const API = `${B}/api/workspaces/${WORKSPACE}`
 const t = reporter()
 const errors = []
 const browser = await launch()
-const address = `invite-${Date.now()}@tether.test`
+const address = `invite-${Date.now()}@taskwell.test`
 
 // The newest email to `to` whose text matches `re`, as the first capture group.
 async function mail(to, re) {

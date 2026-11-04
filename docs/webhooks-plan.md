@@ -1,6 +1,6 @@
 # Webhooks and public API docs plan
 
-Scope: a workspace registers HTTPS URLs that Tether POSTs signed JSON to when issues and comments change, with
+Scope: a workspace registers HTTPS URLs that Taskwell POSTs signed JSON to when issues and comments change, with
 retries and a delivery log. Plus a public API reference page, since personal API tokens already sign in any `/api`
 request (`Authorization: Bearer tth_…`).
 
@@ -90,8 +90,8 @@ No `system_config` keys. Delivery rows older than 30 days are deleted by the exi
 - Worker in the user service (`webhook.Run(ctx)`, started in `cmd/user/main.go` like the mailer): LISTEN `webhooks`
   plus a 10s tick; claims due rows with `for update skip locked`, so several instances share the queue.
 - POST the stored payload with a 10s timeout, no redirects. Headers: `Content-Type: application/json`,
-  `User-Agent: Tether-Webhooks/1`, `X-Tether-Event: <event>`, `X-Tether-Delivery: <id>`,
-  `X-Tether-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the webhook's secret>`.
+  `User-Agent: Taskwell-Webhooks/1`, `X-Taskwell-Event: <event>`, `X-Taskwell-Delivery: <id>`,
+  `X-Taskwell-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the webhook's secret>`.
 - 2xx → `delivered`. Anything else (or a network error) → `attempts + 1`, `response_code` / `response_error`
   (first 500 chars) stored, retry after 1m, 5m, 30m, 2h, 6h, 12h (7 attempts in all); when the 7th fails → `failed`.
   Inactive webhooks' pending rows aren't sent (they wait; re-activating resumes them).

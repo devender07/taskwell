@@ -10,8 +10,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const browserGuide = "Open Tether's sandboxed test browser on an issue to record a test case step by step: nothing to install and " +
-	"no Tether AI spent, you decide each action and Tether keeps it as a replayable step. It starts at url (a page on one of the " +
+const browserGuide = "Open Taskwell's sandboxed test browser on an issue to record a test case step by step: nothing to install and " +
+	"no Taskwell AI spent, you decide each action and Taskwell keeps it as a replayable step. It starts at url (a page on one of the " +
 	"workspace's test sites; the first site when left out). Each action answers the page: URL, title, numbered interactive " +
 	"elements (the ref for browser_click, browser_type, browser_select and browser_fill_password) and the visible text. " +
 	"Flow: sign in with browser_fill_password and an account label from list_test_accounts (never ask the user for a password), " +
@@ -35,7 +35,7 @@ func (t *tools) browserTools(s *mcp.Server) {
 		"key, PageUp, PageDown, Home or End."}, browserAct[browserPressIn](t, "press"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_wait", Description: "Wait 1-5 seconds for the page to change."}, browserAct[browserWaitIn](t, "wait"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_fill_password", Description: "Type a test account's password into the password field " +
-		"with the ref. Tether types it; you never see it. The account must be allowed on this page's site (list_test_accounts)."},
+		"with the ref. Taskwell types it; you never see it. The account must be allowed on this page's site (list_test_accounts)."},
 		browserAct[browserPasswordIn](t, "fill_password"))
 	mcp.AddTool(s, &mcp.Tool{Name: "browser_assert_text", Description: "Check the text is on the page (waits up to 5 s). " +
 		"Recorded only when it holds now, unless failing is true."}, browserAct[browserTextIn](t, "assert_text"))

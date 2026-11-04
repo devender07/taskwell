@@ -1,11 +1,11 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Checkbox } from '@tether/shared/checkbox'
-import { Dialog } from '@tether/shared/dialog'
-import { Input } from '@tether/shared/input'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { webhookEvents, webhookUrl } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Checkbox } from '@taskwell/shared/checkbox'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Input } from '@taskwell/shared/input'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { webhookEvents, webhookUrl } from '@taskwell/shared/validate'
 import { createWebhook, toFormErrors, updateWebhook, type DeliveryStatus, type FieldErrors, type Webhook, type WebhookEvent } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -44,7 +44,7 @@ export function SecretView({ secret, onDone }: { secret: string; onDone: () => v
   return (
     <div className="grid gap-4">
       <p className="text-body-sm m-0" role="status">
-        Copy it now; you won't see it again. Use it to check the X-Tether-Signature header.
+        Copy it now; you won't see it again. Use it to check the X-Taskwell-Signature header.
       </p>
       <div className="flex items-end gap-3">
         <div className="flex-grow" style={{ minWidth: 0 }}>
@@ -95,7 +95,7 @@ export function WebhookDialog({ workspace, webhook, open, onClose }: { workspace
         <SecretView secret={state.secret} onDone={onClose} />
       ) : (
         <form action={submit} noValidate className="grid gap-4">
-          <Input label="URL" placeholder="https://example.com/tether" autoComplete="off" autoFocus value={url} onChange={(e) => setUrl(e.target.value)} error={state.errors?.url} />
+          <Input label="URL" placeholder="https://example.com/taskwell" autoComplete="off" autoFocus value={url} onChange={(e) => setUrl(e.target.value)} error={state.errors?.url} />
           <fieldset className="grid gap-3 m-0 p-0" style={{ border: 0 }}>
             <legend className="text-label mb-2">Events</legend>
             {EVENTS.map((e) => (

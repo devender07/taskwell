@@ -15,9 +15,9 @@ since object keys are the same file ids), per-workspace buckets, CDN.
 |---|---|---|---|
 | `s3_endpoint` | `http://localhost:9000` | no | S3-compatible endpoint; empty uses AWS. Set means path-style URLs |
 | `s3_region` | `us-east-1` | no | Bucket region (`auto` for R2) |
-| `s3_bucket` | `tether` | no | Bucket name; empty makes uploads fail |
-| `s3_access_key_id` | `tether` | no | Access key |
-| `s3_secret_access_key` | `tether-secret` | yes | Secret key |
+| `s3_bucket` | `taskwell` | no | Bucket name; empty makes uploads fail |
+| `s3_access_key_id` | `taskwell` | no | Access key |
+| `s3_secret_access_key` | `taskwell-secret` | yes | Secret key |
 
 The defaults match the dev S3 store, like `smtp_host` matches Mailpit.
 

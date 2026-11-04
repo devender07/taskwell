@@ -1,9 +1,9 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Checkbox } from '@tether/shared/checkbox'
-import { Input } from '@tether/shared/input'
-import { email as checkEmail, required } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Checkbox } from '@taskwell/shared/checkbox'
+import { Input } from '@taskwell/shared/input'
+import { email as checkEmail, required } from '@taskwell/shared/validate'
 import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 

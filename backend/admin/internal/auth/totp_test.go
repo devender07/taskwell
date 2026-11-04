@@ -58,7 +58,7 @@ func TestEnrolment(t *testing.T) {
 		t.Fatalf("secret %q: want 32 random base32 characters", s)
 	}
 	u := otpauthURL("ann@x.com", s)
-	if !strings.HasPrefix(u, "otpauth://totp/Tether%20admin:ann@x.com?") || !strings.Contains(u, "secret="+s) {
+	if !strings.HasPrefix(u, "otpauth://totp/Taskwell%20admin:ann@x.com?") || !strings.Contains(u, "secret="+s) {
 		t.Errorf("otpauthURL = %q", u)
 	}
 	codes, hashes := newRecoveryCodes()

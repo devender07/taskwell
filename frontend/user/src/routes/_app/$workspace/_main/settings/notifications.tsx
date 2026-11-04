@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Checkbox } from '@tether/shared/checkbox'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
+import { Checkbox } from '@taskwell/shared/checkbox'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { api, toFormErrors, type NotificationSettings } from '@/api'
 import { loaderApi } from '@/realtime'
 

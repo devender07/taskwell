@@ -1,9 +1,9 @@
 import { useRouter } from '@tanstack/react-router'
 import { useOptimistic, useState, useTransition } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { EyeIcon } from '@tether/shared/icons'
-import { Popover } from '@tether/shared/popover'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { EyeIcon } from '@taskwell/shared/icons'
+import { Popover } from '@taskwell/shared/popover'
 import { api, avatarSrc, toFormErrors, type Issue, type PersonRef, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 

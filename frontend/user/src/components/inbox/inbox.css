@@ -18,5 +18,5 @@
 .inbox-dot { width: 8px; height: 8px; border-radius: 9999px; }
 .inbox-dot[data-unread] { background: var(--accent); }
 /* Newest at the bottom and scrolled there on open, like a chat; reversing the column does both without JS. */
-.tether-bot-scroll { display: flex; flex-direction: column-reverse; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.tether-bot-scroll > ul { display: flex; flex-direction: column-reverse; }
+.taskwell-bot-scroll { display: flex; flex-direction: column-reverse; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.taskwell-bot-scroll > ul { display: flex; flex-direction: column-reverse; }

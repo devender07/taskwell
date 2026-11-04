@@ -14,6 +14,32 @@ function toLanding(req: { url?: string }, _res: unknown, next: () => void) {
   next()
 }
 
+// Cloudflare Pages headers (what the Caddyfile sets): the CSP lets the app reach VITE_API_URL over https and wss.
+// Images come from the API or its storage redirect, so img-src allows any https origin.
+let api = ''
+const pagesHeaders: Plugin = {
+  name: 'pages-headers',
+  apply: 'build',
+  configResolved: (config) => void (api = new URL(config.env.VITE_API_URL).origin),
+  generateBundle() {
+    const csp = `default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
+    this.emitFile({
+      type: 'asset',
+      fileName: '_headers',
+      source: `/*
+  Content-Security-Policy: ${csp}
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+`,
+    })
+  },
+}
+
 export default defineConfig({
   cacheDir: '../node_modules/.vite/user', // keep Vite's cache out of the app folder
   plugins: [
@@ -21,6 +47,7 @@ export default defineConfig({
     tanstackRouter({ target: 'react', autoCodeSplitting: true, tmpDir: '../node_modules/.tanstack/user' }),
     react(),
     landingAtRoot,
+    pagesHeaders,
   ],
   resolve: { alias: { '@': '/src' } },
   build: {

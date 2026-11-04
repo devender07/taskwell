@@ -1,7 +1,7 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { coalescer, eventPaths, loadedPaths, matchKey, touches, type RealtimeEvent } from '@tether/shared/realtime'
-import { createSocket } from '@tether/shared/socket'
+import { coalescer, eventPaths, loadedPaths, matchKey, touches, type RealtimeEvent } from '@taskwell/shared/realtime'
+import { createSocket } from '@taskwell/shared/socket'
 import { api, getMe, setClient } from '@/api'
 
 // The admin service's realtime socket (docs/realtime-plan.md): events name the admin API paths that changed and

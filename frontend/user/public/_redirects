@@ -1,0 +1,2 @@
+# Cloudflare Pages: / is the landing page; other unknown paths fall back to index.html (the app) on their own.
+/ /landing 200

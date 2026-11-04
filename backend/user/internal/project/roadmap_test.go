@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestRoadmap covers project dates, milestones and the roadmap. Ann is the admin, Mia a member who may manage

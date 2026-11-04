@@ -1265,7 +1265,7 @@ INSERT INTO public.system_config (key, value, secret, description, updated_at) V
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('smtp_port', '1025', false, 'SMTP server port', '2026-11-02 16:11:47.947713+00');
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('smtp_username', '', false, 'SMTP username; empty skips auth', '2026-11-02 16:11:47.947713+00');
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('smtp_password', '', true, 'SMTP password', '2026-11-02 16:11:47.947713+00');
-INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('smtp_from', 'Tether <no-reply@tether.local>', false, 'From header for outgoing email', '2026-11-02 16:11:47.947713+00');
+INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('smtp_from', 'Taskwell <no-reply@taskwell.local>', false, 'From header for outgoing email', '2026-11-02 16:11:47.947713+00');
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('app_base_url', 'http://localhost:5173', false, 'Public URL of the user app, used in email links', '2026-11-02 16:11:47.947713+00');
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('otp_ttl_minutes', '10', false, 'Sign-in code lifetime in minutes', '2026-11-02 16:11:47.947713+00');
 INSERT INTO public.system_config (key, value, secret, description, updated_at) VALUES ('reset_ttl_minutes', '30', false, 'Password reset link lifetime in minutes', '2026-11-02 16:11:47.947713+00');

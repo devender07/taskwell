@@ -3,8 +3,8 @@ package feedback
 import (
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (

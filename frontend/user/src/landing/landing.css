@@ -179,15 +179,21 @@ h3 { margin: 0; font: 590 16px/24px var(--font); }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
   margin: 0;
   padding: 8px 8px 8px 24px;
-  overflow-x: auto;
   font: 400 14px/21px var(--mono);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-.code .button { flex: none; }
+.code code { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.copy { flex: none; display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; color: var(--text-2); background: none; border: 0; border-radius: 9999px; cursor: pointer; }
+.copy:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.copy:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.copy > svg { grid-area: 1 / 1; }
+.copy .copied-icon, .copy[data-copied] .copy-icon { visibility: hidden; }
+.copy[data-copied] .copied-icon { visibility: visible; color: var(--success); }
 
 .cta { position: relative; overflow: hidden; }
 .cta::before {

@@ -20,7 +20,7 @@ func Allow(origin func(*http.Request) string, next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Tether-Client")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Taskwell-Client")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return

@@ -27,14 +27,14 @@ function Authorize() {
   const query = Route.useSearch()
   if (!client) {
     return (
-      <AuthCard title="Can't connect to Tether" subtitle="Go back to the app that sent you here and try again.">
+      <AuthCard title="Can't connect to Taskwell" subtitle="Go back to the app that sent you here and try again.">
         <FormError>{error}</FormError>
       </AuthCard>
     )
   }
   return (
     <AuthCard
-      title={`Connect ${client.client_name} to Tether?`}
+      title={`Connect ${client.client_name} to Taskwell?`}
       subtitle={`It will act as you: see and change the issues, comments and chats you can. It sends you back to ${new URL(client.redirect_uri).host}.`}
     >
       <OAuthConsent query={query} />

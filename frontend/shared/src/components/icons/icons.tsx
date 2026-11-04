@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from 'react'
 
 // The app's icon set: 24x24 line icons in currentColor, so they take the text color around them. Every new icon goes
-// here and is imported from @tether/shared/icons; size defaults to 18.
+// here and is imported from @taskwell/shared/icons; size defaults to 18.
 type IconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & { size?: number }
 
 function Icon({ size = 18, children, ...props }: IconProps & { children: ReactNode }) {

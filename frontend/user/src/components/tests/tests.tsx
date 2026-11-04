@@ -1,14 +1,14 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { startTransition, useActionState, useEffect, useOptimistic, useState, type DragEvent, type ReactNode } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { IconButton } from '@tether/shared/icon-button'
-import { Input } from '@tether/shared/input'
-import { Popover } from '@tether/shared/popover'
-import { Textarea } from '@tether/shared/textarea'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { testCaseExpected, testCaseSteps, testCaseTitle } from '@tether/shared/validate'
-import { ChevronDownIcon, GripIcon, ResultGlyph } from '@tether/shared/icons'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Input } from '@taskwell/shared/input'
+import { Popover } from '@taskwell/shared/popover'
+import { Textarea } from '@taskwell/shared/textarea'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { testCaseExpected, testCaseSteps, testCaseTitle } from '@taskwell/shared/validate'
+import { ChevronDownIcon, GripIcon, ResultGlyph } from '@taskwell/shared/icons'
 import {
   api,
   can,
@@ -237,7 +237,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
       {runAi && noSite ? <p className="text-caption text-secondary m-0">Add a test site in Settings → AI testing to run AI tests.</p> : null}
       {manage && list.length > 0 && !recorded ? (
         <p className="text-caption text-secondary m-0">
-          No test case is recorded yet. Ask Claude Code to record them with the Tether MCP server, or pass one AI run, to run them without AI.
+          No test case is recorded yet. Ask Claude Code to record them with the Taskwell MCP server, or pass one AI run, to run them without AI.
         </p>
       ) : null}
       <FormError>{regenerating ? null : startError}</FormError>

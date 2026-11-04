@@ -21,7 +21,7 @@ an orange eye everywhere: lists, boards, the issue page, pickers, Home, the time
 
 ## Icons
 
-A fixed set of keys, drawn by the shared icon library (`@tether/shared/icons`, `StatusTypeIcon`): `circle`,
+A fixed set of keys, drawn by the shared icon library (`@taskwell/shared/icons`, `StatusTypeIcon`): `circle`,
 `circle-dashed`, `circle-half`, `circle-check`, `circle-x`, `eye`, `refresh`, `pause`, `clock`, `flag`, `star`,
 `bug`, `rocket`, `alert`, `lock`, `message`. Backend validates against the same list.
 
@@ -77,7 +77,7 @@ statuses refetches as it does for status changes today).
   listing its statuses. A card's "+" adds a status inline to that type; a custom type's "⋯" edits or deletes it.
   A status row's hover actions move it up or down within its type, and "⋯" edits it (name and type, inline) or
   deletes it. Reordering saves every status in the shown order. "Add type" (page header) opens the dialog: a live
-  preview, Name, Icon (a grid of the icon set), Color (`@tether/shared/color-picker`). No "Counts as": a type is its
+  preview, Name, Icon (a grid of the icon set), Color (`@taskwell/shared/color-picker`). No "Counts as": a type is its
   own identity; new types are saved with category `started` (open, in-flight work) and keep that category.
 
 ## Agents

@@ -20,7 +20,7 @@ function WebhooksSettings() {
       <header className="grid gap-2">
         <h1 className="text-h2">Webhooks</h1>
         <p className="text-body-sm text-secondary">
-          Tether sends a signed POST to your URL when issues and comments change.{' '}
+          Taskwell sends a signed POST to your URL when issues and comments change.{' '}
           <Link to="/docs/api" hash="webhooks" style={{ color: 'var(--link)' }}>
             Read the webhook docs
           </Link>

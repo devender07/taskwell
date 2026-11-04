@@ -10,11 +10,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/auth"
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 type Handler struct {
@@ -52,7 +52,7 @@ func (h *Handler) metadata(w http.ResponseWriter, r *http.Request) error {
 		"grant_types_supported":                 []string{"authorization_code"},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
-		"scopes_supported":                      []string{"tether"},
+		"scopes_supported":                      []string{"taskwell"},
 	})
 	return nil
 }
@@ -118,7 +118,7 @@ func (h *Handler) request(w http.ResponseWriter, r *http.Request) (*client, erro
 	msg := ""
 	switch {
 	case c == nil:
-		msg = "This app isn't registered with Tether. Try connecting again."
+		msg = "This app isn't registered with Taskwell. Try connecting again."
 	case !c.redirects(r.FormValue("redirect_uri")):
 		msg = "This app's redirect URL isn't registered."
 	case r.FormValue("response_type") != "code":
@@ -202,6 +202,6 @@ func (h *Handler) token(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	web.JSON(w, http.StatusOK, map[string]string{"access_token": tok, "token_type": "Bearer", "scope": "tether"})
+	web.JSON(w, http.StatusOK, map[string]string{"access_token": tok, "token_type": "Bearer", "scope": "taskwell"})
 	return nil
 }

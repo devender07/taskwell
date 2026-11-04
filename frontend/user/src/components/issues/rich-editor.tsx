@@ -1,9 +1,9 @@
 import { Suspense, lazy, type ComponentProps } from 'react'
-import type { RichEditor as Editor } from '@tether/shared/rich-editor'
+import type { RichEditor as Editor } from '@taskwell/shared/rich-editor'
 
 type Props = ComponentProps<typeof Editor>
 
-const LazyEditor = lazy(() => import('@tether/shared/rich-editor').then((m) => ({ default: m.RichEditor })))
+const LazyEditor = lazy(() => import('@taskwell/shared/rich-editor').then((m) => ({ default: m.RichEditor })))
 
 // The editor (ProseMirror and Tiptap) loads on first render. Until then a box of its size, which takes no input, holds
 // its place.

@@ -1,5 +1,5 @@
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
+import { Button } from '@taskwell/shared/button'
 import { api, toFormErrors } from '@/api'
 import { FormError } from './auth-card'
 

@@ -1,10 +1,10 @@
 import { useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { Input } from '@tether/shared/input'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { tokenName } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Input } from '@taskwell/shared/input'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { tokenName } from '@taskwell/shared/validate'
 import { mcpUrl, createToken, deleteToken, toFormErrors, type ApiToken, type FieldErrors } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -41,7 +41,7 @@ export function NewTokenButton() {
   const close = () => setOpen(false)
 
   const { secret } = state
-  const setup = secret ? `claude mcp add --transport http tether ${mcpUrl()} --header "Authorization: Bearer ${secret}"` : ''
+  const setup = secret ? `claude mcp add --transport http taskwell ${mcpUrl()} --header "Authorization: Bearer ${secret}"` : ''
 
   return (
     <>

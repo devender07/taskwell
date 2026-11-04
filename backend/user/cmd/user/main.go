@@ -18,29 +18,29 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/shared/cors"
-	"github.com/devender07/tether/backend/shared/env"
-	"github.com/devender07/tether/backend/shared/obs"
-	"github.com/devender07/tether/backend/user/internal/aitest"
-	"github.com/devender07/tether/backend/user/internal/analytics"
-	"github.com/devender07/tether/backend/user/internal/auth"
-	"github.com/devender07/tether/backend/user/internal/chat"
-	"github.com/devender07/tether/backend/user/internal/cycle"
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/feedback"
-	"github.com/devender07/tether/backend/user/internal/file"
-	"github.com/devender07/tether/backend/user/internal/gitlink"
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/notify"
-	"github.com/devender07/tether/backend/user/internal/oauth"
-	"github.com/devender07/tether/backend/user/internal/project"
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sweep"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/webhook"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/shared/cors"
+	"github.com/devender07/taskwell/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/user/internal/aitest"
+	"github.com/devender07/taskwell/backend/user/internal/analytics"
+	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/chat"
+	"github.com/devender07/taskwell/backend/user/internal/cycle"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/feedback"
+	"github.com/devender07/taskwell/backend/user/internal/file"
+	"github.com/devender07/taskwell/backend/user/internal/gitlink"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/notify"
+	"github.com/devender07/taskwell/backend/user/internal/oauth"
+	"github.com/devender07/taskwell/backend/user/internal/project"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sweep"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/webhook"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 func main() {
@@ -53,7 +53,7 @@ func main() {
 	if *healthcheck {
 		os.Exit(obs.Healthcheck(metricsAddr))
 	}
-	dbURL := env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
+	dbURL := env.Get("DATABASE_URL", "postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable")
 	addr := ":" + env.Get("PORT", "8090")
 	secret := []byte(os.Getenv("JWT_SECRET"))
 	if prod {
@@ -221,7 +221,7 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		obs.WriteHTTP(w)
 		obs.WritePool(w, pool.Stat())
-		obs.Metric(w, "tether_realtime_sockets", "gauge", "Open realtime WebSockets.", "", float64(rtH.Sockets()))
+		obs.Metric(w, "taskwell_realtime_sockets", "gauge", "Open realtime WebSockets.", "", float64(rtH.Sockets()))
 		writeDBMetrics(r.Context(), w, pool)
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
@@ -247,10 +247,10 @@ func writeDBMetrics(ctx context.Context, w io.Writer, pool *pgxpool.Pool) {
 		slog.WarnContext(ctx, "metrics query failed", "err", err)
 		return
 	}
-	obs.Metric(w, "tether_mail_queued", "gauge", "Emails waiting to be sent.", "", float64(queued))
-	obs.Metric(w, "tether_mail_failed", "gauge", "Emails given up on, kept 30 days.", "", float64(failed))
-	obs.Metric(w, "tether_mail_oldest_seconds", "gauge", "Age of the oldest email waiting to be sent.", "", oldest)
-	obs.Metric(w, "tether_pg_notification_queue_usage", "gauge", "Fraction of Postgres's NOTIFY queue in use (0-1).", "", notifyUsage)
+	obs.Metric(w, "taskwell_mail_queued", "gauge", "Emails waiting to be sent.", "", float64(queued))
+	obs.Metric(w, "taskwell_mail_failed", "gauge", "Emails given up on, kept 30 days.", "", float64(failed))
+	obs.Metric(w, "taskwell_mail_oldest_seconds", "gauge", "Age of the oldest email waiting to be sent.", "", oldest)
+	obs.Metric(w, "taskwell_pg_notification_queue_usage", "gauge", "Fraction of Postgres's NOTIFY queue in use (0-1).", "", notifyUsage)
 }
 
 // serve runs srv until SIGINT or SIGTERM, then stops taking requests, lets in-flight ones finish (up to 20s) and calls

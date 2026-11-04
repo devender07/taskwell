@@ -38,7 +38,7 @@ func checkValue(key, v string) string {
 		}
 	case "smtp_from":
 		if _, err := mail.ParseAddress(v); err != nil {
-			return "Enter an email address, like Tether <no-reply@example.com>."
+			return "Enter an email address, like Taskwell <no-reply@example.com>."
 		}
 	}
 	return ""

@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestPrivate: a private project is seen only by its members and admins, everywhere projects are listed, and its

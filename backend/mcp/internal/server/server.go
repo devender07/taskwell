@@ -1,4 +1,4 @@
-// Package server is Tether's MCP server: tools that read and change issues by calling the user service's REST API
+// Package server is Taskwell's MCP server: tools that read and change issues by calling the user service's REST API
 // with the caller's personal API token (docs/mcp-plan.md).
 //
 // server.go registers the tools, api.go is the REST client and text.go converts descriptions and comments.
@@ -36,7 +36,7 @@ func Handler(apiURL, appURL, mcpURL string, client *http.Client) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("WWW-Authenticate", challenge)
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"error":"Send a Tether API token: Authorization: Bearer tth_…"}`))
+			_, _ = w.Write([]byte(`{"error":"Send a Taskwell API token: Authorization: Bearer tth_…"}`))
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -48,7 +48,7 @@ func Handler(apiURL, appURL, mcpURL string, client *http.Client) http.Handler {
 func Metadata(mcpURL, authURL string) http.HandlerFunc {
 	body, _ := json.Marshal(map[string]any{"resource": strings.TrimRight(mcpURL, "/") + "/mcp",
 		"authorization_servers":    []string{strings.TrimRight(authURL, "/")},
-		"bearer_methods_supported": []string{"header"}, "scopes_supported": []string{"tether"}})
+		"bearer_methods_supported": []string{"header"}, "scopes_supported": []string{"taskwell"}})
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
@@ -64,9 +64,9 @@ type tools struct {
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true}
 
 func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "tether", Title: "Tether", Version: "1.0.0"}, &mcp.ServerOptions{SchemaCache: cache})
+	s := mcp.NewServer(&mcp.Implementation{Name: "taskwell", Title: "Taskwell", Version: "1.0.0"}, &mcp.ServerOptions{SchemaCache: cache})
 	mcp.AddTool(s, &mcp.Tool{Name: "list_workspaces", Annotations: readOnly,
-		Description: "List the Tether workspaces you belong to. Every other tool takes a workspace slug from here."}, t.listWorkspaces)
+		Description: "List the Taskwell workspaces you belong to. Every other tool takes a workspace slug from here."}, t.listWorkspaces)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Annotations: readOnly,
 		Description: "List a workspace's active projects with their keys (the ENG in ENG-142)."}, t.listProjects)
 	mcp.AddTool(s, &mcp.Tool{Name: "workspace_options", Annotations: readOnly,

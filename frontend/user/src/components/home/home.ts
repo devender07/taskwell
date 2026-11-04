@@ -27,7 +27,7 @@ export function greeting(now = new Date()) {
 // Newest first, one entry per issue, at most 20.
 export const pushRecent = (list: Recent[], item: Recent) => [item, ...list.filter((r) => r.identifier !== item.identifier)].slice(0, 20)
 
-const key = (workspace: string) => `tether:recent:${workspace}`
+const key = (workspace: string) => `taskwell:recent:${workspace}`
 
 export function readRecent(workspace: string): Recent[] {
   try {

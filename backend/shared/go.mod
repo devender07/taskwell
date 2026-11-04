@@ -1,4 +1,4 @@
-module github.com/devender07/tether/backend/shared
+module github.com/devender07/taskwell/backend/shared
 
 go 1.26.0
 

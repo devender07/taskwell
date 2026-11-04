@@ -1,6 +1,6 @@
 import { useLoaderData, useLocation, useMatch, useParams } from '@tanstack/react-router'
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
-import { Dialog } from '@tether/shared/dialog'
+import { Dialog } from '@taskwell/shared/dialog'
 import { can } from '@/api'
 import { branchName } from '@/components/issues/branch'
 import type { Prefill } from '@/components/issues/issue-form'
@@ -35,7 +35,7 @@ const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate()
 export const useShortcuts = () => use(ShortcutsContext)
 
 // Single-key shortcuts (C, /, ?, S, A, P, L) can be turned off in Settings → Profile (WCAG 2.1.4); ⌘K stays.
-const SINGLE_KEYS = 'tether:single-key-shortcuts'
+const SINGLE_KEYS = 'taskwell:single-key-shortcuts'
 export function singleKeyShortcuts() {
   try {
     return localStorage.getItem(SINGLE_KEYS) !== 'off'

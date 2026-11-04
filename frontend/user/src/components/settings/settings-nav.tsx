@@ -1,5 +1,5 @@
 import { Link, useLoaderData } from '@tanstack/react-router'
-import { BellIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@tether/shared/icons'
+import { BellIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
 import { can } from '@/api'
 import './settings.css'
 

@@ -1,4 +1,4 @@
-module github.com/devender07/tether/backend/admin
+module github.com/devender07/taskwell/backend/admin
 
 go 1.26.0
 

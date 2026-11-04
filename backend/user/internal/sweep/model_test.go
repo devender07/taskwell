@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/db"
 )
 
-// testTx migrates TEST_DATABASE_URL (e.g. postgres://tether:tether@localhost:5433/tether_test?sslmode=disable) and
+// testTx migrates TEST_DATABASE_URL (e.g. postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable) and
 // returns a transaction that's rolled back when the test ends; the test is skipped without one.
 func testTx(t *testing.T) pgx.Tx {
 	t.Helper()

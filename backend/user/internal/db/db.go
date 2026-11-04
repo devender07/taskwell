@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/env"
 )
 
 //go:embed migrations/*.sql

@@ -1,4 +1,4 @@
-# Tether feature list
+# Taskwell feature list
 
 Task management for SaaS teams. Build in phase order; don't skip ahead (see `CLAUDE.md` → Product scope).
 
@@ -9,7 +9,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Email + password sign-up and sign-in, email-code sign-in, forgot/reset password
 - [x] JWT access token + rotating refresh token, Remember me, sign-out
 - [x] Continue with Google (code done; add `google_client_id` / `google_client_secret` in `system_config` to turn it on)
-- [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`tether.app/acme`), switcher, settings (rename, change URL), admin/member role on membership
+- [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`taskwell.dev/acme`), switcher, settings (rename, change URL), admin/member role on membership
 - [x] Team invites: invite by email from Settings → Members, accept link (`/invite`, email must match), resend or cancel; member list
 - [x] Roles: built-in Admin and Member plus custom roles with permissions (Settings → Roles), change role, remove member, leave
 - [x] Profile: name, change or set password (Settings → Profile; signs out other devices)
@@ -95,9 +95,9 @@ Plan: `docs/mcp-plan.md`.
 - [x] Personal API tokens (Settings → API tokens): create (shown once, with the `claude mcp add` command), list with last used, revoke; `Authorization: Bearer tth_…` signs any `/api` request in as that user, except auth, password and token endpoints
 - [x] MCP server (`backend/mcp`, `/mcp`, streamable HTTP, stateless): list workspaces / projects / options, search, list (filters), my issues, get, create, update, comment; names instead of ids; forwards the caller's token to the API
 - [x] MCP tools for every feature: AI testing (test cases, AI runs with wait, manual runs marked by the client, sites, accounts, usage), projects, cycles, issue links/watch/delete, comments, activity, labels, statuses, chat, inbox, invites
-- [x] Tests view (MCP Apps) for `get_test_run` and `list_test_cases` in Claude Desktop / claude.ai: results, notes, reproduction steps, screenshots on demand, open in Tether
+- [x] Tests view (MCP Apps) for `get_test_run` and `list_test_cases` in Claude Desktop / claude.ai: results, notes, reproduction steps, screenshots on demand, open in Taskwell
 - [x] Recorded tests (`docs/recorded-tests-plan.md`): MCP clients save browser steps (and their playwright-cli Playwright code) on test cases; "Run recorded tests" replays them in the sandboxed Chrome without Claude or the AI limit; `assert_text` / `assert_no_text` steps; "Download Playwright" exports `<ID>.spec.ts` for developers
-- [x] MCP sign-in with OAuth (`docs/mcp-oauth-plan.md`): `claude mcp add --transport http tether <app>/mcp`, the browser asks to allow, the client gets a personal API token (listed and revocable in Settings → API tokens); Home shows the MCP URL and command
+- [x] MCP sign-in with OAuth (`docs/mcp-oauth-plan.md`): `claude mcp add --transport http taskwell <app>/mcp`, the browser asks to allow, the client gets a personal API token (listed and revocable in Settings → API tokens); Home shows the MCP URL and command
 - [x] Test accounts tied to a test site (Settings → AI testing, MCP `save_test_account` `site`): the password is typed only on that site's host
 
 ## Admin app (alongside, as each phase needs it)
@@ -105,7 +105,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
 - [x] Workspaces and users list, suspend a user
 - [x] Basic usage stats
-- [x] Admin sign-in for platform admins (promote with `tether-admin -promote email`)
+- [x] Admin sign-in for platform admins (promote with `taskwell-admin -promote email`)
 
 ## Later
 

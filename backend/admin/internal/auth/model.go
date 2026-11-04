@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/admin/internal/audit"
 )
 
 type User struct {

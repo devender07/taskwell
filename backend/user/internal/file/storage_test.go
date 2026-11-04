@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 // An avatar goes to the dev S3 store from `make up` and comes back through two redirects: the user's avatar to the

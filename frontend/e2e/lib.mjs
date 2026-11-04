@@ -12,8 +12,8 @@ export const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://localhost:5174'
 export const WORKSPACE = process.env.E2E_WORKSPACE ?? 'acme'
 export const PROJECT = process.env.E2E_PROJECT ?? 'ENG'
 // The seeded demo accounts (backend seed); override for another environment.
-export const DEMO = { email: process.env.E2E_EMAIL ?? 'demo@tether.test', name: 'Demo' }
-export const MAYA = { email: process.env.E2E_EMAIL_2 ?? 'maya@tether.test', name: 'Maya' }
+export const DEMO = { email: process.env.E2E_EMAIL ?? 'demo@taskwell.test', name: 'Demo' }
+export const MAYA = { email: process.env.E2E_EMAIL_2 ?? 'maya@taskwell.test', name: 'Maya' }
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'Demo12345'
 
 export const launch = () => chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome', headless: !process.env.HEADED })

@@ -13,7 +13,7 @@ type Event struct {
 	Kind      string    `json:"kind"`
 	Workspace string    `json:"workspace"` // the workspace's slug; "" for user-wide and admin events
 	Actor     string    `json:"actor"`
-	Origin    string    `json:"origin"` // the X-Tether-Client of the request that made the change, set by Publish
+	Origin    string    `json:"origin"` // the X-Taskwell-Client of the request that made the change, set by Publish
 	Paths     []string  `json:"paths"`
 	NewSlug   string    `json:"new_slug,omitempty"`
 	At        time.Time `json:"at"`

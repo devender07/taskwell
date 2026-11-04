@@ -1,19 +1,19 @@
 # Postgres server
 
-Postgres 18 in Docker for Tether, tuned for 4 vCPU / 4 GB RAM (about 1–1.3 GB of it in use), with nightly backups.
+Postgres 18 in Docker for Taskwell, tuned for 4 vCPU / 4 GB RAM (about 1–1.3 GB of it in use), with nightly backups.
 The app (user, admin, MCP, Caddy) is deployed separately and connects to it.
 
 | File | What it is |
 | --- | --- |
-| `docker-compose.yml` | Postgres with Tether's user, database and tuned settings, on the `tether` Docker network |
+| `docker-compose.yml` | Postgres with Taskwell's user, database and tuned settings, on the `taskwell` Docker network |
 | `backup.sh` | Dumps the database, keeps 14 days, optionally copies each dump off the server |
 
 ## Install
 
-On the server, with Docker installed. Copy this folder to `/opt/tether-db` (or clone the repo and use it in place).
+On the server, with Docker installed. Copy this folder to `/opt/taskwell-db` (or clone the repo and use it in place).
 
 ```sh
-sudo mkdir -p /opt/tether-db && cd /opt/tether-db
+sudo mkdir -p /opt/taskwell-db && cd /opt/taskwell-db
 # copy docker-compose.yml and backup.sh here, then:
 echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" | sudo tee .env
 sudo chmod 600 .env
@@ -24,38 +24,38 @@ sudo docker compose ps        # STATUS: healthy
 Check it:
 
 ```sh
-sudo docker exec -it tether-postgres psql -U tether -d tether \
-  -c "show shared_buffers; select version(); select pg_encoding_to_char(encoding) from pg_database where datname = 'tether';"
+sudo docker exec -it taskwell-postgres psql -U taskwell -d taskwell \
+  -c "show shared_buffers; select version(); select pg_encoding_to_char(encoding) from pg_database where datname = 'taskwell';"
 ```
 
 Expect `1GB`, `PostgreSQL 18.x` and `UTF8`.
 
-Don't create tables: Tether's `migrate` step (or the user service with `MIGRATE_ON_START=true`) creates them and the
+Don't create tables: Taskwell's `migrate` step (or the user service with `MIGRATE_ON_START=true`) creates them and the
 `pg_trgm` extension.
 
-### `database "tether" does not exist`
+### `database "taskwell" does not exist`
 
 The image creates the database only the first time it starts on an empty volume. If a `pgdata` volume already existed,
 it skips that. Create it by hand (empty database, so this is safe):
 
 ```sh
-sudo docker exec -it tether-postgres createdb -U tether -O tether -E UTF8 -T template0 --locale=C.UTF-8 tether
+sudo docker exec -it taskwell-postgres createdb -U taskwell -O taskwell -E UTF8 -T template0 --locale=C.UTF-8 taskwell
 ```
 
 Or start over while there's no data: `sudo docker compose down -v && sudo docker compose up -d` (`-v` deletes the volume).
 
 ## Connect the app
 
-Password: `sudo cat /opt/tether-db/.env`.
+Password: `sudo cat /opt/taskwell-db/.env`.
 
-- App containers on this server (recommended): add them to the network (`networks: [tether]`, and
-  `networks: { tether: { external: true } }` at the bottom of the app's compose file), then
+- App containers on this server (recommended): add them to the network (`networks: [taskwell]`, and
+  `networks: { taskwell: { external: true } }` at the bottom of the app's compose file), then
   ```
-  DATABASE_URL=postgres://tether:<password>@tether-postgres:5432/tether?sslmode=disable
+  DATABASE_URL=postgres://taskwell:<password>@taskwell-postgres:5432/taskwell?sslmode=disable
   ```
 - App running on the server outside Docker:
   ```
-  DATABASE_URL=postgres://tether:<password>@127.0.0.1:5432/tether?sslmode=disable
+  DATABASE_URL=postgres://taskwell:<password>@127.0.0.1:5432/taskwell?sslmode=disable
   ```
 
 Pool sizes that fit `max_connections=60`: `DB_MAX_CONNS=20` (user API, plus its 2 permanent LISTEN connections),
@@ -66,47 +66,47 @@ private network with TLS (`ssl=on`, `sslmode=require`) and a `pg_hba.conf` rule 
 
 ## Backups
 
-Every night at 03:00, keeping 14 days in `/backups/tether`:
+Every night at 03:00, keeping 14 days in `/backups/taskwell`:
 
 ```sh
-sudo cp /opt/tether-db/backup.sh /usr/local/bin/tether-backup
-echo '0 3 * * * root /usr/local/bin/tether-backup >> /var/log/tether-backup.log 2>&1' | sudo tee /etc/cron.d/tether-backup
-sudo /usr/local/bin/tether-backup     # run once now to check it works
+sudo cp /opt/taskwell-db/backup.sh /usr/local/bin/taskwell-backup
+echo '0 3 * * * root /usr/local/bin/taskwell-backup >> /var/log/taskwell-backup.log 2>&1' | sudo tee /etc/cron.d/taskwell-backup
+sudo /usr/local/bin/taskwell-backup     # run once now to check it works
 ```
 
-Settings (put them in the cron line, e.g. `0 3 * * * root KEEP_DAYS=30 /usr/local/bin/tether-backup ...`):
+Settings (put them in the cron line, e.g. `0 3 * * * root KEEP_DAYS=30 /usr/local/bin/taskwell-backup ...`):
 
 | Variable | Default | |
 | --- | --- | --- |
-| `BACKUP_DIR` | `/backups/tether` | Where dumps go |
+| `BACKUP_DIR` | `/backups/taskwell` | Where dumps go |
 | `KEEP_DAYS` | `14` | Older dumps are deleted |
-| `RCLONE_REMOTE` | empty | e.g. `r2:tether-backups`: also copies each dump there with `rclone` (install and `rclone config` it first) |
+| `RCLONE_REMOTE` | empty | e.g. `r2:taskwell-backups`: also copies each dump there with `rclone` (install and `rclone config` it first) |
 
 A backup that stays on the same server is lost with the server, so set `RCLONE_REMOTE` (Cloudflare R2, S3, Backblaze) or
-copy `/backups/tether` off regularly.
+copy `/backups/taskwell` off regularly.
 
 ### Restore
 
 ```sh
-sudo docker exec -i tether-postgres pg_restore -U tether -d tether --clean --if-exists < /backups/tether/tether-2026-11-03-0300.dump
+sudo docker exec -i taskwell-postgres pg_restore -U taskwell -d taskwell --clean --if-exists < /backups/taskwell/taskwell-2026-11-03-0300.dump
 ```
 
 Stop the app first so nothing writes during the restore. Test a restore once into a scratch database before you need it:
 
 ```sh
-sudo docker exec -it tether-postgres createdb -U tether restore_test
-sudo docker exec -i tether-postgres pg_restore -U tether -d restore_test < /backups/tether/<file>.dump
-sudo docker exec -it tether-postgres psql -U tether -d restore_test -c "select count(*) from users;"
-sudo docker exec -it tether-postgres dropdb -U tether restore_test
+sudo docker exec -it taskwell-postgres createdb -U taskwell restore_test
+sudo docker exec -i taskwell-postgres pg_restore -U taskwell -d restore_test < /backups/taskwell/<file>.dump
+sudo docker exec -it taskwell-postgres psql -U taskwell -d restore_test -c "select count(*) from users;"
+sudo docker exec -it taskwell-postgres dropdb -U taskwell restore_test
 ```
 
 ## Day to day
 
 | Task | Command |
 | --- | --- |
-| SQL shell | `sudo docker exec -it tether-postgres psql -U tether -d tether` |
-| Database size | `... -c "select pg_size_pretty(pg_database_size('tether'))"` |
-| Logs (queries over 500 ms show here) | `sudo docker logs -f tether-postgres` |
+| SQL shell | `sudo docker exec -it taskwell-postgres psql -U taskwell -d taskwell` |
+| Database size | `... -c "select pg_size_pretty(pg_database_size('taskwell'))"` |
+| Logs (queries over 500 ms show here) | `sudo docker logs -f taskwell-postgres` |
 | Change a setting | Edit `command:` in `docker-compose.yml`, then `sudo docker compose up -d` (restarts in seconds) |
 | Minor upgrade (18.x) | `sudo docker compose pull && sudo docker compose up -d` |
 

@@ -1,8 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { slugify, workspaceName, workspaceSlug } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { slugify, workspaceName, workspaceSlug } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
@@ -37,7 +37,7 @@ export function CreateWorkspaceForm({ onDone }: { onDone?: () => void }) {
       <Input
         label="Workspace URL"
         name="slug"
-        prefix="tether.app/"
+        prefix={`${location.host}/`}
         placeholder="acme"
         autoCapitalize="none"
         spellCheck={false}

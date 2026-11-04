@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/netguard"
+	"github.com/devender07/taskwell/backend/user/internal/netguard"
 )
 
 // Proxy is the egress proxy Chrome sends every request through (--proxy-server). A request is let out only for a
@@ -86,7 +86,7 @@ func (p *Proxy) takeBlocked(runID string) []string {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	run, ok := p.authorize(r)
 	if !ok {
-		w.Header().Set("Proxy-Authenticate", `Basic realm="tether"`)
+		w.Header().Set("Proxy-Authenticate", `Basic realm="taskwell"`)
 		http.Error(w, "Proxy authentication required", http.StatusProxyAuthRequired)
 		return
 	}

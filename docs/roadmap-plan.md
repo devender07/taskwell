@@ -84,7 +84,7 @@ event those already publish gets the extra path). Private-project audiences stay
 
 - `src/api.ts`: `Project` gains `start_date`/`target_date`; types `Milestone` and `RoadmapProject`; path helpers.
 - **Project form** (`components/projects/project-form.tsx`): "Start date" and "Target date" fields side by side,
-  optional, using `@tether/shared/date-picker` (as the issue due date does). Client check: target on or after start
+  optional, using `@taskwell/shared/date-picker` (as the issue due date does). Client check: target on or after start
   (`"Target date must be on or after the start date."`).
 - **Milestones** on the project's settings/edit page (where `ProjectForm` is used for an existing project): a
   "Milestones" section listing name + date with Edit and Delete, and an "Add milestone" inline form (name, date).
@@ -93,7 +93,7 @@ event those already publish gets the extra path). Private-project audiences stay
   `components/roadmap/`:
   - `validateSearch`: `zoom: 'month' | 'quarter' | 'year'` (default `quarter`): the visible span and column width
     (month: days, quarter: weeks, year: months as columns).
-  - Header: title "Roadmap", zoom tabs (`@tether/shared/tabs`), a "Today" button that scrolls today into view.
+  - Header: title "Roadmap", zoom tabs (`@taskwell/shared/tabs`), a "Today" button that scrolls today into view.
   - Grid: a sticky left column (240px) with project name, key and progress percent; a horizontally scrollable timeline
     with month labels, light gridlines and a today line (accent pink). The timeline spans from the earliest to the
     latest date shown, padded a month each side, never less than the zoom's span around today.
@@ -105,7 +105,7 @@ event those already publish gets the extra path). Private-project audiences stay
   - Empty state when there are no active projects ("No projects yet" + link to Projects).
   - Live: loader via `loaderApi`, so realtime refetches on `…/roadmap`.
   - Keyboard and screen readers: rows are a list; each bar is a link labelled "{name}, {start} to {target}, {n}% done".
-- **Sidebar**: "Roadmap" link after Projects with a new `RoadmapIcon` in `@tether/shared/icons`. Command palette:
+- **Sidebar**: "Roadmap" link after Projects with a new `RoadmapIcon` in `@taskwell/shared/icons`. Command palette:
   "Go to Roadmap".
 
 ## Agents

@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
 )
 
 const (

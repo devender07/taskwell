@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (
@@ -328,7 +328,7 @@ func (h *Handler) sendInvite(ctx context.Context, workspace string, inv Invite, 
 	}
 	link := strings.TrimRight(base, "/") + "/invite?token=" + url.QueryEscape(token)
 	// The subject stays fixed: names are free-form, and a subject is what a phishing relay would want to control.
-	return h.mail.Enqueue(ctx, h.model.db, inv.Email, "You're invited to a workspace on Tether",
-		fmt.Sprintf("%s invited you to join %s on Tether.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
+	return h.mail.Enqueue(ctx, h.model.db, inv.Email, "You're invited to a workspace on Taskwell",
+		fmt.Sprintf("%s invited you to join %s on Taskwell.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
 			inv.InvitedBy, workspace, link, days))
 }

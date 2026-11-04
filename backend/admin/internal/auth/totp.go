@@ -20,7 +20,7 @@ const (
 	totpStep   = 30 * time.Second
 	totpDigits = 6
 	totpSkew   = 1 // steps either side of now that still count, for clock drift
-	totpIssuer = "Tether admin"
+	totpIssuer = "Taskwell admin"
 
 	recoveryCount = 10
 )

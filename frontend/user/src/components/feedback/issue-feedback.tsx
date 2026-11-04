@@ -1,4 +1,4 @@
-import { fullTime, relativeTime } from '@tether/shared/time'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { issuePath, type FeedbackPage, type Workspace } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { useLive } from '@/components/tests/tests'

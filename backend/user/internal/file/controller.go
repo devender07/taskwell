@@ -11,10 +11,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -180,7 +180,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 			continue
 		}
 		f := &File{Name: cleanName(part.FileName()), workspaceID: workspaceID, uploaderID: userID}
-		out, err := os.CreateTemp("", "tether-upload-")
+		out, err := os.CreateTemp("", "taskwell-upload-")
 		if err != nil {
 			return nil, false, fmt.Errorf("create temp file: %w", err)
 		}

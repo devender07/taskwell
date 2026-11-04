@@ -1,5 +1,5 @@
 # /etc/caddy/Caddyfile for the systemd setup: the Go services on 127.0.0.1 (README.md), the built frontends in
-# /var/www/tether/{user,admin}. Replace the two hostnames and S3_ORIGIN (the s3_endpoint origin, e.g. your R2 URL).
+# /var/www/taskwell/{user,admin}. Replace the two hostnames and S3_ORIGIN (the s3_endpoint origin, e.g. your R2 URL).
 
 (spa) {
 	header {
@@ -36,7 +36,7 @@
 	encode zstd gzip
 }
 
-tether.ai {
+taskwell.dev {
 	handle /mcp {
 		reverse_proxy 127.0.0.1:8095 {
 			flush_interval -1
@@ -50,14 +50,14 @@ tether.ai {
 	}
 	# / is the static landing page; the app lives at /{workspace}, /signin and the rest.
 	handle / {
-		root * /var/www/tether/user
+		root * /var/www/taskwell/user
 		header Cache-Control no-cache
 		rewrite * /landing.html
 		file_server
 	}
-	import spa 127.0.0.1:8090 /var/www/tether/user
+	import spa 127.0.0.1:8090 /var/www/taskwell/user
 }
 
-admin.tether.ai {
-	import spa 127.0.0.1:8080 /var/www/tether/admin
+admin.taskwell.dev {
+	import spa 127.0.0.1:8080 /var/www/taskwell/admin
 }

@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { Dialog } from '@tether/shared/dialog'
+import { Dialog } from '@taskwell/shared/dialog'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { readNotice } from '@/realtime'
 

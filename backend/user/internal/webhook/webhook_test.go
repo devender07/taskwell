@@ -17,9 +17,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 func TestValidate(t *testing.T) {
@@ -353,7 +353,7 @@ func TestWorker(t *testing.T) {
 	if err := json.Unmarshal([]byte(h.body), &sent); err != nil || sent["id"] != ds[0].ID || sent["type"] != "ping" {
 		t.Fatalf("body %s", h.body)
 	}
-	sig := h.header.Get("X-Tether-Signature")
+	sig := h.header.Get("X-Taskwell-Signature")
 	ts, _, _ := strings.Cut(strings.TrimPrefix(sig, "t="), ",")
 	unix, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil || time.Since(time.Unix(unix, 0)) > time.Minute {
@@ -362,8 +362,8 @@ func TestWorker(t *testing.T) {
 	if Sign(plain, time.Unix(unix, 0), []byte(h.body)) != sig {
 		t.Fatalf("signature %q doesn't verify", sig)
 	}
-	for k, v := range map[string]string{"Content-Type": "application/json", "User-Agent": "Tether-Webhooks/1",
-		"X-Tether-Event": "ping", "X-Tether-Delivery": ds[0].ID} {
+	for k, v := range map[string]string{"Content-Type": "application/json", "User-Agent": "Taskwell-Webhooks/1",
+		"X-Taskwell-Event": "ping", "X-Taskwell-Delivery": ds[0].ID} {
 		if h.header.Get(k) != v {
 			t.Errorf("%s = %q, want %q", k, h.header.Get(k), v)
 		}

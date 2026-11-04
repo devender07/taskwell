@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tether: project management for software teams</title>
+    <title>Taskwell: project management for software teams</title>
     <meta name="description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Tether: project management for software teams" />
+    <meta property="og:title" content="Taskwell: project management for software teams" />
     <meta property="og:description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
     <meta name="twitter:card" content="summary" />
     <script type="module" src="/src/landing/landing.ts"></script>
@@ -17,9 +17,9 @@
 
     <header class="site-header">
       <div class="container flex items-center justify-between gap-6 site-header-inner">
-        <a href="#top" class="brand" aria-label="Tether home">
+        <a href="#top" class="brand" aria-label="Taskwell home">
           <img src="/favicon.svg" alt="" width="28" height="28" />
-          <span>Tether</span>
+          <span>Taskwell</span>
         </a>
         <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
           <span></span><span></span>
@@ -44,7 +44,7 @@
           <p class="eyebrow reveal"><span class="dot" aria-hidden="true"></span> <span id="greeting">Built for SaaS teams that ship weekly</span></p>
           <h1 class="display reveal">Plan it, build it, test it.<br /><span class="text-secondary">All in one place.</span></h1>
           <p class="lead reveal">
-            Tether keeps issues, cycles, docs, chat and AI testing in one fast, keyboard-first workspace, so your team spends less time
+            Taskwell keeps issues, cycles, docs, chat and AI testing in one fast, keyboard-first workspace, so your team spends less time
             updating tools and more time shipping.
           </p>
           <div class="flex flex-wrap gap-3 justify-center reveal">
@@ -56,7 +56,7 @@
         </div>
 
         <div class="container">
-          <div class="app-frame reveal" aria-label="Preview of a Tether project board" role="img">
+          <div class="app-frame reveal" aria-label="Preview of a Taskwell project board" role="img">
             <div class="app-frame-bar" aria-hidden="true">
               <span></span><span></span><span></span>
               <p class="text-caption text-secondary">ENG · Board</p>
@@ -130,7 +130,7 @@
           <div class="grid gap-6 reveal">
             <p class="eyebrow">Workflow</p>
             <h2 class="heading">Your process, not ours</h2>
-            <p class="lead">Shape Tether around how your team already works.</p>
+            <p class="lead">Shape Taskwell around how your team already works.</p>
             <div class="tabs" role="tablist" aria-label="Workflow features">
               <button type="button" role="tab" id="tab-statuses" aria-controls="panel-statuses" aria-selected="true">Statuses</button>
               <button type="button" role="tab" id="tab-roles" aria-controls="panel-roles" aria-selected="false" tabindex="-1">Roles</button>
@@ -183,7 +183,7 @@
             <p class="eyebrow">AI testing</p>
             <h2 class="heading">Write test cases in plain words. Let AI click through them.</h2>
             <p class="lead">
-              Add test cases to an issue and Tether runs them in a real browser, step by step, with screenshots of every step. Save a run as a
+              Add test cases to an issue and Taskwell runs them in a real browser, step by step, with screenshots of every step. Save a run as a
               script and replay it on every release.
             </p>
             <ul class="checks">
@@ -206,7 +206,7 @@
             <li class="integration reveal"><h3>Claude and MCP</h3><p>Connect Claude to your workspace in one command. It can read, create and update issues as you.</p></li>
             <li class="integration reveal"><h3>Webhooks and API</h3><p>Send events anywhere and script your workflow with personal API tokens.</p></li>
           </ul>
-          <pre class="code reveal"><code>claude mcp add --transport http tether https://your-tether.app/mcp</code><button type="button" class="button button-ghost copy" data-copy="claude mcp add --transport http tether https://your-tether.app/mcp">Copy</button></pre>
+          <pre class="code reveal"><code>claude mcp add --transport http taskwell %VITE_MCP_URL%</code><button type="button" class="copy" aria-label="Copy command" title="Copy command" data-copy="claude mcp add --transport http taskwell %VITE_MCP_URL%"><svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg><svg class="copied-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg></button></pre>
         </div>
       </section>
 
@@ -222,8 +222,8 @@
 
     <footer class="site-footer">
       <div class="container flex flex-wrap items-center justify-between gap-4">
-        <a href="#top" class="brand"><img src="/favicon.svg" alt="" width="24" height="24" /><span>Tether</span></a>
-        <p class="text-caption text-secondary m-0">© <span id="year"></span> Tether. Made for teams that ship.</p>
+        <a href="#top" class="brand"><img src="/favicon.svg" alt="" width="24" height="24" /><span>Taskwell</span></a>
+        <p class="text-caption text-secondary m-0">© <span id="year"></span> Taskwell. Made for teams that ship.</p>
       </div>
     </footer>
   </body>

@@ -8,12 +8,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 // TestTakeInviteSend runs against a scratch database, e.g.
-// TEST_DATABASE_URL=postgres://tether:tether@localhost:5433/tether_test?sslmode=disable.
+// TEST_DATABASE_URL=postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable.
 func TestTakeInviteSend(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {

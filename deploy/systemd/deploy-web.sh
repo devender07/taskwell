@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds the user and admin frontends, packs them into backend/dist/tether-web.tar.gz and sends it to the server.
-# Then on the server: sudo mkdir -p /var/www/tether && sudo tar -xzf /tmp/tether-web.tar.gz -C /var/www/tether
+# Builds the user and admin frontends, packs them into backend/dist/taskwell-web.tar.gz and sends it to the server.
+# Then on the server: sudo mkdir -p /var/www/taskwell && sudo tar -xzf /tmp/taskwell-web.tar.gz -C /var/www/taskwell
 # Usage, from anywhere in the repo: deploy/systemd/deploy-web.sh [user@host]
 set -eu
 
@@ -15,10 +15,10 @@ npm run build
 cp -r user/dist "$STAGE/user"
 cp -r admin/dist "$STAGE/admin"
 mkdir -p "$OUT"
-tar -czf "$OUT/tether-web.tar.gz" -C "$STAGE" user admin
+tar -czf "$OUT/taskwell-web.tar.gz" -C "$STAGE" user admin
 
-scp "$OUT/tether-web.tar.gz" "$SERVER":/tmp/
+scp "$OUT/taskwell-web.tar.gz" "$SERVER":/tmp/
 echo
 echo "sent. Now on the server:"
-echo "  sudo rm -rf /var/www/tether/user /var/www/tether/admin"
-echo "  sudo mkdir -p /var/www/tether && sudo tar -xzf /tmp/tether-web.tar.gz -C /var/www/tether && rm /tmp/tether-web.tar.gz"
+echo "  sudo rm -rf /var/www/taskwell/user /var/www/taskwell/admin"
+echo "  sudo mkdir -p /var/www/taskwell && sudo tar -xzf /tmp/taskwell-web.tar.gz -C /var/www/taskwell && rm /tmp/taskwell-web.tar.gz"

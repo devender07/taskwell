@@ -1,8 +1,8 @@
-import '@tether/shared/tokens.css'
-import '@tether/shared/utilities.css'
-import '@tether/shared/button.css'
+import '@taskwell/shared/tokens.css'
+import '@taskwell/shared/utilities.css'
+import '@taskwell/shared/button.css'
 import './landing.css'
-import { apiUrl } from '@tether/shared/api-url'
+import { apiUrl } from '@taskwell/shared/api-url'
 
 document.documentElement.classList.add('js')
 
@@ -82,13 +82,18 @@ if (live && !reduced) {
 // Copy the MCP command
 document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => {
   button.addEventListener('click', async () => {
+    const label = button.ariaLabel
     try {
       await navigator.clipboard.writeText(button.dataset.copy!)
-      button.textContent = 'Copied'
+      button.dataset.copied = ''
+      button.ariaLabel = button.title = 'Copied'
     } catch {
-      button.textContent = 'Press Ctrl+C'
+      button.ariaLabel = button.title = 'Press Ctrl+C'
     }
-    setTimeout(() => (button.textContent = 'Copy'), 2000)
+    setTimeout(() => {
+      delete button.dataset.copied
+      button.ariaLabel = button.title = label!
+    }, 2000)
   })
 })
 

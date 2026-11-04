@@ -1,11 +1,11 @@
 import { Link, useMatch, useNavigate, useParams } from '@tanstack/react-router'
 import { createContext, use, useActionState, useState, type ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { Logo } from '@tether/shared/logo'
-import { Popover } from '@tether/shared/popover'
-import { CheckIcon, ChevronDownIcon, MenuIcon, XIcon } from '@tether/shared/icons'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Logo } from '@taskwell/shared/logo'
+import { Popover } from '@taskwell/shared/popover'
+import { CheckIcon, ChevronDownIcon, MenuIcon, XIcon } from '@taskwell/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { NotificationsBell } from './notifications-bell'
@@ -37,7 +37,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
             {menuOpen ? <XIcon size={20} /> : <MenuIcon size={20} />}
           </button>
         ) : null}
-        <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Tether home" className="navbar-home">
+        <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Taskwell home" className="navbar-home">
           <Logo size={24} />
         </Link>
       </div>

@@ -209,7 +209,7 @@ Root message, its replies (same rendering), its own composer ("Reply…"), typin
 
 ### Shared editor change
 
-`@tether/shared` `RichEditor` gains an optional `issues?: (q: string) => Promise<{ id: string; label: string; title: string }[]>` prop: a second Mention suggestion with char `#`, rendering suggestions as "ENG-12 Fix login". `RichText` renders `#` mentions as a link (`href` built by a new optional `issueHref?: (identifier: string) => string` prop; without it, plain text). Enter-to-send: optional `onSubmit` prop; when set, Enter (without Shift, outside lists/code blocks and when no suggestion is open) calls it instead of a new line.
+`@taskwell/shared` `RichEditor` gains an optional `issues?: (q: string) => Promise<{ id: string; label: string; title: string }[]>` prop: a second Mention suggestion with char `#`, rendering suggestions as "ENG-12 Fix login". `RichText` renders `#` mentions as a link (`href` built by a new optional `issueHref?: (identifier: string) => string` prop; without it, plain text). Enter-to-send: optional `onSubmit` prop; when set, Enter (without Shift, outside lists/code blocks and when no suggestion is open) calls it instead of a new line.
 
 ### Palette and shortcuts
 

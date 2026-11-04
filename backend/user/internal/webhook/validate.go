@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/netguard"
+	"github.com/devender07/taskwell/backend/user/internal/netguard"
 )
 
 // Events are the events a webhook can subscribe to; ping is sent only by "Send test".

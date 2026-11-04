@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Button } from '@tether/shared/button'
-import { LogoMark } from '@tether/shared/logo'
-import { apiUrl } from '@tether/shared/api-url'
+import { Button } from '@taskwell/shared/button'
+import { LogoMark } from '@taskwell/shared/logo'
+import { apiUrl } from '@taskwell/shared/api-url'
 import './auth.css'
 
 const line = { height: 1, background: 'rgba(255, 255, 255, 0.08)' }

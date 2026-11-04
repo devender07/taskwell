@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 const (
-	accessCookie  = "tether_access"
-	refreshCookie = "tether_refresh"
-	googleCookie  = "tether_google" // state, PKCE verifier and remember flag for one Google round trip
-	signupCookie  = "tether_signup" // the nonce that binds a sign-up's code to the browser that signed up
+	accessCookie  = "taskwell_access"
+	refreshCookie = "taskwell_refresh"
+	googleCookie  = "taskwell_google" // state, PKCE verifier and remember flag for one Google round trip
+	signupCookie  = "taskwell_signup" // the nonce that binds a sign-up's code to the browser that signed up
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.

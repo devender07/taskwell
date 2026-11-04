@@ -15,12 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/devender07/tether/backend/shared/env"
-	"github.com/devender07/tether/backend/shared/obs"
-	"github.com/devender07/tether/backend/user/internal/aitest"
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/user/internal/aitest"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 func main() {
@@ -47,7 +47,7 @@ func main() {
 
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	pool, err := db.Open(context.Background(), env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable"))
+	pool, err := db.Open(context.Background(), env.Get("DATABASE_URL", "postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable"))
 	if err != nil {
 		obs.Fatal("database", "err", err)
 	}

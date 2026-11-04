@@ -14,11 +14,11 @@ import (
 	"strings"
 )
 
-const errBadToken = "Your Tether token is invalid or revoked."
+const errBadToken = "Your Taskwell token is invalid or revoked."
 
 // api calls the user service's REST API as the caller: every request carries their Authorization header.
 type api struct {
-	base   string // TETHER_API_URL, no trailing slash
+	base   string // TASKWELL_API_URL, no trailing slash
 	auth   string // "Bearer tth_…"
 	client *http.Client
 }
@@ -47,7 +47,7 @@ func (a *api) do(ctx context.Context, method, path string, form url.Values, out 
 		return err
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("decode tether api: %w", err)
+		return fmt.Errorf("decode taskwell api: %w", err)
 	}
 	return nil
 }
@@ -73,12 +73,12 @@ func (a *api) send(ctx context.Context, method, path string, form url.Values, li
 	}
 	res, err := a.client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("call tether api: %w", err)
+		return nil, "", fmt.Errorf("call taskwell api: %w", err)
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	if err != nil {
-		return nil, "", fmt.Errorf("read tether api: %w", err)
+		return nil, "", fmt.Errorf("read taskwell api: %w", err)
 	}
 	if res.StatusCode == http.StatusUnauthorized {
 		return nil, "", errors.New(errBadToken)
@@ -106,7 +106,7 @@ func apiError(status int, data []byte) error {
 		}
 		return errors.New(strings.Join(msgs, "\n"))
 	}
-	return fmt.Errorf("Tether answered %d %s.", status, http.StatusText(status))
+	return fmt.Errorf("Taskwell answered %d %s.", status, http.StatusText(status))
 }
 
 // toolField names the API's form fields as the tools call them.

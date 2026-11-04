@@ -6,7 +6,7 @@ package audit
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
 )
 
 // Register mounts the API routes on mux.

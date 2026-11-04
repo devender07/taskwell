@@ -9,7 +9,7 @@ package chat
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // maxBody fits a 10,000-character message as doc JSON.

@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestVerifySignupIsAtomic checks that a sign-up is verified together with its default workspace, or not at all.

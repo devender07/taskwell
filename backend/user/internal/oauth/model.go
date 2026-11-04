@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/auth"
 )
 
 // errBadGrant is a code that's unknown, expired, used, issued to another client or redirect URI, or whose PKCE

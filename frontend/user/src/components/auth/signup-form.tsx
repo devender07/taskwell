@@ -1,8 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { email, name, password, workspaceName } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { email, name, password, workspaceName } from '@taskwell/shared/validate'
 import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 

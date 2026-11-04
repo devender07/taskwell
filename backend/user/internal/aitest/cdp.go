@@ -396,7 +396,7 @@ func (e pageError) Error() string { return string(e) }
 // center scrolls the element with the ref into view and returns its center.
 func (p *page) center(ctx context.Context, ref int) (x, y float64, err error) {
 	var pt *struct{ X, Y float64 }
-	err = p.eval(ctx, `(() => { const el = document.querySelector('[data-tether-ref="`+strconv.Itoa(ref)+`"]');
+	err = p.eval(ctx, `(() => { const el = document.querySelector('[data-taskwell-ref="`+strconv.Itoa(ref)+`"]');
 		if (!el) return null; el.scrollIntoView({block: 'center', inline: 'center'});
 		const r = el.getBoundingClientRect(); return {X: r.x + r.width / 2, Y: r.y + r.height / 2}; })()`, &pt)
 	if err != nil {
@@ -437,7 +437,7 @@ func (p *page) typeText(ctx context.Context, ref int, text string) error {
 			return err
 		}
 	}
-	if err := p.eval(ctx, `(() => { const el = document.querySelector('[data-tether-ref="`+strconv.Itoa(ref)+`"]');
+	if err := p.eval(ctx, `(() => { const el = document.querySelector('[data-taskwell-ref="`+strconv.Itoa(ref)+`"]');
 		if (el && el.select) el.select(); else document.execCommand('selectAll'); })()`, nil); err != nil {
 		return err
 	}
@@ -448,7 +448,7 @@ func (p *page) typeText(ctx context.Context, ref int, text string) error {
 // password would show in the page state.
 func (p *page) fillPassword(ctx context.Context, ref int, pw string) error {
 	var ok bool
-	if err := p.eval(ctx, `(() => { const el = document.querySelector('[data-tether-ref="`+strconv.Itoa(ref)+`"]');
+	if err := p.eval(ctx, `(() => { const el = document.querySelector('[data-taskwell-ref="`+strconv.Itoa(ref)+`"]');
 		return !!el && el.tagName === 'INPUT' && el.type === 'password'; })()`, &ok); err != nil {
 		return err
 	}
@@ -461,7 +461,7 @@ func (p *page) fillPassword(ctx context.Context, ref int, pw string) error {
 func (p *page) selectOption(ctx context.Context, ref int, value string) error {
 	v, _ := json.Marshal(value)
 	var ok bool
-	err := p.eval(ctx, `(() => { const el = document.querySelector('[data-tether-ref="`+strconv.Itoa(ref)+`"]');
+	err := p.eval(ctx, `(() => { const el = document.querySelector('[data-taskwell-ref="`+strconv.Itoa(ref)+`"]');
 		if (!el || el.tagName !== 'SELECT') return false; const v = `+string(v)+`;
 		const o = [...el.options].find(o => o.value === v || o.text.trim() === v); if (!o) return false;
 		el.value = o.value; el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true}));
@@ -547,14 +547,14 @@ const elementsJS = `
       el.innerText || (tag === 'input' && (type === 'submit' || type === 'button') ? el.value : '') || el.title || el.name); };
 `
 
-// stateJS tags the visible interactive elements with data-tether-ref and lists them, never a password's value.
+// stateJS tags the visible interactive elements with data-taskwell-ref and lists them, never a password's value.
 const stateJS = `(() => {` + elementsJS + `
-  document.querySelectorAll('[data-tether-ref]').forEach(e => e.removeAttribute('data-tether-ref'));
+  document.querySelectorAll('[data-taskwell-ref]').forEach(e => e.removeAttribute('data-taskwell-ref'));
   const out = []; let n = 0;
   for (const el of document.querySelectorAll(sel)) {
     if (n >= 200) break;
     if (!visible(el)) continue;
-    n++; el.setAttribute('data-tether-ref', String(n));
+    n++; el.setAttribute('data-taskwell-ref', String(n));
     const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || 'text').toLowerCase();
     const kind = el.getAttribute('role') || (tag === 'input' ? 'input type=' + type : tag);
     const name = nameOf(el);

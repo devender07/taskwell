@@ -1,4 +1,4 @@
-module github.com/devender07/tether/backend/mcp
+module github.com/devender07/taskwell/backend/mcp
 
 go 1.26.0
 

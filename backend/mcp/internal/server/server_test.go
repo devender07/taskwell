@@ -193,7 +193,7 @@ func TestGetTestRun(t *testing.T) {
 }
 
 // TestTestsView checks the MCP Apps wiring: the view resource, the tools linked to it, and the screenshot loader
-// fetching only Tether files, with the caller's token.
+// fetching only Taskwell files, with the caller's token.
 func TestTestsView(t *testing.T) {
 	png := []byte("\x89PNG fake")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -336,7 +336,7 @@ func TestOAuthDiscovery(t *testing.T) {
 	}
 	w = httptest.NewRecorder()
 	Metadata("https://api.app.test/", "https://api.app.test")(w, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp", nil))
-	want := `{"authorization_servers":["https://api.app.test"],"bearer_methods_supported":["header"],"resource":"https://api.app.test/mcp","scopes_supported":["tether"]}`
+	want := `{"authorization_servers":["https://api.app.test"],"bearer_methods_supported":["header"],"resource":"https://api.app.test/mcp","scopes_supported":["taskwell"]}`
 	if w.Code != 200 || w.Body.String() != want {
 		t.Fatalf("metadata: %d %s", w.Code, w.Body)
 	}

@@ -19,9 +19,9 @@ var pollEvery = 3 * time.Second
 // finished are the statuses a test run ends in.
 var finished = []string{"passed", "failed", "error", "cancelled", "limit_reached"}
 
-const testingHow = " Three ways to test an issue: (1) run_ai_test has Tether's AI drive a browser against the workspace's test site, " +
+const testingHow = " Three ways to test an issue: (1) run_ai_test has Taskwell's AI drive a browser against the workspace's test site, " +
 	"then get_test_run with wait_seconds until it finishes; (2) test it yourself with your own tools, recording the outcome with " +
-	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps by driving Tether's test " +
+	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps by driving Taskwell's test " +
 	"browser with browser_open (nothing to install, no AI spend) or with your own tools and save_test_script, then " +
 	"run_recorded_tests replays them with no AI spend. A failed result becomes a bug through create_issue: the case's " +
 	"title as the title, the result's summary and reproduction steps as the description."
@@ -43,7 +43,7 @@ func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "reorder_test_cases",
 		Description: "Put an issue's test cases in a new order: case_ids lists every case once, in order."}, t.reorderTestCases)
 	mcp.AddTool(s, &mcp.Tool{Name: "run_ai_test",
-		Description: "Start an AI test run on an issue: Tether's AI tests every case (or case_id only) in a sandboxed browser against " +
+		Description: "Start an AI test run on an issue: Taskwell's AI tests every case (or case_id only) in a sandboxed browser against " +
 			"the workspace's test site, spending the workspace's monthly AI limit. regenerate has the AI rewrite the cases from the issue first. " +
 			"Then call get_test_run with the run id and wait_seconds until it finishes." + testingHow}, t.runAITest)
 	mcp.AddTool(s, &mcp.Tool{Name: "start_manual_test_run",
@@ -52,7 +52,7 @@ func (t *tools) testTools(s *mcp.Server) {
 		t.startManualTestRun)
 	mcp.AddTool(s, &mcp.Tool{Name: "mark_test_result",
 		Description: "Record a manual run's result: passed, failed or skipped, with a note saying what you saw (always for a failure). " +
-			"AI runs are marked by Tether.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, t.markTestResult)
+			"AI runs are marked by Taskwell.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, t.markTestResult)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_test_run", Annotations: readOnly, Meta: viewMeta(false),
 		Description: "Read a test run: status, counts, cost, error, and each result with its summary, reproduction steps and screenshots. " +
 			"wait_seconds (up to 120) waits for a running run to finish, checking every 3 seconds; call again if it is still running."},
@@ -65,7 +65,7 @@ func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "clear_test_script", Annotations: destructive,
 		Description: "Remove a test case's recorded steps and Playwright code; runs then need the AI to test it."}, t.clearTestScript)
 	mcp.AddTool(s, &mcp.Tool{Name: "run_recorded_tests",
-		Description: "Start a recorded test run on an issue: Tether replays each recorded case's steps in a sandboxed browser against " +
+		Description: "Start a recorded test run on an issue: Taskwell replays each recorded case's steps in a sandboxed browser against " +
 			"the workspace's test site, with no AI and no AI spend. A replay or assertion that fails fails the case with the reason, " +
 			"the steps so far and screenshots; unrecorded cases are skipped. Then call get_test_run with the run id and wait_seconds " +
 			"until it finishes."}, t.runRecordedTests)
@@ -90,9 +90,9 @@ func (t *tools) testTools(s *mcp.Server) {
 		Description: "Remove a test account."}, t.deleteTestAccount)
 }
 
-const recordingGuide = "Record a test case's browser steps so Tether replays it without AI (run_recorded_tests) and exports it to Playwright. " +
-	"Explore the site with your own browser tools first; Tether spends no AI here. Without browser tools of your own, " +
-	"use browser_open: Tether's test browser records the steps as you go and browser_save stores them. " +
+const recordingGuide = "Record a test case's browser steps so Taskwell replays it without AI (run_recorded_tests) and exports it to Playwright. " +
+	"Explore the site with your own browser tools first; Taskwell spends no AI here. Without browser tools of your own, " +
+	"use browser_open: Taskwell's test browser records the steps as you go and browser_save stores them. " +
 	"steps start with navigate (a URL on one of the workspace's test sites, from list_test_sites); tools: navigate {url}, " +
 	"click {target}, type {target, text}, select {target, value}, press {key}, wait {seconds 1-5}, fill_password {target, account}, " +
 	"assert_text {text} and assert_no_text {text} (wait up to 5 s for the text to appear / disappear). " +
@@ -104,7 +104,7 @@ const recordingGuide = "Record a test case's browser steps so Tether replays it 
 	"most edge cases (a draft must not show in the other inbox). check is a text that's on the page only when the expected result holds. " +
 	"When playwright-cli is available, record with it: snapshot for element refs, each action prints its Playwright code, " +
 	"generate-locator for assertion locators. Send that code as playwright (the test's body, or a whole test(...) block), with " +
-	"passwords as process.env.TETHER_PASSWORD_<LABEL> (the account label upper-cased, other characters as _), never a literal; and " +
+	"passwords as process.env.TASKWELL_PASSWORD_<LABEL> (the account label upper-cased, other characters as _), never a literal; and " +
 	"translate each action to a step for the no-AI replay: role button/link/textbox/combobox/checkbox plus accessible name becomes " +
 	"target {tag, name} (check the real tag with playwright-cli eval \"el => el.tagName\" eN, and use a data-testid/id/name selector " +
 	"as css when eval shows one). Leave playwright out to keep the stored code, or send \"\" to clear it. " +

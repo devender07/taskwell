@@ -7,7 +7,7 @@ set -eu
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 [ $# -ge 2 ] || { echo "usage: $0 EMAIL PASSWORD [NAME]"; exit 1; }
 
-docker exec -i tether-postgres psql -U tether -d tether -v ON_ERROR_STOP=1 -q \
+docker exec -i taskwell-postgres psql -U taskwell -d taskwell -v ON_ERROR_STOP=1 -q \
   -v email="$1" -v pw="$2" -v name="${3:-Admin}" <<'SQL'
 create extension if not exists pgcrypto;
 insert into users (name, email, password_hash, email_verified_at)
@@ -16,5 +16,5 @@ on conflict (email) do update
   set password_hash = excluded.password_hash, email_verified_at = coalesce(users.email_verified_at, now());
 SQL
 
-systemd-run --pty --wait --quiet --uid=tether -p EnvironmentFile=/etc/tether/admin.env \
-  /opt/tether/tether-admin -promote "$1"
+systemd-run --pty --wait --quiet --uid=taskwell -p EnvironmentFile=/etc/taskwell/admin.env \
+  /opt/taskwell/taskwell-admin -promote "$1"

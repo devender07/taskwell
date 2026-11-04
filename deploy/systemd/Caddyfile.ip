@@ -47,14 +47,14 @@ http://185.67.20.135 {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle / {
-		root * /var/www/tether/user
+		root * /var/www/taskwell/user
 		header Cache-Control no-cache
 		rewrite * /landing.html
 		file_server
 	}
-	import spa 127.0.0.1:8090 /var/www/tether/user
+	import spa 127.0.0.1:8090 /var/www/taskwell/user
 }
 
 http://185.67.20.135:8081 {
-	import spa 127.0.0.1:8080 /var/www/tether/admin
+	import spa 127.0.0.1:8080 /var/www/taskwell/admin
 }

@@ -1,6 +1,6 @@
 import { Link, notFound } from '@tanstack/react-router'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button } from '@tether/shared/button'
+import { Button } from '@taskwell/shared/button'
 import { ApiError, can, type Issue, type Label, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'

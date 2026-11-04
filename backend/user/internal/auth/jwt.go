@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const issuer = "tether"
+const issuer = "taskwell"
 
 // claims are an access token's: the user is the subject and SID is the sign-in (refresh token family) it came from.
 type claims struct {

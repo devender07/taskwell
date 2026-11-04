@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/auth"
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 // TestFlow runs register, authorize (check, deny, allow) and the token exchange against the scratch database (see

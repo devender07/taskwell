@@ -18,16 +18,16 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/admin/internal/audit"
-	"github.com/devender07/tether/backend/admin/internal/auth"
-	"github.com/devender07/tether/backend/admin/internal/config"
-	"github.com/devender07/tether/backend/admin/internal/directory"
-	"github.com/devender07/tether/backend/admin/internal/realtime"
-	"github.com/devender07/tether/backend/admin/internal/stats"
-	"github.com/devender07/tether/backend/admin/internal/web"
-	"github.com/devender07/tether/backend/shared/cors"
-	"github.com/devender07/tether/backend/shared/env"
-	"github.com/devender07/tether/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/admin/internal/auth"
+	"github.com/devender07/taskwell/backend/admin/internal/config"
+	"github.com/devender07/taskwell/backend/admin/internal/directory"
+	"github.com/devender07/taskwell/backend/admin/internal/realtime"
+	"github.com/devender07/taskwell/backend/admin/internal/stats"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/shared/cors"
+	"github.com/devender07/taskwell/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/obs"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 	if *healthcheck {
 		os.Exit(obs.Healthcheck(metricsAddr))
 	}
-	dbURL := env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
+	dbURL := env.Get("DATABASE_URL", "postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable")
 	addr := ":" + env.Get("PORT", "8080")
 	secret := []byte(os.Getenv("ADMIN_JWT_SECRET"))
 	if prod && os.Getenv("DATABASE_URL") == "" {
@@ -165,7 +165,7 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		obs.WriteHTTP(w)
 		obs.WritePool(w, pool.Stat())
-		obs.Metric(w, "tether_realtime_sockets", "gauge", "Open admin realtime WebSockets.", "", float64(rtH.Sockets()))
+		obs.Metric(w, "taskwell_realtime_sockets", "gauge", "Open admin realtime WebSockets.", "", float64(rtH.Sockets()))
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 

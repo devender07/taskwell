@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Button } from '@tether/shared/button'
-import { Pagination } from '@tether/shared/pagination'
+import { Button } from '@taskwell/shared/button'
+import { Pagination } from '@taskwell/shared/pagination'
 import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath, mcpUrl } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
@@ -315,7 +315,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
 export function RecentlyViewed({ workspace, issues }: { workspace: string; issues: Issue[] }) {
   const [recent, setRecent] = useState(() => readRecent(workspace))
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => e.key === `tether:recent:${workspace}` && setRecent(readRecent(workspace))
+    const onStorage = (e: StorageEvent) => e.key === `taskwell:recent:${workspace}` && setRecent(readRecent(workspace))
     addEventListener('storage', onStorage)
     return () => removeEventListener('storage', onStorage)
   }, [workspace])
@@ -398,7 +398,7 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
 
 export function ConnectClaude() {
   const url = mcpUrl()
-  const command = `claude mcp add --transport http tether ${url}`
+  const command = `claude mcp add --transport http taskwell ${url}`
   return (
     <Card title="Connect Claude">
       <div className="grid gap-3 px-6 py-4">
