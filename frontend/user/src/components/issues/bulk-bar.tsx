@@ -9,6 +9,7 @@ import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import { loadAssignees } from './fields'
+import { useUndoDelete } from './undo-delete'
 import type { Choice } from './issue-view'
 
 type Change = { ids: string[]; fields: [string, string][] }
@@ -20,6 +21,7 @@ const count = (n: number) => `${n} ${n === 1 ? 'issue' : 'issues'}`
 // request. A failure keeps the selection so it can be retried.
 export function BulkBar({ workspace, issues, choices, onClear, onDone }: Props) {
   const router = useRouter()
+  const undo = useUndoDelete(workspace.slug)
   const [confirming, setConfirming] = useState(false)
   const people = useMemo(() => loadAssignees(peopleSearch(workspace.slug)), [workspace.slug])
   const [error, run, pending] = useActionState(async (_prev: string | null, { ids, fields }: Change) => {
@@ -35,7 +37,8 @@ export function BulkBar({ workspace, issues, choices, onClear, onDone }: Props) 
     }
     setConfirming(false)
     await reloadPage(router)
-    onDone(res.deleted !== undefined ? `Deleted ${count(res.deleted)}.` : `Updated ${count(res.updated ?? ids.length)}.`)
+    if (res.deleted !== undefined) undo(ids)
+    onDone(res.deleted !== undefined ? '' : `Updated ${count(res.updated ?? ids.length)}.`)
     return null
   }, null)
   const send = (...fields: [string, string][]) => startTransition(() => run({ ids: issues.map((i) => i.identifier), fields }))
@@ -102,7 +105,7 @@ export function BulkBar({ workspace, issues, choices, onClear, onDone }: Props) 
           <FormError>{error}</FormError>
         </div>
       ) : null}
-      <Dialog open={confirming} onClose={() => setConfirming(false)} title={`Delete ${count(issues.length)}?`} description="This can't be undone.">
+      <Dialog open={confirming} onClose={() => setConfirming(false)} title={`Delete ${count(issues.length)}?`} description="They move to the trash for 30 days.">
         <form action={() => send(['delete', '1'])} className="grid gap-4">
           <FormError>{error}</FormError>
           <Button type="submit" variant="danger" className="w-full" disabled={pending}>

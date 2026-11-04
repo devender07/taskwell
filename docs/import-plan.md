@@ -114,8 +114,8 @@ Comments are created by the importer. The body is "**{author}** · {date}" on th
 
 ## Frontend (user app)
 
-- New route `settings/import.tsx`, shown in the settings nav as "Import" (icon `UploadIcon`, added to icons.tsx if missing) when the user has `issues.create`.
-- The page has two tabs, "CSV" and "GitHub".
+- An "Import issues" button opens a wide dialog: on the projects list (any active project, picked in the form) and on a project page next to "New issue" and in its empty state (that project only). Moved out of Settings at the user's request.
+- The form has two tabs, "CSV" and "GitHub".
   - **CSV**: a file input (accept `.csv`), a project `SmartAutocomplete` (non-archived projects), and the hint "Export from Linear (Settings → Import/export) or Jira (Filters → Export CSV), or any CSV with a Title column."
   - **GitHub**: a repository input, a token password input (hint "Needed for private repositories. Used once, never stored."), a checkbox "Include closed issues", and a project.
 - "Preview" posts with `dry_run=1` and shows the summary:
@@ -126,7 +126,6 @@ Comments are created by the importer. The body is "**{author}** · {date}" on th
   - the comments count
   - skipped rows (up to 20, then "and N more")
 - Then "Import {n} issues" posts for real. On 201 the page shows "Imported {n} issues" with a link to the project. Errors go through `toFormErrors` to fields or `FormError`.
-- The project page's empty state gets a secondary "Import issues" link to the import page with `?project=KEY`. The import page reads that param and preselects the project.
 
 Sentence case everywhere.
 

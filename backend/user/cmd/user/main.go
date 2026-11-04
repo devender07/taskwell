@@ -21,6 +21,7 @@ import (
 	"github.com/devender07/taskwell/backend/shared/cors"
 	"github.com/devender07/taskwell/backend/shared/env"
 	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/shared/totp"
 	"github.com/devender07/taskwell/backend/user/internal/aitest"
 	"github.com/devender07/taskwell/backend/user/internal/analytics"
 	"github.com/devender07/taskwell/backend/user/internal/auth"
@@ -39,6 +40,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sweep"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/template"
 	"github.com/devender07/taskwell/backend/user/internal/view"
 	"github.com/devender07/taskwell/backend/user/internal/webhook"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -129,12 +131,23 @@ func main() {
 	issueH.Register(mux)
 	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
 	view.New(pool, authenticate, wsH.Member).Register(mux)
+	templateH := template.New(pool, authenticate, wsH.Member)
+	templateH.Register(mux)
 	jwtSecret := string(secret)
 	if jwtSecret == "" {
 		if jwtSecret, err = cfg.Get(context.Background(), "jwt_secret"); err != nil {
 			obs.Fatal("startup", "err", err)
 		}
 	}
+	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY") // the admin app reads the same variable
+	if prod && len(mfaSecret) < 32 {
+		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
+	}
+	if mfaSecret == "" {
+		slog.Warn("MFA_ENCRYPTION_KEY is unset: TOTP secrets are encrypted with a key derived from jwt_secret (dev only)")
+		mfaSecret = "jwt_secret:" + jwtSecret
+	}
+	authH.MFAKey = totp.Key(mfaSecret)
 	gitKey, err := gitlink.Key(os.Getenv("INTEGRATION_SECRET_KEY"), jwtSecret, prod)
 	if err != nil {
 		obs.Fatal(err.Error())
@@ -203,6 +216,7 @@ func main() {
 	fileH.Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
+	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

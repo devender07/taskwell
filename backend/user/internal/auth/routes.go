@@ -21,6 +21,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/signin", h.wrap(h.limitIP(h.signin)))
 	mux.HandleFunc("POST /api/auth/otp/send", h.wrap(h.limitIP(h.otpSend)))
 	mux.HandleFunc("POST /api/auth/otp/verify", h.wrap(h.limitIP(h.otpVerify)))
+	mux.HandleFunc("POST /api/auth/mfa", h.wrap(h.limitIP(h.mfaVerify)))
 	mux.HandleFunc("POST /api/auth/password/forgot", h.wrap(h.limitIP(h.forgot)))
 	mux.HandleFunc("POST /api/auth/password/reset", h.wrap(h.limitIP(h.reset)))
 	mux.HandleFunc("POST /api/auth/password/change", h.wrap(h.limitIP(h.changePassword)))
@@ -34,16 +35,21 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/me", h.wrap(h.me))
 	mux.HandleFunc("POST /api/me", h.wrap(h.updateMe))
 	mux.HandleFunc("POST /api/me/password/code", h.wrap(h.limitIP(h.passwordCode)))
+	mux.HandleFunc("GET /api/me/mfa", h.wrap(h.mfaStatus))
+	mux.HandleFunc("POST /api/me/mfa/setup", h.wrap(h.limitIP(h.mfaSetup)))
+	mux.HandleFunc("POST /api/me/mfa/enable", h.wrap(h.limitIP(h.mfaEnable)))
+	mux.HandleFunc("POST /api/me/mfa/disable", h.wrap(h.limitIP(h.mfaDisable)))
+	mux.HandleFunc("POST /api/me/mfa/recovery", h.wrap(h.limitIP(h.mfaRecovery)))
 	mux.HandleFunc("GET /api/me/tokens", h.wrap(h.listTokens))
 	mux.HandleFunc("POST /api/me/tokens", h.wrap(h.createToken))
 	mux.HandleFunc("DELETE /api/me/tokens/{id}", h.wrap(h.deleteToken))
 }
 
-// cookieOnly reports whether path needs a cookie sign-in: a personal API token can't sign in, mint more tokens or
-// change the password.
+// cookieOnly reports whether path needs a cookie sign-in: a personal API token can't sign in, mint more tokens,
+// change the password or two-factor.
 func cookieOnly(path string) bool {
 	return strings.HasPrefix(path, "/api/auth/") || strings.HasPrefix(path, "/api/me/password") ||
-		strings.HasPrefix(path, "/api/me/tokens")
+		strings.HasPrefix(path, "/api/me/tokens") || strings.HasPrefix(path, "/api/me/mfa")
 }
 
 // wrap caps the body size, turns bearer requests away from cookieOnly paths and turns a returned error into a

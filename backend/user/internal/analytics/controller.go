@@ -73,11 +73,14 @@ func (h *Handler) team(w http.ResponseWriter, r *http.Request, userID string) er
 	return nil
 }
 
-// workspace returns the path's workspace, or writes a 404 and returns nil when the caller isn't a member.
+// workspace returns the path's workspace, or writes a 404 (not a member) or 403 (a guest) and returns nil.
 func (h *Handler) workspace(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, error) {
 	ws, err := h.members(r.Context(), userID, r.PathValue("slug"))
 	if err == nil && ws == nil {
 		web.Err(w, http.StatusNotFound, errNoWorkspace)
+	}
+	if ws != nil && workspace.DenyGuest(w, ws) {
+		return nil, nil
 	}
 	return ws, err
 }

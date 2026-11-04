@@ -421,7 +421,7 @@ const runsPage = 10
 // runs returns the issue's newest runsPage runs created before before (all when nil), and whether older ones exist.
 func (m *model) runs(ctx context.Context, issueID string, before *time.Time) ([]Run, bool, error) {
 	rows, err := m.db.Query(ctx, `select `+runCols+` where r.issue_id = $1 and ($2::timestamptz is null or r.created_at < $2)
-		group by r.id, i.id, p.id order by r.created_at desc, r.id desc limit $3`, issueID, before, runsPage+1)
+		group by r.id, i.id, i.number, i.title, p.id order by r.created_at desc, r.id desc limit $3`, issueID, before, runsPage+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("list test runs: %w", err)
 	}
@@ -438,7 +438,7 @@ func (m *model) runs(ctx context.Context, issueID string, before *time.Time) ([]
 // run returns the workspace's run with the id and its results; nil when there's none or the viewer can't see its issue.
 func (m *model) run(ctx context.Context, workspaceID, id, viewerID string) (*RunDetail, error) {
 	r, err := scanRun(m.db.QueryRow(ctx, `select `+runCols+` where r.id = $1 and r.workspace_id = $2 and can_see_project(p.id, $3)
-		group by r.id, i.id, p.id`, id, workspaceID, viewerID))
+		group by r.id, i.id, i.number, i.title, p.id`, id, workspaceID, viewerID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

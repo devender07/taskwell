@@ -439,9 +439,16 @@ export const LayersIcon = (props: IconProps) => (
   </Icon>
 )
 
-export const UploadIcon = (props: IconProps) => (
+export const TrashIcon = (props: IconProps) => (
   <Icon {...props}>
-    <path d="M12 15V4M7 9l5-5 5 5" />
-    <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </Icon>
+)
+
+export const FileIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
   </Icon>
 )

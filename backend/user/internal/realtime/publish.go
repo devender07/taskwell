@@ -14,20 +14,25 @@ import (
 
 // Publish sends e to its audience on every API instance when tx commits; nothing is sent if it rolls back.
 // It stamps the event with the request's origin (see WithOrigin) and the time.
-// An event about a private project (e.Project) goes to each person who can see it rather than the whole workspace.
+// An event about a private project (e.Project), or any project in a workspace with guests, goes to each person who
+// can see it rather than the whole workspace.
 func Publish(ctx context.Context, tx pgx.Tx, e Event) error {
 	if e.Project != "" && strings.HasPrefix(e.Audience, "ws:") {
 		var private bool
 		var viewers []string
 		err := tx.QueryRow(ctx,
-			`select p.private, array(select m.user_id::text from workspace_members m
+			`with p as (select p.id, p.workspace_id, p.private or exists (select 1 from workspace_roles r
+			              join workspace_members m on m.role_id = r.id where r.workspace_id = p.workspace_id and r.builtin = 'guest') private
+			            from projects p where p.id = $1)
+			 select p.private, array(select m.user_id::text from workspace_members m
 			   where m.workspace_id = p.workspace_id and p.private and can_see_project(p.id, m.user_id))
-			 from projects p where p.id = $1`, e.Project).Scan(&private, &viewers)
+			 from p`, e.Project).Scan(&private, &viewers)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("publish %s: %w", e.Kind, err)
 		}
 		if private {
-			// ponytail: one NOTIFY per viewer; add a project audience to the hub if private projects get big.
+			// ponytail: one NOTIFY per viewer; add a project audience to the hub if private projects (or workspaces with
+			// guests) get big.
 			for _, u := range viewers {
 				pe := e
 				pe.Project, pe.Audience = "", ToUser(u)

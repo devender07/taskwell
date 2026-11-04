@@ -237,3 +237,19 @@ export const viewName: Check = (v) => {
   if (!s) return 'Enter a name.'
   return s.length > 60 ? 'Use 60 characters or fewer.' : null
 }
+
+export const projectUpdateBody = (empty: boolean, length: number) =>
+  empty ? 'Write an update.' : length > 10000 ? 'Update must be 10,000 characters or fewer.' : null
+
+export const templateName = viewName
+
+// A template's title may be empty unless it repeats; otherwise the issue title rules.
+export const templateTitle = (v: string, repeats: boolean) => (v.trim() ? issueTitle(v) : repeats ? 'A repeating template needs a title.' : null)
+
+export const repeatEvery: Check = (v) => (/^\d+$/.test(v.trim()) && +v >= 1 && +v <= 365 ? null : 'Repeat every 1 to 365.')
+
+// A YYYY-MM-DD date that is today (in this browser) or later.
+export const startsOn: Check = (v) => (dueDate(v) || !v || v < new Date().toLocaleDateString('en-CA') ? 'Pick today or a later date.' : null)
+
+export const sixDigitCode: Check = (v) => (/^\d{6}$/.test(v.replace(/\s/g, '')) ? null : 'Enter the 6-digit code.')
+export const recoveryCode: Check = (v) => (v.trim() ? null : 'Enter a recovery code.')

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -27,6 +28,8 @@ var (
 	errArchived    = errors.New("project archived")
 	errActive      = errors.New("project isn't archived")
 	errNoMilestone = errors.New("milestone not found")
+	errCantPost    = errors.New("can't post a project update")
+	errCantEdit    = errors.New("can't edit the project update")
 )
 
 type Person struct {
@@ -46,6 +49,7 @@ type Project struct {
 	TargetDate  *string   `json:"target_date"`
 	CreatedAt   time.Time `json:"created_at"`
 	ManualOrder bool      `json:"manual_order"` // someone has ordered its issues by hand: its lists default to manual
+	Health      *string   `json:"health"`       // its latest update's; nil without one
 }
 
 // input is a create or update form. A nil date is unchanged on update (unset on create); "" clears it.
@@ -58,14 +62,15 @@ type input struct {
 const cols = `id::text, name, key, description, archived_at is not null, private,
 	coalesce((select json_agg(json_build_object('id', u.id, 'name', u.name) order by lower(u.name), u.id)
 	  from project_members pm join users u on u.id = pm.user_id where pm.project_id = projects.id), '[]'),
-	to_char(start_date, 'YYYY-MM-DD'), to_char(target_date, 'YYYY-MM-DD'), created_at, manual_order`
+	to_char(start_date, 'YYYY-MM-DD'), to_char(target_date, 'YYYY-MM-DD'), created_at, manual_order,
+	(select health from project_updates where project_id = projects.id order by created_at desc, id desc limit 1)`
 
 // visible is the condition that the viewer ($2 unless placed otherwise) can see the project.
 const visible = `can_see_project(id, $2)`
 
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.StartDate, &p.TargetDate, &p.CreatedAt, &p.ManualOrder)
+	err := row.Scan(&p.ID, &p.Name, &p.Key, &p.Description, &p.Archived, &p.Private, &p.Members, &p.StartDate, &p.TargetDate, &p.CreatedAt, &p.ManualOrder, &p.Health)
 	p.CreatedAt = p.CreatedAt.UTC()
 	return p, err
 }
@@ -333,7 +338,7 @@ func (m *model) people(ctx context.Context, workspaceID, key, viewerID, q string
 			return err
 		}
 		rows, err := tx.Query(ctx,
-			`select u.id::text, u.name, u.email, r.id::text, r.name
+			`select u.id::text, u.name, u.email, r.id::text, r.name, r.builtin is not distinct from 'guest'
 			   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
 			  where m.workspace_id = $1 and can_see_project($2, m.user_id)
 			    and (strpos(lower(u.name), lower($3)) > 0 or strpos(lower(u.email), lower($3)) > 0)
@@ -344,7 +349,7 @@ func (m *model) people(ctx context.Context, workspaceID, key, viewerID, q string
 		}
 		ms, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (workspace.Member, error) {
 			var mb workspace.Member
-			err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name)
+			err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name, &mb.Guest)
 			return mb, err
 		})
 		if ms == nil {
@@ -359,18 +364,33 @@ func (m *model) people(ctx context.Context, workspaceID, key, viewerID, q string
 }
 
 // setMembers adds the users (workspace members) to the private project the actor can see, or removes them when add
-// is false, and publishes e; nil when there's no such project. Returns errPublic for a public project and
+// is false, and publishes e; nil when there's no such project. A public project takes guests only (it's how they see
+// it): returns errPublic for anyone else there, and
 // errNotMember for an id that isn't a workspace member. Someone removed is told to refetch everything, since the
 // project is gone for them unless they're an admin.
 func (m *model) setMembers(ctx context.Context, workspaceID, key, actorID string, ids []string, add bool, e realtime.Event) (*Project, error) {
 	var p *Project
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		id, _, private, err := find(ctx, tx, workspaceID, key, actorID)
-		switch {
-		case err != nil || id == "":
+		if err != nil || id == "" {
 			return err
-		case !private:
-			return errPublic
+		}
+		if !add {
+			ids = slices.DeleteFunc(ids, func(id string) bool { return !web.IsUUID(id) })
+		}
+		if !private {
+			if slices.ContainsFunc(ids, func(id string) bool { return !web.IsUUID(id) }) {
+				return errPublic
+			}
+			var guests bool
+			if err := tx.QueryRow(ctx, `select count(*) = cardinality($2::uuid[]) from workspace_members m
+				join workspace_roles r on r.id = m.role_id
+				where m.workspace_id = $1 and m.user_id = any($2::uuid[]) and r.builtin = 'guest'`, workspaceID, ids).Scan(&guests); err != nil {
+				return err
+			}
+			if !guests {
+				return errPublic
+			}
 		}
 		if add {
 			if err := checkMembers(ctx, tx, workspaceID, ids); err != nil {
@@ -378,7 +398,6 @@ func (m *model) setMembers(ctx context.Context, workspaceID, key, actorID string
 			}
 			err = addMembers(ctx, tx, id, actorID, ids)
 		} else {
-			ids = slices.DeleteFunc(ids, func(id string) bool { return !web.IsUUID(id) })
 			_, err = tx.Exec(ctx, `delete from project_members where project_id = $1 and user_id = any($2::uuid[])`, id, ids)
 		}
 		if err != nil {
@@ -527,6 +546,7 @@ type RoadmapProject struct {
 	Private    bool    `json:"private"`
 	StartDate  *string `json:"start_date"`
 	TargetDate *string `json:"target_date"`
+	Health     *string `json:"health"`
 	Progress   struct {
 		Total     int `json:"total"`
 		Completed int `json:"completed"`
@@ -550,7 +570,7 @@ type RoadmapCycle struct {
 func (m *model) roadmap(ctx context.Context, workspaceID, viewerID string) ([]RoadmapProject, error) {
 	rows, err := m.db.Query(ctx,
 		`select p.id::text, p.key, p.name, p.private, to_char(p.start_date, 'YYYY-MM-DD'), to_char(p.target_date, 'YYYY-MM-DD'),
-		        count(i.id), count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled')
+		        (select health from project_updates where project_id = p.id order by created_at desc, id desc limit 1), count(i.id), count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled')
 		 from projects p left join issues i on i.project_id = p.id left join statuses s on s.id = i.status_id
 		 where p.workspace_id = $1 and p.archived_at is null and can_see_project(p.id, $2)
 		 group by p.id order by coalesce(p.start_date, p.target_date) nulls last, lower(p.name), p.key`, workspaceID, viewerID)
@@ -559,7 +579,7 @@ func (m *model) roadmap(ctx context.Context, workspaceID, viewerID string) ([]Ro
 	}
 	ps, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RoadmapProject, error) {
 		p := RoadmapProject{Milestones: []Milestone{}, Cycles: []RoadmapCycle{}}
-		err := row.Scan(&p.id, &p.Key, &p.Name, &p.Private, &p.StartDate, &p.TargetDate,
+		err := row.Scan(&p.id, &p.Key, &p.Name, &p.Private, &p.StartDate, &p.TargetDate, &p.Health,
 			&p.Progress.Total, &p.Progress.Completed, &p.Progress.Canceled)
 		return p, err
 	})
@@ -600,4 +620,170 @@ func (m *model) roadmap(ctx context.Context, workspaceID, viewerID string) ([]Ro
 		return nil, fmt.Errorf("roadmap cycles: %w", err)
 	}
 	return ps, nil
+}
+
+// --- updates ---
+
+// Update is a project update; CanEdit is set by the caller.
+type Update struct {
+	ID        string          `json:"id"`
+	Health    string          `json:"health"`
+	Body      json.RawMessage `json:"body"`
+	Author    *Person         `json:"author"`
+	CreatedAt time.Time       `json:"created_at"`
+	EditedAt  *time.Time      `json:"edited_at"`
+	CanEdit   bool            `json:"can_edit"`
+}
+
+// updatePage is how many updates a page holds.
+const updatePage = 20
+
+// updateCols selects an Update from project_updates u.
+const updateCols = `u.id::text, u.health, u.body,
+	(select json_build_object('id', a.id, 'name', a.name) from users a where a.id = u.author_id), u.created_at, u.edited_at`
+
+// scanUpdate scans an update; CanEdit is true for its author or when manage is set.
+func scanUpdate(row pgx.Row, viewerID string, manage bool) (Update, error) {
+	var u Update
+	err := row.Scan(&u.ID, &u.Health, &u.Body, &u.Author, &u.CreatedAt, &u.EditedAt)
+	u.CreatedAt = u.CreatedAt.UTC()
+	if u.EditedAt != nil {
+		*u.EditedAt = u.EditedAt.UTC()
+	}
+	u.CanEdit = manage || u.Author != nil && u.Author.ID == viewerID
+	return u, err
+}
+
+// updates returns a page of the updates of the project with the key, newest first: the newest updatePage created
+// before before (all when nil), and whether there are older ones; nil when the viewer can't see the project.
+// ponytail: a page boundary inside one created_at skips the rest of that instant; only bulk inserts could do that.
+func (m *model) updates(ctx context.Context, workspaceID, key, viewerID string, manage bool, before *time.Time) ([]Update, bool, error) {
+	var id string
+	err := m.db.QueryRow(ctx, `select id::text from projects where workspace_id = $1 and `+visible+`
+		and key = canonical_key($1, $3)`, workspaceID, viewerID, key).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("project updates: %w", err)
+	}
+	rows, err := m.db.Query(ctx, `select `+updateCols+` from project_updates u
+		where u.project_id = $1 and ($2::timestamptz is null or u.created_at < $2)
+		order by u.created_at desc, u.id desc limit $3`, id, before, updatePage+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("project updates: %w", err)
+	}
+	us, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Update, error) { return scanUpdate(row, viewerID, manage) })
+	if err != nil {
+		return nil, false, fmt.Errorf("project updates: %w", err)
+	}
+	if len(us) > updatePage {
+		return us[:updatePage], true, nil
+	}
+	return us, false, nil
+}
+
+// publishUpdate tells who can see the project that its updates (and so its health) changed.
+func publishUpdate(ctx context.Context, tx pgx.Tx, e realtime.Event, projectID, key string) error {
+	e.Kind, e.Project = "project_update.changed", projectID
+	e.Paths = []string{realtime.Workspace(e.Workspace) + "/projects", realtime.Project(e.Workspace, key),
+		realtime.ProjectUpdates(e.Workspace, key), realtime.Roadmap(e.Workspace), realtime.Activity(e.Workspace)}
+	return realtime.Publish(ctx, tx, e)
+}
+
+// createUpdate posts an update on the project with the key the actor can see and publishes e; nil when there's no
+// such project. Returns errArchived for an archived project, and errCantPost unless manage is set or the project is
+// private and the actor is a member.
+func (m *model) createUpdate(ctx context.Context, workspaceID, key, actorID string, manage bool, health string,
+	body json.RawMessage, e realtime.Event) (*Update, error) {
+	var u *Update
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var id, current string
+		var archived, member bool
+		err := tx.QueryRow(ctx, `select id::text, key, archived_at is not null,
+			private and exists(select 1 from project_members where project_id = projects.id and user_id = $2)
+			from projects where workspace_id = $1 and `+visible+` and key = canonical_key($1, $3)`,
+			workspaceID, actorID, key).Scan(&id, &current, &archived, &member)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil
+		case err != nil:
+			return err
+		case !manage && !member:
+			return errCantPost
+		case archived:
+			return errArchived
+		}
+		created, err := scanUpdate(tx.QueryRow(ctx, `insert into project_updates as u (project_id, author_id, health, body)
+			values ($1, $2, $3, $4) returning `+updateCols, id, actorID, health, body), actorID, manage)
+		if err != nil {
+			return err
+		}
+		u = &created
+		return publishUpdate(ctx, tx, e, id, current)
+	})
+	if errors.Is(err, errCantPost) || errors.Is(err, errArchived) {
+		return nil, err
+	}
+	if err != nil {
+		return nil, fmt.Errorf("create project update: %w", err)
+	}
+	return u, nil
+}
+
+// writeUpdate locks the workspace's update with the id (a UUID) on a project the actor can see, runs fn with it and
+// publishes e; false when there's no such update. Returns errCantEdit unless the actor wrote it or manage is set.
+func (m *model) writeUpdate(ctx context.Context, workspaceID, id, actorID string, manage bool, e realtime.Event,
+	fn func(tx pgx.Tx) error) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var projectID, key string
+		var author *string
+		err := tx.QueryRow(ctx, `select p.id::text, p.key, u.author_id::text from project_updates u join projects p on p.id = u.project_id
+			where p.workspace_id = $1 and u.id = $2 and can_see_project(p.id, $3) for update of u`,
+			workspaceID, id, actorID).Scan(&projectID, &key, &author)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil
+		case err != nil:
+			return err
+		}
+		found = true
+		if !manage && (author == nil || *author != actorID) {
+			return errCantEdit
+		}
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return publishUpdate(ctx, tx, e, projectID, key)
+	})
+	if err != nil && !errors.Is(err, errCantEdit) {
+		return found, fmt.Errorf("write project update: %w", err)
+	}
+	return found, err
+}
+
+// editUpdate changes the update's health and body unless they're nil, and marks it edited; nil when there's no such
+// update (see writeUpdate).
+func (m *model) editUpdate(ctx context.Context, workspaceID, id, actorID string, manage bool, health *string,
+	body json.RawMessage, e realtime.Event) (*Update, error) {
+	var u Update
+	found, err := m.writeUpdate(ctx, workspaceID, id, actorID, manage, e, func(tx pgx.Tx) error {
+		var err error
+		u, err = scanUpdate(tx.QueryRow(ctx, `update project_updates u set health = coalesce($2, health),
+			body = coalesce($3, body), edited_at = now() where id = $1 returning `+updateCols, id, health, body), actorID, manage)
+		return err
+	})
+	if !found || err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// deleteUpdate removes the update; false when there's no such update (see writeUpdate).
+func (m *model) deleteUpdate(ctx context.Context, workspaceID, id, actorID string, manage bool, e realtime.Event) (bool, error) {
+	return m.writeUpdate(ctx, workspaceID, id, actorID, manage, e, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `delete from project_updates where id = $1`, id)
+		return err
+	})
 }

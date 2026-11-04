@@ -125,6 +125,9 @@ func (h *Handler) importCSV(w http.ResponseWriter, r *http.Request, userID strin
 	if !ok || err != nil {
 		return err
 	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
+	}
 	err = r.ParseMultipartForm(1 << 20) // the file spills to disk past 1 MB
 	errs := map[string]string{}
 	file, header, ferr := r.FormFile("file")
@@ -163,6 +166,9 @@ func (h *Handler) importGitHub(w http.ResponseWriter, r *http.Request, userID st
 	ws, ok, err := h.access(w, r, userID, workspace.PermIssuesCreate)
 	if !ok || err != nil {
 		return err
+	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
 	}
 	_ = r.ParseMultipartForm(maxBody)
 	repo, okRepo := parseRepo(r.PostForm.Get("repo"))

@@ -10,6 +10,7 @@ import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
 import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
+import { HealthPill, healthLabel } from '@/components/projects/updates'
 import { CopyButton } from '@/components/settings/integrations'
 import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
@@ -224,6 +225,7 @@ function useFitRows(ref: RefObject<HTMLElement | null>, fallback: number) {
 }
 
 function activityText(item: ActivityItem) {
+  if (item.type === 'project_update') return <>posted an update on <span className="text-primary font-510">{item.project.name}</span> · {healthLabel(item.health)}</>
   const subject = <IssueName issue={item.issue} />
   if (item.type === 'comment') return <>commented on {subject}</>
   return eventText(item, (i) => <span className="text-primary">{i.identifier}</span>, subject)
@@ -296,7 +298,8 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
               <li key={`${item.type}:${item.id}`}>
                 <FeedRow
                   workspace={workspace}
-                  identifier={item.issue.identifier}
+                  identifier={item.type === 'project_update' ? undefined : item.issue.identifier}
+                  project={item.type === 'project_update' ? item.project.key : undefined}
                   actor={item.actor}
                   actorName={item.type === 'event' ? eventActor(item) : undefined}
                   text={text}
@@ -367,6 +370,7 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
                 <Link to="/$workspace/projects/$key" params={{ workspace: workspace.slug, key: p.key }} className="home-project">
                   <span className="flex items-center gap-3" style={{ minWidth: 0 }}>
                     <span className="text-label text-primary ellipsis flex-grow">{p.name}</span>
+                    <HealthPill health={p.health} />
                     <span className="issue-id flex-noshrink">{p.key}</span>
                   </span>
                   <span

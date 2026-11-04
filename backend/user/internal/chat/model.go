@@ -51,8 +51,10 @@ func (m msgRef) root() string {
 	return m.id
 }
 
-// access is whether the user (a workspace member) may open chat c: everyone in the workspace chat, members elsewhere.
-const access = `(c.kind = 'workspace' or exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
+// access is whether the user (a workspace member) may open chat c: everyone but guests in the workspace chat, members
+// elsewhere.
+const access = `(c.kind = 'workspace' and not is_guest(c.workspace_id, $1)
+	or exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
 
 // --- chats ---
 
@@ -97,7 +99,8 @@ const chatQuery = `
 	left join lateral (
 	  select (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = m.author_id) author, m.body, m.created_at
 	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null order by m.id desc limit 1) lm on true
-	where c.workspace_id = $2 and (c.kind = 'workspace' or r.user_id is not null) and ($3::uuid is null or c.id = $3)
+	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or r.user_id is not null)
+	  and ($3::uuid is null or c.id = $3)
 	order by c.kind = 'workspace' desc, c.kind = 'self' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
 
 func (m *model) queryChats(ctx context.Context, userID, wsID string, chatID *string) ([]Chat, error) {
@@ -169,7 +172,7 @@ func (m *model) unreadCount(ctx context.Context, userID, wsID string) (int, erro
 		 join workspace_members wm on wm.workspace_id = c.workspace_id and wm.user_id = $1
 		 left join chat_members r on r.chat_id = c.id and r.user_id = $1
 		 join messages m on `+unread+`
-		 where c.workspace_id = $2 and (c.kind = 'workspace' and $1 = any(m.mentions)
+		 where c.workspace_id = $2 and (c.kind = 'workspace' and $1 = any(m.mentions) and not is_guest($2, $1)
 		   or c.kind in ('direct', 'group') and r.user_id is not null)`, userID, wsID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count unread messages: %w", err)
@@ -229,13 +232,24 @@ func members(ctx context.Context, q querier, wsID, chatID string) ([]string, err
 	return ids, nil
 }
 
-// audience is who sees the chat's changes: the workspace for the workspace chat, else each member.
+// audience is who sees the chat's changes: the workspace for the workspace chat (each non-guest when it has guests),
+// else each member.
 func audience(ctx context.Context, q querier, wsID string, c ref) ([]string, error) {
+	var ids []string
+	var err error
 	if c.kind == "workspace" {
-		return []string{realtime.ToWorkspace(wsID)}, nil
-	}
-	ids, err := members(ctx, q, wsID, c.id)
-	if err != nil {
+		// ponytail: one NOTIFY per member once a workspace has a guest; add a non-guest audience to the hub if that's big.
+		rows, err := q.Query(ctx, `select m.user_id::text from workspace_members m join workspace_roles r on r.id = m.role_id
+			where m.workspace_id = $1 and r.builtin is distinct from 'guest'
+			  and exists (select 1 from workspace_roles g join workspace_members gm on gm.role_id = g.id
+			              where g.workspace_id = $1 and g.builtin = 'guest')`, wsID)
+		if err != nil {
+			return nil, err
+		}
+		if ids, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(ids) == 0 {
+			return []string{realtime.ToWorkspace(wsID)}, err
+		}
+	} else if ids, err = members(ctx, q, wsID, c.id); err != nil {
 		return nil, err
 	}
 	aud := make([]string, len(ids))
@@ -591,7 +605,7 @@ func visible(ctx context.Context, tx pgx.Tx, wsID string, c ref, body json.RawMe
 	rows, err := tx.Query(ctx,
 		`select u::text from unnest($1::uuid[]) u
 		 where exists (select 1 from workspace_members wm where wm.workspace_id = $2 and wm.user_id = u)
-		   and ($4 = 'workspace' or exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
+		   and ($4 = 'workspace' and not is_guest($2, u) or exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
 		ids, wsID, c.id, c.kind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("check mentions: %w", err)

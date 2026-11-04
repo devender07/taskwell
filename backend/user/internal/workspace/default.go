@@ -64,7 +64,8 @@ func slugify(s string) string {
 	return out
 }
 
-// joinInvited adds the user to every workspace with a pending invite for their email, which is verified by now; false
+// joinInvited adds the user to every workspace with a pending invite for their email (a guest to its projects), which
+// is verified by now; false
 // when there's none. The invites stay, so the emailed link still accepts (as a member already) and lands there.
 func joinInvited(ctx context.Context, tx pgx.Tx, userID string) (bool, error) {
 	rows, err := tx.Query(ctx,
@@ -82,6 +83,14 @@ func joinInvited(ctx context.Context, tx pgx.Tx, userID string) (bool, error) {
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		return false, fmt.Errorf("join invited workspaces: %w", err)
+	}
+	var invites []string
+	if err := tx.QueryRow(ctx, `select coalesce(array_agg(i.id::text), '{}') from workspace_invites i join users u on u.email = i.email
+		where u.id = $1 and i.expires_at > now()`, userID).Scan(&invites); err != nil {
+		return false, fmt.Errorf("join invited workspaces: %w", err)
+	}
+	if err := joinGuestProjects(ctx, tx, userID, invites); err != nil {
+		return false, err
 	}
 	for _, id := range ids {
 		ws, err := scanWorkspace(tx.QueryRow(ctx, `select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, id, userID))

@@ -93,13 +93,16 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
                 onClick={close}
               >
                 <span className="ellipsis">{w.name}</span>
+                {w.guest ? <span className="text-caption text-secondary flex-noshrink" style={{ marginLeft: 'auto' }}>Guest</span> : null}
                 {w.id === current.id ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
               </Link>
             ))}
             <hr className="popover-divider" />
-            <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
-              Workspace settings
-            </Link>
+            {current.guest ? null : (
+              <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
+                Workspace settings
+              </Link>
+            )}
             {canCreate ? (
               <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
                 Create workspace

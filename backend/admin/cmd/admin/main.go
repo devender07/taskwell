@@ -28,6 +28,7 @@ import (
 	"github.com/devender07/taskwell/backend/shared/cors"
 	"github.com/devender07/taskwell/backend/shared/env"
 	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/shared/totp"
 )
 
 func main() {
@@ -197,14 +198,14 @@ func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
 // derived from system_config's jwt_secret.
 func loadMFAKey(ctx context.Context, pool *pgxpool.Pool, envKey string) ([]byte, error) {
 	if envKey != "" {
-		return auth.MFAKey(envKey), nil
+		return totp.Key(envKey), nil
 	}
 	var s string
 	if err := pool.QueryRow(ctx, `select value from system_config where key = 'jwt_secret'`).Scan(&s); err != nil || s == "" {
 		return nil, fmt.Errorf("MFA_ENCRYPTION_KEY is unset and jwt_secret can't be read; start the user service once: %v", err)
 	}
 	slog.Warn("MFA_ENCRYPTION_KEY is unset: TOTP secrets are encrypted with a key derived from jwt_secret (dev only)")
-	return auth.MFAKey("jwt_secret:" + s), nil
+	return totp.Key("jwt_secret:" + s), nil
 }
 
 // printEnrolment shows a new factor to the operator, who passes it to the admin over a safe channel.

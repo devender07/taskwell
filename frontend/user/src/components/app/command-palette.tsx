@@ -7,6 +7,7 @@ import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, 
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
+import { useUndoDelete } from '@/components/issues/undo-delete'
 import './shortcuts.css'
 
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
@@ -32,6 +33,8 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
   labels: ['Change labels…', 'L'],
 }
 const SETTINGS = ['Profile', 'Notifications', 'API tokens', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
+// Actions for pages a guest can't use.
+const GUEST_HIDDEN = new Set(['roadmap', 'inbox', 'feedback', 'add-feedback', 'new-message', 'new-group', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels', 'Integrations', 'Feedback form'])
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -66,6 +69,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   const id = useId()
   const navigate = useNavigate()
   const router = useRouter()
+  const undo = useUndoDelete(workspace.slug)
   const [mode, setMode] = useState<Mode>(initial)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -234,6 +238,22 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         navigator.clipboard.writeText(text).then(onClose, () => setError("Couldn't copy. Try again."))
       actions.push({ value: 'copy-link', label: 'Copy issue link', run: copy(`${location.origin}/${slug}/issue/${ctx.issue.identifier}`) })
       actions.push({ value: 'copy-id', label: 'Copy issue ID', run: copy(ctx.issue.identifier) })
+      if (ctx.issue.can_delete) {
+        const { identifier, project } = ctx.issue
+        actions.push({
+          value: 'delete',
+          label: 'Delete issue',
+          run: () =>
+            api(`${workspacePath(slug)}/issues/${encodeURIComponent(identifier)}`, undefined, 'DELETE').then(
+              async () => {
+                onClose()
+                await navigate({ to: '/$workspace/projects/$key', params: { workspace: slug, key: project.key }, replace: true })
+                undo([identifier])
+              },
+              (e) => setError(toFormErrors(e).error),
+            ),
+        })
+      }
       if (copyBranch) {
         actions.push({
           value: 'copy-branch',
@@ -246,7 +266,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         })
       }
     }
-    const matched = filterOptions(actions, q) as typeof actions
+    const matched = filterOptions(workspace.guest ? actions.filter((a) => !GUEST_HIDDEN.has(a.value)) : actions, q) as typeof actions
     if (matched.length) {
       groups.push({
         label: 'Actions',

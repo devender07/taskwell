@@ -21,7 +21,7 @@ const (
 	errForbidden         = "You don't have permission to do that."
 	errKeyTaken          = "That key is taken."
 	errPickedOutsider    = "Someone you picked isn't in this workspace."
-	errPublicMembers     = "Only private projects have members."
+	errPublicMembers     = "Public projects take guests only."
 	errMilestoneNotFound = "Milestone not found."
 	errArchivedProject   = "This project is archived."
 	errNotArchived       = "Archive the project before deleting it."
@@ -67,7 +67,7 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request, userID string) e
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, true)
-	if !ok || err != nil {
+	if !ok || err != nil || workspace.DenyGuest(w, ws) {
 		return err
 	}
 	in, ok := readForm(w, r)

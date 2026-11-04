@@ -20,12 +20,15 @@ type State = { errors?: FieldErrors; error?: string | null }
 export const INBOX_ROUTES = ['/_app/$workspace/_main/inbox', '/_app/$workspace/_main/inbox/c/$chatId']
 export const chatsPath = (slug: string) => `${workspacePath(slug)}/chats`
 
-// Searches the workspace's members as you type, leaving out the ids in exclude.
-const loadPeople = (slug: string, exclude: string[]) => async (q: string, signal: AbortSignal) =>
-  (await searchMembers(slug, q, 20, signal)).filter((m) => !exclude.includes(m.id)).map((m) => ({ value: m.id, label: m.name, hint: m.email }))
+// Searches the workspace's members (or only its guests) as you type, leaving out the ids in exclude.
+// ponytail: guests are filtered from a 20-member search page, so a guest past it needs a longer name; add a guest filter to /members if that bites.
+const loadPeople = (slug: string, exclude: string[], guests?: boolean) => async (q: string, signal: AbortSignal) =>
+  (await searchMembers(slug, q, 20, signal))
+    .filter((m) => !exclude.includes(m.id) && (!guests || m.guest))
+    .map((m) => ({ value: m.id, label: m.name, hint: m.guest ? `${m.email} · Guest` : m.email }))
 
 // Picks several people: each pick adds a chip and clears the field for the next one.
-export function PeoplePicker({ slug, value, onChange, exclude, error }: { slug: string; value: PersonRef[]; onChange: (people: PersonRef[]) => void; exclude: string[]; error?: string | null }) {
+export function PeoplePicker({ slug, value, onChange, exclude, error, guests }: { slug: string; value: PersonRef[]; onChange: (people: PersonRef[]) => void; exclude: string[]; error?: string | null; guests?: boolean }) {
   const [round, setRound] = useState(0)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -37,8 +40,8 @@ export function PeoplePicker({ slug, value, onChange, exclude, error }: { slug: 
         key={round}
         label="People"
         placeholder="Type a name"
-        emptyText="No one else to add"
-        loadOptions={loadPeople(slug, [...exclude, ...value.map((p) => p.id)])}
+        emptyText={guests ? 'No other guests to add' : 'No one else to add'}
+        loadOptions={loadPeople(slug, [...exclude, ...value.map((p) => p.id)], guests)}
         error={error}
         onChange={(o) => {
           if (!o) return

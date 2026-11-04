@@ -7,12 +7,15 @@ export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwel
 
 export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
 export type RoleRef = { id: string; name: string }
-export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
-export type Member = { id: string; name: string; email: string; role: RoleRef }
+// guest: the caller is a guest here (sees only the projects they're added to). Optional: only the single-workspace GET promises it.
+export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean }
+export type Member = { id: string; name: string; email: string; role: RoleRef; guest: boolean }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
-export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
+export type Role = { id: string; name: string; builtin: 'admin' | 'member' | 'guest' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; manual_order: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; manual_order: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null; health: Health | null }
+// The latest project update's health.
+export type Health = 'on_track' | 'at_risk' | 'off_track'
 export type Milestone = { id: string; name: string; date: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
@@ -30,7 +33,7 @@ export type StatusType = { id: string; name: string; category: StatusCategory; i
 export type Label = { id: string; name: string; color: string }
 export type CycleState = 'upcoming' | 'current' | 'past'
 export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
-export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date'> & {
+export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date' | 'health'> & {
   progress: { total: number; completed: number; canceled: number }
   milestones: Milestone[]
   cycles: Omit<CycleRef, 'id'>[]
@@ -164,7 +167,10 @@ export type Notification = {
 )
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
-export type ActivityItem = ({ type: 'event' } & ActivityBase & IssueEvent) | ({ type: 'comment'; excerpt: string } & ActivityBase)
+export type ActivityItem =
+  | ({ type: 'event' } & ActivityBase & IssueEvent)
+  | ({ type: 'comment'; excerpt: string } & ActivityBase)
+  | { type: 'project_update'; id: string; created_at: string; actor: PersonRef | null; project: { key: string; name: string }; health: Health }
 // Newest first; `?before=` the last item's created_at fetches the next page.
 export type ActivityPage = { items: ActivityItem[]; has_more: boolean }
 export type ProjectStats = { key: string; open: number; done: number; canceled: number; overdue: number }
@@ -208,6 +214,23 @@ export const deleteFeedback = (workspace: string, id: string) => api(`${feedback
 export const issuePath = (workspace: Workspace, identifier: string) =>
   `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
 export const bulkIssuesPath = (workspace: string) => `${workspacePath(workspace)}/issues/bulk`
+
+// Newest deleted first, 50 a page; `?before=` the last item's deleted_at fetches the next.
+export type TrashedIssue = {
+  id: string
+  identifier: string
+  title: string
+  project: { key: string; name: string }
+  deleted_at: string
+  deleted_by: PersonRef | null
+  can_restore: boolean
+}
+export type TrashPage = { issues: TrashedIssue[]; has_more: boolean }
+export const trashPath = (workspace: string) => `${workspacePath(workspace)}/trash`
+const trashedPath = (workspace: string, identifier: string) => `${trashPath(workspace)}/${encodeURIComponent(identifier)}`
+export const restoreIssue = (workspace: string, identifier: string) => api<Issue>(`${trashedPath(workspace, identifier)}/restore`, new FormData())
+export const purgeIssue = (workspace: string, identifier: string) => api(trashedPath(workspace, identifier), undefined, 'DELETE')
+export const emptyTrash = (workspace: string) => api(trashPath(workspace), undefined, 'DELETE')
 
 // path: the page under the workspace with its search, e.g. `/projects/ABC?view=board`.
 export type SavedView = { id: string; name: string; path: string; shared: boolean; owner: PersonRef; can_edit: boolean }
@@ -257,6 +280,29 @@ export function addProjectMembers(workspace: string, project: string, ids: strin
 }
 export const removeProjectMember = (workspace: string, project: string, userId: string) =>
   api<Project>(`${projectPath(workspace, project)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export type ProjectUpdate = { id: string; health: Health; body: Doc; author: PersonRef | null; created_at: string; edited_at: string | null; can_edit: boolean }
+// Newest first, 20 a page; `?before=` the last update's created_at fetches the next page.
+export type ProjectUpdatePage = { updates: ProjectUpdate[]; has_more: boolean }
+export const projectUpdatesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/updates`
+export const projectUpdatePath = (workspace: string, id: string) => `${workspacePath(workspace)}/project-updates/${encodeURIComponent(id)}`
+
+export type RepeatUnit = 'day' | 'week' | 'month'
+export type Template = {
+  id: string
+  name: string
+  title: string
+  description: Doc | null
+  project: { id: string; key: string; name: string } | null
+  status: Status | null
+  assignee: PersonRef | null
+  priority: number
+  labels: Label[]
+  repeat: { every: number; unit: RepeatUnit; next_on: string; paused: boolean } | null
+  can_edit: boolean
+}
+export const templatesPath = (workspace: string) => `${workspacePath(workspace)}/templates`
+export const templatePath = (workspace: string, id: string) => `${templatesPath(workspace)}/${encodeURIComponent(id)}`
 
 export const roadmapPath = (workspace: string) => `${workspacePath(workspace)}/roadmap`
 export const milestonesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/milestones`
@@ -325,6 +371,9 @@ export const testWebhook = (workspace: string, id: string) => api(`${webhookPath
 export const deleteWebhook = (workspace: string, id: string) => api(webhookPath(workspace, id), undefined, 'DELETE')
 export const redeliver = (workspace: string, id: string, delivery: string) =>
   api(`${deliveriesPath(workspace, id)}/${encodeURIComponent(delivery)}/redeliver`, new FormData())
+
+export type MfaStatus = { enabled: boolean; recovery_left: number }
+export const mfaPath = '/me/mfa'
 
 export const tokensPath = '/me/tokens'
 export function createToken(name: string) {

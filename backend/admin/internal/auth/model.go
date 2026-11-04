@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/shared/totp"
 )
 
 type User struct {
@@ -125,12 +126,12 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 		if err := audit.Record(ctx, tx, "", action, got.Email, "cli"); err != nil {
 			return err
 		}
-		secret := newTOTPSecret()
-		sealed, err := seal(key, got.ID, secret)
+		secret := totp.NewSecret()
+		sealed, err := totp.Seal(key, got.ID, secret)
 		if err != nil {
 			return err
 		}
-		codes, hashes := newRecoveryCodes()
+		codes, hashes := totp.NewRecoveryCodes()
 		onConflict := `do nothing`
 		if replace {
 			onConflict = `do update set secret = excluded.secret, enabled_at = now(), last_step = 0,
@@ -141,7 +142,7 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
-		e = &Enrolment{Secret: secret, URL: otpauthURL(got.Email, secret), RecoveryCodes: codes}
+		e = &Enrolment{Secret: secret, URL: totp.URL("Taskwell admin", got.Email, secret), RecoveryCodes: codes}
 		return audit.Record(ctx, tx, "", audit.MFAEnrolled, got.Email, "cli")
 	})
 	if err != nil {
@@ -238,7 +239,7 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 			return err
 		}
 		if code == "" {
-			h := hashRecovery(recovery)
+			h := totp.HashRecovery(recovery)
 			if !slices.Contains(hashes, h) {
 				return nil
 			}
@@ -246,11 +247,11 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 			_, err := tx.Exec(ctx, `update admin_mfa set recovery_codes = array_remove(recovery_codes, $2) where user_id = $1`, userID, h)
 			return err
 		}
-		secret, err := unseal(key, userID, sealed)
+		secret, err := totp.Unseal(key, userID, sealed)
 		if err != nil {
 			return err
 		}
-		step, ok, err := checkTOTP(secret, code, now, lastStep)
+		step, ok, err := totp.Check(secret, code, now, lastStep)
 		if err != nil || !ok {
 			return err
 		}

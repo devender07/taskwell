@@ -1,12 +1,14 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useId, useRef, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Checkbox } from '@taskwell/shared/checkbox'
+import { Dialog } from '@taskwell/shared/dialog'
 import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import { Tabs } from '@taskwell/shared/tabs'
 import { filled } from '@taskwell/shared/validate'
 import { api, toFormErrors, workspacePath, type FieldErrors, type ImportSource, type ImportSummary, type Project, type Workspace } from '@/api'
+import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 
 type Tab = 'csv' | 'github'
@@ -22,6 +24,27 @@ const SOURCE: Record<ImportSource, string> = { linear: 'Linear', jira: 'Jira', c
 const issues = (n: number) => `${n.toLocaleString()} ${n === 1 ? 'issue' : 'issues'}`
 const SKIPPED_SHOWN = 20
 
+// "Import issues" button and its dialog, on the projects list and a project page (which passes only itself).
+export function ImportButton({ workspace, projects, project, variant = 'secondary' }: { workspace: Workspace; projects: Project[]; project?: string; variant?: 'primary' | 'secondary' | 'ghost' }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant={variant} onClick={() => setOpen(true)}>
+        Import issues
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Import issues"
+        description="From a CSV export or a GitHub repository. Preview first; nothing changes until you import."
+        wide
+      >
+        {open ? <ImportForm workspace={workspace} projects={projects} project={project} /> : null}
+      </Dialog>
+    </>
+  )
+}
+
 // Imports a CSV or a GitHub repository's issues into a project: "Preview" is a dry run, then "Import" does it.
 export function ImportForm({ workspace, projects, project }: { workspace: Workspace; projects: Project[]; project?: string }) {
   const projectOptions = projects.filter((p) => !p.archived).map((p) => ({ value: p.key, label: p.name, hint: p.key }))
@@ -32,6 +55,7 @@ export function ImportForm({ workspace, projects, project }: { workspace: Worksp
   const [token, setToken] = useState('')
   const [closed, setClosed] = useState(false)
   const [version, setVersion] = useState(0)
+  const router = useRouter()
   const [dismissed, setDismissed] = useState<ImportSummary>()
   const picker = useRef<HTMLInputElement>(null)
   const fileId = useId()
@@ -54,7 +78,9 @@ export function ImportForm({ workspace, projects, project }: { workspace: Worksp
     if (mode === 'preview') form.set('dry_run', '1')
     try {
       const summary = await api<ImportSummary>(`${workspacePath(workspace.slug)}/import/${tab}`, form)
-      return mode === 'preview' ? { preview: summary, version } : { done: summary }
+      if (mode === 'preview') return { preview: summary, version }
+      await reloadPage(router)
+      return { done: summary }
     } catch (e) {
       return toFormErrors(e)
     }

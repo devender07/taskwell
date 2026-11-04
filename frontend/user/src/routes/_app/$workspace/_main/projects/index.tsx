@@ -7,6 +7,8 @@ import { Tabs } from '@taskwell/shared/tabs'
 import { can, type Project, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ProjectForm } from '@/components/projects/project-form'
+import { HealthPill } from '@/components/projects/updates'
+import { ImportButton } from '@/components/projects/import'
 import '@/components/projects/projects.css'
 
 type View = 'active' | 'archived'
@@ -36,7 +38,10 @@ function Projects() {
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       <header className="flex items-end justify-between gap-4">
         <h1 className="text-h2">Projects</h1>
-        {manage ? <Button onClick={() => setCreating(true)}>Create project</Button> : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {can(workspace, 'issues.create') && !archived && projects.length ? <ImportButton workspace={workspace} projects={projects} /> : null}
+          {manage ? <Button onClick={() => setCreating(true)}>Create project</Button> : null}
+        </div>
       </header>
       <Tabs
         aria-label="Projects shown"
@@ -61,6 +66,7 @@ function Projects() {
                     <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
                       {p.private ? <LockIcon size={14} className="text-secondary flex-noshrink" role="img" aria-hidden={false} aria-label="Private" /> : null}
                       <span className="text-label text-primary ellipsis">{p.name}</span>
+                      <HealthPill health={p.health} />
                     </span>
                     {p.description ? <span className="text-caption text-secondary ellipsis">{p.description}</span> : null}
                   </div>

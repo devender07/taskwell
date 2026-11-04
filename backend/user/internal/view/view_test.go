@@ -116,6 +116,15 @@ func TestViews(t *testing.T) {
 	do(mia, "POST", "/"+annShared.ID, url.Values{"name": {"x"}}, 403)
 	do(mia, "DELETE", "/"+annShared.ID, nil, 403)
 
+	// A guest sees only their own views: a shared view's path can name projects they can't see.
+	gus := dbtest.User(t, pool, "Gus")
+	dbtest.Join(t, pool, wsID, gus, "guest")
+	save(gus, "Gus's", false)
+	if got := names(gus); got != "Gus's:true" {
+		t.Errorf("guest sees %s", got)
+	}
+	do(gus, "DELETE", "/"+annShared.ID, nil, 404)
+
 	// Validation.
 	if body := do(mia, "POST", "", url.Values{"name": {" "}, "path": {"/settings"}}, 400); !strings.Contains(body, "Enter a name.") ||
 		!strings.Contains(body, errBadPath) {

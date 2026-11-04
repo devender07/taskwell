@@ -658,16 +658,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			Assignee: deref(f.assigneeID), Mentioned: doc.Mentions(f.description)}); err != nil {
 			return err
 		}
-		n, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
-			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
-				realtime.Watching(n.slug), realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)})...)); err != nil {
-			return err
-		}
-		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
+		return publishCreated(ctx, tx, id, userID)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -679,6 +670,20 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		return "", fmt.Errorf("create issue: %w", err)
 	}
 	return id, nil
+}
+
+// publishCreated publishes a new (or restored) issue: its project's lists and pages, and its related issues'.
+func publishCreated(ctx context.Context, tx pgx.Tx, id, userID string, paths ...string) error {
+	n, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
+		[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
+			realtime.Watching(n.slug), realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)}, paths)...)); err != nil {
+		return err
+	}
+	return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
 }
 
 // update changes the issue's non-nil fields, sets updated_at, and logs each real change as the actor's event, with
@@ -838,7 +843,8 @@ func (m *model) move(ctx context.Context, workspaceID, projectID, id, actorID, a
 // place returns the rank that puts an issue of the project right after the issue afterID, else (afterID "") right
 // before beforeID, else last; exclude is the issue being placed ("" on create), left out of the neighbours. Returns
 // "" when exclude is already there or is the issue it'd go next to. A rank over maxRank characters rebalances the
-// project first. The caller holds the project row's lock, so no other placement reads the same neighbours.
+// project first. The caller holds the project row's lock, so no other placement reads the same neighbours. Trashed
+// issues count as neighbours: they keep their ranks (unique per project) for a restore.
 func place(ctx context.Context, tx pgx.Tx, projectID, exclude, afterID, beforeID string) (string, error) {
 	if exclude != "" && (afterID == exclude || afterID == "" && beforeID == exclude) {
 		return "", nil
@@ -849,9 +855,9 @@ func place(ctx context.Context, tx pgx.Tx, projectID, exclude, afterID, beforeID
 			`with n as (select (select rank from issues where id = $3::uuid and project_id = $1) a,
 			                   (select rank from issues where id = $4::uuid and project_id = $1) b)
 			 select coalesce(case when n.a is not null then n.a
-			          when n.b is not null then (select max(rank) from issues where project_id = $1 and rank < n.b and id is distinct from $2::uuid)
-			          else (select max(rank) from issues where project_id = $1 and id is distinct from $2::uuid) end, ''),
-			        coalesce(case when n.a is not null then (select min(rank) from issues
+			          when n.b is not null then (select max(rank) from issues_all where project_id = $1 and rank < n.b and id is distinct from $2::uuid)
+			          else (select max(rank) from issues_all where project_id = $1 and id is distinct from $2::uuid) end, ''),
+			        coalesce(case when n.a is not null then (select min(rank) from issues_all
 			                                                 where project_id = $1 and rank > n.a and id is distinct from $2::uuid)
 			          else n.b end, ''),
 			        coalesce((select rank from issues where id = $2::uuid), '')
@@ -870,8 +876,8 @@ func place(ctx context.Context, tx pgx.Tx, projectID, exclude, afterID, beforeID
 			return "", err
 		}
 		if _, err := tx.Exec(ctx,
-			`update issues i set rank = lpad(o.rn::text, 10, '0') || 'V'
-			 from (select id, row_number() over (order by rank) rn from issues where project_id = $1) o where o.id = i.id`,
+			`update issues_all i set rank = lpad(o.rn::text, 10, '0') || 'V'
+			 from (select id, row_number() over (order by rank) rn from issues_all where project_id = $1) o where o.id = i.id`,
 			projectID); err != nil {
 			return "", fmt.Errorf("rebalance ranks: %w", err)
 		}
@@ -1112,16 +1118,18 @@ func (m *model) delete(ctx context.Context, id, actorID string) error {
 	return nil
 }
 
-// deleteIssue deletes the issue in tx and publishes it.
+// deleteIssue moves the issue to the trash in tx and publishes it. clock_timestamp keeps a bulk delete's issues in
+// order for the trash's paging.
 func deleteIssue(ctx context.Context, tx pgx.Tx, id, actorID string) error {
 	n, err := issueNames(ctx, tx, id)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
+	if _, err := tx.Exec(ctx, `update issues set deleted_at = clock_timestamp(), deleted_by = $2 where id = $1`,
+		id, nullable(actorID)); err != nil {
 		return err
 	}
-	return publishIssue(ctx, tx, "issue.deleted", actorID, nil, n)
+	return publishIssue(ctx, tx, "issue.deleted", actorID, []string{trashPath(n.slug)}, n)
 }
 
 // --- bulk ---
@@ -1590,14 +1598,16 @@ func timelineCut(cs []Comment, es []Event) ([]Comment, []Event, bool) {
 	return cs, es, true
 }
 
-// Activity is one item of the workspace's activity feed: an event (Kind and Data, as on the timeline) or a comment
-// (Excerpt).
+// Activity is one item of the workspace's activity feed: an event (Kind and Data, as on the timeline), a comment
+// (Excerpt) or a project update (Project and Health, no Issue).
 type Activity struct {
-	Type      string          `json:"type"` // "event" or "comment"
+	Type      string          `json:"type"` // "event", "comment" or "project_update"
 	ID        string          `json:"id"`
 	CreatedAt time.Time       `json:"created_at"`
 	Actor     *Person         `json:"actor"`
-	Issue     json.RawMessage `json:"issue"` // {identifier, title, status}
+	Issue     json.RawMessage `json:"issue,omitempty"` // {identifier, title, status}
+	Project   *ProjectRef     `json:"project,omitempty"`
+	Health    string          `json:"health,omitempty"`
 	Kind      string          `json:"kind,omitempty"`
 	Data      json.RawMessage `json:"data,omitempty"`
 	Excerpt   *string         `json:"excerpt,omitempty"`
@@ -1606,8 +1616,8 @@ type Activity struct {
 // activityPage caps an activity page.
 const activityPage = 30
 
-// activity returns a page of the workspace's events (but description edits) and comments on issues in active
-// projects the viewer can see, newest first: the newest activityPage created before before (all when nil), and whether there are older
+// activity returns a page of the workspace's events (but description edits) and comments on issues, and project
+// updates, in active projects the viewer can see, newest first: the newest activityPage created before before (all when nil), and whether there are older
 // ones. Like the timeline, a page never splits a shared created_at.
 // ponytail: the created_at indexes are workspace-wide, so a quiet workspace's page scans other workspaces' newer rows;
 // denormalise workspace_id onto issue_events and comments with (workspace_id, created_at) indexes when that shows up.
@@ -1625,6 +1635,13 @@ func (m *model) activity(ctx context.Context, workspaceID, viewerID string, befo
 		 (select 'comment', c.id::text, c.created_at, `+fmt.Sprintf(actor, "c.author_id")+`, `+issue+`, '', null, c.body
 		  from comments c`+fmt.Sprintf(from, "c")+`
 		  order by c.created_at desc, c.id desc limit $3)
+		 union all
+		 (select 'project_update', pu.id::text, pu.created_at, `+fmt.Sprintf(actor, "pu.author_id")+`,
+		         json_build_object('key', p.key, 'name', p.name), pu.health, null, null
+		  from project_updates pu join projects p on p.id = pu.project_id
+		  where p.workspace_id = $1 and p.archived_at is null and ($2::timestamptz is null or pu.created_at < $2)
+		    and can_see_project(p.id, $4)
+		  order by pu.created_at desc, pu.id desc limit $3)
 		 order by 3 desc, 2 desc limit $3`, workspaceID, before, activityPage+1, viewerID)
 	if err != nil {
 		return nil, false, fmt.Errorf("list activity: %w", err)
@@ -1634,6 +1651,13 @@ func (m *model) activity(ctx context.Context, workspaceID, viewerID string, befo
 		var body []byte
 		err := row.Scan(&a.Type, &a.ID, &a.CreatedAt, &a.Actor, &a.Issue, &a.Kind, &a.Data, &body)
 		a.CreatedAt = a.CreatedAt.UTC()
+		if a.Type == "project_update" { // the issue column holds the project, kind the health
+			a.Project, a.Health, a.Kind = &ProjectRef{}, a.Kind, ""
+			if err == nil {
+				err = json.Unmarshal(a.Issue, a.Project)
+			}
+			a.Issue = nil
+		}
 		if a.Type == "comment" {
 			r := []rune(strings.TrimSpace(doc.PlainText(body)))
 			excerpt := string(r[:min(len(r), 200)])
@@ -2087,6 +2111,17 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 		if inUse {
 			return errInUse
 		}
+		// Trashed issues follow moveTo, else take the first status left.
+		var to *string
+		if web.IsUUID(moveTo) {
+			to = &moveTo
+		}
+		if _, err := tx.Exec(ctx, `update issues_all set status_id = coalesce(
+			  (select id from statuses where workspace_id = $1 and id = $3::uuid and id <> $2),
+			  (select id from statuses where workspace_id = $1 and id <> $2 order by position, id limit 1))
+			where status_id = $2`, workspaceID, id, to); err != nil {
+			return err
+		}
 		if _, err = tx.Exec(ctx, `delete from statuses where id = $1`, id); err != nil {
 			return err
 		}
@@ -2185,4 +2220,123 @@ func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realt
 		return false, fmt.Errorf("delete label: %w", err)
 	}
 	return found, nil
+}
+
+// --- trash ---
+
+// trashPage is how many trashed issues a page of the trash lists.
+const trashPage = 50
+
+// Trashed is an issue in the trash.
+type Trashed struct {
+	ID         string     `json:"id"`
+	Identifier string     `json:"identifier"`
+	Title      string     `json:"title"`
+	Project    ProjectRef `json:"project"`
+	DeletedAt  time.Time  `json:"deleted_at"`
+	DeletedBy  *Person    `json:"deleted_by"`
+	CanRestore bool       `json:"can_restore"`
+	createdBy  string
+	archived   bool // its project is archived
+}
+
+const trashedCols = `i.id::text, p.key || '-' || i.number, i.title, p.key, p.name, i.deleted_at, d.id::text, d.name,
+	coalesce(i.created_by::text, ''), p.archived_at is not null
+	from issues_all i join projects p on p.id = i.project_id left join users d on d.id = i.deleted_by`
+
+func scanTrashed(row pgx.Row) (Trashed, error) {
+	var t Trashed
+	var dID, dName *string
+	err := row.Scan(&t.ID, &t.Identifier, &t.Title, &t.Project.Key, &t.Project.Name, &t.DeletedAt, &dID, &dName,
+		&t.createdBy, &t.archived)
+	if dID != nil {
+		t.DeletedBy = &Person{*dID, *dName}
+	}
+	t.DeletedAt = t.DeletedAt.UTC()
+	return t, err
+}
+
+// trashPath is the workspace's trash page.
+func trashPath(slug string) string { return realtime.Workspace(slug) + "/trash" }
+
+// trash returns a page of the workspace's trashed issues in projects the viewer can see, newest deleted first and
+// deleted before before (zero: from the newest); more is true when there are older ones.
+func (m *model) trash(ctx context.Context, workspaceID, viewerID string, before time.Time) (ts []Trashed, more bool, err error) {
+	var b *time.Time
+	if !before.IsZero() {
+		b = &before
+	}
+	rows, err := m.db.Query(ctx, `select `+trashedCols+`
+		where i.workspace_id = $1 and i.deleted_at is not null and ($3::timestamptz is null or i.deleted_at < $3)
+		  and can_see_project(p.id, $2)
+		order by i.deleted_at desc, i.id desc limit $4`, workspaceID, viewerID, b, trashPage+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list trash: %w", err)
+	}
+	ts, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Trashed, error) { return scanTrashed(row) })
+	if err != nil {
+		return nil, false, fmt.Errorf("list trash: %w", err)
+	}
+	if len(ts) > trashPage {
+		return ts[:trashPage], true, nil
+	}
+	return ts, false, nil
+}
+
+// trashed returns the trashed issue with the project key and number when the viewer can see its project; nil when
+// there's none.
+func (m *model) trashed(ctx context.Context, workspaceID, key string, number int, viewerID string) (*Trashed, error) {
+	t, err := scanTrashed(m.db.QueryRow(ctx, `select `+trashedCols+`
+		where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3 and i.deleted_at is not null
+		  and can_see_project(p.id, $4)`, workspaceID, key, number, viewerID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find trashed issue: %w", err)
+	}
+	return &t, nil
+}
+
+// restore takes the issue out of the trash as the actor, logs it and publishes it like a new issue; false when it
+// isn't in the trash.
+func (m *model) restore(ctx context.Context, id, actorID string) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `update issues_all set deleted_at = null, deleted_by = null where id = $1 and deleted_at is not null`, id)
+		if found = tag.RowsAffected() == 1; err != nil || !found {
+			return err
+		}
+		if err := addEvents(ctx, tx, id, actorID, []event{{"restored", struct{}{}}}); err != nil {
+			return err
+		}
+		var slug string
+		if err := tx.QueryRow(ctx, `select w.slug from issues i join workspaces w on w.id = i.workspace_id where i.id = $1`, id).Scan(&slug); err != nil {
+			return err
+		}
+		return publishCreated(ctx, tx, id, actorID, trashPath(slug))
+	})
+	if err != nil {
+		return false, fmt.Errorf("restore issue: %w", err)
+	}
+	return found, nil
+}
+
+// purge deletes trashed issues for good: the one with the id, or with id "" every one in the workspace in a project
+// the viewer can see. Comments, activity and the rest go with them (cascades).
+func (m *model) purge(ctx context.Context, workspaceID, slug, viewerID, id string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from issues_all i using projects p
+			where p.id = i.project_id and i.workspace_id = $1 and i.deleted_at is not null and can_see_project(p.id, $2)
+			  and ($3::uuid is null or i.id = $3)`, workspaceID, viewerID, nullable(id))
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.Event{Kind: "issue.deleted", Workspace: slug, Actor: viewerID,
+			Audience: realtime.ToWorkspace(workspaceID), Paths: []string{trashPath(slug)}})
+	})
+	if err != nil {
+		return fmt.Errorf("purge trash: %w", err)
+	}
+	return nil
 }

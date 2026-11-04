@@ -2,7 +2,7 @@
 // second factor, into server-side sessions (admin_sessions).
 //
 // routes.go mounts the endpoints, controller.go handles HTTP, model.go owns every SQL query
-// session.go issues and checks the admin cookie, and totp.go is RFC 6238.
+// session.go issues and checks the admin cookie, and TOTP comes from shared/totp.
 package auth
 
 import (

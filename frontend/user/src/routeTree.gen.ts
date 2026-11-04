@@ -20,6 +20,7 @@ import { Route as AppNewWorkspaceRouteImport } from './routes/_app/new-workspace
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as authOauthAuthorizeRouteImport } from './routes/(auth)/oauth.authorize'
+import { Route as authSignin2faRouteImport } from './routes/(auth)/signin_.2fa'
 import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_main'
 import { Route as LiveWorkspaceRunRouteImport } from './routes/live.$workspace.$run'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
@@ -29,6 +30,7 @@ import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$wor
 import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$workspace/_main/roadmap'
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
+import { Route as AppWorkspaceMainTrashRouteImport } from './routes/_app/$workspace/_main/trash'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
 import { Route as AppWorkspaceMainInboxTaskwellRouteImport } from './routes/_app/$workspace/_main/inbox/taskwell'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
@@ -39,12 +41,12 @@ import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
 import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
 import { Route as AppWorkspaceMainSettingsFeedbackRouteImport } from './routes/_app/$workspace/_main/settings/feedback'
-import { Route as AppWorkspaceMainSettingsImportRouteImport } from './routes/_app/$workspace/_main/settings/import'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
 import { Route as AppWorkspaceMainSettingsMembersRouteImport } from './routes/_app/$workspace/_main/settings/members'
 import { Route as AppWorkspaceMainSettingsNotificationsRouteImport } from './routes/_app/$workspace/_main/settings/notifications'
 import { Route as AppWorkspaceMainSettingsProfileRouteImport } from './routes/_app/$workspace/_main/settings/profile'
+import { Route as AppWorkspaceMainSettingsTemplatesRouteImport } from './routes/_app/$workspace/_main/settings/templates'
 import { Route as AppWorkspaceMainSettingsWorkflowRouteImport } from './routes/_app/$workspace/_main/settings/workflow'
 import { Route as AppWorkspaceMainSettingsWorkspaceRouteImport } from './routes/_app/$workspace/_main/settings/workspace'
 import { Route as AppWorkspaceMainInboxCChatIdRouteImport } from './routes/_app/$workspace/_main/inbox/c/$chatId'
@@ -110,6 +112,11 @@ const authOauthAuthorizeRoute = authOauthAuthorizeRouteImport.update({
   path: '/oauth/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
+const authSignin2faRoute = authSignin2faRouteImport.update({
+  id: '/(auth)/signin_/2fa',
+  path: '/signin/2fa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppWorkspaceMainRoute = AppWorkspaceMainRouteImport.update({
   id: '/_main',
   getParentRoute: () => AppWorkspaceRoute,
@@ -155,6 +162,11 @@ const AppWorkspaceMainSettingsRoute =
 const AppWorkspaceMainTeamRoute = AppWorkspaceMainTeamRouteImport.update({
   id: '/team',
   path: '/team',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
+const AppWorkspaceMainTrashRoute = AppWorkspaceMainTrashRouteImport.update({
+  id: '/trash',
+  path: '/trash',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
 const AppWorkspaceMainInboxIndexRoute =
@@ -217,12 +229,6 @@ const AppWorkspaceMainSettingsFeedbackRoute =
     path: '/feedback',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
-const AppWorkspaceMainSettingsImportRoute =
-  AppWorkspaceMainSettingsImportRouteImport.update({
-    id: '/import',
-    path: '/import',
-    getParentRoute: () => AppWorkspaceMainSettingsRoute,
-  } as any)
 const AppWorkspaceMainSettingsIntegrationsRoute =
   AppWorkspaceMainSettingsIntegrationsRouteImport.update({
     id: '/integrations',
@@ -251,6 +257,12 @@ const AppWorkspaceMainSettingsProfileRoute =
   AppWorkspaceMainSettingsProfileRouteImport.update({
     id: '/profile',
     path: '/profile',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
+const AppWorkspaceMainSettingsTemplatesRoute =
+  AppWorkspaceMainSettingsTemplatesRouteImport.update({
+    id: '/templates',
+    path: '/templates',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
 const AppWorkspaceMainSettingsWorkflowRoute =
@@ -326,6 +338,7 @@ export interface FileRoutesByFullPath {
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
+  '/signin/2fa': typeof authSignin2faRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
@@ -333,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
+  '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -341,12 +355,12 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
-  '/$workspace/settings/import': typeof AppWorkspaceMainSettingsImportRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/$workspace/settings/templates': typeof AppWorkspaceMainSettingsTemplatesRoute
   '/$workspace/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/$workspace/inbox/': typeof AppWorkspaceMainInboxIndexRoute
@@ -373,11 +387,13 @@ export interface FileRoutesByTo {
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
+  '/signin/2fa': typeof authSignin2faRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
+  '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
@@ -385,12 +401,12 @@ export interface FileRoutesByTo {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
-  '/$workspace/settings/import': typeof AppWorkspaceMainSettingsImportRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/$workspace/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/$workspace/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
   '/$workspace/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/$workspace/settings/templates': typeof AppWorkspaceMainSettingsTemplatesRoute
   '/$workspace/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/$workspace/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxIndexRoute
@@ -418,6 +434,7 @@ export interface FileRoutesById {
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/(auth)/oauth/authorize': typeof authOauthAuthorizeRoute
+  '/(auth)/signin_/2fa': typeof authSignin2faRoute
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/_app/$workspace/_main/feedback': typeof AppWorkspaceMainFeedbackRoute
@@ -426,6 +443,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
+  '/_app/$workspace/_main/trash': typeof AppWorkspaceMainTrashRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
   '/_app/$workspace/_main/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -434,12 +452,12 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/_app/$workspace/_main/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
-  '/_app/$workspace/_main/settings/import': typeof AppWorkspaceMainSettingsImportRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
   '/_app/$workspace/_main/settings/members': typeof AppWorkspaceMainSettingsMembersRoute
   '/_app/$workspace/_main/settings/notifications': typeof AppWorkspaceMainSettingsNotificationsRoute
   '/_app/$workspace/_main/settings/profile': typeof AppWorkspaceMainSettingsProfileRoute
+  '/_app/$workspace/_main/settings/templates': typeof AppWorkspaceMainSettingsTemplatesRoute
   '/_app/$workspace/_main/settings/workflow': typeof AppWorkspaceMainSettingsWorkflowRoute
   '/_app/$workspace/_main/settings/workspace': typeof AppWorkspaceMainSettingsWorkspaceRoute
   '/_app/$workspace/_main/inbox/': typeof AppWorkspaceMainInboxIndexRoute
@@ -468,6 +486,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
+    | '/signin/2fa'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
     | '/$workspace/inbox'
@@ -475,6 +494,7 @@ export interface FileRouteTypes {
     | '/$workspace/roadmap'
     | '/$workspace/settings'
     | '/$workspace/team'
+    | '/$workspace/trash'
     | '/$workspace/'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
@@ -483,12 +503,12 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/feedback'
-    | '/$workspace/settings/import'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
     | '/$workspace/settings/notifications'
     | '/$workspace/settings/profile'
+    | '/$workspace/settings/templates'
     | '/$workspace/settings/workflow'
     | '/$workspace/settings/workspace'
     | '/$workspace/inbox/'
@@ -515,11 +535,13 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
+    | '/signin/2fa'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
     | '/$workspace/my-issues'
     | '/$workspace/roadmap'
     | '/$workspace/team'
+    | '/$workspace/trash'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
     | '/$workspace/members/$id'
@@ -527,12 +549,12 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/feedback'
-    | '/$workspace/settings/import'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
     | '/$workspace/settings/members'
     | '/$workspace/settings/notifications'
     | '/$workspace/settings/profile'
+    | '/$workspace/settings/templates'
     | '/$workspace/settings/workflow'
     | '/$workspace/settings/workspace'
     | '/$workspace/inbox'
@@ -559,6 +581,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/f/$token'
     | '/(auth)/oauth/authorize'
+    | '/(auth)/signin_/2fa'
     | '/_app/$workspace/_main'
     | '/live/$workspace/$run'
     | '/_app/$workspace/_main/feedback'
@@ -567,6 +590,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/roadmap'
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/team'
+    | '/_app/$workspace/_main/trash'
     | '/_app/$workspace/_main/'
     | '/_app/$workspace/_main/inbox/taskwell'
     | '/_app/$workspace/_main/issue/$identifier'
@@ -575,12 +599,12 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
     | '/_app/$workspace/_main/settings/feedback'
-    | '/_app/$workspace/_main/settings/import'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
     | '/_app/$workspace/_main/settings/members'
     | '/_app/$workspace/_main/settings/notifications'
     | '/_app/$workspace/_main/settings/profile'
+    | '/_app/$workspace/_main/settings/templates'
     | '/_app/$workspace/_main/settings/workflow'
     | '/_app/$workspace/_main/settings/workspace'
     | '/_app/$workspace/_main/inbox/'
@@ -606,6 +630,7 @@ export interface RootRouteChildren {
   DocsApiRoute: typeof DocsApiRoute
   FTokenRoute: typeof FTokenRoute
   authOauthAuthorizeRoute: typeof authOauthAuthorizeRoute
+  authSignin2faRoute: typeof authSignin2faRoute
   LiveWorkspaceRunRoute: typeof LiveWorkspaceRunRoute
 }
 
@@ -688,6 +713,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authOauthAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/(auth)/signin_/2fa': {
+      id: '/(auth)/signin_/2fa'
+      path: '/signin/2fa'
+      fullPath: '/signin/2fa'
+      preLoaderRoute: typeof authSignin2faRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/$workspace/_main': {
       id: '/_app/$workspace/_main'
       path: ''
@@ -749,6 +781,13 @@ declare module '@tanstack/react-router' {
       path: '/team'
       fullPath: '/$workspace/team'
       preLoaderRoute: typeof AppWorkspaceMainTeamRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/trash': {
+      id: '/_app/$workspace/_main/trash'
+      path: '/trash'
+      fullPath: '/$workspace/trash'
+      preLoaderRoute: typeof AppWorkspaceMainTrashRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/inbox/': {
@@ -821,13 +860,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsFeedbackRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
-    '/_app/$workspace/_main/settings/import': {
-      id: '/_app/$workspace/_main/settings/import'
-      path: '/import'
-      fullPath: '/$workspace/settings/import'
-      preLoaderRoute: typeof AppWorkspaceMainSettingsImportRouteImport
-      parentRoute: typeof AppWorkspaceMainSettingsRoute
-    }
     '/_app/$workspace/_main/settings/integrations': {
       id: '/_app/$workspace/_main/settings/integrations'
       path: '/integrations'
@@ -861,6 +893,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/$workspace/settings/profile'
       preLoaderRoute: typeof AppWorkspaceMainSettingsProfileRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
+    '/_app/$workspace/_main/settings/templates': {
+      id: '/_app/$workspace/_main/settings/templates'
+      path: '/templates'
+      fullPath: '/$workspace/settings/templates'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsTemplatesRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
     '/_app/$workspace/_main/settings/workflow': {
@@ -957,12 +996,12 @@ interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
   AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
   AppWorkspaceMainSettingsFeedbackRoute: typeof AppWorkspaceMainSettingsFeedbackRoute
-  AppWorkspaceMainSettingsImportRoute: typeof AppWorkspaceMainSettingsImportRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
   AppWorkspaceMainSettingsMembersRoute: typeof AppWorkspaceMainSettingsMembersRoute
   AppWorkspaceMainSettingsNotificationsRoute: typeof AppWorkspaceMainSettingsNotificationsRoute
   AppWorkspaceMainSettingsProfileRoute: typeof AppWorkspaceMainSettingsProfileRoute
+  AppWorkspaceMainSettingsTemplatesRoute: typeof AppWorkspaceMainSettingsTemplatesRoute
   AppWorkspaceMainSettingsWorkflowRoute: typeof AppWorkspaceMainSettingsWorkflowRoute
   AppWorkspaceMainSettingsWorkspaceRoute: typeof AppWorkspaceMainSettingsWorkspaceRoute
   AppWorkspaceMainSettingsIndexRoute: typeof AppWorkspaceMainSettingsIndexRoute
@@ -981,7 +1020,6 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
       AppWorkspaceMainSettingsApiTokensRoute,
     AppWorkspaceMainSettingsFeedbackRoute:
       AppWorkspaceMainSettingsFeedbackRoute,
-    AppWorkspaceMainSettingsImportRoute: AppWorkspaceMainSettingsImportRoute,
     AppWorkspaceMainSettingsIntegrationsRoute:
       AppWorkspaceMainSettingsIntegrationsRoute,
     AppWorkspaceMainSettingsLabelsRoute: AppWorkspaceMainSettingsLabelsRoute,
@@ -989,6 +1027,8 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
     AppWorkspaceMainSettingsNotificationsRoute:
       AppWorkspaceMainSettingsNotificationsRoute,
     AppWorkspaceMainSettingsProfileRoute: AppWorkspaceMainSettingsProfileRoute,
+    AppWorkspaceMainSettingsTemplatesRoute:
+      AppWorkspaceMainSettingsTemplatesRoute,
     AppWorkspaceMainSettingsWorkflowRoute:
       AppWorkspaceMainSettingsWorkflowRoute,
     AppWorkspaceMainSettingsWorkspaceRoute:
@@ -1018,6 +1058,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainRoadmapRoute: typeof AppWorkspaceMainRoadmapRoute
   AppWorkspaceMainSettingsRoute: typeof AppWorkspaceMainSettingsRouteWithChildren
   AppWorkspaceMainTeamRoute: typeof AppWorkspaceMainTeamRoute
+  AppWorkspaceMainTrashRoute: typeof AppWorkspaceMainTrashRoute
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainMembersIdRoute: typeof AppWorkspaceMainMembersIdRoute
@@ -1034,6 +1075,7 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainRoadmapRoute: AppWorkspaceMainRoadmapRoute,
   AppWorkspaceMainSettingsRoute: AppWorkspaceMainSettingsRouteWithChildren,
   AppWorkspaceMainTeamRoute: AppWorkspaceMainTeamRoute,
+  AppWorkspaceMainTrashRoute: AppWorkspaceMainTrashRoute,
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
   AppWorkspaceMainIssueIdentifierRoute: AppWorkspaceMainIssueIdentifierRoute,
   AppWorkspaceMainMembersIdRoute: AppWorkspaceMainMembersIdRoute,
@@ -1082,6 +1124,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsApiRoute: DocsApiRoute,
   FTokenRoute: FTokenRoute,
   authOauthAuthorizeRoute: authOauthAuthorizeRoute,
+  authSignin2faRoute: authSignin2faRoute,
   LiveWorkspaceRunRoute: LiveWorkspaceRunRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,5 +1,5 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
 import { useMenu, WorkspaceSwitcher } from './navbar'
@@ -10,7 +10,9 @@ import './sidebar.css'
 // Main navigation inside a workspace. Add a link here when a new workspace section ships.
 export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
-  const team = can(useLoaderData({ from: '/_app/$workspace' }), 'analytics.view')
+  const ws = useLoaderData({ from: '/_app/$workspace' })
+  const team = can(ws, 'analytics.view')
+  const guest = ws.guest
   const unread = useUnread()
   const views = useLoaderData({ from: '/_app/$workspace/_main' })
   const [open, setOpen] = useMenu()
@@ -47,16 +49,20 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
-      <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
-        <InboxIcon />
-        Inbox
-        {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
-      </Link>
-      <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
-        <FeedbackIcon />
-        Feedback
-        {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
-      </Link>
+      {guest ? null : (
+        <>
+          <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
+            <InboxIcon />
+            Inbox
+            {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
+          </Link>
+          <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
+            <FeedbackIcon />
+            Feedback
+            {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
+          </Link>
+        </>
+      )}
       <Link to="/$workspace/my-issues" params={{ workspace }} aria-current={current('my-issues')}>
         <UserIcon />
         My issues
@@ -65,10 +71,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <FolderIcon />
         Projects
       </Link>
-      <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
-        <RoadmapIcon />
-        Roadmap
-      </Link>
+      {guest ? null : (
+        <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
+          <RoadmapIcon />
+          Roadmap
+        </Link>
+      )}
       {views.length ? (
         <>
           <h2 className="sidebar-heading">Views</h2>
@@ -90,7 +98,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           })}
         </>
       ) : null}
-      {team ? (
+      {team && !guest ? (
         <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
           <UsersIcon />
           Team
@@ -99,6 +107,10 @@ export function AppSidebar({ workspace }: { workspace: string }) {
       <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
         <SettingsIcon />
         Settings
+      </Link>
+      <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
+        <TrashIcon />
+        Trash
       </Link>
     </nav>
   )

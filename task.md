@@ -114,8 +114,13 @@ Plan: `docs/mcp-plan.md`.
 - [x] Customer feedback intake (docs/feedback-plan.md): public form link per workspace, Feedback inbox (new / linked / archived), link to or create an issue, customer feedback on the issue page, `feedback.manage`
 - [x] Public API and webhooks (docs/webhooks-plan.md): API reference at `/docs/api`; signed outbound webhooks for issue.created / issue.updated / issue.deleted / comment.created with retries, delivery log and redeliver (Settings → Webhooks, `integrations.manage`)
 - Billing (Stripe, per seat)
-- [x] Import (docs/import-plan.md): CSV from Linear, Jira or any CSV with a Title column, and GitHub repositories (Settings → Import); preview first, then one transaction; statuses, priorities, labels, assignees by email or name, comments; no notifications
+- [x] Import (docs/import-plan.md): CSV from Linear, Jira or any CSV with a Title column, and GitHub repositories ("Import issues" on the projects list and project pages); preview first, then one transaction; statuses, priorities, labels, assignees by email or name, comments; no notifications
 - [x] Bulk actions (docs/bulk-actions-plan.md): checkboxes on list rows, Shift-click ranges, `X` / `Esc`; change status, assignee, priority, cycle, add or remove labels, or delete in one all-or-nothing request
+- [x] Project updates (docs/project-updates-plan.md): written updates with a health (on track, at risk, off track) on the project page; health on the project, projects list, roadmap and Home; in the activity feed
+- [x] Issue templates and recurring issues (docs/templates-plan.md): Settings → Templates prefill quick-create; a template can repeat every N days, weeks or months and creates the issue on schedule
+- [x] Two-factor sign-in (docs/two-factor-plan.md): authenticator app plus 10 recovery codes (Settings → Profile), asked after password, email code and Google; TOTP code shared with the admin app (`backend/shared/totp`)
+- [x] Trash and undo (docs/trash-plan.md): deleted issues stay 30 days (`issues` is a view over `issues_all`), Undo toast, Trash page with restore, delete forever and empty
+- [x] Guests (docs/guests-plan.md): a Guest role that sees only the projects it's added to; no chat, feedback, roadmap, team or workspace settings; invite with projects
 - [x] Saved views (docs/saved-views-plan.md): save a page's filters and display options by name, private or shared with the workspace, listed in the sidebar; rename, share, delete
 
 ## Not building until a customer asks

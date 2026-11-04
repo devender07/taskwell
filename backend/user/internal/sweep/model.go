@@ -35,6 +35,8 @@ var retention = []struct{ table, where string }{
 	{"rate_limits", `at < now() - interval '1 hour'`},
 	// Registration is open, so clients with no code in flight go after 30 days; their tokens live on in api_tokens.
 	{"oauth_codes", `expires_at < now()`},
+	// Trashed issues go for good after 30 days, with their comments and the rest (cascades).
+	{"issues_all", `deleted_at < now() - interval '30 days'`},
 	{"oauth_clients", `created_at < now() - interval '30 days' and not exists (select 1 from oauth_codes c where c.client_id = oauth_clients.id)`},
 }
 
@@ -85,12 +87,12 @@ func (m model) bigDocs(ctx context.Context) ([]bigDoc, error) {
 const fileRef = `/api/files/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/`
 
 // referenced is every file id a document points at: an image's src, a link's href or any other string in an issue
-// description or a comment that starts with a file URL, and any file URL in a live-editing update not yet saved
-// (Yjs stores strings as UTF-8, so the URL shows in the bytes).
+// description (trashed ones too) or a comment that starts with a file URL, and any file URL in a live-editing update
+// not yet saved (Yjs stores strings as UTF-8, so the URL shows in the bytes).
 // ponytail: reads every document each sweep; keep a file_refs table maintained on save when this gets slow.
 const referenced = `
 	select substring(s #>> '{}' from '^` + fileRef + `')::uuid as id
-	from (select description as d from issues where description is not null union all select body from comments) docs,
+	from (select description as d from issues_all where description is not null union all select body from comments) docs,
 	     jsonb_path_query(docs.d, 'strict $.** ? (@.type() == "string" && @ starts with "/api/files/")') s
 	union
 	select m[1]::uuid from issue_doc_updates u, regexp_matches(encode(u.data, 'escape'), '` + fileRef + `', 'g') m`

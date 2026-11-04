@@ -4,6 +4,7 @@ import { useLayoutEffect, type CSSProperties, type RefObject } from 'react'
 import type { RoadmapProject, Workspace } from '@/api'
 import { formatDate, formatRange } from '@/components/issues/fields'
 import { localDate } from '@/components/home/home'
+import { HealthPill, healthLabel } from '@/components/projects/updates'
 import { months, percentDone, ticks, timeline, widthOf, xOf, type Timeline, type Zoom } from './timeline'
 import '@/components/projects/projects.css'
 import './roadmap.css'
@@ -79,6 +80,7 @@ function Row({ workspace, project: p, tl, manage }: { workspace: Workspace; proj
   const params = { workspace: workspace.slug, key: p.key }
   const only = p.start_date ?? p.target_date
   const both = p.start_date && p.target_date ? { from: p.start_date, to: p.target_date } : null
+  const health = p.health ? `, ${healthLabel(p.health)}` : ''
 
   return (
     <li className="roadmap-row">
@@ -97,9 +99,10 @@ function Row({ workspace, project: p, tl, manage }: { workspace: Workspace; proj
             params={params}
             className="roadmap-bar"
             style={{ left: xOf(tl, both.from), width: Math.max(widthOf(tl, both.from, both.to), 12), '--done': `${pct}%` } as CSSProperties}
-            aria-label={`${p.name}, ${formatDate(both.from)} to ${formatDate(both.to)}, ${pct}% done`}
+            aria-label={`${p.name}, ${formatDate(both.from)} to ${formatDate(both.to)}, ${pct}% done${health}`}
           >
             <span className="roadmap-fill" aria-hidden />
+            <span className="roadmap-health" aria-hidden><HealthPill health={p.health} /></span>
           </Link>
         ) : only ? (
           <Link
@@ -107,12 +110,13 @@ function Row({ workspace, project: p, tl, manage }: { workspace: Workspace; proj
             params={params}
             className="roadmap-dot-link"
             style={{ left: xOf(tl, only) + tl.dayPx / 2 }}
-            aria-label={`${p.name}, ${p.start_date ? 'starts' : 'target'} ${formatDate(only)}, ${pct}% done`}
+            aria-label={`${p.name}, ${p.start_date ? 'starts' : 'target'} ${formatDate(only)}, ${pct}% done${health}`}
           >
             <span className="roadmap-dot" aria-hidden />
             <span className="text-caption text-secondary ellipsis" aria-hidden>
               {p.name} · {p.start_date ? 'starts' : 'target'} {formatDate(only)}
             </span>
+            <span aria-hidden><HealthPill health={p.health} /></span>
           </Link>
         ) : (
           <span className="roadmap-undated text-caption text-secondary">

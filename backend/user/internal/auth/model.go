@@ -1,17 +1,20 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/shared/totp"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 )
 
@@ -269,13 +272,18 @@ func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTo
 		if _, err := tx.Exec(ctx, `update users set password_hash = $2 where id = $1`, id, passwordHash); err != nil {
 			return fmt.Errorf("update password: %w", err)
 		}
-		if _, err := tx.Exec(ctx,
-			`delete from refresh_tokens where user_id = $1 and family_id is distinct from
-			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, id, keepTokenHash); err != nil {
-			return fmt.Errorf("sign out other sessions: %w", err)
-		}
-		return realtime.Publish(ctx, tx, realtime.SessionRevoked(id))
+		return revokeOthers(ctx, tx, id, keepTokenHash)
 	})
+}
+
+// revokeOthers signs out every session of the user but the family keepTokenHash (may be nil) belongs to.
+func revokeOthers(ctx context.Context, tx pgx.Tx, id string, keepTokenHash []byte) error {
+	if _, err := tx.Exec(ctx,
+		`delete from refresh_tokens where user_id = $1 and family_id is distinct from
+		   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, id, keepTokenHash); err != nil {
+		return fmt.Errorf("sign out other sessions: %w", err)
+	}
+	return realtime.Publish(ctx, tx, realtime.SessionRevoked(id))
 }
 
 // userForGoogle finds the user by Google subject, else links the account with the same (Google-verified) email,
@@ -707,4 +715,158 @@ func (m *model) deleteAPIToken(ctx context.Context, userID, id string) (bool, er
 		return false, fmt.Errorf("delete api token: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// --- two-factor ---
+
+var (
+	errMFAOn  = errors.New("two-factor is already on")
+	errMFAOff = errors.New("two-factor is off")
+)
+
+// mfaStatus reports whether the user has two-factor on and how many recovery codes are left.
+func (m *model) mfaStatus(ctx context.Context, userID string) (on bool, left int, err error) {
+	err = m.db.QueryRow(ctx, `select enabled_at is not null, cardinality(recovery_codes) from user_mfa where user_id = $1`,
+		userID).Scan(&on, &left)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, 0, nil
+	}
+	if err != nil {
+		return false, 0, fmt.Errorf("read two-factor: %w", err)
+	}
+	return on, left, nil
+}
+
+// startMFA stores a new sealed secret for enableMFA to confirm, replacing an unfinished setup; errMFAOn when
+// two-factor is already on.
+func (m *model) startMFA(ctx context.Context, userID, sealed string) error {
+	tag, err := m.db.Exec(ctx, `
+		insert into user_mfa (user_id, secret, recovery_codes) values ($1, $2, '{}')
+		on conflict (user_id) do update set secret = excluded.secret, last_step = 0, created_at = now()
+		where user_mfa.enabled_at is null`, userID, sealed)
+	if err != nil {
+		return fmt.Errorf("start two-factor: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errMFAOn
+	}
+	return nil
+}
+
+// enableMFA turns on the setup startMFA began when code matches its secret, storing the recovery code hashes; ok is
+// false for a wrong code. errMFAOn when it's on already, errMFAOff when no setup was started.
+func (m *model) enableMFA(ctx context.Context, key []byte, userID, code string, hashes []string, now time.Time) (ok bool, err error) {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var sealed string
+		var on bool
+		err := tx.QueryRow(ctx, `select secret, enabled_at is not null from user_mfa where user_id = $1 for update`, userID).
+			Scan(&sealed, &on)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errMFAOff
+		}
+		if err != nil {
+			return err
+		}
+		if on {
+			return errMFAOn
+		}
+		secret, err := totp.Unseal(key, userID, sealed)
+		if err != nil {
+			return err
+		}
+		step, match, err := totp.Check(secret, code, now, 0)
+		if err != nil || !match {
+			return err
+		}
+		ok = true
+		_, err = tx.Exec(ctx, `update user_mfa set enabled_at = now(), last_step = $2, recovery_codes = $3 where user_id = $1`,
+			userID, step, hashes)
+		return err
+	})
+	if err != nil && !errors.Is(err, errMFAOn) && !errors.Is(err, errMFAOff) {
+		err = fmt.Errorf("enable two-factor: %w", err)
+	}
+	return ok, err
+}
+
+// mfaResult is what checking a second factor found.
+type mfaResult struct {
+	ok           bool
+	usedRecovery bool // a recovery code (now spent) was used
+}
+
+// checkMFA checks a code from the authenticator app, or else a recovery code, against the user's factor. A match
+// uses it up: the code's step is remembered so it can't be replayed, a recovery code is removed. errMFAOff when
+// two-factor is off.
+func checkMFA(ctx context.Context, tx pgx.Tx, key []byte, userID, code, recovery string, now time.Time) (mfaResult, error) {
+	var sealed string
+	var lastStep int64
+	var hashes []string
+	err := tx.QueryRow(ctx, `select secret, last_step, recovery_codes from user_mfa
+		where user_id = $1 and enabled_at is not null for update`, userID).Scan(&sealed, &lastStep, &hashes)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return mfaResult{}, errMFAOff
+	}
+	if err != nil {
+		return mfaResult{}, err
+	}
+	if code == "" {
+		h := totp.HashRecovery(recovery)
+		if recovery == "" || !slices.Contains(hashes, h) {
+			return mfaResult{}, nil
+		}
+		_, err := tx.Exec(ctx, `update user_mfa set recovery_codes = array_remove(recovery_codes, $2) where user_id = $1`, userID, h)
+		return mfaResult{ok: true, usedRecovery: true}, err
+	}
+	secret, err := totp.Unseal(key, userID, sealed)
+	if err != nil {
+		return mfaResult{}, err
+	}
+	step, ok, err := totp.Check(secret, code, now, lastStep)
+	if err != nil || !ok {
+		return mfaResult{}, err
+	}
+	_, err = tx.Exec(ctx, `update user_mfa set last_step = $2 where user_id = $1`, userID, step)
+	return mfaResult{ok: true}, err
+}
+
+// mfa runs checkMFA in a transaction and, on a match, then in the same transaction.
+func (m *model) mfa(ctx context.Context, key []byte, userID, code, recovery string, then func(tx pgx.Tx) error) (mfaResult, error) {
+	var res mfaResult
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if res, err = checkMFA(ctx, tx, key, userID, code, recovery, time.Now()); err != nil || !res.ok || then == nil {
+			return err
+		}
+		return then(tx)
+	})
+	if err != nil && !errors.Is(err, errMFAOff) {
+		err = fmt.Errorf("check two-factor: %w", err)
+	}
+	return res, err
+}
+
+// disableMFA turns two-factor off when the code or recovery code matches, and signs out every other session (all but
+// the sign-in keepSID; "" keeps none).
+func (m *model) disableMFA(ctx context.Context, key []byte, userID, code, recovery, keepSID string) (bool, error) {
+	res, err := m.mfa(ctx, key, userID, code, recovery, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `delete from user_mfa where user_id = $1`, userID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `delete from refresh_tokens where user_id = $1 and family_id is distinct from $2::uuid`,
+			userID, cmp.Or(keepSID, "00000000-0000-0000-0000-000000000000")); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
+	})
+	return res.ok, err
+}
+
+// replaceRecovery swaps the user's recovery codes for hashes when code (from the app) matches.
+func (m *model) replaceRecovery(ctx context.Context, key []byte, userID, code string, hashes []string) (bool, error) {
+	res, err := m.mfa(ctx, key, userID, code, "", func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `update user_mfa set recovery_codes = $2 where user_id = $1`, userID, hashes)
+		return err
+	})
+	return res.ok, err
 }

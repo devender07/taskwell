@@ -4,13 +4,15 @@ import { useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { LockIcon } from '@taskwell/shared/icons'
-import { ApiError, can, cyclesPath, type Cycle, type Label, type Project, type Status, workspacePath } from '@/api'
+import { ApiError, can, cyclesPath, projectUpdatesPath, type Cycle, type Label, type Project, type ProjectUpdatePage, type Status, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
 import { IssueView } from '@/components/issues/issue-view'
+import { ImportButton } from '@/components/projects/import'
 import { defaultSort, hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
 import { ProjectMilestones } from '@/components/projects/milestones'
+import { HealthPill, ProjectUpdates } from '@/components/projects/updates'
 import { ArchiveProject, DeleteProject, ProjectForm, ProjectMembers } from '@/components/projects/project-form'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
@@ -28,12 +30,13 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     // ponytail: without a sort in the URL the issues wait for the project (its default sort); ship the default with
     // the issue page if that wait shows.
     const sort = ctx.deps.search.sort ?? projectReq.then(defaultSort)
-    const [project, page, cycles, statuses, labels] = await Promise.all([
+    const [project, page, cycles, statuses, labels, updates] = await Promise.all([
       projectReq,
       Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
       loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
+      loaderApi<ProjectUpdatePage>(ctx, projectUpdatesPath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -41,20 +44,21 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     if (project.key !== params.key) {
       throw redirect({ to: '/$workspace/projects/$key', params: { workspace: params.workspace, key: project.key }, replace: true })
     }
-    return { project, page, source, cycles, statuses, labels }
+    return { project, page, source, cycles, statuses, labels, updates }
   },
   component: ProjectPage,
 })
 
 function ProjectPage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, page, source, cycles, statuses, labels } = Route.useLoaderData()
+  const { project, page, source, cycles, statuses, labels, updates } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const [editing, setEditing] = useState(Boolean(search.edit))
   const { openCreate } = useShortcuts()
   const manage = can(workspace, 'projects.manage')
+  const post = !project.archived && (manage || (project.private && project.members.some((m) => m.id === user.id)))
   const create = can(workspace, 'issues.create') && !project.archived
   const current = cycles.find((c) => c.state === 'current')
   const empty = page.total === 0 && !hasFilters(search)
@@ -79,6 +83,7 @@ function ProjectPage() {
             <span className="project-key flex-noshrink">{project.key}</span>
             {project.private ? <LockIcon className="text-secondary flex-noshrink" /> : null}
             <h1 className="text-h2 ellipsis">{project.name}</h1>
+            <HealthPill health={project.health} />
             {project.private ? <span className="project-tag flex-noshrink">Private</span> : null}
             {project.archived ? <span className="project-tag flex-noshrink">Archived</span> : null}
           </div>
@@ -101,7 +106,7 @@ function ProjectPage() {
                 <Button variant="secondary" onClick={() => setEditing(true)}>
                   Edit
                 </Button>
-                {project.private ? <ProjectMembers workspace={workspace} project={project} /> : null}
+                <ProjectMembers workspace={workspace} project={project} />
                 <ArchiveProject workspace={workspace} project={project} />
                 {project.archived ? <DeleteProject workspace={workspace} project={project} /> : null}
               </>
@@ -118,10 +123,16 @@ function ProjectPage() {
       ) : (
         <p className="text-body-sm text-secondary m-0">No description.</p>
       )}
+      <ProjectUpdates key={project.id} workspace={workspace} project={project} page={updates} canPost={post} />
       <section className="grid gap-4" aria-labelledby="issues-heading">
         <div className="flex items-center justify-between gap-4">
           <h2 id="issues-heading" className="text-label">Issues</h2>
-          {create && !empty ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
+          {create && !empty ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <ImportButton workspace={workspace} projects={[project]} project={project.key} variant="ghost" />
+              <Button title="New issue (C)" onClick={openCreate}>New issue</Button>
+            </div>
+          ) : null}
         </div>
         {empty ? (
           <div className="grid gap-4 p-6 bg-surface border rounded-lg justify-items-center text-center">
@@ -129,9 +140,7 @@ function ProjectPage() {
             {create ? (
               <div className="flex flex-wrap justify-center gap-3">
                 <Button title="New issue (C)" onClick={openCreate}>New issue</Button>
-                <Link to="/$workspace/settings/import" params={{ workspace: workspace.slug }} search={{ project: project.key }} className="button button-secondary">
-                  Import issues
-                </Link>
+                <ImportButton workspace={workspace} projects={[project]} project={project.key} />
               </div>
             ) : null}
           </div>

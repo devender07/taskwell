@@ -1,5 +1,5 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, type Role, workspacePath } from '@/api'
+import { can, type Project, type Role, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { InviteForm, MemberList, PendingInvites } from '@/components/workspace/members'
 import { type MemberPage, memberPagePath } from '@/components/workspace/member-pages'
@@ -10,11 +10,12 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/members')(
   loader: async (ctx) => {
     const path = `${workspacePath(ctx.params.workspace)}`
     trackPath(ctx, `${path}/invites`) // the members response lists invites too
-    const [page, roles] = await Promise.all([
+    const [page, roles, projects] = await Promise.all([
       loaderApi<MemberPage>(ctx, memberPagePath(ctx.params.workspace, ctx.deps.q)),
       loaderApi<Role[]>(ctx, `${path}/roles`),
+      loaderApi<Project[]>(ctx, `${path}/projects`), // for guests: which projects they're invited to and in
     ])
-    return { page, roles }
+    return { page, roles, projects }
   },
   component: MembersSettings,
 })
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/members')(
 function MembersSettings() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { user } = Route.useRouteContext()
-  const { page, roles } = Route.useLoaderData()
+  const { page, roles, projects } = Route.useLoaderData()
   const { q = '' } = Route.useSearch()
   const navigate = Route.useNavigate()
   const invite = can(workspace, 'members.invite')
@@ -34,12 +35,13 @@ function MembersSettings() {
       </header>
       {invite ? (
         <section className="grid gap-4 p-6 bg-surface border rounded-lg">
-          <InviteForm key={workspace.id} workspace={workspace} roles={roles} />
+          <InviteForm key={workspace.id} workspace={workspace} roles={roles} projects={projects} />
         </section>
       ) : null}
       <MemberList
         workspace={workspace}
         roles={roles}
+        projects={projects}
         page={page}
         userId={user.id}
         query={q}

@@ -56,6 +56,53 @@ func parseAccess(secret []byte, token string) (*claims, error) {
 	return &claims, nil
 }
 
+// mfaAudience marks a pending sign-in token (the taskwell_mfa cookie): parseAccess refuses it, as it does any token
+// with an audience.
+const mfaAudience = "taskwell-mfa"
+
+// mfaClaims are a pending sign-in's: the user is the subject, ID counts its wrong codes, and Remember is the "Remember
+// me" choice to start the session with.
+type mfaClaims struct {
+	jwt.RegisteredClaims
+	Remember bool `json:"remember,omitempty"`
+}
+
+// signMFA returns a token for a sign-in of userID waiting for its second step, valid for ttl.
+func signMFA(secret []byte, userID string, remember bool, ttl time.Duration) (string, error) {
+	now := time.Now()
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, mfaClaims{RegisteredClaims: jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   userID,
+		Audience:  jwt.ClaimStrings{mfaAudience},
+		ID:        rand.Text(),
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+	}, Remember: remember})
+	s, err := t.SignedString(secret)
+	if err != nil {
+		return "", fmt.Errorf("sign mfa token: %w", err)
+	}
+	return s, nil
+}
+
+// parseMFA returns the claims of a valid, unexpired pending sign-in token.
+func parseMFA(secret []byte, token string) (*mfaClaims, error) {
+	var c mfaClaims
+	_, err := jwt.ParseWithClaims(token, &c, func(*jwt.Token) (any, error) { return secret, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(mfaAudience),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if c.Subject == "" || c.ID == "" {
+		return nil, fmt.Errorf("mfa token has no subject or id")
+	}
+	return &c, nil
+}
+
 // EnsureJWTSecret fills an empty jwt_secret (the dev fallback when JWT_SECRET is unset) with 256 random bits. Safe to run from several instances at once.
 func EnsureJWTSecret(ctx context.Context, db *pgxpool.Pool) error {
 	b := make([]byte, 32)

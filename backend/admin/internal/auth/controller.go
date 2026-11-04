@@ -23,7 +23,7 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcryp
 type Handler struct {
 	model  *model
 	secret []byte  // ADMIN_JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
-	mfaKey []byte  // seals TOTP secrets (MFAKey)
+	mfaKey []byte  // seals TOTP secrets (totp.Key)
 	ip     limiter // sign-in attempts per client IP, shared with every admin instance
 }
 

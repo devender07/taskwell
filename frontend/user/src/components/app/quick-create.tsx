@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
-import { api, toFormErrors, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { api, templatesPath, toFormErrors, type Label, type Project, type Status, type Template, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
 import { subscribePaths } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
+import { forProjectFirst } from '@/components/templates/template'
 
-type Data = { projects: Project[]; statuses: Status[]; labels: Label[] }
+type Data = { projects: Project[]; statuses: Status[]; labels: Label[]; templates: Template[] }
 
 // The last load per workspace, so reopening shows the form at once (at its full size) while it refetches.
 const cache = new Map<string, Data>()
@@ -33,10 +34,11 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
   const pick = (keys: string[]) => [projectKey, lastProject(workspace.slug)].find((k) => k && keys.includes(k)) ?? keys[0] ?? null
   const [key, setKey] = useState<string | null>(() => (data ? pick(data.projects.map((p) => p.key)) : null))
   const [version, setVersion] = useState(0)
+  const [picked, setPicked] = useState(false) // the user chose a project here, so a template's project doesn't replace it
   const path = `${workspacePath(workspace.slug)}`
 
   useEffect(
-    () => subscribePaths([`${path}/projects`, `${path}/statuses`, `${path}/labels`], () => setVersion((v) => v + 1)),
+    () => subscribePaths([`${path}/projects`, `${path}/statuses`, `${path}/labels`, templatesPath(workspace.slug)], () => setVersion((v) => v + 1)),
     [path],
   )
 
@@ -46,13 +48,14 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
       api<Project[]>(`${path}/projects`),
       api<Status[]>(`${path}/statuses`),
       api<Label[]>(`${path}/labels`),
+      api<Template[]>(templatesPath(workspace.slug)).catch(() => []),
     ]).then(
-      ([all, statuses, labels]) => {
+      ([all, statuses, labels, templates]) => {
         if (!live) return
         const projects = all.filter((p) => !p.archived)
         const keys = projects.map((p) => p.key)
         setKey((cur) => (cur && keys.includes(cur) ? cur : pick(keys)))
-        const next = { projects, statuses, labels }
+        const next = { projects, statuses, labels, templates }
         cache.set(workspace.slug, next)
         setData(next)
       },
@@ -75,7 +78,10 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
       label="Project"
       options={options}
       value={options.find((o) => o.value === key) ?? null}
-      onChange={(o) => setKey(o?.value ?? null)}
+      onChange={(o) => {
+        setKey(o?.value ?? null)
+        setPicked(true)
+      }}
     />
   )
   return (
@@ -83,7 +89,13 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
       <FormError>{error}</FormError>
       {project ? (
         <div onSubmit={() => rememberProject(workspace.slug, project.key)}>
-          <CreateIssueForm workspace={workspace} project={project} projectPicker={picker} prefill={prefill} statuses={data.statuses} labels={data.labels} people={peopleSearch(workspace.slug, project.key)} />
+          <CreateIssueForm workspace={workspace} project={project} projectPicker={picker} prefill={prefill}
+            statuses={data.statuses}
+            labels={data.labels}
+            people={peopleSearch(workspace.slug, project.key)}
+            templates={forProjectFirst(data.templates, projectKey ?? project.key)}
+            onTemplateProject={(k) => !picked && data.projects.some((p) => p.key === k) && setKey(k)}
+          />
         </div>
       ) : (
         picker

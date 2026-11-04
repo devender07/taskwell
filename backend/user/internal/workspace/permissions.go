@@ -79,12 +79,23 @@ func allPermissions() []string {
 	return keys
 }
 
-// effective is a role's permissions: the whole catalog for Admin, the stored set otherwise.
+// effective is a role's permissions: the whole catalog for Admin, the stored set otherwise (never a guestDenied one
+// for Guest).
 func effective(builtin string, perms []string) []string {
-	if builtin == roleAdmin {
+	switch builtin {
+	case roleAdmin:
 		return allPermissions()
+	case roleGuest:
+		return slices.DeleteFunc(slices.Clone(perms), guestDenied)
 	}
 	return perms
+}
+
+// guestDenied reports whether a Guest role may not hold the permission: none of the Workspace, Members and
+// Analytics groups.
+func guestDenied(key string) bool {
+	i := slices.IndexFunc(catalog, func(p Permission) bool { return p.Key == key })
+	return i >= 0 && slices.Contains([]string{"Workspace", "Members", "Analytics"}, catalog[i].Group)
 }
 
 // Has reports whether perms includes key.

@@ -16,12 +16,14 @@ export function PasswordForm({ redirect }: { redirect?: string }) {
     const remember = form.has('remember')
     const errors = { email: checkEmail(email), password: required('Password')(String(form.get('password') ?? '')) }
     if (errors.email || errors.password) return { email, remember, errors }
+    let res: { mfa_required?: boolean } | undefined
     try {
-      await api('/auth/signin', form)
+      res = await api<{ mfa_required?: boolean }>('/auth/signin', form)
     } catch (e) {
       return { email, remember, ...toFormErrors(e) }
     }
-    await navigate({ href: redirect ?? (await homePath()) })
+    if (res?.mfa_required) await navigate({ to: '/signin/2fa', search: redirect ? { redirect } : {} })
+    else await navigate({ href: redirect ?? (await homePath()) })
     return { email, remember }
   }, { email: '', remember: false })
 

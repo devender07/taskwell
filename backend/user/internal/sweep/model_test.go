@@ -131,3 +131,37 @@ func TestRetention(t *testing.T) {
 		t.Fatalf("%d refresh tokens left, want the live and the recently used one", left)
 	}
 }
+
+// TestTrashRetention: issues trashed over 30 days ago go for good; newer trash and live issues stay.
+func TestTrashRetention(t *testing.T) {
+	tx := testTx(t)
+	ctx := context.Background()
+	var ws string
+	if err := tx.QueryRow(ctx, `with u as (insert into users (name, email) values ('Trash', 'trash-' || gen_random_uuid() || '@test') returning id)
+		insert into workspaces (name, slug, created_by) select 'W', 'trash-' || gen_random_uuid(), id from u
+		returning id::text`).Scan(&ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `with p as (insert into projects (workspace_id, name, key) values ($1, 'P', 'TRS') returning id)
+		insert into issues_all (workspace_id, project_id, number, title, status_id, rank, deleted_at)
+		select $1, p.id, n, 'x', (select id from statuses where workspace_id = $1 limit 1), n::text || 'V', d
+		from p, (values (1, now() - interval '31 days'), (2, now() - interval '29 days'), (3, null)) v(n, d)`, ws); err != nil {
+		t.Fatal(err)
+	}
+	m := model{tx}
+	for _, r := range retention {
+		if r.table == "issues_all" {
+			if _, err := m.deleteAll(ctx, r.table, r.where); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	rows, err := tx.Query(ctx, `select number from issues_all where workspace_id = $1 order by number`, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+	if err != nil || !slices.Equal(left, []int32{2, 3}) {
+		t.Fatalf("left %v %v, want [2 3]", left, err)
+	}
+}

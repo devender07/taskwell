@@ -290,6 +290,8 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 	case ws == nil:
 		web.Err(w, http.StatusNotFound, errNoWorkspace)
 		return nil, false, nil
+	case workspace.DenyGuest(w, ws):
+		return nil, false, nil
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
 		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, false, nil

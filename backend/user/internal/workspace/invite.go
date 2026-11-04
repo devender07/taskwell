@@ -46,14 +46,14 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string)
 			web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
 			return nil
 		}
-		ms, total, err := h.model.memberPage(ctx, ws.ID, strings.TrimSpace(query.Get("q")), offset, limit)
+		ms, total, err := h.model.memberPage(ctx, ws.ID, userID, strings.TrimSpace(query.Get("q")), offset, limit)
 		if err != nil {
 			return err
 		}
 		web.JSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs, "total": total, "has_more": offset+len(ms) < total})
 		return nil
 	}
-	ms, err := h.model.members(ctx, ws.ID)
+	ms, err := h.model.members(ctx, ws.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -76,6 +76,20 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
+	var projectIDs []string
+	if role.Builtin != nil && *role.Builtin == roleGuest {
+		if projectIDs, err = h.model.projectIDs(ctx, ws.ID, userID, r.Form["project_keys"]); err != nil {
+			return err
+		}
+		if len(projectIDs) == 0 {
+			msg := "Choose at least one project."
+			if len(r.Form["project_keys"]) > 0 {
+				msg = "Choose projects from this workspace."
+			}
+			web.Fields(w, http.StatusBadRequest, map[string]string{"project_keys": msg})
+			return nil
+		}
+	}
 	email = web.NormEmail(email)
 	if in, err := h.model.isMember(ctx, ws.ID, email); err != nil {
 		return err
@@ -91,7 +105,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	token := secret.NewToken()
-	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, secret.Hash(token), days)
+	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, projectIDs, secret.Hash(token), days)
 	if err != nil {
 		return err
 	}

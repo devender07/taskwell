@@ -35,7 +35,7 @@ Build one image on its own (from the repo root): `docker build -f deploy/backend
 | `APP_ENV` | user, admin | `production` | Anything else relaxes production checks |
 | `JWT_SECRET` | user | | Required. 32+ random bytes |
 | `ADMIN_JWT_SECRET` | admin | | Required. Different from `JWT_SECRET` |
-| `MFA_ENCRYPTION_KEY` | admin | | Required in production, 32+ bytes. Encrypts admins' TOTP secrets (AES-GCM). Changing it makes every stored factor unreadable; then `-reset-mfa` each admin. In dev it falls back to a key derived from `jwt_secret`, with a warning |
+| `MFA_ENCRYPTION_KEY` | user, admin | | Required in production, 32+ bytes, the same for both. Encrypts admins' and users' TOTP secrets (AES-GCM). Changing it makes every stored factor unreadable; then `-reset-mfa` each admin, and users turn two-factor off with a recovery code. In dev it falls back to a key derived from `jwt_secret`, with a warning |
 | `ADMIN_ALLOWED_IPS` | admin | empty (any) | Comma-separated IPs and CIDR ranges allowed to use the admin API (403 for others). The client IP is the last `X-Forwarded-For` entry when the peer is a private or loopback address (Caddy), else the peer. Warns at start in production when empty. `Caddyfile` has an equivalent edge rule, commented out |
 | `TEST_SECRET_KEY` | user, tester | | Required in production, 32+ bytes. Seals test account passwords (AES-GCM). Changing it makes saved test account passwords unreadable: save them again |
 | `INTEGRATION_SECRET_KEY` | user | | Required in production, 32+ bytes. Seals GitHub / GitLab webhook secrets (AES-GCM). Changing it breaks connected webhooks: regenerate their secrets in Settings → Integrations. In dev it falls back to a key derived from `jwt_secret`, with a warning |

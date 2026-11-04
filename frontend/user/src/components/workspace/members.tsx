@@ -2,27 +2,32 @@ import { Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useOptimistic, useState } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
+import { Checkbox } from '@taskwell/shared/checkbox'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
 import { LeaveIcon, UserMinusIcon } from '@taskwell/shared/icons'
 import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import { email as checkEmail } from '@taskwell/shared/validate'
-import { api, avatarSrc, can, homePath, toFormErrors, type FieldErrors, type Invite, type Member, type Role, type Workspace, workspacePath } from '@/api'
+import { addProjectMembers, api, avatarSrc, removeProjectMember, can, homePath, toFormErrors, type FieldErrors, type Invite, type Member, type Project, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { type MemberPage, useMemberPages } from './member-pages'
 import '@/components/analytics/analytics.css'
+import '@/components/projects/projects.css'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
 
-// Without roles (e.g. on the Workspace page) invites join as Member.
-export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?: Role[] }) {
+// Without roles (e.g. on the Workspace page) invites join as Member. A guest invite also names the projects they join.
+export function InviteForm({ workspace, roles, projects = [] }: { workspace: Workspace; roles?: Role[]; projects?: Pick<Project, 'key' | 'name'>[] }) {
   const slug = workspace.slug
   const router = useRouter()
+  const guestRole = roles?.find((r) => r.builtin === 'guest')?.id
+  const [roleId, setRoleId] = useState(roles?.find((r) => r.builtin === 'member')?.id)
+  const guest = guestRole !== undefined && roleId === guestRole
   const [{ email, sent, errors, error }, submit, pending] = useActionState(async (_prev: InviteState, form: FormData): Promise<InviteState> => {
     const email = String(form.get('email') ?? '').trim()
-    const fieldError = checkEmail(email)
-    if (fieldError) return { email, errors: { email: fieldError } }
+    const fieldErrors = { email: checkEmail(email), project_keys: guest && !form.has('project_keys') ? 'Choose at least one project.' : null }
+    if (fieldErrors.email || fieldErrors.project_keys) return { email, errors: fieldErrors }
     form.set('email', email)
     let invite: Invite
     try {
@@ -59,6 +64,7 @@ export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?:
               name="role_id"
               options={roleOptions(workspace, roles)}
               defaultValue={roleOptions(workspace, roles).find((o) => o.value === roles.find((r) => r.builtin === 'member')?.id)}
+              onChange={(o) => setRoleId(o?.value)}
               error={errors?.role_id}
             />
           </div>
@@ -67,6 +73,18 @@ export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?:
           {pending ? 'Sending…' : 'Send invite'}
         </Button>
       </div>
+      {guest ? (
+        <fieldset className="grid gap-2 m-0 p-0" style={{ border: 0 }} aria-describedby="invite-projects-hint">
+          <legend className="text-label p-0 mb-2">Projects</legend>
+          <p id="invite-projects-hint" className="text-caption text-secondary m-0">Guests see only the projects you choose.</p>
+          {projects.length ? (
+            projects.map((p) => <Checkbox key={p.key} name="project_keys" value={p.key} label={p.name} />)
+          ) : (
+            <p className="text-body-sm text-secondary m-0">There are no projects to add a guest to yet.</p>
+          )}
+          <FormError>{errors?.project_keys}</FormError>
+        </fieldset>
+      ) : null}
       <FormError>{error}</FormError>
       {sent && !pending ? <p role="status" className="text-caption text-success">Invite sent to {sent}.</p> : null}
     </form>
@@ -74,7 +92,7 @@ export function InviteForm({ workspace, roles }: { workspace: Workspace; roles?:
 }
 
 // Searchable by name or email; `page` is page one (the loader's for `query`), the rest load as you scroll.
-export function MemberList({ workspace, roles, page, userId, query, onQuery }: { workspace: Workspace; roles: Role[]; page: MemberPage; userId: string; query: string; onQuery: (q: string) => void }) {
+export function MemberList({ workspace, roles, projects, page, userId, query, onQuery }: { workspace: Workspace; roles: Role[]; projects: Project[]; page: MemberPage; userId: string; query: string; onQuery: (q: string) => void }) {
   const { members, hasMore, end, error } = useMemberPages(workspace.slug, query.trim(), page)
   return (
     <section className="grid gap-3" aria-label="Members">
@@ -82,7 +100,7 @@ export function MemberList({ workspace, roles, page, userId, query, onQuery }: {
       {members.length ? (
         <ul className="grid m-0 p-0 bg-surface border rounded-lg" style={{ listStyle: 'none' }}>
           {members.map((m) => (
-            <MemberRow key={m.id} workspace={workspace} roles={roles} member={m} self={m.id === userId} />
+            <MemberRow key={m.id} workspace={workspace} roles={roles} projects={projects} member={m} self={m.id === userId} />
           ))}
         </ul>
       ) : (
@@ -94,7 +112,7 @@ export function MemberList({ workspace, roles, page, userId, query, onQuery }: {
   )
 }
 
-function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; roles: Role[]; member: Member; self: boolean }) {
+function MemberRow({ workspace, roles, projects, member, self }: { workspace: Workspace; roles: Role[]; projects: Project[]; member: Member; self: boolean }) {
   const router = useRouter()
   const navigate = useNavigate()
   const current = roles.find((r) => r.id === member.role.id)
@@ -130,9 +148,9 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
 
   return (
     <li className="grid gap-2 px-6 py-3">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Avatar name={member.name} src={avatarSrc(member.id)} />
-        <div className="grid flex-grow" style={{ minWidth: 0 }}>
+        <div className="grid flex-grow" style={{ minWidth: 0, flexBasis: 160 }}>
           <span className="text-label text-primary ellipsis">
             {self || can(workspace, 'analytics.view') ? (
               <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: member.id }} className="member-link">
@@ -142,6 +160,7 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
               member.name
             )}
             {self ? <span className="text-secondary font-400"> (you)</span> : null}
+            {member.guest ? <span className="project-tag" style={{ marginLeft: 8 }}>Guest</span> : null}
           </span>
           <span className="text-caption text-secondary ellipsis">{member.email}</span>
         </div>
@@ -162,6 +181,7 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
         ) : (
           <span className="text-caption text-secondary flex-noshrink">{member.role.name}</span>
         )}
+        {member.guest && manage && !self ? <GuestProjects workspace={workspace} projects={projects} member={member} /> : null}
         {self || manage ? (
           <IconButton
             className="icon-button-danger flex-noshrink"
@@ -195,6 +215,55 @@ function MemberRow({ workspace, roles, member, self }: { workspace: Workspace; r
         </form>
       </Dialog>
     </li>
+  )
+}
+
+// Which projects a guest is in: checking a project adds them to it, unchecking removes them.
+function GuestProjects({ workspace, projects, member }: { workspace: Workspace; projects: Project[]; member: Member }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const inProject = (p: Project) => p.members.some((m) => m.id === member.id)
+
+  const [error, save, pending] = useActionState(async (_prev: string | null, form: FormData) => {
+    const keys = new Set(form.getAll('project_keys').map(String))
+    try {
+      for (const p of projects) {
+        if (keys.has(p.key) && !inProject(p)) await addProjectMembers(workspace.slug, p.key, [member.id])
+        else if (!keys.has(p.key) && inProject(p)) await removeProjectMember(workspace.slug, p.key, member.id)
+      }
+    } catch (e) {
+      await router.invalidate()
+      return toFormErrors(e).error
+    }
+    await router.invalidate()
+    setOpen(false)
+    return null
+  }, null)
+
+  return (
+    <>
+      <Button variant="ghost" className="flex-noshrink" onClick={() => setOpen(true)} aria-label={`Projects for ${member.name}`}>
+        Projects…
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Projects" description={<><strong className="text-primary font-510">{member.name}</strong> sees only these projects.</>}>
+        <form action={save} noValidate className="grid gap-4">
+          {projects.length ? (
+            <fieldset className="grid gap-2 m-0 p-0" style={{ border: 0 }}>
+              <legend className="sr-only">Projects</legend>
+              {projects.map((p) => (
+                <Checkbox key={p.key} name="project_keys" value={p.key} label={p.name} defaultChecked={inProject(p)} />
+              ))}
+            </fieldset>
+          ) : (
+            <p className="text-body-sm text-secondary m-0">There are no projects yet.</p>
+          )}
+          <FormError>{error}</FormError>
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? 'Saving…' : 'Save'}
+          </Button>
+        </form>
+      </Dialog>
+    </>
   )
 }
 

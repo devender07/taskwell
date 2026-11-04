@@ -14,8 +14,11 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
-// roleAdmin is the Admin role's workspace_roles.builtin.
-const roleAdmin = "admin"
+// roleAdmin and roleGuest are the Admin and Guest roles' workspace_roles.builtin.
+const (
+	roleAdmin = "admin"
+	roleGuest = "guest"
+)
 
 // memberDefaults are a new workspace's Member role permissions.
 var memberDefaults = []string{"issues.create", "comments.create"}
@@ -32,13 +35,15 @@ type RoleRef struct {
 	Name string `json:"name"`
 }
 
-// Workspace is a workspace as seen by one member: their role and its effective permissions.
+// Workspace is a workspace as seen by one member: their role and its effective permissions. A Guest sees only the
+// projects they're a member of and nothing workspace-wide (chat, feedback, analytics, settings).
 type Workspace struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Slug        string   `json:"slug"`
 	Role        RoleRef  `json:"role"`
 	Permissions []string `json:"permissions"`
+	Guest       bool     `json:"guest"`
 }
 
 // wsCols selects a Workspace from workspaces w and workspace_roles r; scan it with scanWorkspace.
@@ -51,7 +56,7 @@ func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var ws Workspace
 	var builtin string
 	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions)
-	ws.Permissions = effective(builtin, ws.Permissions)
+	ws.Permissions, ws.Guest = effective(builtin, ws.Permissions), builtin == roleGuest
 	return ws, err
 }
 
@@ -97,7 +102,7 @@ func create(ctx context.Context, conn interface {
 		}
 		if err := tx.QueryRow(ctx,
 			`with r as (insert into workspace_roles (workspace_id, name, builtin, permissions)
-			   values ($1, 'Admin', 'admin', '{}'), ($1, 'Member', 'member', $2) returning id, builtin)
+			   values ($1, 'Admin', 'admin', '{}'), ($1, 'Member', 'member', $2), ($1, 'Guest', 'guest', $2) returning id, builtin)
 			 select id::text from r where builtin = 'admin'`,
 			ws.ID, memberDefaults).Scan(&ws.Role.ID); err != nil {
 			return err
@@ -204,6 +209,7 @@ type Member struct {
 	Name  string  `json:"name"`
 	Email string  `json:"email"`
 	Role  RoleRef `json:"role"`
+	Guest bool    `json:"guest"`
 }
 
 // Invite is a pending invite; InvitedBy is the inviter's name, "" once they're deleted.
@@ -223,23 +229,29 @@ type InviteInfo struct {
 }
 
 // memberCols selects a Member from workspace_members m, users u and workspace_roles r.
-const memberCols = `u.id::text, u.name, u.email, r.id::text, r.name`
+const memberCols = `u.id::text, u.name, u.email, r.id::text, r.name, r.builtin is not distinct from 'guest'`
+
+// memberSeen limits members m (users u, roles r) of workspace $1 to those viewer $2 may see: everyone, but a guest sees
+// only admins, themselves and who can see a project they're in.
+const memberSeen = ` and (not is_guest($1, $2) or r.builtin = 'admin' or u.id = $2
+	or exists (select 1 from project_members pm join projects p on p.id = pm.project_id
+	           where pm.user_id = $2 and p.workspace_id = $1 and can_see_project(p.id, u.id)))`
 
 func scanMember(row pgx.Row) (Member, error) {
 	var mb Member
-	err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name)
+	err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name, &mb.Guest)
 	return mb, err
 }
 
-// members returns the workspace's members, admins first, then by name. Not paginated: every member is needed at
+// members returns the workspace's members the viewer may see (memberSeen), admins first, then by name. Not paginated: every member is needed at
 // once by the assignee and mention pickers and the people filters, and a workspace's members are bounded by its
 // team size (hundreds), unlike an issue's timeline.
-func (m *model) members(ctx context.Context, workspaceID string) ([]Member, error) {
+func (m *model) members(ctx context.Context, workspaceID, viewerID string) ([]Member, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+memberCols+`
 		   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
-		  where m.workspace_id = $1
-		  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email`, workspaceID)
+		  where m.workspace_id = $1`+memberSeen+`
+		  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email`, workspaceID, viewerID)
 	if err != nil {
 		return nil, fmt.Errorf("list members: %w", err)
 	}
@@ -250,24 +262,24 @@ func (m *model) members(ctx context.Context, workspaceID string) ([]Member, erro
 	return ms, nil
 }
 
-// memberPage returns limit of the workspace's members from offset, in members' order, whose name or email contains q
+// memberPage returns limit of the workspace's members the viewer may see from offset, in members' order, whose name or email contains q
 // (any case; "" matches everyone), and how many match in all (0 past the end).
 // ponytail: offset paging, so a member joining or leaving mid-scroll shifts the pages by one; keyset on
 // (admin, lower(name), email) if that shows up.
-func (m *model) memberPage(ctx context.Context, workspaceID, q string, offset, limit int) ([]Member, int, error) {
+func (m *model) memberPage(ctx context.Context, workspaceID, viewerID, q string, offset, limit int) ([]Member, int, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+memberCols+`, count(*) over ()
 		   from workspace_members m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id
-		  where m.workspace_id = $1 and (strpos(lower(u.name), lower($2)) > 0 or strpos(lower(u.email), lower($2)) > 0)
+		  where m.workspace_id = $1 and (strpos(lower(u.name), lower($3)) > 0 or strpos(lower(u.email), lower($3)) > 0)`+memberSeen+`
 		  order by r.builtin is not distinct from 'admin' desc, lower(u.name), u.email
-		  offset $3 limit $4`, workspaceID, q, offset, limit)
+		  offset $4 limit $5`, workspaceID, viewerID, q, offset, limit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list members: %w", err)
 	}
 	total := 0
 	ms, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Member, error) {
 		var mb Member
-		err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name, &total)
+		err := row.Scan(&mb.ID, &mb.Name, &mb.Email, &mb.Role.ID, &mb.Role.Name, &mb.Guest, &total)
 		return mb, err
 	})
 	if err != nil {
@@ -351,20 +363,64 @@ func invitesChanged(ws *Workspace, actorID string) realtime.Event {
 	return event(ws, actorID, "members.changed", p+"/invites", p+"/members")
 }
 
-// invite creates the invite, or replaces the token, expiry, inviter and role of a pending one for the same email.
-func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, roleID string, tokenHash []byte, days int) (Invite, error) {
+// projectIDs returns the ids of the workspace's projects with the keys (or their old keys) the viewer can see; nil
+// unless every key names one.
+func (m *model) projectIDs(ctx context.Context, workspaceID, viewerID string, keys []string) ([]string, error) {
+	if len(keys) == 0 || len(keys) > 100 {
+		return nil, nil
+	}
+	var ids []string
+	var all bool
+	err := m.db.QueryRow(ctx, `
+		with k as (select distinct canonical_key($1, upper(trim(x))) key from unnest($3::text[]) x),
+		     p as (select p.id from projects p join k on k.key = p.key where p.workspace_id = $1 and can_see_project(p.id, $2))
+		select coalesce(array(select id::text from p), '{}'), (select count(*) from p) = (select count(*) from k)`,
+		workspaceID, viewerID, keys).Scan(&ids, &all)
+	if err != nil {
+		return nil, fmt.Errorf("find projects: %w", err)
+	}
+	if !all {
+		return nil, nil
+	}
+	return ids, nil
+}
+
+// joinGuestProjects adds the user, when a guest of the invite's workspace, to the projects the invites with the ids
+// name (still existing ones).
+func joinGuestProjects(ctx context.Context, tx pgx.Tx, userID string, inviteIDs []string) error {
+	_, err := tx.Exec(ctx, `
+		insert into project_members (project_id, user_id, added_by)
+		select p.id, $1, i.invited_by
+		  from workspace_invites i
+		  join workspace_members m on m.workspace_id = i.workspace_id and m.user_id = $1
+		  join workspace_roles r on r.id = m.role_id and r.builtin = 'guest'
+		  join projects p on p.workspace_id = i.workspace_id and p.id = any(i.project_ids)
+		 where i.id = any($2::uuid[])
+		on conflict do nothing`, userID, inviteIDs)
+	if err != nil {
+		return fmt.Errorf("join guest projects: %w", err)
+	}
+	return nil
+}
+
+// invite creates the invite, or replaces the token, expiry, inviter, role and projects (a guest's) of a pending one
+// for the same email.
+func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, roleID string, projectIDs []string, tokenHash []byte, days int) (Invite, error) {
 	var inv Invite
+	if projectIDs == nil {
+		projectIDs = []string{}
+	}
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var err error
 		if inv, err = scanInvite(tx.QueryRow(ctx,
 			`with i as (
-			   insert into workspace_invites (workspace_id, email, invited_by, role_id, token_hash, expires_at)
-			   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
+			   insert into workspace_invites (workspace_id, email, invited_by, role_id, token_hash, expires_at, project_ids)
+			   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6), $7)
 			   on conflict (workspace_id, email) do update
 			     set invited_by = excluded.invited_by, role_id = excluded.role_id,
-			         token_hash = excluded.token_hash, expires_at = excluded.expires_at
+			         token_hash = excluded.token_hash, expires_at = excluded.expires_at, project_ids = excluded.project_ids
 			   returning *) `+inviteCols,
-			ws.ID, email, invitedBy, roleID, tokenHash, days)); err != nil {
+			ws.ID, email, invitedBy, roleID, tokenHash, days, projectIDs)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, invitedBy))
@@ -437,7 +493,8 @@ func (m *model) inviteInfo(ctx context.Context, tokenHash []byte) (*InviteInfo, 
 	return &info, nil
 }
 
-// accept adds the user to the invite's workspace with the invite's role (keeping any existing role) and deletes the invite.
+// accept adds the user to the invite's workspace with the invite's role (keeping any existing role), and a guest to
+// its projects, and deletes the invite.
 // Returns nil when the token is unknown or expired, and errWrongEmail plus the invite's email when the user's differs.
 func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*Workspace, string, error) {
 	var ws *Workspace
@@ -464,6 +521,9 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 			   from workspace_invites i join workspace_roles r on r.workspace_id = i.workspace_id and r.builtin = 'member'
 			  where i.id = $1
 			 on conflict do nothing`, id, userID); err != nil {
+			return err
+		}
+		if err := joinGuestProjects(ctx, tx, userID, []string{id}); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `delete from workspace_invites where id = $1`, id); err != nil {
@@ -513,11 +573,11 @@ func scanRole(row pgx.Row) (Role, error) {
 	return r, err
 }
 
-// roles returns the workspace's roles: Admin, Member, then custom ones by name.
+// roles returns the workspace's roles: Admin, Member, Guest, then custom ones by name.
 func (m *model) roles(ctx context.Context, workspaceID string) ([]Role, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+roleCols+` from workspace_roles r where r.workspace_id = $1
-		  order by case r.builtin when 'admin' then 0 when 'member' then 1 else 2 end, lower(r.name)`, workspaceID)
+		  order by case r.builtin when 'admin' then 0 when 'member' then 1 when 'guest' then 2 else 3 end, lower(r.name)`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
 	}
@@ -735,7 +795,7 @@ func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID
 		if removed = tag.RowsAffected() == 1; err != nil || !removed {
 			return err
 		}
-		if _, err = tx.Exec(ctx, `update issues set assignee_id = null where workspace_id = $1 and assignee_id = $2`, ws.ID, userID); err != nil {
+		if _, err = tx.Exec(ctx, `update issues_all set assignee_id = null where workspace_id = $1 and assignee_id = $2`, ws.ID, userID); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(ctx, `delete from project_members where user_id = $2

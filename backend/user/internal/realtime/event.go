@@ -85,6 +85,9 @@ func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issu
 // Milestones is the project's milestone list.
 func Milestones(slug, key string) string { return Project(slug, key) + "/milestones" }
 
+// ProjectUpdates is the project's written updates.
+func ProjectUpdates(slug, key string) string { return Project(slug, key) + "/updates" }
+
 // Roadmap is the workspace's roadmap: active projects with their dates, progress, cycles and milestones.
 func Roadmap(slug string) string { return Workspace(slug) + "/roadmap" }
 
@@ -105,6 +108,9 @@ func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
 // Views is the workspace's saved views: the caller's own and the shared ones.
 func Views(slug string) string { return Workspace(slug) + "/views" }
+
+// Templates is the workspace's issue templates.
+func Templates(slug string) string { return Workspace(slug) + "/templates" }
 
 // Watching is the list of issues the caller watches.
 func Watching(slug string) string { return Workspace(slug) + "/watching" }

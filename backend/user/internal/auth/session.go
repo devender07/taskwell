@@ -16,6 +16,10 @@ const (
 	refreshCookie = "taskwell_refresh"
 	googleCookie  = "taskwell_google" // state, PKCE verifier and remember flag for one Google round trip
 	signupCookie  = "taskwell_signup" // the nonce that binds a sign-up's code to the browser that signed up
+	mfaCookie     = "taskwell_mfa"    // a sign-in waiting for its second step (mfaClaims)
+
+	mfaTTL      = 5 * time.Minute // to enter the second step
+	mfaMaxFails = 5               // wrong codes per pending sign-in before it ends
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.
@@ -132,6 +136,43 @@ func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userI
 		return err
 	}
 	return h.setTokens(ctx, w, userID, family{remember: remember, expiresAt: time.Now().Add(time.Duration(hours) * time.Hour)})
+}
+
+// begin signs the user in, or when they have two-factor on, starts a sign-in waiting for its second step (mfa is then
+// true and there is no session yet: mfaVerify starts it). Every first-step sign-in goes through here.
+func (h *Handler) begin(ctx context.Context, w http.ResponseWriter, userID string, remember bool) (mfa bool, err error) {
+	on, _, err := h.model.mfaStatus(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if !on {
+		return false, h.startSession(ctx, w, userID, remember)
+	}
+	if suspended, err := h.model.suspended(ctx, userID); err != nil {
+		return false, err
+	} else if suspended {
+		return false, errSuspended
+	}
+	key, err := h.jwtSecret(ctx)
+	if err != nil {
+		return false, err
+	}
+	tok, err := signMFA(key, userID, remember, mfaTTL)
+	if err != nil {
+		return false, err
+	}
+	return true, h.setMFACookie(ctx, w, tok, int(mfaTTL.Seconds()))
+}
+
+// setMFACookie sets the pending sign-in cookie, or clears it when maxAge is negative.
+func (h *Handler) setMFACookie(ctx context.Context, w http.ResponseWriter, tok string, maxAge int) error {
+	secure, err := h.secure(ctx)
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{Name: mfaCookie, Value: tok, Path: "/api/auth", MaxAge: maxAge,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	return nil
 }
 
 // setTokens sets an access token and a new refresh token for family f as cookies. Without "Remember me" both are

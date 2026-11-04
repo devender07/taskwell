@@ -3,7 +3,7 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
-// activity events, rank.go computes manual-order ranks and collab.go relays live edits (joined over the realtime socket). Changes record their notifications with notify.Record.
+// activity events, rank.go computes manual-order ranks, trash.go serves the trash and collab.go relays live edits (joined over the realtime socket). Changes record their notifications with notify.Record.
 package issue
 
 import (
@@ -42,6 +42,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.update))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
+	mux.HandleFunc("GET /api/workspaces/{slug}/trash", h.wrap(h.trash))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/trash", h.wrap(h.emptyTrash))
+	mux.HandleFunc("POST /api/workspaces/{slug}/trash/{identifier}/restore", h.wrap(h.restore))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/trash/{identifier}", h.wrap(h.purge))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/move", h.wrap(h.move))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))

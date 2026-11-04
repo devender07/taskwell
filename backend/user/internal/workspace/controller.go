@@ -19,6 +19,9 @@ const (
 	errEscalation = "You can't grant permissions you don't have."
 	errNoAdmin    = "A workspace needs at least one admin."
 	errSlugTaken  = "That URL is taken."
+
+	// ErrGuest answers a guest asking for something workspace-wide.
+	ErrGuest = "Guests can't see this."
 )
 
 type Handler struct {
@@ -113,6 +116,14 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 		return nil, false, nil
 	}
 	return ws, true, nil
+}
+
+// DenyGuest writes a 403 and returns true when the caller is a guest of ws, for what's workspace-wide.
+func DenyGuest(w http.ResponseWriter, ws *Workspace) bool {
+	if ws.Guest {
+		web.Err(w, http.StatusForbidden, ErrGuest)
+	}
+	return ws.Guest
 }
 
 // Member returns the workspace with the user's role and permissions; nil when it's missing or the user isn't a member.

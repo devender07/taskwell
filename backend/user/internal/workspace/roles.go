@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/devender07/taskwell/backend/user/internal/web"
@@ -18,6 +19,9 @@ func (h *Handler) roles(w http.ResponseWriter, r *http.Request, userID string) e
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
 		return err
+	}
+	if DenyGuest(w, ws) {
+		return nil
 	}
 	rs, err := h.model.roles(r.Context(), ws.ID)
 	if err != nil {
@@ -66,6 +70,10 @@ func (h *Handler) updateRole(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	if builtin {
 		name = role.Name
+	}
+	if role.Builtin != nil && *role.Builtin == roleGuest && slices.ContainsFunc(perms, guestDenied) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"permissions": "Guests can't have workspace permissions."})
+		return nil
 	}
 	updated, err := h.model.updateRole(ctx, ws, userID, role.ID, name, perms)
 	if errors.Is(err, errNameTaken) {
