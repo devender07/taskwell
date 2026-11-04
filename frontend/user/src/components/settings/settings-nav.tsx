@@ -1,5 +1,5 @@
 import { Link, useLoaderData } from '@tanstack/react-router'
-import { BellIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
+import { BellIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UploadIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
 import { can } from '@/api'
 import './settings.css'
 
@@ -41,6 +41,12 @@ export function SettingsNav({ workspace }: { workspace: string }) {
         <TagIcon />
         Labels
       </Link>
+      {can(ws, 'issues.create') ? (
+        <Link to="/$workspace/settings/import" params={{ workspace }}>
+          <UploadIcon />
+          Import
+        </Link>
+      ) : null}
       <Link to="/$workspace/settings/ai-testing" params={{ workspace }}>
         <FlaskIcon />
         AI testing

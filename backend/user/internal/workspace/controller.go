@@ -77,7 +77,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, ok, err := h.access(w, r, userID, permWorkspaceEdit)
+	ws, ok, err := h.access(w, r, userID, PermWorkspaceEdit)
 	if !ok || err != nil {
 		return err
 	}

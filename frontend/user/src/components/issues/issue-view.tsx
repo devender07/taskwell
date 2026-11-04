@@ -4,6 +4,7 @@ import {
   startTransition,
   useActionState,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useId,
   useMemo,
@@ -47,6 +48,9 @@ import {
   type ViewSearch,
 } from './view-search'
 import { useIssuePages, usePageEnd } from './issue-pages'
+import { BulkBar } from './bulk-bar'
+import { singleKeyShortcuts } from '@/components/app/shortcuts'
+import { ViewMenu } from './saved-views'
 import { dropMark, slotAt, useIssueDrag } from './drag'
 import './issues.css'
 
@@ -63,7 +67,7 @@ type Props = {
   defaultSort?: SortBy
   manual?: boolean
 }
-type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
+export type Choice = { key: FilterKey; title: string; options: { value: string; label: string; icon?: ReactNode }[] }
 type Move = { issue: Issue; path: string; form: FormData; override: Override }
 const views = [
   { value: 'list', label: 'List' },
@@ -136,6 +140,47 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
   )
   const assignees = useMemo(() => pageAssignees(pages.page), [pages.page])
   const setSearch = (next: ViewSearch) => navigate({ to: '.', search: next })
+
+  // Selected list rows by issue id; a new page, view or filter starts over.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const lastPicked = useRef<string | null>(null)
+  const selectionKey = `${source}?${issuePageQuery(search, mine, defaultSort)}&view=${view}`
+  const [seenKey, setSeenKey] = useState(selectionKey)
+  if (selectionKey !== seenKey) {
+    setSeenKey(selectionKey)
+    setSelected(new Set())
+  }
+  const loaded = groups.flatMap((g) => g.issues)
+  const picked = loaded.filter((i) => selected.has(i.id))
+  const clearSelection = () => setSelected(new Set())
+
+  // Shift picks the range from the last row picked, to the same state as this one.
+  function pick(issue: Issue, range: boolean) {
+    const from = range && lastPicked.current ? loaded.findIndex((i) => i.id === lastPicked.current) : -1
+    const to = loaded.findIndex((i) => i.id === issue.id)
+    const rows = from < 0 ? [issue] : loaded.slice(Math.min(from, to), Math.max(from, to) + 1).filter((i) => i.can_edit)
+    const on = !selected.has(issue.id)
+    const next = new Set(selected)
+    for (const i of rows) if (on) next.add(i.id); else next.delete(i.id)
+    setSelected(next)
+    lastPicked.current = issue.id
+  }
+
+  // X toggles the focused row, Escape clears the selection; not while typing, in a dialog, or once a popover took it.
+  const onSelectKey = useEffectEvent((e: KeyboardEvent) => {
+    if (view !== 'list' || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('dialog[open]')) return
+    if (e.key === 'Escape' && selected.size) return clearSelection()
+    if (e.key.toLowerCase() !== 'x' || !singleKeyShortcuts() || !(e.target instanceof Element)) return
+    const id = e.target.closest<HTMLElement>('[data-issue]')?.dataset.issue
+    const issue = id && root.current?.contains(e.target) ? loaded.find((i) => i.id === id) : undefined
+    if (!issue?.can_edit) return
+    e.preventDefault()
+    pick(issue, e.shiftKey)
+  })
+  useEffect(() => {
+    window.addEventListener('keydown', onSelectKey)
+    return () => window.removeEventListener('keydown', onSelectKey)
+  }, [])
 
   const choices: Choice[] = [
     { key: 'status', title: 'Status', options: statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> })) },
@@ -233,7 +278,7 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
   }
 
   return (
-    <div ref={root} className="grid gap-4">
+    <div ref={root} className="grid gap-4" style={picked.length ? { paddingBottom: 96 } : undefined}>
       <div className="flex flex-wrap items-center gap-3">
         <Tabs
           aria-label="View"
@@ -255,6 +300,7 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
           onChange={(v) => setSearch({ ...search, sort: v === defaultSort ? undefined : (v as SortBy) })}
         />
         <FilterMenu choices={choices} search={search} onChange={setFilter} />
+        <ViewMenu workspace={workspace} />
         <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>
           {page.total} {page.total === 1 ? 'issue' : 'issues'}
         </span>
@@ -299,8 +345,22 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
           onKey={keyMove}
           more={pages.more}
           errorOf={pages.error}
+          selected={selected}
+          onPick={pick}
         />
       )}
+      {view === 'list' && picked.length ? (
+        <BulkBar
+          workspace={workspace}
+          issues={picked}
+          choices={choices}
+          onClear={clearSelection}
+          onDone={(message) => {
+            clearSelection()
+            setAnnouncement(message)
+          }}
+        />
+      ) : null}
       <p id={hint} className="sr-only">
         {view === 'board' ? 'Press Shift+Left or Shift+Right to move to another column. ' : ''}
         {ordered ? 'Press Alt+Up or Alt+Down to move up or down.' : ''}
@@ -336,7 +396,9 @@ function useHandlers(drag: Omit<CardHandlers, 'key'>, onKey: CardHandlers['key']
 }
 
 // With manual order, rows drag within their group; a drop line marks the slot.
-function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more, errorOf }: ViewProps) {
+type ListProps = ViewProps & { selected: ReadonlySet<string>; onPick: (issue: Issue, range: boolean) => void }
+
+function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more, errorOf, selected, onPick }: ListProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const list = useRef<HTMLDivElement>(null)
   const { drag, ghostRef, ...dragHandlers } = useIssueDrag({
@@ -349,7 +411,7 @@ function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more,
   const on = useHandlers(dragHandlers, onKey)
 
   return (
-    <div ref={list} className="grid gap-4">
+    <div ref={list} className="grid gap-4" data-selecting={selected.size ? '' : undefined}>
       {groups
         .filter((g) => g.count > 0 || g.issues.length > 0)
         .map((g) => {
@@ -382,7 +444,14 @@ function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more,
               {open ? (
                 <ul className="grid m-0 p-0" style={{ listStyle: 'none' }}>
                   {g.issues.map((issue) => (
-                    <li key={issue.id} data-drop={mark?.id === issue.id ? mark.side : undefined}>
+                    <li key={issue.id} className="issue-item" data-drop={mark?.id === issue.id ? mark.side : undefined}>
+                      <Checkbox
+                        className="issue-select"
+                        label={<span className="sr-only">Select {issue.identifier}</span>}
+                        checked={selected.has(issue.id)}
+                        disabled={!issue.can_edit}
+                        onChange={(e) => onPick(issue, (e.nativeEvent as MouseEvent).shiftKey === true)}
+                      />
                       {ordered ? (
                         <IssueRow workspace={workspace} issue={issue} group={g.key} dragging={drag?.issue.id === issue.id} hint={hint} on={on} />
                       ) : (

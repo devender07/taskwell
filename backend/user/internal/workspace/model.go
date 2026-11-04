@@ -723,8 +723,8 @@ func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userI
 	return mb, nil
 }
 
-// removeMember takes the user out of the workspace and its private projects and unassigns their issues there, by the
-// actor (the user when they leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
+// removeMember takes the user out of the workspace and its private projects, deletes their saved views there and
+// unassigns their issues there, by the actor (the user when they leave); false when they aren't a member. Returns errLastAdmin when it would leave no admin.
 func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID string) (bool, error) {
 	if !web.IsUUID(userID) {
 		return false, nil
@@ -740,6 +740,9 @@ func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID
 		}
 		if _, err = tx.Exec(ctx, `delete from project_members where user_id = $2
 			and project_id in (select id from projects where workspace_id = $1)`, ws.ID, userID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `delete from saved_views where workspace_id = $1 and user_id = $2`, ws.ID, userID); err != nil {
 			return err
 		}
 		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {

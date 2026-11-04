@@ -38,6 +38,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/watching", h.wrap(h.watching))
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/cycles/{number}/issues", h.wrap(h.cycleIssues))
 	mux.HandleFunc("GET /api/workspaces/{slug}/activity", h.wrap(h.activity))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/bulk", h.wrap(h.bulk))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.update))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
@@ -48,6 +49,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/watch", h.wrap(h.watch(false)))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/timeline", h.wrap(h.timeline))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/comments", h.wrap(h.createComment))
+	mux.HandleFunc("POST /api/workspaces/{slug}/import/csv", web.Wrap(h.authenticate, maxImportFile+1<<20, h.importCSV))
+	mux.HandleFunc("POST /api/workspaces/{slug}/import/github", h.wrap(h.importGitHub))
 	mux.HandleFunc("POST /api/workspaces/{slug}/comments/{id}", h.wrap(h.updateComment))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/comments/{id}", h.wrap(h.deleteComment))
 }

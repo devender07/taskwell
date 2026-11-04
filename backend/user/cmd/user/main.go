@@ -39,6 +39,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sweep"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/view"
 	"github.com/devender07/taskwell/backend/user/internal/webhook"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
@@ -127,6 +128,7 @@ func main() {
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
 	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
+	view.New(pool, authenticate, wsH.Member).Register(mux)
 	jwtSecret := string(secret)
 	if jwtSecret == "" {
 		if jwtSecret, err = cfg.Get(context.Background(), "jwt_secret"); err != nil {
@@ -285,7 +287,7 @@ func serve(srv, metrics *http.Server, stop func()) {
 }
 
 // withTimeouts bounds each request: 30s to read the body, respond and run (the context ends then), 10 minutes for
-// file uploads and downloads. The realtime socket sets its own.
+// file uploads and downloads and imports (a GitHub import fetches page by page). The realtime socket sets its own.
 func withTimeouts(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/realtime" {
@@ -293,7 +295,8 @@ func withTimeouts(h http.Handler) http.Handler {
 			return
 		}
 		d := 30 * time.Second
-		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") {
+		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") ||
+			strings.Contains(r.URL.Path, "/import/") {
 			d = 10 * time.Minute
 		}
 		rc := http.NewResponseController(w)

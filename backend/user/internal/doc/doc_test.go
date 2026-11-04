@@ -87,3 +87,18 @@ func TestKeepMentions(t *testing.T) {
 		t.Errorf("unchanged doc rewritten: %s", got)
 	}
 }
+
+func TestFromText(t *testing.T) {
+	got := string(FromText("  One\r\ntwo\n \nThree  "))
+	want := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"One"},{"type":"hardBreak"},` +
+		`{"type":"text","text":"two"}]},{"type":"paragraph","content":[{"type":"text","text":"Three"}]}]}`
+	if got != want {
+		t.Errorf("got %s", got)
+	}
+	if d, msg := Check(FromText("a\n\nb"), "Description", 100); d == nil || msg != "" {
+		t.Errorf("FromText's doc doesn't pass Check: %q", msg)
+	}
+	if FromText(" \n ") != nil {
+		t.Error("blank text isn't nil")
+	}
+}

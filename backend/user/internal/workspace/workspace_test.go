@@ -93,8 +93,8 @@ func TestPermissions(t *testing.T) {
 	if !subset(member, allPermissions()) {
 		t.Error("admin can't grant everything")
 	}
-	if got, ok := normPerms([]string{"comments.create", permWorkspaceEdit, "comments.create"}); !ok ||
-		!slices.Equal(got, []string{permWorkspaceEdit, "comments.create"}) {
+	if got, ok := normPerms([]string{"comments.create", PermWorkspaceEdit, "comments.create"}); !ok ||
+		!slices.Equal(got, []string{PermWorkspaceEdit, "comments.create"}) {
 		t.Errorf("normPerms = %v, %v", got, ok)
 	}
 	if _, ok := normPerms([]string{"nope"}); ok {

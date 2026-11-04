@@ -11,7 +11,8 @@ type Permission struct {
 }
 
 const (
-	permWorkspaceEdit   = "workspace.edit"
+	// PermWorkspaceEdit gates renaming the workspace; it also lets a member edit and delete others' shared views.
+	PermWorkspaceEdit   = "workspace.edit"
 	permWorkspaceDelete = "workspace.delete"
 	// permWorkspacesCreate lets a member create new workspaces; checked in SQL by can_create_workspace.
 	permWorkspacesCreate = "workspaces.create"
@@ -49,7 +50,7 @@ const (
 
 // catalog is every permission in display order.
 var catalog = []Permission{
-	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
+	{PermWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
 	{permWorkspacesCreate, "Workspace", "Create new workspaces", true},
 	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},

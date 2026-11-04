@@ -16,6 +16,38 @@
   .issue-row-wide { display: none; }
 }
 
+/* A list row: its select checkbox, then the row link. The checkbox shows on hover and focus, while anything is
+   selected, and always on touch screens. */
+.issue-item { display: flex; align-items: center; }
+.issue-item > .issue-row { flex: 1; min-width: 0; padding-left: 0; }
+.issue-select { flex-shrink: 0; justify-content: center; width: 44px; height: 44px; opacity: 0; }
+.issue-item:hover .issue-select, .issue-item:focus-within .issue-select, [data-selecting] .issue-select { opacity: 1; }
+@media (hover: none) {
+  .issue-select { opacity: 1; }
+}
+
+.bulk-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: rgba(0, 0, 0, 0.6) 0 0 0 1px, rgba(0, 0, 0, 0.1) 0 4px 4px 0;
+  transform: translateX(-50%);
+}
+@media (max-width: 640px) {
+  .bulk-bar { right: 0; bottom: 0; left: 0; width: auto; max-width: none; border-radius: 0; transform: none; }
+}
+
 .pr-state {
   padding: 0 8px;
   color: var(--text-2);

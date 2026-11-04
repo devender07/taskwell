@@ -431,3 +431,17 @@ export const PathIcon = ({ d, ...props }: IconProps & { d: string }) => (
     <path d={d} />
   </Icon>
 )
+
+export const LayersIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m12 3 9 5-9 5-9-5z" />
+    <path d="m3 13 9 5 9-5" />
+  </Icon>
+)
+
+export const UploadIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 15V4M7 9l5-5 5 5" />
+    <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+  </Icon>
+)

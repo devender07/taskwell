@@ -103,6 +103,9 @@ func Feedback(slug string) string { return Workspace(slug) + "/feedback" }
 
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
+// Views is the workspace's saved views: the caller's own and the shared ones.
+func Views(slug string) string { return Workspace(slug) + "/views" }
+
 // Watching is the list of issues the caller watches.
 func Watching(slug string) string { return Workspace(slug) + "/watching" }
 

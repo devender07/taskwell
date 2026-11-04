@@ -207,6 +207,26 @@ export const deleteFeedback = (workspace: string, id: string) => api(`${feedback
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
   `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
+export const bulkIssuesPath = (workspace: string) => `${workspacePath(workspace)}/issues/bulk`
+
+// path: the page under the workspace with its search, e.g. `/projects/ABC?view=board`.
+export type SavedView = { id: string; name: string; path: string; shared: boolean; owner: PersonRef; can_edit: boolean }
+export const viewsPath = (workspace: string) => `${workspacePath(workspace)}/views`
+export const viewPath = (workspace: string, id: string) => `${viewsPath(workspace)}/${encodeURIComponent(id)}`
+
+export type ImportSource = 'linear' | 'jira' | 'csv' | 'github'
+// imported and first: only once imported, not on a dry run. row: the CSV data row (1-based) or the GitHub issue number.
+export type ImportSummary = {
+  source: ImportSource
+  total: number
+  statuses: { from: string; to: { id: string; name: string }; count: number }[]
+  new_labels: string[]
+  unmatched_assignees: string[]
+  comments: number
+  skipped: { row: number; error: string }[]
+  imported?: number
+  first?: string
+}
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)

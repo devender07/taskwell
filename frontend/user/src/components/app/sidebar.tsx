@@ -1,5 +1,5 @@
-import { Link, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, RoadmapIcon, SearchIcon, SettingsIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
 import { useMenu, WorkspaceSwitcher } from './navbar'
@@ -12,6 +12,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
   const team = can(useLoaderData({ from: '/_app/$workspace' }), 'analytics.view')
   const unread = useUnread()
+  const views = useLoaderData({ from: '/_app/$workspace/_main' })
   const [open, setOpen] = useMenu()
   const { user, workspaces } = useRouteContext({ from: '/_app' })
   const count = unread.chats
@@ -68,6 +69,27 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <RoadmapIcon />
         Roadmap
       </Link>
+      {views.length ? (
+        <>
+          <h2 className="sidebar-heading">Views</h2>
+          {views.map((v) => {
+            const [path = '', query = ''] = v.path.split('?')
+            return (
+              // The saved path is checked by the API against the issue pages; the cast only skips the route-typed `to`.
+              <Link key={v.id} to={`/${workspace}${path}` as '/'} search={defaultParseSearch(query)} activeOptions={{ exact: true }}>
+                <LayersIcon className="flex-noshrink" />
+                <span className="ellipsis">{v.name}</span>
+                {v.shared ? (
+                  <span className="flex-noshrink" style={{ display: 'inline-flex', marginLeft: 'auto' }} title="Shared with workspace">
+                    <UsersIcon size={14} />
+                    <span className="sr-only">(shared)</span>
+                  </span>
+                ) : null}
+              </Link>
+            )
+          })}
+        </>
+      ) : null}
       {team ? (
         <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
           <UsersIcon />

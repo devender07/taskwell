@@ -228,3 +228,12 @@ export const feedbackEmail = (v: string, needed: boolean) => {
   return s.length > 254 || !EMAIL.test(s) ? 'Enter a valid email.' : null
 }
 export const feedbackName: Check = (v) => (v.trim().length > 80 ? 'Name must be 80 characters or fewer.' : null)
+
+// For a field whose only check is being filled in, with the message to show when it isn't.
+export const filled = (message: string): Check => (v) => (v.trim() ? null : message)
+
+export const viewName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Enter a name.'
+  return s.length > 60 ? 'Use 60 characters or fewer.' : null
+}

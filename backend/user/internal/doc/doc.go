@@ -201,3 +201,30 @@ func KeepMentions(raw []byte, keep func(id string) bool) json.RawMessage {
 	}
 	return out
 }
+
+var blankLine = regexp.MustCompile(`\n[ \t]*\n`)
+
+// FromText turns plain text into a document: one paragraph per blank-line-separated block, line breaks kept as hard
+// breaks; nil when it's blank. A port of the MCP server's toDoc.
+// ponytail: no markdown; parse it if imports need formatting.
+func FromText(text string) json.RawMessage {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+	if text == "" {
+		return nil
+	}
+	d := node{Type: "doc"}
+	for _, block := range blankLine.Split(text, -1) {
+		p := node{Type: "paragraph"}
+		for i, line := range strings.Split(strings.TrimSpace(block), "\n") {
+			if i > 0 {
+				p.Content = append(p.Content, node{Type: "hardBreak"})
+			}
+			if line != "" {
+				p.Content = append(p.Content, node{Type: "text", Text: line})
+			}
+		}
+		d.Content = append(d.Content, p)
+	}
+	b, _ := json.Marshal(d) // a node always marshals
+	return b
+}

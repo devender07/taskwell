@@ -1101,14 +1101,7 @@ func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labe
 
 func (m *model) delete(ctx context.Context, id, actorID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		n, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
-			return err
-		}
-		if err := publishIssue(ctx, tx, "issue.deleted", actorID, nil, n); err != nil {
+		if err := deleteIssue(ctx, tx, id, actorID); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
@@ -1117,6 +1110,239 @@ func (m *model) delete(ctx context.Context, id, actorID string) error {
 		return fmt.Errorf("delete issue: %w", err)
 	}
 	return nil
+}
+
+// deleteIssue deletes the issue in tx and publishes it.
+func deleteIssue(ctx context.Context, tx pgx.Tx, id, actorID string) error {
+	n, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
+		return err
+	}
+	return publishIssue(ctx, tx, "issue.deleted", actorID, nil, n)
+}
+
+// --- bulk ---
+
+// findMany returns the workspace's issues with the identifiers, in their order (one per identifier), as the viewer
+// sees them; nil when one isn't an identifier, doesn't exist or can't be seen.
+func (m *model) findMany(ctx context.Context, workspaceID string, identifiers []string, viewerID string) ([]Issue, error) {
+	keys, numbers := make([]string, len(identifiers)), make([]int, len(identifiers))
+	for i, s := range identifiers {
+		var ok bool
+		if keys[i], numbers[i], ok = ParseIdentifier(s); !ok {
+			return nil, nil
+		}
+	}
+	rows, err := m.db.Query(ctx, `select x.ord, `+listCols+`
+		join unnest($2::text[], $3::int[]) with ordinality x(key, number, ord) on p.key = canonical_key($1, x.key) and i.number = x.number
+		where i.workspace_id = $1 and can_see_project(p.id, $4) order by x.ord`, workspaceID, keys, numbers, viewerID)
+	if err != nil {
+		return nil, fmt.Errorf("find issues: %w", err)
+	}
+	is, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Issue, error) {
+		var ord int
+		return scanIssue(prefixed{row, []any{&ord}})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("find issues: %w", err)
+	}
+	if len(is) < len(identifiers) {
+		return nil, nil
+	}
+	return is, nil
+}
+
+// bulkUpdate applies f to every issue in one transaction, like update does to one, and adds and removes the labels.
+// Returns errNoCycle when the cycle isn't in an issue's project.
+func (m *model) bulkUpdate(ctx context.Context, workspaceID string, ids []string, actorID string, f fields, add, remove []string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssues(ctx, tx, ids...); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			f := f
+			if len(add) > 0 || len(remove) > 0 {
+				var have []string
+				if err := tx.QueryRow(ctx, `select array(select label_id::text from issue_labels where issue_id = $1)`, id).Scan(&have); err != nil {
+					return err
+				}
+				f.setLabels, f.labelIDs = true, labelSet(have, add, remove)
+			}
+			if err := apply(ctx, tx, workspaceID, id, actorID, f, nil, "issue.updated"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if errors.Is(err, errNoCycle) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("bulk update issues: %w", err)
+	}
+	return nil
+}
+
+// bulkDelete deletes the issues in one transaction.
+func (m *model) bulkDelete(ctx context.Context, ids []string, actorID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssues(ctx, tx, ids...); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := deleteIssue(ctx, tx, id, actorID); err != nil {
+				return err
+			}
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if err != nil {
+		return fmt.Errorf("bulk delete issues: %w", err)
+	}
+	return nil
+}
+
+// --- import ---
+
+// importProject returns the id of the project with the key and whether it's archived; "" when there's none or the
+// viewer can't see it.
+func (m *model) importProject(ctx context.Context, workspaceID, key, viewerID string) (string, bool, error) {
+	var id string
+	var archived bool
+	err := m.db.QueryRow(ctx, `select id::text, archived_at is not null from projects
+		where workspace_id = $1 and key = canonical_key($1, $2) and can_see_project(id, $3)`, workspaceID, key, viewerID).Scan(&id, &archived)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("find import project: %w", err)
+	}
+	return id, archived, nil
+}
+
+// importRefs reads what an import maps onto: the workspace's statuses and labels, and the members who can see the
+// project.
+func (m *model) importRefs(ctx context.Context, workspaceID, projectID string) (importRefs, error) {
+	refs := importRefs{labels: map[string]string{}}
+	ss, err := m.listStatuses(ctx, workspaceID)
+	if err != nil {
+		return refs, err
+	}
+	for _, s := range ss {
+		refs.statuses = append(refs.statuses, s.Status)
+	}
+	var name, id string
+	rows, err := m.db.Query(ctx, `select lower(name), id::text from labels where workspace_id = $1`, workspaceID)
+	if err == nil {
+		_, err = pgx.ForEachRow(rows, []any{&name, &id}, func() error {
+			refs.labels[name] = id
+			return nil
+		})
+	}
+	if err != nil {
+		return refs, fmt.Errorf("import labels: %w", err)
+	}
+	if rows, err = m.db.Query(ctx, `select u.id::text, lower(u.email), lower(u.name) from workspace_members m join users u on u.id = m.user_id
+		where m.workspace_id = $1 and can_see_project($2, u.id) order by m.created_at, u.id`, workspaceID, projectID); err == nil {
+		refs.members, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (importMember, error) {
+			var im importMember
+			return im, row.Scan(&im.id, &im.email, &im.name)
+		})
+	}
+	if err != nil {
+		return refs, fmt.Errorf("import members: %w", err)
+	}
+	return refs, nil
+}
+
+// importIssues adds the issues to the project in one transaction, numbered and ranked after its last ones, creating
+// the new labels, and returns the first one's identifier. Each logs a created event; none notify. Returns errArchived
+// when the project was archived meanwhile.
+func (m *model) importIssues(ctx context.Context, workspaceID, projectID, actorID string, is []plannedIssue, newLabels []string) (string, error) {
+	var first string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// Bumping issue_seq by the whole block locks the project row, as create does.
+		var key, slug string
+		var last int
+		if err := tx.QueryRow(ctx,
+			`update projects p set issue_seq = issue_seq + $2 from workspaces w
+			 where p.id = $1 and w.id = p.workspace_id and p.archived_at is null returning p.key, w.slug, p.issue_seq`,
+			projectID, len(is)).Scan(&key, &slug, &last); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return errArchived
+			}
+			return err
+		}
+		if _, err := tx.Exec(ctx, `insert into labels (workspace_id, name, color) select $1, n, $3 from unnest($2::text[]) n
+			on conflict do nothing`, workspaceID, newLabels, defaultLabelColor); err != nil {
+			return err
+		}
+		labels := map[string]string{}
+		var name, id string
+		rows, err := tx.Query(ctx, `select lower(name), id::text from labels where workspace_id = $1`, workspaceID)
+		if err != nil {
+			return err
+		}
+		if _, err := pgx.ForEachRow(rows, []any{&name, &id}, func() error {
+			labels[name] = id
+			return nil
+		}); err != nil {
+			return err
+		}
+		// The first issue goes after the project's last; each next one right after it, by a suffix.
+		rank, err := place(ctx, tx, projectID, "", "", "")
+		if err != nil {
+			return err
+		}
+		number := last - len(is) + 1
+		first = key + "-" + strconv.Itoa(number)
+		b := &pgx.Batch{}
+		for n, i := range is {
+			r := rank
+			if n > 0 {
+				r += fmt.Sprintf("%04dV", n)
+			}
+			var labelIDs []string
+			for _, l := range i.labels {
+				labelIDs = append(labelIDs, labels[strings.ToLower(l)])
+			}
+			b.Queue(`with i as (insert into issues (workspace_id, project_id, number, title, description, description_text, status_id,
+				   assignee_id, priority, due_date, created_by, rank)
+				 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12) returning id),
+				 l as (insert into issue_labels (issue_id, label_id) select i.id, unnest($13::uuid[]) from i on conflict do nothing),
+				 c as (insert into comments (issue_id, author_id, body) select i.id, $11, unnest($14::text[])::jsonb from i)
+				 insert into issue_events (issue_id, actor_id, kind, data) select i.id, $11, 'created', '{}' from i`,
+				workspaceID, projectID, number+n, i.title, i.description, doc.PlainText(i.description), i.statusID,
+				i.assigneeID, i.priority, i.due, actorID, r, labelIDs, i.comments)
+		}
+		if err := tx.SendBatch(ctx, b).Close(); err != nil {
+			return err
+		}
+		// One event covers every issue; imports notify no one and send no webhooks.
+		e := realtime.Event{Kind: "issue.created", Workspace: slug, Actor: actorID, Audience: realtime.ToWorkspace(workspaceID),
+			Project: projectID, Paths: []string{realtime.ProjectIssues(slug, key), realtime.Project(slug, key), realtime.MyIssues(slug),
+				realtime.Watching(slug), realtime.Activity(slug), realtime.ProjectStats(slug), realtime.Roadmap(slug)}}
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return err
+		}
+		if len(newLabels) > 0 {
+			if err := realtime.Publish(ctx, tx, realtime.Event{Kind: "workflow.changed", Workspace: slug, Actor: actorID,
+				Audience: realtime.ToWorkspace(workspaceID), Paths: []string{realtime.Workspace(slug) + "/labels"}}); err != nil {
+				return err
+			}
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if errors.Is(err, errArchived) {
+		return "", err
+	}
+	if err != nil {
+		return "", fmt.Errorf("import issues: %w", err)
+	}
+	return first, nil
 }
 
 // --- live editing ---

@@ -126,7 +126,14 @@ function ProjectPage() {
         {empty ? (
           <div className="grid gap-4 p-6 bg-surface border rounded-lg justify-items-center text-center">
             <p className="text-body-sm text-secondary">No issues yet.</p>
-            {create ? <Button title="New issue (C)" onClick={openCreate}>New issue</Button> : null}
+            {create ? (
+              <div className="flex flex-wrap justify-center gap-3">
+                <Button title="New issue (C)" onClick={openCreate}>New issue</Button>
+                <Link to="/$workspace/settings/import" params={{ workspace: workspace.slug }} search={{ project: project.key }} className="button button-secondary">
+                  Import issues
+                </Link>
+              </div>
+            ) : null}
           </div>
         ) : (
           <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cycles} defaultSort={defaultSort(project)} manual />
