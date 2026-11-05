@@ -5,7 +5,7 @@ colors:
   surface: "#FAFAFC"
   well: "#F5F5F7"
   ink: "#1D1D1F"
-  ink-muted: "#7A7A7A"
+  ink-muted: "#6E6E73"
   hairline: "#E0E0E0"
   primary: "#0066CC"
   on-primary: "#FFFFFF"
@@ -40,7 +40,7 @@ button. The landing page is always dark.
 | Well (board columns, anything that holds cards) | `--well` | `#F5F5F7` |
 | Card inside a well | `--card` | `#FFFFFF` |
 | Primary text | `--text` | ink `#1D1D1F` |
-| Secondary text, captions, placeholders | `--text-2` | ink-muted `#7A7A7A` |
+| Secondary text, captions, placeholders | `--text-2` | ink-muted `#6E6E73` |
 | Input text | `--input-text` | ink `#1D1D1F` |
 | Borders, dividers, control outlines | `--border`, `--ring` | hairline `#E0E0E0` |
 | Links, focus rings, mentions | `--link`, `--focus` | primary `#0066CC` |
@@ -51,9 +51,7 @@ button. The landing page is always dark.
 | Hover, pressed and overlay tints | `rgba(var(--ink), a)` | ink `29, 29, 31` at the dark theme's opacities (0.02 to 0.16) |
 | Modal backdrop | | `rgba(0, 0, 0, 0.6)`, as in dark |
 
-Contrast: ink on canvas is 16.8:1, white on primary 5.6:1, primary on canvas 5.6:1. Ink-muted on canvas is 4.3:1,
-under the 4.5:1 that `DESIGN.md` asks for body text, so keep it to secondary text at 13px and up; never use it for
-the only label of a control.
+Contrast: ink on canvas is 16.8:1, white on primary 5.6:1, primary on canvas 5.6:1. Ink-muted on canvas is 5.1:1, so it passes the 4.5:1 body-text minimum in `DESIGN.md`.
 
 ## 3. Components
 

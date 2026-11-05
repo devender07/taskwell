@@ -81,6 +81,8 @@ Plans: `docs/notes-plan.md`, `docs/notes-collab-plan.md`.
 
 - [x] Editor: link and table tools, list buttons toggle and convert lists in place, tools that don't fit go in a "More formatting" menu
 - [x] Sticky page headers on every workspace page (border once the page scrolls under them)
+- [x] Due-date reminders (docs/due-reminders-plan.md): the assignee gets "due tomorrow" the day before and "overdue" the day after, at the digest hour in their timezone; in the Taskwell bot and bell, emailed unless "Due dates" is off
+- [x] Weekly digest email (docs/weekly-digest-plan.md): Mondays at the digest hour in the user's timezone, closed last week / due / blocked / blocking others across workspaces; "Weekly summary" in Settings → Notifications, on by default
 - [x] Light mode (docs/light-mode-plan.md): System / Light / Dark in Settings → Profile, per browser; landing page stays dark
 - [x] Sticky issue toolbar (view, group, sort, search, filters, chips) under the page header on issue lists
 - [x] "Assigned by" on issues (last assignee change, else the creator): list rows, board cards, issue page

@@ -5,8 +5,7 @@ import { ArrowLeftIcon } from '@taskwell/shared/icons'
 import '@taskwell/shared/icon-button' // its CSS, for the back link
 import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
 import { useUnread } from '@/components/app/unread'
-import { PROVIDER_NAME } from '@/components/issues/pull-requests'
-import { FeedRow, notificationTarget, notificationText } from './feed-row'
+import { FeedRow, notificationTarget, notificationText, notificationActorName } from './feed-row'
 
 export const botPath = (slug: string) => `${workspacePath(slug)}/notifications?exclude=chat`
 
@@ -78,7 +77,7 @@ export function TaskwellBot({ slug, page }: { slug: string; page: NotificationPa
                 workspace={slug}
                 {...notificationTarget(n)}
                 actor={n.actor}
-                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
+                actorName={notificationActorName(n)}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}

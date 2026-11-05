@@ -17,7 +17,7 @@ Light colors come from `DESIGN-LIGHT.md` (an Apple-inspired palette); the names 
 | `--bg` | `#08090a` | `#ffffff` (canvas) |
 | `--surface` | `#0f1011` | `#fafafc` (surface-pearl) |
 | `--text` | `#f7f8f8` | `#1d1d1f` (ink) |
-| `--text-2` | `#8a8f98` | `#7a7a7a` (ink-muted-48) |
+| `--text-2` | `#8a8f98` | `#6e6e73` (ink-muted) |
 | `--border` | `rgba(255,255,255,.05)` | `#e0e0e0` (hairline) |
 | `--link` | `#5e6ad2` | `#0066cc` (primary) |
 | `--ink` (new) | `255, 255, 255` | `29, 29, 31` (ink) |

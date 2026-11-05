@@ -1,9 +1,12 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
+import { LogoMark } from '@taskwell/shared/logo'
 import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { avatarSrc, type Notification, type PersonRef } from '@/api'
 import { JoinInviteButton } from '@/components/invite/invite-actions'
+import { formatDate } from '@/components/issues/fields'
+import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import './inbox.css'
 
 type FeedRowProps = {
@@ -28,12 +31,15 @@ type FeedRowProps = {
 // One line of who did what to which issue or chat, linking to it: the notifications popover and Home's blocks.
 export function FeedRow({ workspace, identifier = '', chat, project, invite, actor, actorName, text, excerpt, at, unread, onClick }: FeedRowProps) {
   const name = actor?.name ?? actorName ?? 'Someone'
+  // Taskwell's own reminders show its logo and read without a name: "WEB-12 Title is due tomorrow".
+  const bot = !actor && name === 'Taskwell'
   const body = (
     <>
-      <Avatar name={name} size={24} src={actor && avatarSrc(actor.id)} />
+      {bot ? <LogoMark size={24} /> : <Avatar name={name} size={24} src={actor && avatarSrc(actor.id)} />}
       <span className="grid gap-1 flex-grow" style={{ minWidth: 0 }}>
         <span className="text-caption text-secondary" style={{ overflowWrap: 'anywhere' }}>
-          <span className="text-primary">{name}</span> {text}
+          {bot ? null : <><span className="text-primary">{name}</span> </>}
+          {text}
         </span>
         {excerpt ? <span className="text-caption text-secondary ellipsis">{excerpt}</span> : null}
         {invite && !invite.available ? <span className="text-caption text-secondary">This invite is no longer available.</span> : null}
@@ -99,8 +105,16 @@ export function notificationText(n: Notification): ReactNode {
       return <>commented on {issue}</>
     case 'mention':
       return <>mentioned you in {issue}</>
+    case 'due_soon':
+      return <>{issue} is due tomorrow</>
+    case 'overdue':
+      return <>{issue} is overdue{n.data.due_date ? ` (due ${formatDate(n.data.due_date)})` : ''}</>
   }
 }
+
+// Who a notification is from when it has no actor: the git provider, or Taskwell itself for due-date reminders.
+export const notificationActorName = (n: Notification) =>
+  n.data.via ? PROVIDER_NAME[n.data.via.provider] : n.kind === 'due_soon' || n.kind === 'overdue' ? 'Taskwell' : undefined
 
 // Where a notification's row links: its issue, or its chat scrolled to the message.
 export const notificationTarget = (n: Notification) =>

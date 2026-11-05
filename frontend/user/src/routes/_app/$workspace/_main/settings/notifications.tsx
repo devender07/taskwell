@@ -10,19 +10,20 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/notificati
   component: NotificationSettingsPage,
 })
 
-type Kind = 'mentions' | 'assignments' | 'status' | 'comments' | 'chat'
+type Kind = 'mentions' | 'assignments' | 'status' | 'comments' | 'chat' | 'due_dates'
 
 const modes: { value: NotificationSettings['email']; label: string }[] = [
   { value: 'instant', label: 'Right away' },
   { value: 'digest', label: 'Once a day (daily digest)' },
   { value: 'off', label: 'Never' },
 ]
-const kinds: { value: Kind; label: string }[] = [
+const kinds: { value: Kind; label: string; caption?: string }[] = [
   { value: 'mentions', label: 'Mentions' },
   { value: 'assignments', label: 'Assigned to me or added to a project' },
   { value: 'status', label: 'Status changes on issues I watch' },
   { value: 'comments', label: 'Comments on issues I watch' },
   { value: 'chat', label: 'Direct messages and chat mentions' },
+  { value: 'due_dates', label: 'Due dates', caption: "The day before an issue assigned to you is due, and when it's overdue." },
 ]
 
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -62,7 +63,7 @@ function NotificationSettingsPage() {
     } catch (e) {
       setSettings(prev)
       const { errors, error } = toFormErrors(e)
-      setError(errors.email ?? errors.timezone ?? error)
+      setError(errors.email ?? errors.weekly ?? errors.due_dates ?? errors.timezone ?? error)
     }
   }
 
@@ -94,11 +95,22 @@ function NotificationSettingsPage() {
         <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }} disabled={settings.email === 'off'}>
           <legend className="text-label text-primary mb-2 p-0">Email me about</legend>
           {kinds.map((k) => (
-            <div key={k.value} className="flex items-center" style={{ minHeight: 44 }}>
-              <Checkbox label={k.label} checked={settings[k.value]} onChange={(e) => save({ ...settings, [k.value]: e.target.checked })} />
+            <div key={k.value}>
+              <div className="flex items-center" style={{ minHeight: 44 }}>
+                <Checkbox label={k.label} checked={settings[k.value]} onChange={(e) => save({ ...settings, [k.value]: e.target.checked })} />
+              </div>
+              {k.caption ? <p className="text-caption text-secondary m-0">{k.caption}</p> : null}
             </div>
           ))}
         </fieldset>
+        <div className="grid gap-1">
+          <div className="flex items-center" style={{ minHeight: 44 }}>
+            <Checkbox label="Weekly summary" checked={settings.weekly} disabled={settings.email === 'off'} onChange={(e) => save({ ...settings, weekly: e.target.checked })} />
+          </div>
+          <p className="text-caption text-secondary m-0">
+            {settings.email === 'off' ? 'Turn on email to get it.' : "Monday mornings in your digest timezone: what you closed last week, what's due and what's blocked."}
+          </p>
+        </div>
         <div role="status" className="text-caption" style={{ minHeight: 20 }}>
           {error ? <span className="text-accent">{error}</span> : saved ? <span className="text-success">Saved.</span> : null}
         </div>

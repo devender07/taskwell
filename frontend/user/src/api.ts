@@ -158,11 +158,11 @@ export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string
   actor: PersonRef | null
-  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider } }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider }; due_date?: string }
   read: boolean
   created_at: string
 } & (
-  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
+  | { kind: 'mention' | 'assigned' | 'status' | 'comment' | 'due_soon' | 'overdue'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
   | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
   | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
   // available: the invite still exists, hasn't expired, and the user hasn't joined.
@@ -184,6 +184,8 @@ export type NotificationSettings = {
   status: boolean
   comments: boolean
   chat: boolean
+  weekly: boolean
+  due_dates: boolean
   timezone: string | null // null until chosen
 }
 

@@ -160,7 +160,7 @@ export function ArchiveProject({ workspace, project }: { workspace: Workspace; p
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
+      <Button onClick={() => setOpen(true)}>
         Archive project
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Archive ${project.name}?`} description="Archived projects are hidden from the list. You can unarchive them later, or delete them for good.">

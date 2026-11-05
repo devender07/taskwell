@@ -7,8 +7,7 @@ import { Popover } from '@taskwell/shared/popover'
 import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { PlusIcon } from '@taskwell/shared/icons'
 import { avatarSrc, type Chat, type NotificationPage, type User } from '@/api'
-import { notificationText } from '@/components/inbox/feed-row'
-import { PROVIDER_NAME } from '@/components/issues/pull-requests'
+import { notificationActorName, notificationText } from '@/components/inbox/feed-row'
 import { NewGroupDialog, NewMessageDialog, NewMessagePeople } from './chat-dialogs'
 import './chat.css'
 
@@ -121,7 +120,7 @@ function BotRow({ slug, page }: { slug: string; page: NotificationPage }) {
           </span>
           <span className="flex items-center gap-2">
             <span className="text-caption text-secondary ellipsis flex-grow">
-              {last ? <>{last.actor?.name ?? (last.data.via && PROVIDER_NAME[last.data.via.provider]) ?? 'Someone'} {notificationText(last)}</> : 'Notifications show up here'}
+              {last ? <>{last.actor || notificationActorName(last) !== 'Taskwell' ? `${last.actor?.name ?? notificationActorName(last) ?? 'Someone'} ` : null}{notificationText(last)}</> : 'Notifications show up here'}
             </span>
             {unread ? (
               <span className="chat-pill" data-mentioned aria-hidden>

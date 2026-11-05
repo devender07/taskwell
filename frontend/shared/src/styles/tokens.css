@@ -84,7 +84,7 @@
   --bg: #ffffff; /* canvas */
   --surface: #fafafc; /* surface-pearl */
   --text: #1d1d1f; /* ink */
-  --text-2: #7a7a7a; /* ink-muted-48 */
+  --text-2: #6e6e73; /* 5:1 on white */
   --border: #e0e0e0; /* hairline */
   --link: #0066cc; /* primary */
   --ink: 29, 29, 31; /* ink, for tints */
@@ -109,7 +109,7 @@
     --bg: #ffffff; /* canvas */
     --surface: #fafafc; /* surface-pearl */
     --text: #1d1d1f; /* ink */
-    --text-2: #7a7a7a; /* ink-muted-48 */
+    --text-2: #6e6e73; /* 5:1 on white */
     --border: #e0e0e0; /* hairline */
     --link: #0066cc; /* primary */
     --ink: 29, 29, 31; /* ink, for tints */
