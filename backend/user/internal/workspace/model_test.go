@@ -2,16 +2,20 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 // TestTakeInviteSend runs against a scratch database, e.g.
-// TEST_DATABASE_URL=postgres://tether:tether@localhost:5433/tether_test?sslmode=disable.
+// TEST_DATABASE_URL=postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable.
 func TestTakeInviteSend(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -80,9 +84,9 @@ func TestTakeInviteSend(t *testing.T) {
 	}
 }
 
-// TestCreateFirstJoinsInvites: a new user someone invited joins that workspace and gets none of their own; anyone
-// else gets their default workspace.
-func TestCreateFirstJoinsInvites(t *testing.T) {
+// TestCreateFirstLeavesInvites: a new user someone invited gets their own workspace like anyone else, and the invite
+// stays pending, offered by GET /me/invites.
+func TestCreateFirstLeavesInvites(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL not set")
@@ -98,9 +102,9 @@ func TestCreateFirstJoinsInvites(t *testing.T) {
 	}
 	var ann, cara, dev string
 	if err := pool.QueryRow(ctx, `
-		with a as (insert into users (name, email) values ('Ann', 'ann@join-invited.test') returning id),
-		     c as (insert into users (name, email) values ('Cara', 'cara@join-invited.test') returning id),
-		     d as (insert into users (name, email) values ('Dev', 'dev@join-invited.test') returning id)
+		with a as (insert into users (name, email, email_verified_at) values ('Ann', 'ann@join-invited.test', now()) returning id),
+		     c as (insert into users (name, email, email_verified_at) values ('Cara', 'cara@join-invited.test', now()) returning id),
+		     d as (insert into users (name, email, email_verified_at) values ('Dev', 'dev@join-invited.test', now()) returning id)
 		select a.id::text, c.id::text, d.id::text from a, c, d`).Scan(&ann, &cara, &dev); err != nil {
 		t.Fatal(err)
 	}
@@ -142,13 +146,44 @@ func TestCreateFirstJoinsInvites(t *testing.T) {
 		}
 		return ids
 	}
-	if got := workspaces(cara); len(got) != 1 || got[0] != annWS {
-		t.Errorf("invited Cara is in %v, want only Ann's workspace %s", got, annWS)
+	for _, u := range []string{cara, dev} {
+		if got := workspaces(u); len(got) != 1 || got[0] == annWS {
+			t.Errorf("%s is in %v, want just a default workspace of their own", u, got)
+		}
 	}
-	if invs, err := (&model{db: pool}).invites(ctx, annWS); err != nil || len(invs) != 0 {
-		t.Errorf("Ann's pending invites after Cara joined: %v %v, want none", invs, err)
+	if invs, err := (&model{db: pool}).invites(ctx, annWS); err != nil || len(invs) != 1 {
+		t.Errorf("Ann's pending invites after Cara signed up: %v %v, want Cara's", invs, err)
 	}
-	if got := workspaces(dev); len(got) != 1 || got[0] == annWS {
-		t.Errorf("Dev is in %v, want just a default workspace of his own", got)
+	mux := http.NewServeMux()
+	New(pool, dbtest.Auth, nil, nil).Register(mux)
+	code, body := dbtest.Do(t, mux, cara, "GET", "/api/me/invites", nil)
+	var mine []PendingInvite
+	if err := json.Unmarshal([]byte(body), &mine); code != 200 || err != nil || len(mine) != 1 ||
+		mine[0].Workspace.Name != "Ann's team" || mine[0].InvitedBy != "Ann" || mine[0].Role.Name != "Member" || mine[0].Guest {
+		t.Errorf("Cara's invites: %d %s", code, body)
+	}
+}
+
+func TestWorkspaceCreation(t *testing.T) {
+	p := dbtest.Pool(t)
+	ctx := context.Background()
+	alice, bob := dbtest.User(t, p, "Alice"), dbtest.User(t, p, "Bob")
+	ws, err := create(ctx, p, alice, "Alice's", dbtest.Name("a"))
+	if err != nil {
+		t.Fatalf("first workspace: %v", err)
+	}
+	dbtest.Join(t, p, ws.ID, bob, "member")
+	if _, err := create(ctx, p, bob, "Bob's", dbtest.Name("b")); !errors.Is(err, errNoCreate) {
+		t.Fatalf("member without the permission: got %v, want errNoCreate", err)
+	}
+	if _, err := p.Exec(ctx, `update workspace_roles set permissions = permissions || $2::text
+		where workspace_id = $1 and builtin = 'member'`, ws.ID, permWorkspacesCreate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := create(ctx, p, bob, "Bob's", dbtest.Name("b")); err != nil {
+		t.Fatalf("member with the permission: %v", err)
+	}
+	if _, err := create(ctx, p, alice, "Alice's second", dbtest.Name("a")); err != nil {
+		t.Fatalf("admin: %v", err)
 	}
 }

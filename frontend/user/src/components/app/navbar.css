@@ -22,6 +22,22 @@
 }
 .navbar-avatar:hover > span { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15); }
 
+.navbar-menu {
+  display: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-left: -12px;
+  padding: 0;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.navbar-menu:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (max-width: 640px) { .navbar-menu { display: inline-grid; } }
+
 .navbar-bell {
   position: relative;
   display: inline-grid;
@@ -60,3 +76,23 @@
 @media (pointer: coarse) {
   .notifications-action { min-height: 44px; }
 }
+
+/* Opens the command palette (search issues and projects); the label hides on small screens. */
+.navbar-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 44px;
+  height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--text-2);
+  font: 400 13px/19.5px var(--font);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.navbar-search:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.15); }
+.navbar-search:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+@media (min-width: 1024px) { .navbar-search { width: 320px; } .navbar-search .kbd { margin-left: auto; } }
+@media (max-width: 639px) { .navbar-search-label, .navbar-search .kbd { display: none; } .navbar-search { justify-content: center; padding: 0; width: 44px; height: 44px; } }

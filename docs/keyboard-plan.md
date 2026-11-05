@@ -60,7 +60,7 @@ Show shortcut hints: `⌘K` hint in the sidebar ("Search" item with a `kbd`), "C
 
 ### Quick-create
 
-`C` and the palette action open the existing `CreateIssueForm` in a `Dialog` with a **Project** `SmartAutocomplete` at the top (active projects; default = the project of the current page/issue, else the last used project from `localStorage` `tether:last-project:<workspace>`, else the first). Statuses/labels/members come from the workspace (fetch statuses/labels/members/projects on open, cached for the dialog's lifetime). The existing project-page "New issue" keeps working (it can reuse the same dialog with the project preset).
+`C` and the palette action open the existing `CreateIssueForm` in a `Dialog` with a **Project** `SmartAutocomplete` at the top (active projects; default = the project of the current page/issue, else the last used project from `localStorage` `taskwell:last-project:<workspace>`, else the first). Statuses/labels/members come from the workspace (fetch statuses/labels/members/projects on open, cached for the dialog's lifetime). The existing project-page "New issue" keeps working (it can reuse the same dialog with the project preset).
 
 ### Help dialog
 

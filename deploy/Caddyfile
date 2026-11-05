@@ -44,6 +44,21 @@
 			flush_interval -1
 		}
 	}
+	# OAuth discovery for MCP clients (docs/mcp-oauth-plan.md): the MCP server describes itself, the user service is
+	# the authorization server.
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy mcp:8095
+	}
+	handle /.well-known/oauth-authorization-server* {
+		reverse_proxy user:8090
+	}
+	# / is the static landing page (built from frontend/user/landing.html); the app lives at /{workspace}, /signin and the rest.
+	handle / {
+		root * /srv/user
+		header Cache-Control no-cache
+		rewrite * /landing.html
+		file_server
+	}
 	import spa user:8090 /srv/user
 }
 

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // Browser sessions: an MCP client drives the tester's browser one action at a time, the tester records each
@@ -24,7 +24,7 @@ import (
 const (
 	sessionIdle   = 10 * time.Minute
 	sessionMax    = 30 * time.Minute
-	sessionHeader = "X-Tether-Session-Token"
+	sessionHeader = "X-Taskwell-Session-Token"
 	actionTimeout = time.Minute
 	maxPageText   = 4000
 

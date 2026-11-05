@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (
@@ -46,14 +46,14 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request, userID string)
 			web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
 			return nil
 		}
-		ms, total, err := h.model.memberPage(ctx, ws.ID, strings.TrimSpace(query.Get("q")), offset, limit)
+		ms, total, err := h.model.memberPage(ctx, ws.ID, userID, strings.TrimSpace(query.Get("q")), offset, limit)
 		if err != nil {
 			return err
 		}
 		web.JSON(w, http.StatusOK, map[string]any{"members": ms, "invites": invs, "total": total, "has_more": offset+len(ms) < total})
 		return nil
 	}
-	ms, err := h.model.members(ctx, ws.ID)
+	ms, err := h.model.members(ctx, ws.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -76,6 +76,20 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if !ok || err != nil {
 		return err
 	}
+	var projectIDs []string
+	if role.Builtin != nil && *role.Builtin == roleGuest {
+		if projectIDs, err = h.model.projectIDs(ctx, ws.ID, userID, r.Form["project_keys"]); err != nil {
+			return err
+		}
+		if len(projectIDs) == 0 {
+			msg := "Choose at least one project."
+			if len(r.Form["project_keys"]) > 0 {
+				msg = "Choose projects from this workspace."
+			}
+			web.Fields(w, http.StatusBadRequest, map[string]string{"project_keys": msg})
+			return nil
+		}
+	}
 	email = web.NormEmail(email)
 	if in, err := h.model.isMember(ctx, ws.ID, email); err != nil {
 		return err
@@ -91,7 +105,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 		return err
 	}
 	token := secret.NewToken()
-	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, secret.Hash(token), days)
+	inv, err := h.model.invite(ctx, ws, email, userID, role.ID, projectIDs, secret.Hash(token), days)
 	if err != nil {
 		return err
 	}
@@ -176,6 +190,55 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, userID st
 		return nil
 	}
 	web.JSON(w, http.StatusOK, ws)
+	return nil
+}
+
+// myInvites lists the caller's pending invites to other workspaces, for the invite prompt.
+func (h *Handler) myInvites(w http.ResponseWriter, r *http.Request, userID string) error {
+	invs, err := h.model.myInvites(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	if invs == nil {
+		invs = []PendingInvite{}
+	}
+	web.JSON(w, http.StatusOK, invs)
+	return nil
+}
+
+func (h *Handler) acceptMyInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.acceptByID(r.Context(), userID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	web.JSON(w, http.StatusOK, ws)
+	return nil
+}
+
+// dismissMyInvite is the prompt's "Not now": the invite stays as a notification in the form's workspace, the one
+// the caller is in.
+func (h *Handler) dismissMyInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.membership(r.Context(), userID, normSlug(r.FormValue("workspace")))
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		web.Err(w, http.StatusNotFound, errNotFound)
+		return nil
+	}
+	found, err := h.model.dismiss(r.Context(), userID, r.PathValue("id"), ws)
+	if err != nil {
+		return err
+	}
+	if !found {
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
@@ -328,7 +391,7 @@ func (h *Handler) sendInvite(ctx context.Context, workspace string, inv Invite, 
 	}
 	link := strings.TrimRight(base, "/") + "/invite?token=" + url.QueryEscape(token)
 	// The subject stays fixed: names are free-form, and a subject is what a phishing relay would want to control.
-	return h.mail.Enqueue(ctx, h.model.db, inv.Email, "You're invited to a workspace on Tether",
-		fmt.Sprintf("%s invited you to join %s on Tether.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
+	return h.mail.Enqueue(ctx, h.model.db, inv.Email, "You're invited to a workspace on Taskwell",
+		fmt.Sprintf("%s invited you to join %s on Taskwell.\n\nAccept the invite:\n\n%s\n\nThe link expires in %d days.\n",
 			inv.InvitedBy, workspace, link, days))
 }

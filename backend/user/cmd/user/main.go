@@ -18,26 +18,33 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/shared/env"
-	"github.com/devender07/tether/backend/shared/obs"
-	"github.com/devender07/tether/backend/user/internal/aitest"
-	"github.com/devender07/tether/backend/user/internal/auth"
-	"github.com/devender07/tether/backend/user/internal/chat"
-	"github.com/devender07/tether/backend/user/internal/cycle"
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/feedback"
-	"github.com/devender07/tether/backend/user/internal/file"
-	"github.com/devender07/tether/backend/user/internal/gitlink"
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/notify"
-	"github.com/devender07/tether/backend/user/internal/project"
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/storage"
-	"github.com/devender07/tether/backend/user/internal/sweep"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/webhook"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/shared/cors"
+	"github.com/devender07/taskwell/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/shared/totp"
+	"github.com/devender07/taskwell/backend/user/internal/aitest"
+	"github.com/devender07/taskwell/backend/user/internal/analytics"
+	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/chat"
+	"github.com/devender07/taskwell/backend/user/internal/cycle"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/feedback"
+	"github.com/devender07/taskwell/backend/user/internal/file"
+	"github.com/devender07/taskwell/backend/user/internal/gitlink"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/note"
+	"github.com/devender07/taskwell/backend/user/internal/notify"
+	"github.com/devender07/taskwell/backend/user/internal/oauth"
+	"github.com/devender07/taskwell/backend/user/internal/project"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/sweep"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/template"
+	"github.com/devender07/taskwell/backend/user/internal/view"
+	"github.com/devender07/taskwell/backend/user/internal/webhook"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 func main() {
@@ -50,7 +57,7 @@ func main() {
 	if *healthcheck {
 		os.Exit(obs.Healthcheck(metricsAddr))
 	}
-	dbURL := env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
+	dbURL := env.Get("DATABASE_URL", "postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable")
 	addr := ":" + env.Get("PORT", "8090")
 	secret := []byte(os.Getenv("JWT_SECRET"))
 	if prod {
@@ -104,7 +111,13 @@ func main() {
 		obs.Fatal("MAIL_MAX_ATTEMPTS must be a number of at least 1")
 	}
 	mailer := mail.New(pool, cfg, duration("MAIL_TIMEOUT", 20*time.Second), duration("MAIL_RETRY_BASE", 30*time.Second), maxAttempts)
+	// The API's public URL when the web app is on another host; unset in production, app_base_url's host serves it.
+	apiURL := os.Getenv("API_URL")
+	if apiURL == "" && !prod {
+		apiURL = "http://localhost" + addr
+	}
 	authH := auth.New(pool, cfg, mailer, secret, workspace.CreateFirst)
+	authH.APIURL = apiURL
 	authH.Register(mux)
 	// Every handler but auth's own signs requests in through this, so the access log knows the user.
 	authenticate := func(r *http.Request) (string, error) {
@@ -118,12 +131,26 @@ func main() {
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
 	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
+	view.New(pool, authenticate, wsH.Member).Register(mux)
+	noteH := note.New(pool, authenticate, wsH.Member)
+	noteH.Register(mux)
+	templateH := template.New(pool, authenticate, wsH.Member)
+	templateH.Register(mux)
 	jwtSecret := string(secret)
 	if jwtSecret == "" {
 		if jwtSecret, err = cfg.Get(context.Background(), "jwt_secret"); err != nil {
 			obs.Fatal("startup", "err", err)
 		}
 	}
+	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY") // the admin app reads the same variable
+	if prod && len(mfaSecret) < 32 {
+		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
+	}
+	if mfaSecret == "" {
+		slog.Warn("MFA_ENCRYPTION_KEY is unset: TOTP secrets are encrypted with a key derived from jwt_secret (dev only)")
+		mfaSecret = "jwt_secret:" + jwtSecret
+	}
+	authH.MFAKey = totp.Key(mfaSecret)
 	gitKey, err := gitlink.Key(os.Getenv("INTEGRATION_SECRET_KEY"), jwtSecret, prod)
 	if err != nil {
 		obs.Fatal(err.Error())
@@ -131,6 +158,10 @@ func main() {
 	gitlink.New(pool, gitKey, func(ctx context.Context) (string, error) { return cfg.Get(ctx, "app_base_url") },
 		authenticate, wsH.Member).Register(mux)
 	feedback.New(pool, authenticate, wsH.Member).Register(mux)
+	analytics.New(pool, authenticate, wsH.Member).Register(mux)
+	oauthH := oauth.New(pool, cfg, authenticate)
+	oauthH.APIURL = apiURL
+	oauthH.Register(mux)
 	testKey, err := aitest.Key(os.Getenv("TEST_SECRET_KEY"), prod)
 	if err != nil {
 		obs.Fatal(err.Error())
@@ -144,6 +175,7 @@ func main() {
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Go(func() { issueH.Listen(work) })
+	wg.Go(func() { noteH.Listen(work) })
 	rtH := realtime.New(pool, func(r *http.Request) (realtime.Session, error) {
 		s, err := authH.Session(r)
 		obs.SetUser(r.Context(), s.UserID)
@@ -163,11 +195,19 @@ func main() {
 			}
 			return s, "", nil
 		})
+	rtH.JoinNote = func(ctx context.Context, c *realtime.Conn, userID, slug, id string) (realtime.Collab, string, error) {
+		s, msg, err := noteH.Join(ctx, c, userID, slug, id)
+		if s == nil {
+			return nil, msg, err
+		}
+		return s, "", nil
+	}
 	rtH.OnRevoke(authH.Forget)
 	if n, err := strconv.Atoi(os.Getenv("WS_MAX_CONNS_PER_USER")); err == nil && n > 0 {
 		realtime.MaxConnsPerUser = n
 	}
 	rtH.ConfigChanged = cfg.Invalidate
+	rtH.AppOrigin = authH.AppOrigin
 	chatH := chat.New(pool, authenticate, wsH.Member)
 	chatH.Register(mux)
 	rtH.ChatAudience = chatH.Audience
@@ -187,6 +227,7 @@ func main() {
 	fileH.Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
+	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +238,7 @@ func main() {
 			http.Error(w, "database: "+err.Error(), http.StatusServiceUnavailable)
 		case !rtH.Listening():
 			http.Error(w, "realtime listener down", http.StatusServiceUnavailable)
-		case !issueH.Listening():
+		case !issueH.Listening() || !noteH.Listening():
 			http.Error(w, "collab listener down", http.StatusServiceUnavailable)
 		default:
 			io.WriteString(w, "ok\n") //nolint:errcheck // the client's gone
@@ -207,12 +248,12 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		obs.WriteHTTP(w)
 		obs.WritePool(w, pool.Stat())
-		obs.Metric(w, "tether_realtime_sockets", "gauge", "Open realtime WebSockets.", "", float64(rtH.Sockets()))
+		obs.Metric(w, "taskwell_realtime_sockets", "gauge", "Open realtime WebSockets.", "", float64(rtH.Sockets()))
 		writeDBMetrics(r.Context(), w, pool)
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux)))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }
@@ -233,10 +274,10 @@ func writeDBMetrics(ctx context.Context, w io.Writer, pool *pgxpool.Pool) {
 		slog.WarnContext(ctx, "metrics query failed", "err", err)
 		return
 	}
-	obs.Metric(w, "tether_mail_queued", "gauge", "Emails waiting to be sent.", "", float64(queued))
-	obs.Metric(w, "tether_mail_failed", "gauge", "Emails given up on, kept 30 days.", "", float64(failed))
-	obs.Metric(w, "tether_mail_oldest_seconds", "gauge", "Age of the oldest email waiting to be sent.", "", oldest)
-	obs.Metric(w, "tether_pg_notification_queue_usage", "gauge", "Fraction of Postgres's NOTIFY queue in use (0-1).", "", notifyUsage)
+	obs.Metric(w, "taskwell_mail_queued", "gauge", "Emails waiting to be sent.", "", float64(queued))
+	obs.Metric(w, "taskwell_mail_failed", "gauge", "Emails given up on, kept 30 days.", "", float64(failed))
+	obs.Metric(w, "taskwell_mail_oldest_seconds", "gauge", "Age of the oldest email waiting to be sent.", "", oldest)
+	obs.Metric(w, "taskwell_pg_notification_queue_usage", "gauge", "Fraction of Postgres's NOTIFY queue in use (0-1).", "", notifyUsage)
 }
 
 // serve runs srv until SIGINT or SIGTERM, then stops taking requests, lets in-flight ones finish (up to 20s) and calls
@@ -271,7 +312,7 @@ func serve(srv, metrics *http.Server, stop func()) {
 }
 
 // withTimeouts bounds each request: 30s to read the body, respond and run (the context ends then), 10 minutes for
-// file uploads and downloads. The realtime socket sets its own.
+// file uploads and downloads and imports (a GitHub import fetches page by page). The realtime socket sets its own.
 func withTimeouts(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/realtime" {
@@ -279,7 +320,8 @@ func withTimeouts(h http.Handler) http.Handler {
 			return
 		}
 		d := 30 * time.Second
-		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") {
+		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") ||
+			strings.Contains(r.URL.Path, "/import/") {
 			d = 10 * time.Minute
 		}
 		rc := http.NewResponseController(w)

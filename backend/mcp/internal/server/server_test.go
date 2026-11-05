@@ -193,7 +193,7 @@ func TestGetTestRun(t *testing.T) {
 }
 
 // TestTestsView checks the MCP Apps wiring: the view resource, the tools linked to it, and the screenshot loader
-// fetching only Tether files, with the caller's token.
+// fetching only Taskwell files, with the caller's token.
 func TestTestsView(t *testing.T) {
 	png := []byte("\x89PNG fake")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -324,5 +324,76 @@ func TestBrowserSession(t *testing.T) {
 	}
 	if got := forms["POST /api/workspaces/acme/browser-sessions/s1/save"]; got.Get("case_id") != "c1" || got.Get("check") != "Welcome" {
 		t.Errorf("save form %v", got)
+	}
+}
+
+// TestOAuthDiscovery checks that /mcp without a token points at the protected resource metadata, and what that says.
+func TestOAuthDiscovery(t *testing.T) {
+	w := httptest.NewRecorder()
+	Handler("http://api.test", "https://app.test/", "https://api.app.test/", http.DefaultClient).ServeHTTP(w, httptest.NewRequest("POST", "/mcp", nil))
+	if want := `Bearer resource_metadata="https://api.app.test/.well-known/oauth-protected-resource/mcp"`; w.Code != 401 || w.Header().Get("WWW-Authenticate") != want {
+		t.Fatalf("no token: %d %q", w.Code, w.Header().Get("WWW-Authenticate"))
+	}
+	w = httptest.NewRecorder()
+	Metadata("https://api.app.test/", "https://api.app.test")(w, httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp", nil))
+	want := `{"authorization_servers":["https://api.app.test"],"bearer_methods_supported":["header"],"resource":"https://api.app.test/mcp","scopes_supported":["taskwell"]}`
+	if w.Code != 200 || w.Body.String() != want {
+		t.Fatalf("metadata: %d %s", w.Code, w.Body)
+	}
+}
+
+// TestReorderIssues checks that reorder_issues moves each listed issue right after the one before it, in order, and
+// that list_issues asks for the manual order by default.
+func TestReorderIssues(t *testing.T) {
+	const token = "Bearer tth_test"
+	var calls []string
+	var sorts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = r.ParseForm()
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/move"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/workspaces/acme/issues/"), "/move")
+			calls = append(calls, id+" after="+r.PostForm.Get("after")+" before="+r.PostForm.Get("before"))
+			_, _ = fmt.Fprintf(w, `{"identifier":%q,"title":"x","status":{"id":"s1","name":"Todo"}}`, id)
+		case r.URL.Path == "/api/workspaces/acme/projects/ENG/issues":
+			sorts = append(sorts, r.URL.Query().Get("sort"))
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	cs := connect(t, srv, token)
+
+	text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG",
+		"identifiers": []string{"ENG-3", "ENG-1", "7"}})
+	if isErr {
+		t.Fatalf("tool error: %s", text)
+	}
+	if want := []string{"ENG-1 after=ENG-3 before=", "ENG-7 after=ENG-1 before="}; !slices.Equal(calls, want) {
+		t.Errorf("move calls %q, want %q", calls, want)
+	}
+	var out []issueOut
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out) != 2 || out[0].Identifier != "ENG-1" || out[1].Identifier != "ENG-7" {
+		t.Errorf("result %s: %v", text, err)
+	}
+
+	calls = nil
+	if text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG",
+		"identifier": "ENG-2", "before": "ENG-3"}); isErr {
+		t.Fatalf("tool error: %s", text)
+	}
+	if want := []string{"ENG-2 after= before=ENG-3"}; !slices.Equal(calls, want) {
+		t.Errorf("move calls %q, want %q", calls, want)
+	}
+	if text, isErr := call(t, cs, "reorder_issues", map[string]any{"workspace": "acme", "project": "ENG", "identifiers": []string{"ENG-2"}}); !isErr {
+		t.Errorf("one identifier: %s, want an error", text)
+	}
+
+	call(t, cs, "list_issues", map[string]any{"workspace": "acme", "project": "ENG"})
+	call(t, cs, "list_issues", map[string]any{"workspace": "acme", "project": "ENG", "sort": "Priority"})
+	if want := []string{"manual", "priority"}; !slices.Equal(sorts, want) {
+		t.Errorf("list sorts %q, want %q", sorts, want)
 	}
 }

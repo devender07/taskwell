@@ -1,6 +1,6 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { Tabs } from '@tether/shared/tabs'
-import type { Label, Member, Status } from '@/api'
+import { Tabs } from '@taskwell/shared/tabs'
+import type { Label, Status } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IssueView } from '@/components/issues/issue-view'
 import { hasFilters, issuePageQuery, validateViewSearch, type IssuePage, type ViewSearch } from '@/components/issues/view-search'
@@ -14,26 +14,28 @@ const tabs = [
 ] as const
 
 export const Route = createFileRoute('/_app/$workspace/_main/my-issues')({
-  validateSearch: (search): Search => ({ ...validateViewSearch(search), ...(search.watching === true ? { watching: true as const } : {}) }),
+  validateSearch: (search): Search => {
+    const { sort, ...view } = validateViewSearch(search)
+    return { ...view, ...(sort && sort !== 'manual' ? { sort } : {}), ...(search.watching === true ? { watching: true as const } : {}) }
+  },
   loaderDeps: ({ search }) => ({ watching: !!search.watching, query: issuePageQuery(search, !search.watching) }),
   loader: async (ctx) => {
     const { params } = ctx
     const path = `${workspacePath(params.workspace)}`
     const source = `${path}/${ctx.deps.watching ? 'watching' : 'my-issues'}`
-    const [page, statuses, labels, { members }] = await Promise.all([
+    const [page, statuses, labels] = await Promise.all([
       loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<{ members: Member[] }>(ctx, `${path}/members`),
     ])
-    return { page, source, statuses, labels, members }
+    return { page, source, statuses, labels }
   },
   component: MyIssues,
 })
 
 function MyIssues() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { page, source, statuses, labels, members } = Route.useLoaderData()
+  const { page, source, statuses, labels } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -41,7 +43,7 @@ function MyIssues() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <h1 className="text-h2">My issues</h1>
+      <h1 className="page-top text-h2">My issues</h1>
       <Tabs
         aria-label="Issues shown"
         className="w-fit"
@@ -54,7 +56,7 @@ function MyIssues() {
           {watching ? "You're not watching any issues." : 'Nothing assigned to you.'}
         </p>
       ) : (
-        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} mine={!watching} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} mine={!watching} />
       )}
     </main>
   )

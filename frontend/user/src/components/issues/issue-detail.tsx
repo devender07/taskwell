@@ -1,7 +1,7 @@
 import { Link, notFound } from '@tanstack/react-router'
-import { useEffect, useState, type ReactNode } from 'react'
-import { Button } from '@tether/shared/button'
-import { ApiError, can, projectPeoplePath, type Issue, type Label, type Member, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button } from '@taskwell/shared/button'
+import { ApiError, can, type Issue, type Label, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
@@ -12,22 +12,22 @@ import { Relations, SubIssues } from '@/components/issues/relations'
 import { Timeline } from '@/components/issues/timeline'
 import { TestsSection } from '@/components/tests/tests'
 import { WatchButton } from '@/components/issues/watch-button'
-import { loaderApi, trackPath, type LoaderContext, type Viewer } from '@/realtime'
+import { GitMenu } from '@/components/issues/git-menu'
+import { peopleSearch } from '@/components/workspace/member-pages'
+import { loaderApi, type LoaderContext, type Viewer } from '@/realtime'
 import '@/components/issues/issues.css'
 
-export type IssueData = { issue: Issue; project: Project; statuses: Status[]; labels: Label[]; members: Member[]; timeline: TimelineData }
+export type IssueData = { issue: Issue; project: Project; statuses: Status[]; labels: Label[]; timeline: TimelineData }
 
 // Everything the issue page shows; the issue page and the inbox preview both load it. A 404 prunes Recently viewed.
 export async function loadIssue(ctx: LoaderContext, workspace: string, identifier: string): Promise<IssueData> {
   const path = `${workspacePath(workspace)}`
   const key = identifier.replace(/-.*/, '').toUpperCase()
-  trackPath(ctx, `${path}/members`)
-  const [issue, project, statuses, labels, members, timeline] = await Promise.all([
+  const [issue, project, statuses, labels, timeline] = await Promise.all([
     loaderApi<Issue>(ctx, `${path}/issues/${encodeURIComponent(identifier)}`),
     loaderApi<Project>(ctx, `${path}/projects/${encodeURIComponent(key)}`),
     loaderApi<Status[]>(ctx, `${path}/statuses`),
     loaderApi<Label[]>(ctx, `${path}/labels`),
-    loaderApi<Member[]>(ctx, projectPeoplePath(workspace, key)),
     loaderApi<TimelineData>(ctx, `${path}/issues/${encodeURIComponent(identifier)}/timeline`),
   ]).catch((e) => {
     if (e instanceof ApiError && e.status === 404) {
@@ -36,11 +36,12 @@ export async function loadIssue(ctx: LoaderContext, workspace: string, identifie
     }
     throw e
   })
-  return { issue, project, statuses, labels, members, timeline }
+  return { issue, project, statuses, labels, timeline }
 }
 
 export function IssueDetail({ workspace, user, data, actions }: { workspace: Workspace; user: User; data: IssueData; actions?: ReactNode }) {
-  const { issue, project, statuses, labels, members, timeline } = data
+  const { issue, project, statuses, labels, timeline } = data
+  const people = useMemo(() => peopleSearch(workspace.slug, project.key), [workspace.slug, project.key])
   const [editing, setEditing] = useState(false)
   const [viewers, setViewers] = useState<Viewer[]>([])
   const create = can(workspace, 'issues.create') && !project.archived
@@ -76,6 +77,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
               <div className="flex items-start gap-2 flex-noshrink">
                 <Viewers viewers={viewers} />
                 <WatchButton key={issue.id} workspace={workspace} issue={issue} />
+                <GitMenu issue={issue} />
                 {issue.can_edit ? (
                   <Button variant="secondary" onClick={() => setEditing(true)}>
                     Edit
@@ -84,18 +86,18 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
               </div>
             </header>
           )}
-          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} members={members} onViewers={setViewers} />
+          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} people={people} onViewers={setViewers} />
           <TestsSection key={`tests-${issue.id}`} workspace={workspace} issue={issue} />
           {issue.parent ? null : (
-            <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} members={members} />
+            <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} people={people} />
           )}
           <Relations key={issue.id} workspace={workspace} issue={issue} />
           <PullRequests issue={issue} />
           <IssueFeedback key={`feedback-${issue.id}`} workspace={workspace} identifier={issue.identifier} />
-          <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} members={members} />
+          <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} people={people} />
         </article>
         <aside className="issue-aside grid gap-4">
-          <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} members={members} />
+          <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} people={people} />
           {issue.can_delete ? <DeleteIssue workspace={workspace} issue={issue} /> : null}
         </aside>
       </div>

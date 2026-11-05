@@ -1,24 +1,26 @@
-import { Link, useRouter } from '@tanstack/react-router'
+import { Link, useRouteContext, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { DatePicker } from '@tether/shared/date-picker'
-import { filterOptions } from '@tether/shared/match'
-import { SmartAutocomplete, type Option } from '@tether/shared/smart-autocomplete'
-import { api, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Member, type Status, type Workspace } from '@/api'
+import { Avatar } from '@taskwell/shared/avatar'
+import { DatePicker } from '@taskwell/shared/date-picker'
+import { filterOptions } from '@taskwell/shared/match'
+import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
+import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChips, LabelsPicker, StatusIcon, assigneeOptions, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
+import { AssignedBy, LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
+import '@/components/analytics/analytics.css'
 
-type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; members: Member[] }
+type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 type Patch = { form: FormData; next: Partial<Issue> }
 
 // Each property saves on change with a partial update; read-only text without edit rights.
-export function IssueProperties({ workspace, issue: saved, statuses, labels, members }: Props) {
+export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
+  const { user } = useRouteContext({ from: '/_app' })
   const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
-  const assigneeOpts = useMemo(() => assigneeOptions(members), [members])
   const found = useRef(new Map<string, IssueRef>())
   const foundCycles = useRef(new Map<string, CycleRef>())
 
@@ -81,15 +83,15 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
           <SmartAutocomplete
             label="Assignee"
             placeholder="No assignee"
-            options={assigneeOpts}
-            value={assigneeOpts.find((o) => o.value && o.value === issue.assignee?.id) ?? null}
+            loadOptions={loadAssignees(people)}
+            value={assigneeOption(issue.assignee)}
             onChange={(o) => {
               const id = o?.value ?? ''
               if (id === (issue.assignee?.id ?? '')) return
-              const m = members.find((m) => m.id === id)
-              update('assignee_id', [id], { assignee: m ? { id: m.id, name: m.name } : null })
+              update('assignee_id', [id], { assignee: o && id ? { id, name: o.label } : null, assigned_by: { id: user.id, name: user.name } })
             }}
           />
+          <AssignedBy issue={issue} />
           <DatePicker
             label="Due date"
             placeholder="No due date"
@@ -145,11 +147,18 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, mem
             {issue.assignee ? (
               <span className="flex items-center gap-2">
                 <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
-                {issue.assignee.name}
+                {canViewMember(workspace, issue.assignee.id, user.id) ? (
+                  <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: issue.assignee.id }} className="member-link">
+                    {issue.assignee.name}
+                  </Link>
+                ) : (
+                  issue.assignee.name
+                )}
               </span>
             ) : (
               <span className="text-secondary">No assignee</span>
             )}
+            <AssignedBy issue={issue} />
           </Property>
           <Property label="Due date">
             {issue.due_date ? <span className={late ? 'text-accent' : undefined}>{formatDate(issue.due_date)}</span> : <span className="text-secondary">No due date</span>}

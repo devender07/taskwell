@@ -1,8 +1,8 @@
 import { useActionState, type ReactNode } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { Textarea } from '@tether/shared/textarea'
-import { feedbackBody, feedbackEmail, feedbackName } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { Textarea } from '@taskwell/shared/textarea'
+import { feedbackBody, feedbackEmail, feedbackName } from '@taskwell/shared/validate'
 import { ApiError, api, toFormErrors, type FieldErrors } from '@/api'
 import { AuthCard, FormError } from '@/components/auth/auth-card'
 

@@ -1,8 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { fullTime, relativeTime } from '@tether/shared/time'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { deleteWebhook, redeliver, rollWebhookSecret, testWebhook, toFormErrors, type Webhook, type WebhookDelivery } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { ConfirmButton } from '@/components/tests/tests'
@@ -51,7 +51,7 @@ export function WebhookActions({ workspace, webhook }: { workspace: string; webh
         <ConfirmButton
           label="Delete"
           title="Delete this webhook?"
-          description="Tether stops sending to it, and its delivery log is deleted."
+          description="Taskwell stops sending to it, and its delivery log is deleted."
           confirm="Delete webhook"
           pending="Deleting…"
           onConfirm={async () => {

@@ -1,27 +1,29 @@
 import { Link, useRouter } from '@tanstack/react-router'
-import { useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { IconButton } from '@tether/shared/icon-button'
-import { Popover } from '@tether/shared/popover'
-import { RichText, type Doc } from '@tether/shared/rich-text'
+import { startTransition, useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Popover } from '@taskwell/shared/popover'
+import { RichText, type Doc } from '@taskwell/shared/rich-text'
 import { RichEditor } from './rich-editor'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { commentBody } from '@tether/shared/validate'
-import { MoreIcon } from '@tether/shared/icons'
-import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Member, type Project, type Timeline as TimelineData, type Workspace, workspacePath } from '@/api'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { commentBody } from '@taskwell/shared/validate'
+import { MoreIcon } from '@taskwell/shared/icons'
+import { usePageEnd } from './issue-pages'
+import type { PeopleSearch } from '@/components/workspace/member-pages'
+import { api, issuePath, avatarSrc, uploadFile, can, toFormErrors, type Comment, type FieldErrors, type Issue, type IssueEvent, type Project, type Timeline as TimelineData, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { eventActor, eventText } from './event-text'
 import { ProviderIcon } from './pull-requests'
 import { StatusIcon } from './fields'
 
-type Mentions = { id: string; name: string }[]
+type Mentions = PeopleSearch
 type Draft = { doc: Doc | null; length: number }
 type State = { errors?: FieldErrors; error?: string | null }
 
-type TimelineProps = { workspace: Workspace; issue: Issue; project: Project; timeline: TimelineData; members: Member[] }
+type TimelineProps = { workspace: Workspace; issue: Issue; project: Project; timeline: TimelineData; people: PeopleSearch }
 
 type Page = { comments: Comment[]; events: IssueEvent[] }
 const NONE: Page = { comments: [], events: [] }
@@ -29,8 +31,7 @@ const at = (x: { created_at: string }) => Date.parse(x.created_at)
 
 // `timeline` is the newest page (the loader's, replaced on every realtime refetch); older pages load on demand and
 // stay below it.
-export function Timeline({ workspace, issue, project, timeline, members }: TimelineProps) {
-  const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
+export function Timeline({ workspace, issue, project, timeline, people: mentions }: TimelineProps) {
   const [older, setOlder] = useState<Page>(NONE)
   const [olderMore, setOlderMore] = useState<boolean | null>(null) // has_more of the last older page; null before one loads
   const [newest, setNewest] = useState(timeline)
@@ -79,6 +80,8 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
     }
     return null
   }, null)
+  const hasOlder = olderMore ?? timeline.has_more
+  const end = usePageEnd<HTMLFormElement>(hasOlder && !loading && !loadError ? () => startTransition(() => loadOlder()) : null, 'timeline', items.length)
 
   return (
     <section className="grid gap-4" aria-labelledby="activity-heading">
@@ -95,12 +98,15 @@ export function Timeline({ workspace, issue, project, timeline, members }: Timel
           ) : null,
         )}
       </ol>
-      {(olderMore ?? timeline.has_more) ? (
-        <form action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
-          <Button type="submit" variant="ghost" disabled={loading}>
-            {loading ? 'Loading…' : 'Show older activity'}
-          </Button>
+      {hasOlder ? (
+        <form ref={end} action={loadOlder} className="grid gap-2" style={{ justifyItems: 'start' }}>
+          {loading ? <p className="text-caption text-secondary m-0">Loading older activity…</p> : null}
           <FormError>{loadError}</FormError>
+          {loadError ? (
+            <Button type="submit" variant="ghost">
+              Try again
+            </Button>
+          ) : null}
         </form>
       ) : null}
     </section>

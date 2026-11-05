@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,11 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/notify"
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/collab"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/notify"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 var (
@@ -96,13 +98,17 @@ type Issue struct {
 	Labels      []Label         `json:"labels"`
 	Cycle       *CycleRef       `json:"cycle"`
 	CreatedBy   *Person         `json:"created_by"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	// AssignedBy made the last assignee change, else whoever created it assigned; null when unassigned.
+	AssignedBy *Person   `json:"assigned_by"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	// DescriptionGeneration counts REST writes of the description; the collab ready frame carries it too, so an
 	// editor that was offline across one drops its stale document instead of merging it back.
-	DescriptionGeneration int  `json:"description_generation"`
-	CanEdit               bool `json:"can_edit"`
-	CanDelete             bool `json:"can_delete"`
+	DescriptionGeneration int    `json:"description_generation"`
+	Rank                  string `json:"rank"` // its place in its project's manual order (byte order)
+	CanEdit               bool   `json:"can_edit"`
+	CanDelete             bool   `json:"can_delete"`
+	projectID             string
 }
 
 // IssueDetail is a single issue with its relations.
@@ -153,7 +159,10 @@ const (
 	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
-	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation
+	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation, i.rank, i.project_id::text,
+	case when i.assignee_id is not null then (select json_build_object('id', ab.id, 'name', ab.name) from users ab
+	  where ab.id = coalesce((select e.actor_id from issue_events e where e.issue_id = i.id and e.kind = 'assignee'
+	                          order by e.id desc limit 1), i.created_by)) end
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
 )
@@ -163,7 +172,8 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
-		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration)
+		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration,
+		&i.Rank, &i.projectID, &i.AssignedBy)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
 	}
@@ -225,9 +235,8 @@ func (n names) relatedPaths() []string {
 }
 
 // publishIssue publishes kind about the issue as named before and after the change: its pages, lists and the
-// pages of the issues related to it.
-func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, ns ...names) error {
-	var paths []string
+// pages of the issues related to it, plus paths.
+func publishIssue(ctx context.Context, tx pgx.Tx, kind, actorID string, paths []string, ns ...names) error {
 	for _, n := range ns {
 		paths = slices.Concat(paths, realtime.IssuePaths(n.slug, n.identifier, n.key), n.relatedPaths())
 	}
@@ -255,14 +264,22 @@ func (m *model) projectID(ctx context.Context, workspaceID, key, viewerID string
 // when a project or assignee gets near it.
 const maxList = 2000
 
-// inCycle returns the cycle's issues, newest first.
-func (m *model) inCycle(ctx context.Context, cycleID string) ([]Issue, error) {
-	return m.issues(ctx, `i.cycle_id = $1 order by i.number desc`, cycleID)
+// inCycle returns the cycle's issues in the sort's order (a sortBy key), newest first without one.
+func (m *model) inCycle(ctx context.Context, cycleID, sort string) ([]Issue, error) {
+	return m.issues(ctx, `i.cycle_id = $1 order by `+orderBy(sort), cycleID)
 }
 
-// list returns the project's issues, newest first.
-func (m *model) list(ctx context.Context, projectID string) ([]Issue, error) {
-	return m.issues(ctx, `i.project_id = $1 order by i.number desc`, projectID)
+// list returns the project's issues in the sort's order (a sortBy key), newest first without one.
+func (m *model) list(ctx context.Context, projectID, sort string) ([]Issue, error) {
+	return m.issues(ctx, `i.project_id = $1 order by `+orderBy(sort), projectID)
+}
+
+// orderBy is an unpaged list's order: the sort's (ties as page's), or newest first for "".
+func orderBy(sort string) string {
+	if sort == "" {
+		return `i.number desc`
+	}
+	return sortBy[sort] + `, i.number desc, i.id`
 }
 
 // assigned returns the user's assigned issues in the workspace's active projects they can see, newest first.
@@ -293,6 +310,7 @@ type pageQuery struct {
 	statuses, assignees, labels, cycles []string
 	priorities                          []int
 	noAssignee, noCycle                 bool
+	text                                string // matches the identifier, or within the title or description
 }
 
 // Group is one group of a paged list: its key, how many issues it has and a page of them.
@@ -308,7 +326,7 @@ var (
 	groupBy = map[string]string{"status": `i.status_id::text`, "assignee": `coalesce(i.assignee_id::text, 'none')`,
 		"priority": `i.priority::text`, "none": `'all'`}
 	sortBy = map[string]string{"priority": `i.priority = 0, i.priority`, "updated": `i.updated_at desc`,
-		"created": `i.created_at desc`, "due": `i.due_date nulls last`}
+		"created": `i.created_at desc`, "due": `i.due_date nulls last`, "manual": `i.rank`}
 )
 
 func (m *model) listPage(ctx context.Context, projectID string, q pageQuery) ([]Group, error) {
@@ -365,6 +383,10 @@ func (m *model) page(ctx context.Context, q pageQuery, where string, args ...any
 	oneOf(`i.cycle_id`, `uuid`, q.cycles, len(q.cycles), q.noCycle)
 	if len(q.labels) > 0 {
 		where += ` and exists(select 1 from issue_labels il where il.issue_id = i.id and il.label_id = any(` + arg(q.labels) + `::uuid[]))`
+	}
+	if q.text != "" {
+		where += ` and (upper(p.key || '-' || i.number) = upper(` + arg(q.text) + `)` +
+			` or i.title ilike ` + arg("%"+escapeLike(q.text)+"%") + ` or i.description_text ilike $` + strconv.Itoa(len(args)) + `)`
 	}
 	group := groupBy[q.group]
 	if q.in != nil {
@@ -596,10 +618,11 @@ func (m *model) checkRefs(ctx context.Context, workspaceID, key, keep string, f 
 	return errs, nil
 }
 
-// create adds an issue numbered after the project's last one and returns its id; "" when there's no project with
-// the key. Returns errArchived when the project is archived. Bumping issue_seq locks the project row, so concurrent
-// creates get distinct numbers.
-func (m *model) create(ctx context.Context, workspaceID, key, userID string, f fields) (string, error) {
+// create adds an issue numbered after the project's last one, placed right after the issue afterID or before beforeID
+// (see place), last without either, and returns its id; "" when there's no project with the key. Returns errArchived
+// when the project is archived. Bumping issue_seq locks the project row, so concurrent creates get distinct numbers
+// and ranks.
+func (m *model) create(ctx context.Context, workspaceID, key, userID string, f fields, afterID, beforeID string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var projectID string
@@ -617,15 +640,19 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		if err := checkCycle(ctx, tx, projectID, f.cycleID); err != nil {
 			return err
 		}
+		rank, err := place(ctx, tx, projectID, "", afterID, beforeID)
+		if err != nil {
+			return err
+		}
 		if err := tx.QueryRow(ctx,
 			`insert into issues (workspace_id, project_id, number, title, description, description_text, status_id, assignee_id, priority,
-			   due_date, created_by, cycle_id)
+			   due_date, created_by, cycle_id, rank)
 			 values ($1, $2, $3, $4, $5, $11,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
-			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid)
+			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid, $13)
 			 returning id::text`,
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
-			doc.PlainText(f.description), f.cycleID).Scan(&id); err != nil {
+			doc.PlainText(f.description), f.cycleID, rank).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -643,16 +670,7 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 			Assignee: deref(f.assigneeID), Mentioned: doc.Mentions(f.description)}); err != nil {
 			return err
 		}
-		n, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
-			[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
-				realtime.Watching(n.slug), realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)})...)); err != nil {
-			return err
-		}
-		return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
+		return publishCreated(ctx, tx, id, userID)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -666,10 +684,24 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 	return id, nil
 }
 
+// publishCreated publishes a new (or restored) issue: its project's lists and pages, and its related issues'.
+func publishCreated(ctx context.Context, tx pgx.Tx, id, userID string, paths ...string) error {
+	n, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := realtime.Publish(ctx, tx, n.event("issue.created", userID, slices.Concat(n.relatedPaths(),
+		[]string{realtime.ProjectIssues(n.slug, n.key), realtime.Project(n.slug, n.key), realtime.MyIssues(n.slug),
+			realtime.Watching(n.slug), realtime.Activity(n.slug), realtime.ProjectStats(n.slug), realtime.Roadmap(n.slug)}, paths)...)); err != nil {
+		return err
+	}
+	return realtime.Publish(ctx, tx, realtime.AdminStats(userID))
+}
+
 // update changes the issue's non-nil fields, sets updated_at, and logs each real change as the actor's event, with
 // its notifications. When it sets the description it also drops the issue's live-editing updates.
 func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f fields) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return apply(ctx, tx, workspaceID, id, actorID, f, nil) })
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return apply(ctx, tx, workspaceID, id, actorID, f, nil, "issue.updated") })
 	if errors.Is(err, errNoCycle) || errors.As(err, new(parentError)) {
 		return err
 	}
@@ -682,14 +714,15 @@ func (m *model) update(ctx context.Context, workspaceID, id, actorID string, f f
 // SetStatus moves the issue to the status (one of its workspace's) in tx like a manual change, with no actor; the
 // status event's data gains via (what moved it, e.g. a merged pull request).
 func SetStatus(ctx context.Context, tx pgx.Tx, issueID, statusID string, via any) error {
-	if err := apply(ctx, tx, "", issueID, "", fields{statusID: &statusID}, via); err != nil {
+	if err := apply(ctx, tx, "", issueID, "", fields{statusID: &statusID}, via, "issue.updated"); err != nil {
 		return fmt.Errorf("set issue status: %w", err)
 	}
 	return nil
 }
 
-// apply is update in tx; actorID "" is no actor. A non-nil via is added to the status event's data.
-func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fields, via any) error {
+// apply is update in tx, publishing kind ("" publishes nothing: the caller does); actorID "" is no actor. A non-nil
+// via is added to the status event's data.
+func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fields, via any, kind string) error {
 	before, err := snap(ctx, tx, id)
 	if err != nil {
 		return err
@@ -699,15 +732,8 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 		return err
 	}
 	if f.setDescription {
-		// The live document is replaced: every instance resets the issue's editors so they reload it, and the next
-		// one seeds it from the new description (a recent seed's claim would hold that off for 10s).
-		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `update issues set seed_claimed_at = null where id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteReset)); err != nil {
+		// The live document is replaced (see collab.Store.Reset).
+		if err := docs.Reset(ctx, tx, id); err != nil {
 			return err
 		}
 	}
@@ -770,11 +796,97 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 	if err := notify.Record(ctx, tx, c); err != nil {
 		return err
 	}
+	if kind == "" {
+		return nil
+	}
 	namedAfter, err := issueNames(ctx, tx, id)
 	if err != nil {
 		return err
 	}
-	return publishIssue(ctx, tx, "issue.updated", actorID, namedBefore, namedAfter)
+	return publishIssue(ctx, tx, kind, actorID, nil, namedBefore, namedAfter)
+}
+
+// move places the issue right after the issue afterID, else right before beforeID (see place), first applying f's
+// status, assignee and priority when it sets any (update's rules, events and notifications), and marks the project
+// as ordered by hand.
+func (m *model) move(ctx context.Context, workspaceID, projectID, id, actorID, afterID, beforeID string, f fields) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// Locks the project row too: moves and creates in a project take turns.
+		if _, err := tx.Exec(ctx, `update projects set manual_order = true where id = $1`, projectID); err != nil {
+			return err
+		}
+		before, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if f.statusID != nil || f.assigneeID != nil || f.priority != nil {
+			if err := apply(ctx, tx, workspaceID, id, actorID, f, nil, ""); err != nil {
+				return err
+			}
+		}
+		rank, err := place(ctx, tx, projectID, id, afterID, beforeID)
+		if err != nil {
+			return err
+		}
+		if rank != "" {
+			if _, err := tx.Exec(ctx, `update issues set rank = $2 where id = $1`, id, rank); err != nil {
+				return err
+			}
+		}
+		after, err := issueNames(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return publishIssue(ctx, tx, "issue.moved", actorID, []string{realtime.Project(after.slug, after.key)}, before, after)
+	})
+	if err != nil {
+		return fmt.Errorf("move issue: %w", err)
+	}
+	return nil
+}
+
+// place returns the rank that puts an issue of the project right after the issue afterID, else (afterID "") right
+// before beforeID, else last; exclude is the issue being placed ("" on create), left out of the neighbours. Returns
+// "" when exclude is already there or is the issue it'd go next to. A rank over maxRank characters rebalances the
+// project first. The caller holds the project row's lock, so no other placement reads the same neighbours. Trashed
+// issues count as neighbours: they keep their ranks (unique per project) for a restore.
+func place(ctx context.Context, tx pgx.Tx, projectID, exclude, afterID, beforeID string) (string, error) {
+	if exclude != "" && (afterID == exclude || afterID == "" && beforeID == exclude) {
+		return "", nil
+	}
+	for {
+		var lo, hi, cur string
+		err := tx.QueryRow(ctx,
+			`with n as (select (select rank from issues where id = $3::uuid and project_id = $1) a,
+			                   (select rank from issues where id = $4::uuid and project_id = $1) b)
+			 select coalesce(case when n.a is not null then n.a
+			          when n.b is not null then (select max(rank) from issues_all where project_id = $1 and rank < n.b and id is distinct from $2::uuid)
+			          else (select max(rank) from issues_all where project_id = $1 and id is distinct from $2::uuid) end, ''),
+			        coalesce(case when n.a is not null then (select min(rank) from issues_all
+			                                                 where project_id = $1 and rank > n.a and id is distinct from $2::uuid)
+			          else n.b end, ''),
+			        coalesce((select rank from issues where id = $2::uuid), '')
+			 from n`, projectID, nullable(exclude), nullable(afterID), nullable(beforeID)).Scan(&lo, &hi, &cur)
+		if err != nil {
+			return "", fmt.Errorf("read neighbours: %w", err)
+		}
+		if cur != "" && cur > lo && (hi == "" || cur < hi) {
+			return "", nil
+		}
+		if r := rankBetween(lo, hi); len(r) <= maxRank {
+			return r, nil
+		}
+		// Renumber the project evenly (rankAt) in one statement; its ranks pass through duplicates on the way.
+		if _, err := tx.Exec(ctx, `set constraints issues_project_id_rank_key deferred`); err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx,
+			`update issues_all i set rank = lpad(o.rn::text, 10, '0') || 'V'
+			 from (select id, row_number() over (order by rank) rn from issues_all where project_id = $1) o where o.id = i.id`,
+			projectID); err != nil {
+			return "", fmt.Errorf("rebalance ranks: %w", err)
+		}
+	}
 }
 
 // snap reads the issue's logged fields, locking it.
@@ -1000,14 +1112,7 @@ func setLabels(ctx context.Context, tx pgx.Tx, workspaceID, issueID string, labe
 
 func (m *model) delete(ctx context.Context, id, actorID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		n, err := issueNames(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `delete from issues where id = $1`, id); err != nil {
-			return err
-		}
-		if err := publishIssue(ctx, tx, "issue.deleted", actorID, n); err != nil {
+		if err := deleteIssue(ctx, tx, id, actorID); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
@@ -1018,109 +1123,254 @@ func (m *model) delete(ctx context.Context, id, actorID string) error {
 	return nil
 }
 
-// --- live editing ---
-
-type docUpdate struct {
-	id   int64
-	data []byte
+// deleteIssue moves the issue to the trash in tx and publishes it. clock_timestamp keeps a bulk delete's issues in
+// order for the trash's paging.
+func deleteIssue(ctx context.Context, tx pgx.Tx, id, actorID string) error {
+	n, err := issueNames(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `update issues set deleted_at = clock_timestamp(), deleted_by = $2 where id = $1`,
+		id, nullable(actorID)); err != nil {
+		return err
+	}
+	return publishIssue(ctx, tx, "issue.deleted", actorID, []string{trashPath(n.slug)}, n)
 }
 
-// docUpdates returns the issue's stored Yjs updates, oldest first.
-func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, error) {
-	rows, err := m.db.Query(ctx, `select id, data from issue_doc_updates where issue_id = $1 order by id`, issueID)
-	if err != nil {
-		return nil, fmt.Errorf("list doc updates: %w", err)
+// --- bulk ---
+
+// findMany returns the workspace's issues with the identifiers, in their order (one per identifier), as the viewer
+// sees them; nil when one isn't an identifier, doesn't exist or can't be seen.
+func (m *model) findMany(ctx context.Context, workspaceID string, identifiers []string, viewerID string) ([]Issue, error) {
+	keys, numbers := make([]string, len(identifiers)), make([]int, len(identifiers))
+	for i, s := range identifiers {
+		var ok bool
+		if keys[i], numbers[i], ok = ParseIdentifier(s); !ok {
+			return nil, nil
+		}
 	}
-	us, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (docUpdate, error) {
-		var u docUpdate
-		err := row.Scan(&u.id, &u.data)
-		return u, err
+	rows, err := m.db.Query(ctx, `select x.ord, `+listCols+`
+		join unnest($2::text[], $3::int[]) with ordinality x(key, number, ord) on p.key = canonical_key($1, x.key) and i.number = x.number
+		where i.workspace_id = $1 and can_see_project(p.id, $4) order by x.ord`, workspaceID, keys, numbers, viewerID)
+	if err != nil {
+		return nil, fmt.Errorf("find issues: %w", err)
+	}
+	is, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Issue, error) {
+		var ord int
+		return scanIssue(prefixed{row, []any{&ord}})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list doc updates: %w", err)
+		return nil, fmt.Errorf("find issues: %w", err)
 	}
-	return us, nil
+	if len(is) < len(identifiers) {
+		return nil, nil
+	}
+	return is, nil
 }
 
-// addDocUpdate stores an update and returns its id; ok is false when the issue's stored updates would pass maxStored.
-func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) (id int64, ok bool, err error) {
-	err = m.db.QueryRow(ctx,
-		`insert into issue_doc_updates (issue_id, data)
-		 select $1, $2 where (select coalesce(sum(octet_length(data)), 0) from issue_doc_updates where issue_id = $1)
-		                     + octet_length($2::bytea) <= $3
-		 returning id`, issueID, data, maxStored).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("add doc update: %w", err)
-	}
-	return id, true, nil
-}
-
-// docUpdate returns one stored update's data; nil when it's gone (compacted).
-func (m *model) docUpdate(ctx context.Context, id int64) ([]byte, error) {
-	var data []byte
-	err := m.db.QueryRow(ctx, `select data from issue_doc_updates where id = $1`, id).Scan(&data)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("load doc update: %w", err)
-	}
-	return data, nil
-}
-
-// notify sends payload to every API instance listening on collab.
-func (m *model) notify(ctx context.Context, payload string) error {
-	if _, err := m.db.Exec(ctx, `select pg_notify('collab', $1)`, payload); err != nil {
-		return fmt.Errorf("notify collab: %w", err)
-	}
-	return nil
-}
-
-// claimSeed claims seeding the issue's live document when nothing is stored yet and no fresh claim exists.
-// A concurrent claim waits on the row lock, then sees the new seed_claimed_at and fails.
-func (m *model) claimSeed(ctx context.Context, issueID string) (bool, error) {
-	tag, err := m.db.Exec(ctx,
-		`update issues set seed_claimed_at = now()
-		 where id = $1 and (seed_claimed_at is null or seed_claimed_at < now() - interval '10 seconds')
-		   and not exists (select 1 from issue_doc_updates where issue_id = $1)`, issueID)
-	if err != nil {
-		return false, fmt.Errorf("claim seed: %w", err)
-	}
-	return tag.RowsAffected() == 1, nil
-}
-
-// renewSeed extends a seed claim that's still held.
-func (m *model) renewSeed(ctx context.Context, issueID string) error {
-	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = now() where id = $1 and seed_claimed_at is not null`, issueID)
-	if err != nil {
-		return fmt.Errorf("renew seed claim: %w", err)
-	}
-	return nil
-}
-
-// setSeedClaim refreshes the seed claim (handed to another editor here) or clears it (free for any instance).
-func (m *model) setSeedClaim(ctx context.Context, issueID string, claimed bool) error {
-	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = case when $2 then now() end where id = $1`, issueID, claimed)
-	if err != nil {
-		return fmt.Errorf("set seed claim: %w", err)
-	}
-	return nil
-}
-
-// compactDoc replaces the issue's updates with the ids, the ones the client loaded, with data, their merged state.
-// Deleting by id rather than "up to" keeps an update that committed after the client's load.
-func (m *model) compactDoc(ctx context.Context, issueID string, ids []int64, data []byte) error {
+// bulkUpdate applies f to every issue in one transaction, like update does to one, and adds and removes the labels.
+// Returns errNoCycle when the cycle isn't in an issue's project.
+func (m *model) bulkUpdate(ctx context.Context, workspaceID string, ids []string, actorID string, f fields, add, remove []string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1 and id = any($2)`, issueID, ids); err != nil {
+		if err := lockIssues(ctx, tx, ids...); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data)
-		return err
+		for _, id := range ids {
+			f := f
+			if len(add) > 0 || len(remove) > 0 {
+				var have []string
+				if err := tx.QueryRow(ctx, `select array(select label_id::text from issue_labels where issue_id = $1)`, id).Scan(&have); err != nil {
+					return err
+				}
+				f.setLabels, f.labelIDs = true, labelSet(have, add, remove)
+			}
+			if err := apply(ctx, tx, workspaceID, id, actorID, f, nil, "issue.updated"); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+	if errors.Is(err, errNoCycle) {
+		return err
+	}
 	if err != nil {
-		return fmt.Errorf("compact doc: %w", err)
+		return fmt.Errorf("bulk update issues: %w", err)
 	}
 	return nil
+}
+
+// bulkDelete deletes the issues in one transaction.
+func (m *model) bulkDelete(ctx context.Context, ids []string, actorID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssues(ctx, tx, ids...); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := deleteIssue(ctx, tx, id, actorID); err != nil {
+				return err
+			}
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if err != nil {
+		return fmt.Errorf("bulk delete issues: %w", err)
+	}
+	return nil
+}
+
+// --- import ---
+
+// importProject returns the id of the project with the key and whether it's archived; "" when there's none or the
+// viewer can't see it.
+func (m *model) importProject(ctx context.Context, workspaceID, key, viewerID string) (string, bool, error) {
+	var id string
+	var archived bool
+	err := m.db.QueryRow(ctx, `select id::text, archived_at is not null from projects
+		where workspace_id = $1 and key = canonical_key($1, $2) and can_see_project(id, $3)`, workspaceID, key, viewerID).Scan(&id, &archived)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("find import project: %w", err)
+	}
+	return id, archived, nil
+}
+
+// importRefs reads what an import maps onto: the workspace's statuses and labels, and the members who can see the
+// project.
+func (m *model) importRefs(ctx context.Context, workspaceID, projectID string) (importRefs, error) {
+	refs := importRefs{labels: map[string]string{}}
+	ss, err := m.listStatuses(ctx, workspaceID)
+	if err != nil {
+		return refs, err
+	}
+	for _, s := range ss {
+		refs.statuses = append(refs.statuses, s.Status)
+	}
+	var name, id string
+	rows, err := m.db.Query(ctx, `select lower(name), id::text from labels where workspace_id = $1`, workspaceID)
+	if err == nil {
+		_, err = pgx.ForEachRow(rows, []any{&name, &id}, func() error {
+			refs.labels[name] = id
+			return nil
+		})
+	}
+	if err != nil {
+		return refs, fmt.Errorf("import labels: %w", err)
+	}
+	if rows, err = m.db.Query(ctx, `select u.id::text, lower(u.email), lower(u.name) from workspace_members m join users u on u.id = m.user_id
+		where m.workspace_id = $1 and can_see_project($2, u.id) order by m.created_at, u.id`, workspaceID, projectID); err == nil {
+		refs.members, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (importMember, error) {
+			var im importMember
+			return im, row.Scan(&im.id, &im.email, &im.name)
+		})
+	}
+	if err != nil {
+		return refs, fmt.Errorf("import members: %w", err)
+	}
+	return refs, nil
+}
+
+// importIssues adds the issues to the project in one transaction, numbered and ranked after its last ones, creating
+// the new labels, and returns the first one's identifier. Each logs a created event; none notify. Returns errArchived
+// when the project was archived meanwhile.
+func (m *model) importIssues(ctx context.Context, workspaceID, projectID, actorID string, is []plannedIssue, newLabels []string) (string, error) {
+	var first string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// Bumping issue_seq by the whole block locks the project row, as create does.
+		var key, slug string
+		var last int
+		if err := tx.QueryRow(ctx,
+			`update projects p set issue_seq = issue_seq + $2 from workspaces w
+			 where p.id = $1 and w.id = p.workspace_id and p.archived_at is null returning p.key, w.slug, p.issue_seq`,
+			projectID, len(is)).Scan(&key, &slug, &last); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return errArchived
+			}
+			return err
+		}
+		if _, err := tx.Exec(ctx, `insert into labels (workspace_id, name, color) select $1, n, $3 from unnest($2::text[]) n
+			on conflict do nothing`, workspaceID, newLabels, defaultLabelColor); err != nil {
+			return err
+		}
+		labels := map[string]string{}
+		var name, id string
+		rows, err := tx.Query(ctx, `select lower(name), id::text from labels where workspace_id = $1`, workspaceID)
+		if err != nil {
+			return err
+		}
+		if _, err := pgx.ForEachRow(rows, []any{&name, &id}, func() error {
+			labels[name] = id
+			return nil
+		}); err != nil {
+			return err
+		}
+		// The first issue goes after the project's last; each next one right after it, by a suffix.
+		rank, err := place(ctx, tx, projectID, "", "", "")
+		if err != nil {
+			return err
+		}
+		number := last - len(is) + 1
+		first = key + "-" + strconv.Itoa(number)
+		b := &pgx.Batch{}
+		for n, i := range is {
+			r := rank
+			if n > 0 {
+				r += fmt.Sprintf("%04dV", n)
+			}
+			var labelIDs []string
+			for _, l := range i.labels {
+				labelIDs = append(labelIDs, labels[strings.ToLower(l)])
+			}
+			b.Queue(`with i as (insert into issues (workspace_id, project_id, number, title, description, description_text, status_id,
+				   assignee_id, priority, due_date, created_by, rank)
+				 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11, $12) returning id),
+				 l as (insert into issue_labels (issue_id, label_id) select i.id, unnest($13::uuid[]) from i on conflict do nothing),
+				 c as (insert into comments (issue_id, author_id, body) select i.id, $11, unnest($14::text[])::jsonb from i)
+				 insert into issue_events (issue_id, actor_id, kind, data) select i.id, $11, 'created', '{}' from i`,
+				workspaceID, projectID, number+n, i.title, i.description, doc.PlainText(i.description), i.statusID,
+				i.assigneeID, i.priority, i.due, actorID, r, labelIDs, i.comments)
+		}
+		if err := tx.SendBatch(ctx, b).Close(); err != nil {
+			return err
+		}
+		// One event covers every issue; imports notify no one and send no webhooks.
+		e := realtime.Event{Kind: "issue.created", Workspace: slug, Actor: actorID, Audience: realtime.ToWorkspace(workspaceID),
+			Project: projectID, Paths: []string{realtime.ProjectIssues(slug, key), realtime.Project(slug, key), realtime.MyIssues(slug),
+				realtime.Watching(slug), realtime.Activity(slug), realtime.ProjectStats(slug), realtime.Roadmap(slug)}}
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return err
+		}
+		if len(newLabels) > 0 {
+			if err := realtime.Publish(ctx, tx, realtime.Event{Kind: "workflow.changed", Workspace: slug, Actor: actorID,
+				Audience: realtime.ToWorkspace(workspaceID), Paths: []string{realtime.Workspace(slug) + "/labels"}}); err != nil {
+				return err
+			}
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminStats(actorID))
+	})
+	if errors.Is(err, errArchived) {
+		return "", err
+	}
+	if err != nil {
+		return "", fmt.Errorf("import issues: %w", err)
+	}
+	return first, nil
+}
+
+// --- live editing ---
+
+// docs is where issue descriptions keep their live state.
+var docs = collab.Store{Updates: "issue_doc_updates", Key: "issue_id", Docs: "issues", Channel: "collab"}
+
+// saveFrame stores a live session's save frame as the issue's description; one that fails the check is dropped.
+func (m *model) saveFrame(ctx context.Context, issueID, actorID string, body []byte) error {
+	d, msg := checkDescription(body)
+	if msg != "" {
+		slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
+		return nil
+	}
+	return m.saveDescription(ctx, issueID, actorID, d)
 }
 
 // saveDescription sets the issue's description (nil clears it), logging the actor's edit and notifying the newly
@@ -1263,14 +1513,16 @@ func timelineCut(cs []Comment, es []Event) ([]Comment, []Event, bool) {
 	return cs, es, true
 }
 
-// Activity is one item of the workspace's activity feed: an event (Kind and Data, as on the timeline) or a comment
-// (Excerpt).
+// Activity is one item of the workspace's activity feed: an event (Kind and Data, as on the timeline), a comment
+// (Excerpt) or a project update (Project and Health, no Issue).
 type Activity struct {
-	Type      string          `json:"type"` // "event" or "comment"
+	Type      string          `json:"type"` // "event", "comment" or "project_update"
 	ID        string          `json:"id"`
 	CreatedAt time.Time       `json:"created_at"`
 	Actor     *Person         `json:"actor"`
-	Issue     json.RawMessage `json:"issue"` // {identifier, title, status}
+	Issue     json.RawMessage `json:"issue,omitempty"` // {identifier, title, status}
+	Project   *ProjectRef     `json:"project,omitempty"`
+	Health    string          `json:"health,omitempty"`
 	Kind      string          `json:"kind,omitempty"`
 	Data      json.RawMessage `json:"data,omitempty"`
 	Excerpt   *string         `json:"excerpt,omitempty"`
@@ -1279,8 +1531,8 @@ type Activity struct {
 // activityPage caps an activity page.
 const activityPage = 30
 
-// activity returns a page of the workspace's events (but description edits) and comments on issues in active
-// projects the viewer can see, newest first: the newest activityPage created before before (all when nil), and whether there are older
+// activity returns a page of the workspace's events (but description edits) and comments on issues, and project
+// updates, in active projects the viewer can see, newest first: the newest activityPage created before before (all when nil), and whether there are older
 // ones. Like the timeline, a page never splits a shared created_at.
 // ponytail: the created_at indexes are workspace-wide, so a quiet workspace's page scans other workspaces' newer rows;
 // denormalise workspace_id onto issue_events and comments with (workspace_id, created_at) indexes when that shows up.
@@ -1298,6 +1550,13 @@ func (m *model) activity(ctx context.Context, workspaceID, viewerID string, befo
 		 (select 'comment', c.id::text, c.created_at, `+fmt.Sprintf(actor, "c.author_id")+`, `+issue+`, '', null, c.body
 		  from comments c`+fmt.Sprintf(from, "c")+`
 		  order by c.created_at desc, c.id desc limit $3)
+		 union all
+		 (select 'project_update', pu.id::text, pu.created_at, `+fmt.Sprintf(actor, "pu.author_id")+`,
+		         json_build_object('key', p.key, 'name', p.name), pu.health, null, null
+		  from project_updates pu join projects p on p.id = pu.project_id
+		  where p.workspace_id = $1 and p.archived_at is null and ($2::timestamptz is null or pu.created_at < $2)
+		    and can_see_project(p.id, $4)
+		  order by pu.created_at desc, pu.id desc limit $3)
 		 order by 3 desc, 2 desc limit $3`, workspaceID, before, activityPage+1, viewerID)
 	if err != nil {
 		return nil, false, fmt.Errorf("list activity: %w", err)
@@ -1307,6 +1566,13 @@ func (m *model) activity(ctx context.Context, workspaceID, viewerID string, befo
 		var body []byte
 		err := row.Scan(&a.Type, &a.ID, &a.CreatedAt, &a.Actor, &a.Issue, &a.Kind, &a.Data, &body)
 		a.CreatedAt = a.CreatedAt.UTC()
+		if a.Type == "project_update" { // the issue column holds the project, kind the health
+			a.Project, a.Health, a.Kind = &ProjectRef{}, a.Kind, ""
+			if err == nil {
+				err = json.Unmarshal(a.Issue, a.Project)
+			}
+			a.Issue = nil
+		}
 		if a.Type == "comment" {
 			r := []rune(strings.TrimSpace(doc.PlainText(body)))
 			excerpt := string(r[:min(len(r), 200)])
@@ -1760,6 +2026,17 @@ func (m *model) deleteStatus(ctx context.Context, workspaceID, id, moveTo string
 		if inUse {
 			return errInUse
 		}
+		// Trashed issues follow moveTo, else take the first status left.
+		var to *string
+		if web.IsUUID(moveTo) {
+			to = &moveTo
+		}
+		if _, err := tx.Exec(ctx, `update issues_all set status_id = coalesce(
+			  (select id from statuses where workspace_id = $1 and id = $3::uuid and id <> $2),
+			  (select id from statuses where workspace_id = $1 and id <> $2 order by position, id limit 1))
+			where status_id = $2`, workspaceID, id, to); err != nil {
+			return err
+		}
 		if _, err = tx.Exec(ctx, `delete from statuses where id = $1`, id); err != nil {
 			return err
 		}
@@ -1858,4 +2135,123 @@ func (m *model) deleteLabel(ctx context.Context, workspaceID, id string, e realt
 		return false, fmt.Errorf("delete label: %w", err)
 	}
 	return found, nil
+}
+
+// --- trash ---
+
+// trashPage is how many trashed issues a page of the trash lists.
+const trashPage = 50
+
+// Trashed is an issue in the trash.
+type Trashed struct {
+	ID         string     `json:"id"`
+	Identifier string     `json:"identifier"`
+	Title      string     `json:"title"`
+	Project    ProjectRef `json:"project"`
+	DeletedAt  time.Time  `json:"deleted_at"`
+	DeletedBy  *Person    `json:"deleted_by"`
+	CanRestore bool       `json:"can_restore"`
+	createdBy  string
+	archived   bool // its project is archived
+}
+
+const trashedCols = `i.id::text, p.key || '-' || i.number, i.title, p.key, p.name, i.deleted_at, d.id::text, d.name,
+	coalesce(i.created_by::text, ''), p.archived_at is not null
+	from issues_all i join projects p on p.id = i.project_id left join users d on d.id = i.deleted_by`
+
+func scanTrashed(row pgx.Row) (Trashed, error) {
+	var t Trashed
+	var dID, dName *string
+	err := row.Scan(&t.ID, &t.Identifier, &t.Title, &t.Project.Key, &t.Project.Name, &t.DeletedAt, &dID, &dName,
+		&t.createdBy, &t.archived)
+	if dID != nil {
+		t.DeletedBy = &Person{*dID, *dName}
+	}
+	t.DeletedAt = t.DeletedAt.UTC()
+	return t, err
+}
+
+// trashPath is the workspace's trash page.
+func trashPath(slug string) string { return realtime.Workspace(slug) + "/trash" }
+
+// trash returns a page of the workspace's trashed issues in projects the viewer can see, newest deleted first and
+// deleted before before (zero: from the newest); more is true when there are older ones.
+func (m *model) trash(ctx context.Context, workspaceID, viewerID string, before time.Time) (ts []Trashed, more bool, err error) {
+	var b *time.Time
+	if !before.IsZero() {
+		b = &before
+	}
+	rows, err := m.db.Query(ctx, `select `+trashedCols+`
+		where i.workspace_id = $1 and i.deleted_at is not null and ($3::timestamptz is null or i.deleted_at < $3)
+		  and can_see_project(p.id, $2)
+		order by i.deleted_at desc, i.id desc limit $4`, workspaceID, viewerID, b, trashPage+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list trash: %w", err)
+	}
+	ts, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Trashed, error) { return scanTrashed(row) })
+	if err != nil {
+		return nil, false, fmt.Errorf("list trash: %w", err)
+	}
+	if len(ts) > trashPage {
+		return ts[:trashPage], true, nil
+	}
+	return ts, false, nil
+}
+
+// trashed returns the trashed issue with the project key and number when the viewer can see its project; nil when
+// there's none.
+func (m *model) trashed(ctx context.Context, workspaceID, key string, number int, viewerID string) (*Trashed, error) {
+	t, err := scanTrashed(m.db.QueryRow(ctx, `select `+trashedCols+`
+		where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3 and i.deleted_at is not null
+		  and can_see_project(p.id, $4)`, workspaceID, key, number, viewerID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find trashed issue: %w", err)
+	}
+	return &t, nil
+}
+
+// restore takes the issue out of the trash as the actor, logs it and publishes it like a new issue; false when it
+// isn't in the trash.
+func (m *model) restore(ctx context.Context, id, actorID string) (bool, error) {
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `update issues_all set deleted_at = null, deleted_by = null where id = $1 and deleted_at is not null`, id)
+		if found = tag.RowsAffected() == 1; err != nil || !found {
+			return err
+		}
+		if err := addEvents(ctx, tx, id, actorID, []event{{"restored", struct{}{}}}); err != nil {
+			return err
+		}
+		var slug string
+		if err := tx.QueryRow(ctx, `select w.slug from issues i join workspaces w on w.id = i.workspace_id where i.id = $1`, id).Scan(&slug); err != nil {
+			return err
+		}
+		return publishCreated(ctx, tx, id, actorID, trashPath(slug))
+	})
+	if err != nil {
+		return false, fmt.Errorf("restore issue: %w", err)
+	}
+	return found, nil
+}
+
+// purge deletes trashed issues for good: the one with the id, or with id "" every one in the workspace in a project
+// the viewer can see. Comments, activity and the rest go with them (cascades).
+func (m *model) purge(ctx context.Context, workspaceID, slug, viewerID, id string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `delete from issues_all i using projects p
+			where p.id = i.project_id and i.workspace_id = $1 and i.deleted_at is not null and can_see_project(p.id, $2)
+			  and ($3::uuid is null or i.id = $3)`, workspaceID, viewerID, nullable(id))
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.Event{Kind: "issue.deleted", Workspace: slug, Actor: viewerID,
+			Audience: realtime.ToWorkspace(workspaceID), Paths: []string{trashPath(slug)}})
+	})
+	if err != nil {
+		return fmt.Errorf("purge trash: %w", err)
+	}
+	return nil
 }

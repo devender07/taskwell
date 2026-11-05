@@ -41,6 +41,17 @@ func TestCheckDoc(t *testing.T) {
 		{"file link", para(`{"type":"text","text":"notes.txt","marks":[{"type":"link","attrs":{"href":"` + file + `"}}]}`), "", false},
 		{"file link traversal", para(`{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":"/api/files/../x"}}]}`), "Description has unsupported content.", true},
 		{"file link query", para(`{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":"` + file + `?x=1"}}]}`), "Description has unsupported content.", true},
+		{"checklist", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"Milk"}]},
+			{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":false},"content":[{"type":"image","attrs":{"src":"` + file + `"}}]}]}]}]}]}`, "", false},
+		{"empty checklist", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":false},"content":[{"type":"paragraph"}]}]}]}`, "", true},
+		{"task without checked", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}]}]}`, "Description has unsupported content.", true},
+		{"task checked not bool", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":"yes"}}]}]}`, "Description has unsupported content.", true},
+		{"paragraph in checklist", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}]}`, "Description has unsupported content.", true},
+		{"task outside checklist", `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"taskItem","attrs":{"checked":false}}]}]}`, "Description has unsupported content.", true},
+		{"table", `{"type":"doc","content":[{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableHeader","attrs":{"colspan":2,"rowspan":1,"colwidth":[120,null]},"content":[{"type":"paragraph"}]}]},{"type":"tableRow","content":[{"type":"tableCell","attrs":{"colspan":1,"rowspan":1,"colwidth":null},"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]},{"type":"tableCell","attrs":{"colspan":1,"rowspan":1,"colwidth":null},"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}]}]}]}`, "", false},
+		{"cell outside row", `{"type":"doc","content":[{"type":"tableCell","attrs":{"colspan":1,"rowspan":1,"colwidth":null},"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}]}`, "Description has unsupported content.", true},
+		{"paragraph in table", `{"type":"doc","content":[{"type":"table","content":[{"type":"paragraph"}]}]}`, "Description has unsupported content.", true},
+		{"bad colspan", `{"type":"doc","content":[{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableCell","attrs":{"colspan":0},"content":[{"type":"paragraph"}]}]}]}]}`, "Description has unsupported content.", true},
 		{"max length", para(`{"type":"text","text":"` + strings.Repeat("é", 50000) + `"}`), "", false},
 	}
 	for _, c := range cases {
@@ -64,6 +75,8 @@ func TestCheckDoc(t *testing.T) {
 		{"blocks and break", `{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Steps"}]},
 			{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"a"},
 			{"type":"hardBreak"},{"type":"text","text":"b"}]}]}]},{"type":"image","attrs":{"src":"` + file + `"}}]}`, "Steps\na\nb"},
+		{"checklist", `{"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"Milk"}]}]},
+			{"type":"taskItem","attrs":{"checked":false},"content":[{"type":"paragraph","content":[{"type":"text","text":"Eggs"}]}]}]}]}`, "Milk\nEggs"},
 		{"nil", ``, ""},
 	}
 	for _, c := range texts {
@@ -85,5 +98,20 @@ func TestKeepMentions(t *testing.T) {
 	}
 	if got := string(KeepMentions([]byte(in), func(string) bool { return true })); got != in {
 		t.Errorf("unchanged doc rewritten: %s", got)
+	}
+}
+
+func TestFromText(t *testing.T) {
+	got := string(FromText("  One\r\ntwo\n \nThree  "))
+	want := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"One"},{"type":"hardBreak"},` +
+		`{"type":"text","text":"two"}]},{"type":"paragraph","content":[{"type":"text","text":"Three"}]}]}`
+	if got != want {
+		t.Errorf("got %s", got)
+	}
+	if d, msg := Check(FromText("a\n\nb"), "Description", 100); d == nil || msg != "" {
+		t.Errorf("FromText's doc doesn't pass Check: %q", msg)
+	}
+	if FromText(" \n ") != nil {
+		t.Error("blank text isn't nil")
 	}
 }

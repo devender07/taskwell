@@ -2,7 +2,7 @@ import { createFileRoute, useLoaderData } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import type { ActivityPage, Issue, NotificationPage, Project, ProjectStats, Status } from '@/api'
 import { clearNotice, loaderApi, readNotice } from '@/realtime'
-import { Activity, AssignedToMe, Inbox, NeedsAttention, Projects, RecentlyViewed } from '@/components/home/blocks'
+import { Activity, AssignedToMe, ConnectClaude, Inbox, NeedsAttention, Projects, RecentlyViewed } from '@/components/home/blocks'
 import { greeting, splitMine } from '@/components/home/home'
 import { workspacePath } from '@/api'
 
@@ -33,7 +33,7 @@ function WorkspaceHome() {
 
   return (
     <main className="home grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-1">
+      <header className="page-top grid gap-1">
         {notice ? <p role="status" className="text-caption text-secondary m-0">{notice}</p> : null}
         <h1 className="text-h2">
           {greeting(now)}, {user.name.split(' ')[0]}
@@ -49,6 +49,7 @@ function WorkspaceHome() {
         <div className="grid gap-6" style={{ minWidth: 0 }}>
           <Inbox workspace={workspace.slug} page={notifications} />
           <RecentlyViewed workspace={workspace.slug} issues={issues} />
+          <ConnectClaude />
           <Projects workspace={workspace} projects={projects} stats={stats} />
         </div>
       </div>

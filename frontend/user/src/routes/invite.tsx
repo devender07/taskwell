@@ -36,7 +36,7 @@ function InvitePage() {
       <AuthCard
         title="Invite unavailable"
         subtitle="Ask whoever invited you to send a new link."
-        footer={<Link to="/" className="auth-link">Go to Tether</Link>}
+        footer={<Link to="/signin" className="auth-link">Go to Taskwell</Link>}
       >
         <FormError>This invite link is invalid or has expired.</FormError>
       </AuthCard>
@@ -49,7 +49,7 @@ function InvitePage() {
   return (
     <AuthCard
       title={`Join ${invite.workspace}`}
-      subtitle={invite.invited_by ? `${invite.invited_by} invited you to collaborate on Tether.` : "You've been invited to collaborate on Tether."}
+      subtitle={invite.invited_by ? `${invite.invited_by} invited you to collaborate on Taskwell.` : "You've been invited to collaborate on Taskwell."}
     >
       {!me ? (
         <>

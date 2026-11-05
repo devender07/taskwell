@@ -81,7 +81,7 @@ Mention emails for comments: newly mentioned members (new comment: everyone ment
   - Event row: small actor avatar (20px) or status icon for status events, one line of `text-caption text-secondary` "**Maya** moved from Todo to In progress · 2h ago" (actor name in `--text`), relative time with the full date in `title`.
   - Comment: card (nested surface, 8px radius) with avatar, name, relative time, "(edited)", the body via read-only `RichEditor`, and a "⋯" `Popover` menu with Edit / Delete when allowed. Edit swaps in an editable `RichEditor` with Save/Cancel. Delete asks in a `Dialog` ("Delete comment?", "This can't be undone.").
   - Composer at the bottom when the user has `comments.create` and the project isn't archived: `RichEditor` (placeholder "Leave a comment… Type @ to mention someone", mentions = members), "Comment" button (disabled while empty or pending); ⌘/Ctrl+Enter submits. After posting, clear the editor and `router.invalidate()`.
-  - Relative time helper in `@tether/shared` (`src/time/relative.ts` + `relative.check.ts`): "just now", "5m ago", "3h ago", "yesterday", "Oct 12", "Oct 12, 2025" for other years.
+  - Relative time helper in `@taskwell/shared` (`src/time/relative.ts` + `relative.check.ts`): "just now", "5m ago", "3h ago", "yesterday", "Oct 12", "Oct 12, 2025" for other years.
 - Live description edits from others don't refresh the timeline (refresh on navigation/after own actions is enough). `ponytail:` note it.
 - Settings → Roles: the two comment permissions now show as active (the role form already renders inactive ones differently — check and make sure they're togglable).
 

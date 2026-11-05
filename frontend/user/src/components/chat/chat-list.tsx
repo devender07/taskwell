@@ -1,11 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { LogoMark } from '@tether/shared/logo'
-import { IconButton } from '@tether/shared/icon-button'
-import { Popover } from '@tether/shared/popover'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { PlusIcon } from '@tether/shared/icons'
+import { Avatar } from '@taskwell/shared/avatar'
+import { LogoMark } from '@taskwell/shared/logo'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Popover } from '@taskwell/shared/popover'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { PlusIcon } from '@taskwell/shared/icons'
 import { avatarSrc, type Chat, type NotificationPage, type User } from '@/api'
 import { notificationText } from '@/components/inbox/feed-row'
 import { PROVIDER_NAME } from '@/components/issues/pull-requests'
@@ -14,10 +14,10 @@ import './chat.css'
 
 type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; bot: NotificationPage; dialog?: 'group' | 'message' }
 
-// The inbox's left column: the workspace chat, Notes, then groups and direct messages, Tether's first.
+// The inbox's left column: the workspace chat, then groups and direct messages, Taskwell's first.
 export function ChatList({ slug, workspaceName, user, chats, bot, dialog }: Props) {
   const navigate = useNavigate()
-  const top = chats.filter((c) => c.kind === 'workspace' || c.kind === 'self')
+  const top = chats.filter((c) => c.kind === 'workspace')
   const groups = chats.filter((c) => c.kind === 'group')
   const direct = chats.filter((c) => c.kind === 'direct')
   const setDialog = (d?: 'group' | 'message') => navigate({ to: '.', search: (prev: Record<string, unknown>) => ({ ...prev, new: d }), replace: true })
@@ -93,27 +93,26 @@ function Section({ title, add, empty, pinned, chats, slug, me, workspaceName }: 
   )
 }
 
-// The person or initials a chat shows: the other person in a direct chat, you in Notes.
+// The person or initials a chat shows: the other person in a direct chat.
 export function ChatAvatar({ chat, me, workspaceName, size = 24 }: { chat: Chat; me: User; workspaceName: string; size?: number }) {
   if (chat.kind === 'direct') {
     const other = chat.members.find((m) => m.id !== me.id) ?? chat.members[0]
     return <Avatar name={other?.name ?? chat.name} size={size} src={other && avatarSrc(other.id)} />
   }
-  if (chat.kind === 'self') return <Avatar name={me.name} size={size} src={me.avatar_url} />
   return <Avatar name={chat.kind === 'workspace' ? workspaceName : chat.name} size={size} />
 }
 
-// Tether's direct message: notifications other than chat ones. It isn't a chat, so it can't be left or deleted.
+// Taskwell's direct message: notifications other than chat ones. It isn't a chat, so it can't be left or deleted.
 function BotRow({ slug, page }: { slug: string; page: NotificationPage }) {
   const last = page.notifications[0]
   const unread = page.notifications.filter((n) => !n.read).length
   return (
     <li>
-      <Link to="/$workspace/inbox/tether" params={{ workspace: slug }} className="chat-row" aria-label={unread ? `Tether, ${unread} unread` : 'Tether'}>
+      <Link to="/$workspace/inbox/taskwell" params={{ workspace: slug }} className="chat-row" aria-label={unread ? `Taskwell, ${unread} unread` : 'Taskwell'}>
         <LogoMark size={24} />
         <span className="grid flex-grow" style={{ minWidth: 0, gridTemplateColumns: 'minmax(0, 1fr)' }}>
           <span className="flex items-baseline gap-2">
-            <span className={`chat-row-name ellipsis flex-grow${unread ? ' font-590' : ''}`}>Tether</span>
+            <span className={`chat-row-name ellipsis flex-grow${unread ? ' font-590' : ''}`}>Taskwell</span>
             {last ? (
               <time dateTime={last.created_at} title={fullTime(last.created_at)} className="text-caption text-secondary flex-noshrink">
                 {relativeTime(last.created_at)}
@@ -155,7 +154,7 @@ function ChatRow({ slug, chat, me, workspaceName }: { slug: string; chat: Chat; 
           </span>
           <span className="flex items-center gap-2">
             <span className="text-caption text-secondary ellipsis flex-grow">
-              {last ? `${last.author?.id === me.id ? 'You: ' : last.author && chat.kind !== 'direct' ? `${last.author.name}: ` : ''}${last.excerpt}` : chat.kind === 'self' ? 'Only you can see this' : 'No messages yet'}
+              {last ? `${last.author?.id === me.id ? 'You: ' : last.author && chat.kind !== 'direct' ? `${last.author.name}: ` : ''}${last.excerpt}` : 'No messages yet'}
             </span>
             {unread ? (
               <span className="chat-pill" data-mentioned={chat.mentioned || undefined} aria-hidden>

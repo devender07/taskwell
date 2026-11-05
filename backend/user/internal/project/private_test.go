@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestPrivate: a private project is seen only by its members and admins, everywhere projects are listed, and its
@@ -121,6 +121,12 @@ func TestPrivate(t *testing.T) {
 	if err := json.Unmarshal([]byte(do(otto, "GET", "/projects/WEB/people", nil, 200)), &people); err != nil || len(people) != 3 {
 		t.Errorf("public people %+v %v", people, err)
 	}
+	people = nil
+	if err := json.Unmarshal([]byte(do(otto, "GET", "/projects/WEB/people?limit=1&q=OTT", nil, 200)), &people); err != nil ||
+		len(people) != 1 || people[0].ID != otto {
+		t.Errorf("searched people %+v %v", people, err)
+	}
+	do(otto, "GET", "/projects/WEB/people?limit=0", nil, 400)
 
 	// Members: add and remove Otto; a public project has none.
 	do(mia, "POST", "/projects/LEAD/members", url.Values{"user_ids": {"nope"}}, 400)

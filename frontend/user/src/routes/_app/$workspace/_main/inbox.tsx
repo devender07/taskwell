@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, useLoaderData, useMatch } from '@tanstack/reac
 import type { Chat, NotificationPage } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ChatList } from '@/components/chat/chat-list'
-import { botPath } from '@/components/inbox/tether-bot'
+import { botPath } from '@/components/inbox/taskwell-bot'
 import { workspacePath } from '@/api'
 
 type Search = { new?: 'group' | 'message' }

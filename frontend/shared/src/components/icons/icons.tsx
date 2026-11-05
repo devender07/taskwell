@@ -1,7 +1,7 @@
 import type { ReactNode, SVGProps } from 'react'
 
 // The app's icon set: 24x24 line icons in currentColor, so they take the text color around them. Every new icon goes
-// here and is imported from @tether/shared/icons; size defaults to 18.
+// here and is imported from @taskwell/shared/icons; size defaults to 18.
 type IconProps = Omit<SVGProps<SVGSVGElement>, 'children'> & { size?: number }
 
 function Icon({ size = 18, children, ...props }: IconProps & { children: ReactNode }) {
@@ -132,6 +132,15 @@ export const TagIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" />
     <circle cx="8" cy="8" r="1.5" />
+  </Icon>
+)
+
+export const BranchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="6" cy="5" r="2" />
+    <circle cx="6" cy="19" r="2" />
+    <circle cx="18" cy="7" r="2" />
+    <path d="M6 7v10M18 9c0 5-12 3-12 8" />
   </Icon>
 )
 
@@ -266,6 +275,12 @@ export const ChevronUpIcon = (props: IconProps) => (
 export const ChevronDownIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="m6 9 6 6 6-6" />
+  </Icon>
+)
+
+export const MenuIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
   </Icon>
 )
 
@@ -414,5 +429,63 @@ export const ChevronRightIcon = (props: IconProps) => (
 export const PathIcon = ({ d, ...props }: IconProps & { d: string }) => (
   <Icon {...props}>
     <path d={d} />
+  </Icon>
+)
+
+export const LayersIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m12 3 9 5-9 5-9-5z" />
+    <path d="m3 13 9 5 9-5" />
+  </Icon>
+)
+
+export const TrashIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </Icon>
+)
+
+export const FileIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </Icon>
+)
+
+export const NoteIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M15 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v11z" />
+    <path d="M15 21v-4a1 1 0 0 1 1-1h4M8 8h8M8 12h5" />
+  </Icon>
+)
+
+export const ChecklistIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="m8 12 3 3 5-6" />
+  </Icon>
+)
+
+export const PaletteIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 21a9 9 0 1 1 9-9c0 2.5-2 4-4.5 4H15a2 2 0 0 0-1.5 3.3A1.2 1.2 0 0 1 12 21z" />
+    <circle cx="7.5" cy="11" r="1" />
+    <circle cx="11" cy="7" r="1" />
+    <circle cx="16" cy="8.5" r="1" />
+  </Icon>
+)
+
+export const ArchiveIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" />
+  </Icon>
+)
+
+export const UserPlusIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="9" cy="8" r="4" />
+    <path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6" />
   </Icon>
 )

@@ -1,6 +1,7 @@
 import { useLoaderData, useLocation, useMatch, useParams } from '@tanstack/react-router'
 import { Suspense, createContext, lazy, use, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
-import { Dialog } from '@tether/shared/dialog'
+import { Dialog } from '@taskwell/shared/dialog'
+import { useToast } from '@taskwell/shared/toast'
 import { can } from '@/api'
 import { branchName } from '@/components/issues/branch'
 import type { Prefill } from '@/components/issues/issue-form'
@@ -30,12 +31,16 @@ const HELP = [
   ['Esc', 'Close'],
 ]
 
+// The mounted workspace's palette, for the navbar (it sits above the workspace layout, outside this context).
+let paletteOpener: (() => void) | null = null
+export const openWorkspacePalette = () => paletteOpener?.()
+
 type Actions = { openPalette: () => void; openCreate: () => void; createPrefilled: (prefill: Prefill) => void }
 const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {}, createPrefilled() {} })
 export const useShortcuts = () => use(ShortcutsContext)
 
 // Single-key shortcuts (C, /, ?, S, A, P, L) can be turned off in Settings → Profile (WCAG 2.1.4); ⌘K stays.
-const SINGLE_KEYS = 'tether:single-key-shortcuts'
+const SINGLE_KEYS = 'taskwell:single-key-shortcuts'
 export function singleKeyShortcuts() {
   try {
     return localStorage.getItem(SINGLE_KEYS) !== 'off'
@@ -60,7 +65,7 @@ export function Shortcuts({ children }: { children: ReactNode }) {
   const [palette, setPalette] = useState<Mode | null>(null)
   const [creating, setCreating] = useState<{ prefill?: Prefill } | null>(null)
   const [help, setHelp] = useState(false)
-  const [toast, setToast] = useState<{ text: string; at: number } | null>(null)
+  const toast = useToast()
   const [path, setPath] = useState(pathname)
   const canCreate = can(workspace, 'issues.create')
 
@@ -70,18 +75,17 @@ export function Shortcuts({ children }: { children: ReactNode }) {
     setCreating(null)
   }
 
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 3000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  const say = (text: string) => setToast({ text, at: Date.now() })
+  const say = (message: string) => toast.show({ message })
   const copyBranch = issue
     ? () => navigator.clipboard.writeText(branchName(issue.issue.identifier, issue.issue.title)).then(() => say('Branch name copied'), () => say("Couldn't copy. Try again."))
     : undefined
 
   const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating({}), createPrefilled: (prefill) => setCreating({ prefill }) }), [])
+
+  useEffect(() => {
+    paletteOpener = actions.openPalette
+    return () => void (paletteOpener = null)
+  }, [actions])
 
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return
@@ -139,7 +143,6 @@ export function Shortcuts({ children }: { children: ReactNode }) {
           </Suspense>
         </Dialog>
       ) : null}
-      <p role="status" className="toast z-modal">{toast?.text}</p>
       <Dialog open={help} onClose={() => setHelp(false)} title="Keyboard shortcuts">
         <dl className="grid gap-3 m-0">
           {HELP.map(([key, label]) => (

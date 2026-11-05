@@ -3,9 +3,9 @@
 # Ctrl+C stops them all. The tester reads ANTHROPIC_API_KEY and TEST_SECRET_KEY from the git-ignored .env.
 
 COMPOSE := docker compose -f ../docker-compose.yml
-PKGS    := github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/... \
-           github.com/devender07/tether/backend/shared/... \
-           github.com/devender07/tether/backend/mcp/...
+PKGS    := github.com/devender07/taskwell/backend/admin/... github.com/devender07/taskwell/backend/user/... \
+           github.com/devender07/taskwell/backend/shared/... \
+           github.com/devender07/taskwell/backend/mcp/...
 # Loads .env into a recipe's environment when it exists.
 ENV     := set -a; [ -f .env ] && . ./.env; set +a;
 # run SERVICE, COMMAND: runs it with every log line prefixed by the service name.
@@ -21,7 +21,7 @@ dev: up migrate
 
 up:
 	$(COMPOSE) --profile ai up -d --wait postgres mailpit s3 chrome
-	@echo 's3.bucket.create -name tether' | $(COMPOSE) exec -T s3 weed shell -master=localhost:9333 >/dev/null
+	@echo 's3.bucket.create -name taskwell' | $(COMPOSE) exec -T s3 weed shell -master=localhost:9333 >/dev/null
 
 down:
 	$(COMPOSE) --profile ai down

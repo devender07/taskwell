@@ -41,7 +41,7 @@ func playwrightSpec(identifier, title string, sites []Site, cs []exportCase) str
 		}
 	}
 	line(0, "// %s %s", identifier, comment(title))
-	line(0, "// Exported by Tether from the issue's test cases. Test site: %s", comment(strings.Join(bases, ", ")))
+	line(0, "// Exported by Taskwell from the issue's test cases. Test site: %s", comment(strings.Join(bases, ", ")))
 	line(0, "// Run: npm i -D @playwright/test && npx playwright test %s.spec.ts", identifier)
 	if len(envs) > 0 {
 		line(0, "// Passwords come from env vars: %s.", comment(strings.Join(envs, ", ")))
@@ -129,9 +129,9 @@ func locatorJS(l *locator) string {
 	return "page.locator(" + js(l.Tag) + ", { hasText: " + strings.TrimSuffix(name, ", exact: true") + " }).first()"
 }
 
-// passwordEnv is the env var holding the account's password: TETHER_PASSWORD_ and the label as a constant.
+// passwordEnv is the env var holding the account's password: TASKWELL_PASSWORD_ and the label as a constant.
 func passwordEnv(label string) string {
-	return "TETHER_PASSWORD_" + strings.Trim(nonConst.ReplaceAllString(strings.ToUpper(label), "_"), "_")
+	return "TASKWELL_PASSWORD_" + strings.Trim(nonConst.ReplaceAllString(strings.ToUpper(label), "_"), "_")
 }
 
 // js is s as a JS string literal.

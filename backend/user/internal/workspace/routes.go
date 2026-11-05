@@ -8,7 +8,7 @@ package workspace
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const maxBody = 64 << 10
@@ -33,6 +33,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/invites/{id}", h.wrap(h.cancelInvite))
 	mux.HandleFunc("GET /api/invites/{token}", h.wrapPublic(h.showInvite))
 	mux.HandleFunc("POST /api/invites/{token}/accept", h.wrap(h.acceptInvite))
+	mux.HandleFunc("GET /api/me/invites", h.wrap(h.myInvites))
+	mux.HandleFunc("POST /api/me/invites/{id}/accept", h.wrap(h.acceptMyInvite))
+	mux.HandleFunc("POST /api/me/invites/{id}/dismiss", h.wrap(h.dismissMyInvite))
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

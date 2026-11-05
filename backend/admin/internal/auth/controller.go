@@ -8,13 +8,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/devender07/tether/backend/admin/internal/audit"
-	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
 )
 
 const (
 	errBadLogin = "Email or password is incorrect."
-	errNoMFA    = "Ask an operator to run tether-admin -reset-mfa for your account."
+	errNoMFA    = "Ask an operator to run taskwell-admin -reset-mfa for your account."
 )
 
 // dummyHash keeps sign-in timing the same whether or not the email belongs to an admin.
@@ -23,7 +23,7 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-equalizer"), bcryp
 type Handler struct {
 	model  *model
 	secret []byte  // ADMIN_JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
-	mfaKey []byte  // seals TOTP secrets (MFAKey)
+	mfaKey []byte  // seals TOTP secrets (totp.Key)
 	ip     limiter // sign-in attempts per client IP, shared with every admin instance
 }
 

@@ -18,11 +18,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -609,6 +609,9 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 	if !ok || err != nil {
 		return err
 	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
+	}
 	n, err := spent(r.Context(), h.model.db, ws.ID)
 	if err != nil {
 		return err
@@ -626,7 +629,7 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 
 var sessionActions = []string{"navigate", "click", "type", "select", "press", "wait", "fill_password", "assert_text", "assert_no_text", "snapshot"}
 
-// browserSession is an open session in the tester at its URL; token is the tester's X-Tether-Session-Token.
+// browserSession is an open session in the tester at its URL; token is the tester's X-Taskwell-Session-Token.
 type browserSession struct{ id, tester, token string }
 
 // createSession opens a browser on the tester for the issue's test cases, at url or the first test site.
@@ -896,6 +899,9 @@ func (h *Handler) listSites(w http.ResponseWriter, r *http.Request, userID strin
 	if !ok || err != nil {
 		return err
 	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
+	}
 	ss, err := h.model.sites(r.Context(), ws.ID)
 	if err != nil {
 		return err
@@ -908,6 +914,9 @@ func (h *Handler) createSite(w http.ResponseWriter, r *http.Request, userID stri
 	ws, ok, err := h.access(w, r, userID, workspace.PermAITestsManage)
 	if !ok || err != nil {
 		return err
+	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
 	}
 	base, host, msg := checkBaseURL(r.FormValue("base_url"), h.opts.AllowHTTP, h.opts.AllowPrivate)
 	if !web.Check(w, map[string]string{"base_url": msg}) {
@@ -930,6 +939,9 @@ func (h *Handler) deleteSite(w http.ResponseWriter, r *http.Request, userID stri
 	if !ok || err != nil {
 		return err
 	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
+	}
 	err = errNotFound
 	if id := r.PathValue("id"); web.IsUUID(id) {
 		err = h.model.deleteSite(r.Context(), ws.ID, ws.Slug, userID, id)
@@ -943,6 +955,9 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request, userID st
 	ws, ok, err := h.access(w, r, userID, "")
 	if !ok || err != nil {
 		return err
+	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
 	}
 	as, err := h.model.accounts(r.Context(), ws.ID)
 	if err != nil {
@@ -959,6 +974,9 @@ func (h *Handler) saveAccount(w http.ResponseWriter, r *http.Request, userID str
 	ws, ok, err := h.access(w, r, userID, workspace.PermAITestsManage)
 	if !ok || err != nil {
 		return err
+	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
 	}
 	id := r.PathValue("id")
 	if id != "" && !web.IsUUID(id) {
@@ -996,6 +1014,9 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request, userID s
 	ws, ok, err := h.access(w, r, userID, workspace.PermAITestsManage)
 	if !ok || err != nil {
 		return err
+	}
+	if workspace.DenyGuest(w, ws) {
+		return nil
 	}
 	err = errNotFound
 	if id := r.PathValue("id"); web.IsUUID(id) {

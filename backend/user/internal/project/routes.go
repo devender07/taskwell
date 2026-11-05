@@ -1,15 +1,16 @@
 // Package project implements the user service's project API: list, create, open, update, archive and unarchive,
-// a private project's members, milestones, each active project's issue counts for Home, and the roadmap. A private
-// project is seen only by its members and workspace admins (the can_see_project SQL function).
+// a private project's members, milestones, project updates (written, with a health), each active project's issue
+// counts for Home, and the roadmap. A private project is seen only by its members and workspace admins (the
+// can_see_project SQL function).
 //
-// routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
+// routes.go mounts the endpoints, controller.go and updates.go handle HTTP (parse, validate, respond)
 // and model.go owns every SQL query.
 package project
 
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // maxBody fits a 10,000-character description even when URL-encoded.
@@ -33,6 +34,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/milestones/{id}", h.wrap(h.updateMilestone))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/projects/{key}/milestones/{id}", h.wrap(h.deleteMilestone))
 	mux.HandleFunc("GET /api/workspaces/{slug}/roadmap", h.wrap(h.roadmap))
+	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/updates", h.wrap(h.updates))
+	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/updates", h.wrap(h.createUpdate))
+	mux.HandleFunc("POST /api/workspaces/{slug}/project-updates/{id}", h.wrap(h.editUpdate))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/project-updates/{id}", h.wrap(h.deleteUpdate))
 }
 
 // wrap caps the body size, answers 401 when signed out, and turns a returned error into a logged 500.

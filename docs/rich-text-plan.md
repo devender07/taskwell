@@ -86,7 +86,7 @@ Rooms: in memory, one per issue id, in a small hub in the issue package (mutex +
 
 ## Frontend
 
-### Shared `RichEditor` (`frontend/shared/src/components/rich-editor/`, export `@tether/shared/rich-editor`)
+### Shared `RichEditor` (`frontend/shared/src/components/rich-editor/`, export `@taskwell/shared/rich-editor`)
 
 ```ts
 type Doc = JSONContent // from @tiptap/react
@@ -111,7 +111,7 @@ type RichEditorProps = {
 
 ### Validators
 
-`issueDescription` in `@tether/shared/validate` takes the text length instead of a string: `(length: number) => string | null`. Update its callers.
+`issueDescription` in `@taskwell/shared/validate` takes the text length instead of a string: `(length: number) => string | null`. Update its callers.
 
 ### User app
 

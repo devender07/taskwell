@@ -1,17 +1,21 @@
 import { redirect } from '@tanstack/react-router'
-import type { Doc } from '@tether/shared/rich-editor'
-import { ApiError, FALLBACK } from '@tether/shared/api-errors'
+import type { Doc } from '@taskwell/shared/rich-editor'
+import { ApiError, FALLBACK } from '@taskwell/shared/api-errors'
+import { apiUrl } from '@taskwell/shared/api-url'
 
-export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
-export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null }
+export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
 export type RoleRef = { id: string; name: string }
-export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[] }
-export type Member = { id: string; name: string; email: string; role: RoleRef }
+// guest: the caller is a guest here (sees only the projects they're added to). Optional: only the single-workspace GET promises it.
+export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean }
+export type Member = { id: string; name: string; email: string; role: RoleRef; guest: boolean }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
-export type Role = { id: string; name: string; builtin: 'admin' | 'member' | null; permissions: string[]; member_count: number }
+export type Role = { id: string; name: string; builtin: 'admin' | 'member' | 'guest' | null; permissions: string[]; member_count: number }
 export type Permission = { key: string; group: string; label: string; active: boolean }
-export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null }
+export type Project = { id: string; name: string; key: string; description: string; archived: boolean; private: boolean; manual_order: boolean; members: PersonRef[]; created_at: string; start_date: string | null; target_date: string | null; health: Health | null }
+// The latest project update's health.
+export type Health = 'on_track' | 'at_risk' | 'off_track'
 export type Milestone = { id: string; name: string; date: string }
 export type PersonRef = { id: string; name: string }
 export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
@@ -29,7 +33,7 @@ export type StatusType = { id: string; name: string; category: StatusCategory; i
 export type Label = { id: string; name: string; color: string }
 export type CycleState = 'upcoming' | 'current' | 'past'
 export type CycleRef = { id: string; number: number; name: string; starts_on: string; ends_on: string; state: CycleState }
-export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date'> & {
+export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_date' | 'target_date' | 'health'> & {
   progress: { total: number; completed: number; canceled: number }
   milestones: Milestone[]
   cycles: Omit<CycleRef, 'id'>[]
@@ -42,6 +46,7 @@ export type Issue = {
   id: string
   identifier: string
   number: number
+  rank: string
   project: { key: string; name: string }
   title: string
   description: Doc | null
@@ -51,6 +56,7 @@ export type Issue = {
   due_date: string | null
   labels: Label[]
   created_by: PersonRef | null
+  assigned_by: PersonRef | null
   created_at: string
   updated_at: string
   can_edit: boolean
@@ -115,12 +121,12 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
-export type ChatKind = 'workspace' | 'self' | 'direct' | 'group'
+export type ChatKind = 'workspace' | 'direct' | 'group'
 export type Chat = {
   id: string
   kind: ChatKind
   name: string
-  members: PersonRef[] // direct: both; group: all; self: you; workspace: none (it's everyone)
+  members: PersonRef[] // direct: both; group: all; workspace: none (it's everyone)
   created_by: string | null
   unread: number
   mentioned: boolean
@@ -159,10 +165,15 @@ export type Notification = {
   | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
   | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
   | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
+  // available: the invite still exists, hasn't expired, and the user hasn't joined.
+  | { kind: 'invite'; issue: null; chat: null; project: null; invite: { id: string; workspace: string; available: boolean } }
 )
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
-export type ActivityItem = ({ type: 'event' } & ActivityBase & IssueEvent) | ({ type: 'comment'; excerpt: string } & ActivityBase)
+export type ActivityItem =
+  | ({ type: 'event' } & ActivityBase & IssueEvent)
+  | ({ type: 'comment'; excerpt: string } & ActivityBase)
+  | { type: 'project_update'; id: string; created_at: string; actor: PersonRef | null; project: { key: string; name: string }; health: Health }
 // Newest first; `?before=` the last item's created_at fetches the next page.
 export type ActivityPage = { items: ActivityItem[]; has_more: boolean }
 export type ProjectStats = { key: string; open: number; done: number; canceled: number; overdue: number }
@@ -190,7 +201,7 @@ export type Feedback = {
   created_at: string
 }
 // Newest first; `&before=` the last item's id fetches the next page.
-export type FeedbackPage = { items: Feedback[]; has_more: boolean }
+export type FeedbackPage = { items: Feedback[]; has_more: boolean; total?: number } // total: only on an issue's feedback
 export type FeedbackForm = { enabled: boolean; token: string | null }
 
 export const feedbackPath = (workspace: string) => `${workspacePath(workspace)}/feedback`
@@ -205,9 +216,106 @@ export const deleteFeedback = (workspace: string, id: string) => api(`${feedback
 
 export const issuePath = (workspace: Workspace, identifier: string) =>
   `${workspacePath(workspace.slug)}/issues/${encodeURIComponent(identifier)}`
+export const bulkIssuesPath = (workspace: string) => `${workspacePath(workspace)}/issues/bulk`
+
+// Newest deleted first, 50 a page; `?before=` the last item's deleted_at fetches the next.
+export type TrashedIssue = {
+  id: string
+  identifier: string
+  title: string
+  project: { key: string; name: string }
+  deleted_at: string
+  deleted_by: PersonRef | null
+  can_restore: boolean
+}
+export type TrashPage = { issues: TrashedIssue[]; has_more: boolean }
+export const trashPath = (workspace: string) => `${workspacePath(workspace)}/trash`
+const trashedPath = (workspace: string, identifier: string) => `${trashPath(workspace)}/${encodeURIComponent(identifier)}`
+export const restoreIssue = (workspace: string, identifier: string) => api<Issue>(`${trashedPath(workspace, identifier)}/restore`, new FormData())
+export const purgeIssue = (workspace: string, identifier: string) => api(trashedPath(workspace, identifier), undefined, 'DELETE')
+export const emptyTrash = (workspace: string) => api(trashPath(workspace), undefined, 'DELETE')
+
+// path: the page under the workspace with its search, e.g. `/projects/ABC?view=board`.
+export type SavedView = { id: string; name: string; path: string; shared: boolean; owner: PersonRef; can_edit: boolean }
+export const viewsPath = (workspace: string) => `${workspacePath(workspace)}/views`
+export const viewPath = (workspace: string, id: string) => `${viewsPath(workspace)}/${encodeURIComponent(id)}`
+
+// pinned, archived and labels are the caller's own; members is everyone but the owner. can_delete: the caller owns it;
+// can_edit: the caller owns it or is an 'edit' member (a viewer can still pin, archive and label it).
+export type NoteRole = 'edit' | 'view'
+export type Note = {
+  id: string
+  title: string
+  body: Doc | null
+  color: string
+  owner: PersonRef
+  members: (PersonRef & { role: NoteRole })[]
+  pinned: boolean
+  archived: boolean
+  labels: string[]
+  can_delete: boolean
+  can_edit: boolean
+  created_at: string
+  updated_at: string
+  updated_by: PersonRef | null
+}
+export const notesPath = (workspace: string) => `${workspacePath(workspace)}/notes`
+const notePath = (workspace: string, id: string) => `${notesPath(workspace)}/${encodeURIComponent(id)}`
+// Only the fields given change; pinned/archived are '1' or '0', labels a JSON array, body a doc's JSON or ''.
+export function saveNote(workspace: string, fields: Record<string, string>, id?: string) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.set(k, v)
+  return api<Note>(id ? notePath(workspace, id) : notesPath(workspace), form)
+}
+// The owner deletes it for everyone; anyone else leaves it.
+export const deleteNote = (workspace: string, id: string) => api(notePath(workspace, id), undefined, 'DELETE')
+export function addNoteMember(workspace: string, id: string, userId: string, role: NoteRole) {
+  const form = new FormData()
+  form.set('user_id', userId)
+  form.set('role', role)
+  return api<Note>(`${notePath(workspace, id)}/members`, form)
+}
+// Owner only.
+export function setNoteMemberRole(workspace: string, id: string, userId: string, role: NoteRole) {
+  const form = new FormData()
+  form.set('role', role)
+  return api<Note>(`${notePath(workspace, id)}/members/${encodeURIComponent(userId)}`, form)
+}
+export const removeNoteMember = (workspace: string, id: string, userId: string) =>
+  api(`${notePath(workspace, id)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export type ImportSource = 'linear' | 'jira' | 'csv' | 'github'
+// imported and first: only once imported, not on a dry run. row: the CSV data row (1-based) or the GitHub issue number.
+export type ImportSummary = {
+  source: ImportSource
+  total: number
+  statuses: { from: string; to: { id: string; name: string }; count: number }[]
+  new_labels: string[]
+  unmatched_assignees: string[]
+  comments: number
+  skipped: { row: number; error: string }[]
+  imported?: number
+  first?: string
+}
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
+
+export type AnalyticsWeek = { week: string; completed: number; created: number; comments: number }
+export type MemberAnalytics = {
+  member: Member
+  open: { total: number; by_category: { backlog: number; unstarted: number; started: number }; overdue: number; due_this_week: number }
+  weeks: AnalyticsWeek[]
+  cycle_time_days: number | null
+  completed_30d: number
+  tests: { runs_started_30d: number }
+  current_cycles: { project: { key: string; name: string }; number: number; name: string; assigned: number; completed: number }[]
+}
+export type TeamMember = { id: string; name: string; open: number; overdue: number; completed_30d: number; cycle_time_days: number | null }
+export const memberAnalyticsPath = (workspace: string, id: string) => `${workspacePath(workspace)}/members/${encodeURIComponent(id)}/analytics`
+export const teamAnalyticsPath = (workspace: string) => `${workspacePath(workspace)}/analytics/team`
+// Your own analytics always; anyone else's with analytics.view.
+export const canViewMember = (workspace: Workspace, id: string, me: string) => id === me || can(workspace, 'analytics.view')
 
 export const projectPath = (workspace: string, project: string) => `${workspacePath(workspace)}/projects/${encodeURIComponent(project)}`
 // Everyone who can see the project, for its assignee and mention pickers: the whole workspace for a public project.
@@ -219,6 +327,29 @@ export function addProjectMembers(workspace: string, project: string, ids: strin
 }
 export const removeProjectMember = (workspace: string, project: string, userId: string) =>
   api<Project>(`${projectPath(workspace, project)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
+
+export type ProjectUpdate = { id: string; health: Health; body: Doc; author: PersonRef | null; created_at: string; edited_at: string | null; can_edit: boolean }
+// Newest first, 20 a page; `?before=` the last update's created_at fetches the next page.
+export type ProjectUpdatePage = { updates: ProjectUpdate[]; has_more: boolean }
+export const projectUpdatesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/updates`
+export const projectUpdatePath = (workspace: string, id: string) => `${workspacePath(workspace)}/project-updates/${encodeURIComponent(id)}`
+
+export type RepeatUnit = 'day' | 'week' | 'month'
+export type Template = {
+  id: string
+  name: string
+  title: string
+  description: Doc | null
+  project: { id: string; key: string; name: string } | null
+  status: Status | null
+  assignee: PersonRef | null
+  priority: number
+  labels: Label[]
+  repeat: { every: number; unit: RepeatUnit; next_on: string; paused: boolean } | null
+  can_edit: boolean
+}
+export const templatesPath = (workspace: string) => `${workspacePath(workspace)}/templates`
+export const templatePath = (workspace: string, id: string) => `${templatesPath(workspace)}/${encodeURIComponent(id)}`
 
 export const roadmapPath = (workspace: string) => `${workspacePath(workspace)}/roadmap`
 export const milestonesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/milestones`
@@ -288,6 +419,19 @@ export const deleteWebhook = (workspace: string, id: string) => api(webhookPath(
 export const redeliver = (workspace: string, id: string, delivery: string) =>
   api(`${deliveriesPath(workspace, id)}/${encodeURIComponent(delivery)}/redeliver`, new FormData())
 
+export type MfaStatus = { enabled: boolean; recovery_left: number }
+export const mfaPath = '/me/mfa'
+
+// Invites for the signed-in user's email that they haven't dismissed, oldest first.
+export type PendingInvite = { id: string; workspace: { name: string }; invited_by: string; role: RoleRef; guest: boolean; expires_at: string; dismissed: boolean }
+export const myInvitesPath = '/me/invites'
+export const acceptMyInvite = (id: string) => api<Workspace>(`${myInvitesPath}/${encodeURIComponent(id)}/accept`, new FormData())
+export const dismissMyInvite = (id: string, workspace: string) => {
+  const form = new FormData()
+  form.set('workspace', workspace)
+  return api(`${myInvitesPath}/${encodeURIComponent(id)}/dismiss`, form)
+}
+
 export const tokensPath = '/me/tokens'
 export function createToken(name: string) {
   const form = new FormData()
@@ -323,7 +467,7 @@ export const setClient = (id: string) => (client = id)
 
 async function send(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal) {
   try {
-    return await fetch(`/api${path}`, { method, body, signal, headers: client ? { 'X-Tether-Client': client } : undefined })
+    return await fetch(apiUrl(`/api${path}`), { method, body, signal, credentials: 'include', headers: client ? { 'X-Taskwell-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }
@@ -354,11 +498,14 @@ const avatarVersions = new Map<string, number>()
 export const avatarSrc = (userId: string) => `/api/users/${encodeURIComponent(userId)}/avatar${avatarVersions.has(userId) ? `?v=${avatarVersions.get(userId)}` : ''}`
 export const bumpAvatar = (userId: string) => avatarVersions.set(userId, Date.now())
 
+// Where AI tools connect: the MCP server, beside the API.
+export const mcpUrl = (): string => import.meta.env.VITE_MCP_URL ?? `${location.origin}/mcp`
+
 // True once this tab has seen a session; a failed refresh or another tab's sign-out then sends it to sign-in.
 let signedIn = false
 
 // Tells other tabs about sign-in and sign-out: signed-out tabs reload into the app, signed-in ones go to sign-in.
-const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('tether-auth') : null
+const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('taskwell-auth') : null
 if (authChannel) {
   authChannel.onmessage = (e) => {
     if (e.data === 'signout') sessionEnded()
@@ -393,7 +540,13 @@ export async function getMe(): Promise<User | null> {
 
 // beforeLoad for the sign-in pages. An unreachable API counts as signed out so the form can surface the error.
 export async function redirectIfSignedIn({ search }: { search: { redirect?: string } }) {
-  if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? '/' })
+  if (await getMe().catch(() => null)) throw redirect({ href: search.redirect ?? (await homePath()) })
+}
+
+// Where a signed-in user starts: their most recently opened workspace, or creating one when they have none.
+export async function homePath() {
+  const [last] = await api<Workspace[]>('/workspaces')
+  return last ? `/${encodeURIComponent(last.slug)}` : '/new-workspace'
 }
 
 export type RunKind = 'ai' | 'manual' | 'replay'

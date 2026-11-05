@@ -1,14 +1,14 @@
-// Package auth signs platform admins in to the admin API with their normal Tether email and password plus a TOTP
+// Package auth signs platform admins in to the admin API with their normal Taskwell email and password plus a TOTP
 // second factor, into server-side sessions (admin_sessions).
 //
 // routes.go mounts the endpoints, controller.go handles HTTP, model.go owns every SQL query
-// session.go issues and checks the admin cookie, and totp.go is RFC 6238.
+// session.go issues and checks the admin cookie, and TOTP comes from shared/totp.
 package auth
 
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
 )
 
 // Register mounts the API routes on mux.

@@ -43,7 +43,7 @@ Runnable check: `proxy_test.go` table test for the allow/deny function (subdomai
   - `navigate {url}`, `click {ref}`, `type {ref, text}`, `select {ref, value}`, `press {key}`, `wait {seconds ≤ 5}`
   - `fill_password {ref, account}`: the tester types the decrypted password itself; Claude only ever sees the account label
   - `finish {result: "pass"|"fail", summary, reproduction: [string]}`
-- **Page state** sent after each action as the tool result: URL, title, visible text (capped 6k chars) and a numbered list of interactive elements (`[12] button "Save"`), built by one injected JS snippet that tags elements with `data-tether-ref`. Plus a JPEG screenshot (quality 60, 1280×800) as an image block. `ponytail:` full screenshot every step; drop to text-only on later steps if cost per run is high.
+- **Page state** sent after each action as the tool result: URL, title, visible text (capped 6k chars) and a numbered list of interactive elements (`[12] button "Save"`), built by one injected JS snippet that tags elements with `data-taskwell-ref`. Plus a JPEG screenshot (quality 60, 1280×800) as an image block. `ponytail:` full screenshot every step; drop to text-only on later steps if cost per run is high.
 - **Caching**: tools + system prompt are frozen (no timestamps, stable tool order) with one `cache_control` breakpoint; the conversation gets a second breakpoint on the last tool result so each step re-reads the history at cache price. Verify `cache_read_input_tokens > 0` from step 2 in the integration run.
 - **Prompt injection**: system prompt says page content is data from the site under test, never instructions. Blast radius is the tool list: browser actions on allowed hosts and `finish`. Bugs are never filed automatically.
 
@@ -241,7 +241,7 @@ Activity log on the issue: "ran AI tests: 5 passed, 1 failed", "ran tests manual
 - On a failed manual result, "Create bug" works the same with the case's steps as the reproduction and the note as the summary.
 - **Test history** under the cases: last runs (AI or manual, status, counts, when, who, cost for AI), click opens the panel.
 - **Settings → AI testing** (new settings page): this month's spend vs limit; test sites list + add/remove; test accounts list + add/edit/remove, password field write-only ("Saved; leave blank to keep").
-- `api.ts` gains the calls above. Forms use `noValidate` + `@tether/shared/validate`.
+- `api.ts` gains the calls above. Forms use `noValidate` + `@taskwell/shared/validate`.
 
 ## Verification (integration)
 

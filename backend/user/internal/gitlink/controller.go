@@ -15,10 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -54,14 +54,14 @@ func New(db *pgxpool.Pool, key []byte, baseURL func(ctx context.Context) (string
 func Key(envKey, jwtSecret string, prod bool) ([]byte, error) {
 	switch {
 	case envKey != "" && (len(envKey) >= 32 || !prod):
-		return secret.Key("tether integrations", envKey), nil
+		return secret.Key("taskwell integrations", envKey), nil
 	case prod:
 		return nil, errors.New("APP_ENV=production requires INTEGRATION_SECRET_KEY of at least 32 bytes (e.g. openssl rand -base64 32)")
 	case jwtSecret == "":
 		return nil, errors.New("INTEGRATION_SECRET_KEY is unset and there's no jwt_secret to derive one from")
 	}
 	slog.Warn("INTEGRATION_SECRET_KEY is unset: webhook secrets are encrypted with a key derived from jwt_secret (dev only)")
-	return secret.Key("tether integrations", "jwt_secret:"+jwtSecret), nil
+	return secret.Key("taskwell integrations", "jwt_secret:"+jwtSecret), nil
 }
 
 func sealAD(workspaceID, provider string) []byte { return []byte(workspaceID + ":" + provider) }

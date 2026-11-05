@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/db"
 )
 
-// testTx migrates TEST_DATABASE_URL (e.g. postgres://tether:tether@localhost:5433/tether_test?sslmode=disable) and
+// testTx migrates TEST_DATABASE_URL (e.g. postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable) and
 // returns a transaction that's rolled back when the test ends; the test is skipped without one.
 func testTx(t *testing.T) pgx.Tx {
 	t.Helper()
@@ -74,8 +74,8 @@ func TestDeleteUnreferencedFiles(t *testing.T) {
 	)
 	desc := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/` + inImage + `/f.png"}},
 		{"type":"paragraph","content":[{"type":"text","text":"see","marks":[{"type":"link","attrs":{"href":"/api/files/` + inLink + `/f.png"}}]}]}]}`
-	issue := one(`insert into issues (workspace_id, project_id, number, title, status_id, created_by, description)
-		values ($1, $2, 1, 'I', $3, $4, $5) returning id::text`, ws, project, status, user, desc)
+	issue := one(`insert into issues (workspace_id, project_id, number, title, status_id, created_by, description, rank)
+		values ($1, $2, 1, 'I', $3, $4, $5, 'V') returning id::text`, ws, project, status, user, desc)
 	one(`insert into comments (issue_id, author_id, body) values ($1, $2, $3) returning id::text`, issue, user,
 		`{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/`+inComment+`/f.png"}}]}`)
 	one(`insert into issue_doc_updates (issue_id, data) values ($1, '\x0102'::bytea || convert_to('/api/files/' || $2 || '/f.png', 'UTF8')) returning id::text`, issue, inLive)
@@ -129,5 +129,39 @@ func TestRetention(t *testing.T) {
 	}
 	if left != 2 {
 		t.Fatalf("%d refresh tokens left, want the live and the recently used one", left)
+	}
+}
+
+// TestTrashRetention: issues trashed over 30 days ago go for good; newer trash and live issues stay.
+func TestTrashRetention(t *testing.T) {
+	tx := testTx(t)
+	ctx := context.Background()
+	var ws string
+	if err := tx.QueryRow(ctx, `with u as (insert into users (name, email) values ('Trash', 'trash-' || gen_random_uuid() || '@test') returning id)
+		insert into workspaces (name, slug, created_by) select 'W', 'trash-' || gen_random_uuid(), id from u
+		returning id::text`).Scan(&ws); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `with p as (insert into projects (workspace_id, name, key) values ($1, 'P', 'TRS') returning id)
+		insert into issues_all (workspace_id, project_id, number, title, status_id, rank, deleted_at)
+		select $1, p.id, n, 'x', (select id from statuses where workspace_id = $1 limit 1), n::text || 'V', d
+		from p, (values (1, now() - interval '31 days'), (2, now() - interval '29 days'), (3, null)) v(n, d)`, ws); err != nil {
+		t.Fatal(err)
+	}
+	m := model{tx}
+	for _, r := range retention {
+		if r.table == "issues_all" {
+			if _, err := m.deleteAll(ctx, r.table, r.where); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	rows, err := tx.Query(ctx, `select number from issues_all where workspace_id = $1 order by number`, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := pgx.CollectRows(rows, pgx.RowTo[int32])
+	if err != nil || !slices.Equal(left, []int32{2, 3}) {
+		t.Fatalf("left %v %v, want [2 3]", left, err)
 	}
 }

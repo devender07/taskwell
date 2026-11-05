@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestRoadmap covers project dates, milestones and the roadmap. Ann is the admin, Mia a member who may manage
@@ -135,8 +135,8 @@ func TestRoadmap(t *testing.T) {
 	do(mia, "POST", "/projects/LEAD/milestones", url.Values{"name": {"Offsite"}, "date": {"2030-01-20"}}, 201)
 
 	// Roadmap: active projects the viewer sees, dated first, with progress, milestones and cycles.
-	if _, err := pool.Exec(ctx, `with i as (insert into issues (workspace_id, project_id, number, title, status_id)
-		  select $1, p.id, row_number() over (), 'x', s.id from projects p, (values ('Todo'), ('Done'), ('Done'), ('Cancelled')) v(st)
+	if _, err := pool.Exec(ctx, `with i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+		  select $1, p.id, row_number() over (), 'x', s.id, (row_number() over ())::text from projects p, (values ('Todo'), ('Done'), ('Done'), ('Cancelled')) v(st)
 		  join statuses s on s.name = v.st and s.workspace_id = $1 where p.workspace_id = $1 and p.key = 'WEB')
 		insert into cycles (workspace_id, project_id, number, starts_on, ends_on)
 		select $1, id, n, d, d + 13 from projects, (values (2, date '2030-02-15'), (1, date '2030-02-01')) v(n, d)

@@ -26,11 +26,14 @@ type mark struct {
 
 var (
 	nodeTypes = []string{"doc", "paragraph", "text", "heading", "bulletList", "orderedList", "listItem", "blockquote",
-		"codeBlock", "horizontalRule", "hardBreak", "mention", "image"}
+		"codeBlock", "horizontalRule", "hardBreak", "mention", "image", "taskList", "taskItem",
+		"table", "tableRow", "tableHeader", "tableCell"}
 	markTypes   = []string{"bold", "italic", "strike", "underline", "code", "link"}
 	hrefSchemes = []string{"http://", "https://", "mailto:"}
 	// imageParents are the nodes an image (a block) may sit in.
-	imageParents = []string{"doc", "blockquote", "listItem"}
+	imageParents = []string{"doc", "blockquote", "listItem", "taskItem", "tableHeader", "tableCell"}
+	// tableParts maps each table node to the only parent it may have.
+	tableParts = map[string]string{"tableRow": "table", "tableHeader": "tableRow", "tableCell": "tableRow"}
 	// fileURL is an upload served by GET /api/files/{id}/{name}.
 	fileURL = regexp.MustCompile(`^/api/files/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[^/?#]+$`)
 )
@@ -57,7 +60,21 @@ func Check(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 		if depth > maxDocDepth || !slices.Contains(nodeTypes, n.Type) || n.Type == "doc" && depth > 1 {
 			return false
 		}
+		if (n.Type == "taskItem") != (parent == "taskList") {
+			return false // a checklist holds only its items, and an item sits only in a checklist
+		}
+		if want, ok := tableParts[n.Type]; (ok && parent != want) || (!ok && (parent == "table" || parent == "tableRow")) {
+			return false // a table holds only rows, a row only cells, and those sit nowhere else
+		}
 		switch n.Type {
+		case "taskItem":
+			if _, ok := n.Attrs["checked"].(bool); !ok {
+				return false
+			}
+		case "tableHeader", "tableCell":
+			if !span(n.Attrs["colspan"]) || !span(n.Attrs["rowspan"]) || !widths(n.Attrs["colwidth"]) {
+				return false
+			}
 		case "heading":
 			if l, _ := n.Attrs["level"].(float64); l != 1 && l != 2 && l != 3 {
 				return false
@@ -116,6 +133,35 @@ func Check(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 	return out, ""
 }
 
+// maxSpan caps a cell's colspan and rowspan.
+const maxSpan = 100
+
+// span is a cell's colspan or rowspan: missing, or a whole number from 1 to maxSpan.
+func span(v any) bool {
+	if v == nil {
+		return true
+	}
+	f, ok := v.(float64)
+	return ok && f >= 1 && f <= maxSpan && f == float64(int(f))
+}
+
+// widths is a cell's colwidth: missing, or one positive pixel width (or null) per column it spans.
+func widths(v any) bool {
+	if v == nil {
+		return true
+	}
+	ws, ok := v.([]any)
+	if !ok || len(ws) > maxSpan {
+		return false
+	}
+	for _, w := range ws {
+		if f, ok := w.(float64); w != nil && (!ok || f <= 0 || f > 10000) {
+			return false
+		}
+	}
+	return true
+}
+
 // Mentions returns the user ids of the people mentioned in a document, each once, in order; issue mentions ("#")
 // aren't people. A nil or invalid doc has none.
 func Mentions(raw []byte) []string {
@@ -162,7 +208,7 @@ func PlainText(raw []byte) string {
 			walk(c)
 		}
 		switch n.Type {
-		case "paragraph", "heading", "codeBlock", "hardBreak":
+		case "paragraph", "heading", "codeBlock", "hardBreak", "tableRow":
 			b.WriteString("\n")
 		}
 	}
@@ -200,4 +246,31 @@ func KeepMentions(raw []byte, keep func(id string) bool) json.RawMessage {
 		return raw
 	}
 	return out
+}
+
+var blankLine = regexp.MustCompile(`\n[ \t]*\n`)
+
+// FromText turns plain text into a document: one paragraph per blank-line-separated block, line breaks kept as hard
+// breaks; nil when it's blank. A port of the MCP server's toDoc.
+// ponytail: no markdown; parse it if imports need formatting.
+func FromText(text string) json.RawMessage {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+	if text == "" {
+		return nil
+	}
+	d := node{Type: "doc"}
+	for _, block := range blankLine.Split(text, -1) {
+		p := node{Type: "paragraph"}
+		for i, line := range strings.Split(strings.TrimSpace(block), "\n") {
+			if i > 0 {
+				p.Content = append(p.Content, node{Type: "hardBreak"})
+			}
+			if line != "" {
+				p.Content = append(p.Content, node{Type: "text", Text: line})
+			}
+		}
+		d.Content = append(d.Content, p)
+	}
+	b, _ := json.Marshal(d) // a node always marshals
+	return b
 }

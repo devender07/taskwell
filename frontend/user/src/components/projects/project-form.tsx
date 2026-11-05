@@ -1,13 +1,13 @@
 import { useNavigate, useRouteContext, useRouter } from '@tanstack/react-router'
 import { useActionState, useId, useState, type ReactNode } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Checkbox } from '@tether/shared/checkbox'
-import { DatePicker } from '@tether/shared/date-picker'
-import { Dialog } from '@tether/shared/dialog'
-import { Input } from '@tether/shared/input'
-import { Textarea } from '@tether/shared/textarea'
-import { projectDescription, projectKey, projectKeyFormat, projectName } from '@tether/shared/validate'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { Checkbox } from '@taskwell/shared/checkbox'
+import { DatePicker } from '@taskwell/shared/date-picker'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Input } from '@taskwell/shared/input'
+import { Textarea } from '@taskwell/shared/textarea'
+import { projectDescription, projectKey, projectKeyFormat, projectName } from '@taskwell/shared/validate'
 import { addProjectMembers, api, avatarSrc, removeProjectMember, toFormErrors, type FieldErrors, type PersonRef, type Project, type Workspace, workspacePath } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -223,6 +223,7 @@ export function DeleteProject({ workspace, project }: { workspace: Workspace; pr
 }
 
 // A private project's members: remove anyone, add from the workspace. Removing yourself hides it unless you're an admin.
+// On a public project everyone sees it already, so this lists and adds only guests.
 export function ProjectMembers({ workspace, project }: { workspace: Workspace; project: Project }) {
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
@@ -258,10 +259,16 @@ export function ProjectMembers({ workspace, project }: { workspace: Workspace; p
   return (
     <>
       <Button variant="secondary" onClick={() => setOpen(true)}>
-        Members
+        {project.private ? 'Members' : 'Guests'}
       </Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="Members" description="Only members and admins can see this project.">
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={project.private ? 'Members' : 'Guests on this project'}
+        description={project.private ? 'Only members and admins can see this project.' : 'Everyone in the workspace sees this project. Guests see it only when you add them here.'}
+      >
         <div className="grid gap-5">
+          {!project.private && !project.members.length ? <p className="text-body-sm text-secondary m-0">No guests yet.</p> : null}
           <ul className="grid gap-1 m-0 p-0" style={{ listStyle: 'none' }}>
             {project.members.map((p) => (
               <li key={p.id} className="flex items-center gap-3" style={{ minHeight: 44 }}>
@@ -278,10 +285,10 @@ export function ProjectMembers({ workspace, project }: { workspace: Workspace; p
           </ul>
           <FormError>{removeError}</FormError>
           <form action={add} noValidate className="grid gap-4">
-            <PeoplePicker slug={workspace.slug} value={picked} onChange={setPicked} exclude={project.members.map((m) => m.id)} error={errors?.user_ids} />
+            <PeoplePicker slug={workspace.slug} value={picked} onChange={setPicked} exclude={project.members.map((m) => m.id)} error={errors?.user_ids} guests={!project.private} />
             <FormError>{error}</FormError>
             <Button type="submit" disabled={pending} style={{ justifySelf: 'end' }}>
-              {pending ? 'Adding…' : 'Add people'}
+              {pending ? 'Adding…' : project.private ? 'Add people' : 'Add guests'}
             </Button>
           </form>
         </div>

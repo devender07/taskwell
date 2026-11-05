@@ -113,3 +113,5 @@
 @media (pointer: coarse) {
   .roadmap-name, .roadmap-set { display: inline-flex; align-items: center; min-height: 44px; }
 }
+.roadmap-health { position: relative; display: flex; padding-left: 4px; }
+.roadmap-health .health-pill { background: var(--surface); }

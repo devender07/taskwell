@@ -16,7 +16,7 @@ type ColorPickerProps = {
   swatches?: string[]
 }
 
-const SWATCHES = ['#5e6ad2', '#f91880', '#00ba7c', '#f2994a', '#f2c94c', '#26b5ce', '#bb87fc', '#8a8f98']
+export const SWATCHES = ['#5e6ad2', '#f91880', '#00ba7c', '#f2994a', '#f2c94c', '#26b5ce', '#bb87fc', '#8a8f98']
 
 // Field showing a hex color ('#rrggbb', or '#rrggbbaa' below full opacity) that opens a picker: saturation and
 // brightness, hue, opacity, the hex itself and swatches. `name` submits it with a form.

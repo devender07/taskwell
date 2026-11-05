@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { LogoMark } from '@tether/shared/logo'
+import { LogoMark } from '@taskwell/shared/logo'
 import { redirectIfSignedIn, safeRedirect } from '@/api'
 import { SigninForm } from '@/components/auth/signin-form'
 
@@ -21,7 +21,7 @@ function SignIn() {
           <span className="mb-2">
             <LogoMark />
           </span>
-          <h1 className="text-h2">Tether admin</h1>
+          <h1 className="text-h2">Taskwell admin</h1>
           <p className="text-body-sm text-secondary">Sign in with your staff account.</p>
         </header>
         <SigninForm redirect={redirect} />

@@ -2,23 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
-import { RichEditor, seedYDoc, yDocToJSON } from '@tether/shared/rich-editor'
-import { issueDescription } from '@tether/shared/validate'
+import { RichEditor, seedYDoc, yDocToJSON } from '@taskwell/shared/rich-editor'
+import { issueDescription } from '@taskwell/shared/validate'
 import { api, issuePath, uploadFile, type Issue } from '@/api'
 import { reloadPage } from '@/realtime'
-import { REMOTE, connectCollab, type CollabState } from './collab'
+import { REMOTE, caretColor, connectCollab, type CollabState } from './collab'
 import { StaticDescription, type DescriptionProps } from './description'
 import { useUnsavedPrompt } from './timeline'
 
 type Session = { doc: Y.Doc; awareness: Awareness }
-
-const CARET_COLORS = ['--accent', '--success', '--link']
-
-function caretColor(id: string) {
-  let h = 0
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0
-  return getComputedStyle(document.documentElement).getPropertyValue(CARET_COLORS[Math.abs(h) % CARET_COLORS.length]!).trim()
-}
 
 const NOTICES = {
   tooLarge: 'That change was too large to save (over 256 KB), so it was undone.',
@@ -27,7 +19,7 @@ const NOTICES = {
 
 // The live description editor (loaded lazily by ./description); `onViewers` (a stable setter) gets the other people
 // who have this issue open.
-export default function LiveDescription({ workspace, issue, user, members, onViewers }: DescriptionProps) {
+export default function LiveDescription({ workspace, issue, user, people: mentions, onViewers }: DescriptionProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
@@ -40,7 +32,6 @@ export default function LiveDescription({ workspace, issue, user, members, onVie
   const long = useRef(false)
   const router = useRouter()
   useUnsavedPrompt(unsent)
-  const mentions = useMemo(() => members.map((m) => ({ id: m.id, name: m.name })), [members])
   const slug = workspace.slug
   const identifier = issue.identifier
   const userId = user.id
@@ -62,7 +53,7 @@ export default function LiveDescription({ workspace, issue, user, members, onVie
       clearTimeout(timer)
       if (dirty && !discard && !long.current && conn.save(JSON.stringify(yDocToJSON(doc)))) dirty = false
     }
-    const conn = connectCollab(slug, identifier, doc, awareness, (s) => {
+    const conn = connectCollab(slug, 'issue', identifier, doc, awareness, (s) => {
       if (!s) return setOffline(true)
       if (s.seed && seed.current && doc.getXmlFragment('default').length === 0) {
         seeding = true

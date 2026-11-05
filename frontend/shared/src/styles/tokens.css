@@ -64,6 +64,8 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/24px var(--font); }
 html { scrollbar-gutter: stable; }
+/* A modal (dialog, command palette) holds the page still behind its backdrop. */
+html:has(dialog:modal) { overflow: hidden; }
 
 /* Scrollbars: thin grey vertical, 10px horizontal. Chrome and Safari use the ::-webkit-scrollbar rules (setting
    scrollbar-width or scrollbar-color would switch them off); Firefox can't size them per axis, so it gets thin. */

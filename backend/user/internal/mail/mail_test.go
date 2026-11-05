@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/db"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 func TestRetryWait(t *testing.T) {
@@ -97,7 +97,7 @@ func fakeSMTP(t *testing.T, silent bool) (port string, delivered func() []string
 }
 
 // TestQueue runs against a scratch database, e.g.
-// TEST_DATABASE_URL=postgres://tether:tether@localhost:5433/tether_test?sslmode=disable (its outbound_mail and SMTP
+// TEST_DATABASE_URL=postgres://taskwell:taskwell@localhost:5433/taskwell_test?sslmode=disable (its outbound_mail and SMTP
 // settings get overwritten; never point it at a database an API instance uses).
 func TestQueue(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
@@ -112,7 +112,7 @@ func TestQueue(t *testing.T) {
 	defer pool.Close()
 	setSMTP := func(port string) {
 		if _, err := pool.Exec(ctx, `update system_config set value = case key when 'smtp_host' then '127.0.0.1' when 'smtp_port' then $1
-			when 'smtp_from' then 'Tether <noreply@tether.test>' else '' end
+			when 'smtp_from' then 'Taskwell <noreply@taskwell.test>' else '' end
 			where key in ('smtp_host', 'smtp_port', 'smtp_from', 'smtp_username', 'smtp_password')`, port); err != nil {
 			t.Fatal(err)
 		}
@@ -153,27 +153,27 @@ func TestQueue(t *testing.T) {
 		port, delivered := fakeSMTP(t, false)
 		setSMTP(port)
 		m := New(pool, sysconfig.New(pool), 5*time.Second, time.Hour, 2)
-		for _, to := range []string{"bad@tether.test", "good@tether.test"} {
+		for _, to := range []string{"bad@taskwell.test", "good@taskwell.test"} {
 			if err := m.Enqueue(ctx, pool, to, "Hello", "Body"); err != nil {
 				t.Fatal(err)
 			}
 		}
 		drain(m)
-		if got := delivered(); len(got) != 1 || got[0] != "good@tether.test" {
-			t.Fatalf("delivered %v, want good@tether.test", got)
+		if got := delivered(); len(got) != 1 || got[0] != "good@taskwell.test" {
+			t.Fatalf("delivered %v, want good@taskwell.test", got)
 		}
-		if r := read("bad@tether.test"); r.attempts != 1 || r.failed || r.due || !strings.Contains(r.lastErr, "550") {
+		if r := read("bad@taskwell.test"); r.attempts != 1 || r.failed || r.due || !strings.Contains(r.lastErr, "550") {
 			t.Fatalf("after one failure: %+v, want attempts 1, waiting, with the 550", r)
 		}
 		var n int
-		if err := pool.QueryRow(ctx, `select count(*) from outbound_mail where recipient = 'good@tether.test'`).Scan(&n); err != nil || n != 0 {
+		if err := pool.QueryRow(ctx, `select count(*) from outbound_mail where recipient = 'good@taskwell.test'`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("sent row kept: %d %v", n, err)
 		}
 		if _, err := pool.Exec(ctx, `update outbound_mail set next_attempt_at = now()`); err != nil {
 			t.Fatal(err)
 		}
 		drain(m)
-		if r := read("bad@tether.test"); r.attempts != 2 || !r.failed {
+		if r := read("bad@taskwell.test"); r.attempts != 2 || !r.failed {
 			t.Fatalf("after max attempts: %+v, want given up", r)
 		}
 		if _, err := pool.Exec(ctx, `update outbound_mail set next_attempt_at = now()`); err != nil {
@@ -189,7 +189,7 @@ func TestQueue(t *testing.T) {
 		port, _ := fakeSMTP(t, true)
 		setSMTP(port)
 		m := New(pool, sysconfig.New(pool), 300*time.Millisecond, time.Hour, 5)
-		if err := m.Enqueue(ctx, pool, "slow@tether.test", "Hello", "Body"); err != nil {
+		if err := m.Enqueue(ctx, pool, "slow@taskwell.test", "Hello", "Body"); err != nil {
 			t.Fatal(err)
 		}
 		start := time.Now()
@@ -197,7 +197,7 @@ func TestQueue(t *testing.T) {
 		if d := time.Since(start); d > 3*time.Second {
 			t.Fatalf("send took %v, want about the 300ms timeout", d)
 		}
-		if r := read("slow@tether.test"); r.attempts != 1 || r.failed || r.due || r.lastErr == "" {
+		if r := read("slow@taskwell.test"); r.attempts != 1 || r.failed || r.due || r.lastErr == "" {
 			t.Fatalf("after timeout: %+v", r)
 		}
 	})

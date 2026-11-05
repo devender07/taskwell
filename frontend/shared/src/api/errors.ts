@@ -3,7 +3,7 @@ export type FieldErrors = Record<string, string | null | undefined>
 
 export const FALLBACK = 'Something went wrong. Try again.'
 const OFFLINE = "You're offline. Reconnect and try again."
-const UNREACHABLE = "Can't reach Tether. Check your connection and try again."
+const UNREACHABLE = "Can't reach Taskwell. Check your connection and try again."
 
 export class ApiError extends Error {
   status: number

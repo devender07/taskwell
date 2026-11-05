@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
-	"github.com/devender07/tether/backend/user/internal/notify"
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/notify"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // model owns every SQL query for chats and messages.
@@ -51,8 +51,11 @@ func (m msgRef) root() string {
 	return m.id
 }
 
-// access is whether the user (a workspace member) may open chat c: everyone in the workspace chat, members elsewhere.
-const access = `(c.kind = 'workspace' or exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
+// access is whether the user (a workspace member) may open chat c: everyone but guests in the workspace chat, members
+// elsewhere.
+// The workspace chat goes by role alone: a member's read marker there (chat_members) outlives a change to Guest.
+const access = `(c.kind = 'workspace' and not is_guest(c.workspace_id, $1)
+	or c.kind <> 'workspace' and exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
 
 // --- chats ---
 
@@ -97,8 +100,9 @@ const chatQuery = `
 	left join lateral (
 	  select (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = m.author_id) author, m.body, m.created_at
 	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null order by m.id desc limit 1) lm on true
-	where c.workspace_id = $2 and (c.kind = 'workspace' or r.user_id is not null) and ($3::uuid is null or c.id = $3)
-	order by c.kind = 'workspace' desc, c.kind = 'self' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
+	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or c.kind <> 'workspace' and r.user_id is not null)
+	  and ($3::uuid is null or c.id = $3)
+	order by c.kind = 'workspace' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
 
 func (m *model) queryChats(ctx context.Context, userID, wsID string, chatID *string) ([]Chat, error) {
 	rows, err := m.db.Query(ctx, chatQuery, userID, wsID, chatID)
@@ -137,16 +141,10 @@ func excerpt(body []byte) string {
 	return text
 }
 
-// list returns the user's chats in the workspace, first creating the workspace chat and their notes if missing.
+// list returns the user's chats in the workspace, first creating the workspace chat if missing.
 func (m *model) list(ctx context.Context, userID, wsID string) ([]Chat, error) {
 	if _, err := m.db.Exec(ctx, `insert into chats (workspace_id, kind) values ($1, 'workspace') on conflict do nothing`, wsID); err != nil {
 		return nil, fmt.Errorf("add workspace chat: %w", err)
-	}
-	if _, err := m.db.Exec(ctx,
-		`with c as (insert into chats (workspace_id, kind, pair, created_by) values ($1, 'self', $2::text, $2::uuid)
-		   on conflict do nothing returning id)
-		 insert into chat_members (chat_id, user_id) select id, $2::uuid from c`, wsID, userID); err != nil {
-		return nil, fmt.Errorf("add notes chat: %w", err)
 	}
 	return m.queryChats(ctx, userID, wsID, nil)
 }
@@ -169,7 +167,7 @@ func (m *model) unreadCount(ctx context.Context, userID, wsID string) (int, erro
 		 join workspace_members wm on wm.workspace_id = c.workspace_id and wm.user_id = $1
 		 left join chat_members r on r.chat_id = c.id and r.user_id = $1
 		 join messages m on `+unread+`
-		 where c.workspace_id = $2 and (c.kind = 'workspace' and $1 = any(m.mentions)
+		 where c.workspace_id = $2 and (c.kind = 'workspace' and $1 = any(m.mentions) and not is_guest($2, $1)
 		   or c.kind in ('direct', 'group') and r.user_id is not null)`, userID, wsID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("count unread messages: %w", err)
@@ -229,13 +227,24 @@ func members(ctx context.Context, q querier, wsID, chatID string) ([]string, err
 	return ids, nil
 }
 
-// audience is who sees the chat's changes: the workspace for the workspace chat, else each member.
+// audience is who sees the chat's changes: the workspace for the workspace chat (each non-guest when it has guests),
+// else each member.
 func audience(ctx context.Context, q querier, wsID string, c ref) ([]string, error) {
+	var ids []string
+	var err error
 	if c.kind == "workspace" {
-		return []string{realtime.ToWorkspace(wsID)}, nil
-	}
-	ids, err := members(ctx, q, wsID, c.id)
-	if err != nil {
+		// ponytail: one NOTIFY per member once a workspace has a guest; add a non-guest audience to the hub if that's big.
+		rows, err := q.Query(ctx, `select m.user_id::text from workspace_members m join workspace_roles r on r.id = m.role_id
+			where m.workspace_id = $1 and r.builtin is distinct from 'guest'
+			  and exists (select 1 from workspace_roles g join workspace_members gm on gm.role_id = g.id
+			              where g.workspace_id = $1 and g.builtin = 'guest')`, wsID)
+		if err != nil {
+			return nil, err
+		}
+		if ids, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(ids) == 0 {
+			return []string{realtime.ToWorkspace(wsID)}, err
+		}
+	} else if ids, err = members(ctx, q, wsID, c.id); err != nil {
 		return nil, err
 	}
 	aud := make([]string, len(ids))
@@ -591,7 +600,7 @@ func visible(ctx context.Context, tx pgx.Tx, wsID string, c ref, body json.RawMe
 	rows, err := tx.Query(ctx,
 		`select u::text from unnest($1::uuid[]) u
 		 where exists (select 1 from workspace_members wm where wm.workspace_id = $2 and wm.user_id = u)
-		   and ($4 = 'workspace' or exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
+		   and ($4 = 'workspace' and not is_guest($2, u) or $4 <> 'workspace' and exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
 		ids, wsID, c.id, c.kind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("check mentions: %w", err)

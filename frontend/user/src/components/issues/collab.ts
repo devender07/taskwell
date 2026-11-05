@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import { applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates, type Awareness } from 'y-protocols/awareness'
-import { joinCollab, type Viewer } from '@/realtime'
+import { joinCollab, type CollabKind, type Viewer } from '@/realtime'
 
 export type CollabState = { canEdit: boolean; seed: boolean; lastId: bigint; loaded: number }
 
@@ -13,7 +13,16 @@ const COMPACT_AFTER = 100
 const MAX_UPDATE = 256 << 10
 const MAX_COMPACT = 1 << 20
 
-// Live editing of one issue's description over the shared realtime socket (protocol in docs/rich-text-plan.md).
+const CARET_COLORS = ['--accent', '--success', '--link']
+
+// A person's caret color, the same everywhere they edit.
+export function caretColor(id: string) {
+  let h = 0
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0
+  return getComputedStyle(document.documentElement).getPropertyValue(CARET_COLORS[Math.abs(h) % CARET_COLORS.length]!).trim()
+}
+
+// Live editing of one issue's description (or note's body, kind 'note') over the shared realtime socket (protocol in docs/rich-text-plan.md).
 // onState gets the server's `ready` info, or null when the connection drops; it re-joins until destroy().
 // onTooLarge fires instead of sending a change over the server's cap; after it nothing more is sent, since later
 // changes build on the unsent one, so the caller starts over with a fresh doc. onReset fires when the server replaced
@@ -22,7 +31,8 @@ const MAX_COMPACT = 1 << 20
 // the one this doc was built on (it was replaced while offline): `lost` says whether offline edits were dropped.
 export function connectCollab(
   workspace: string,
-  issue: string,
+  kind: CollabKind,
+  key: string,
   doc: Y.Doc,
   awareness: Awareness,
   onState: (s: CollabState | null) => void,
@@ -69,7 +79,7 @@ export function connectCollab(
     stored = null
   }
 
-  const channel = joinCollab(workspace, issue, {
+  const channel = joinCollab(workspace, kind, key, {
     onOpen() {
       reset()
       stored = new Y.Doc()

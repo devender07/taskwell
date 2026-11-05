@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { Checkbox } from '@tether/shared/checkbox'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
+import { Checkbox } from '@taskwell/shared/checkbox'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { api, toFormErrors, type NotificationSettings } from '@/api'
 import { loaderApi } from '@/realtime'
 
@@ -68,7 +68,7 @@ function NotificationSettingsPage() {
 
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <h1 className="text-h2">Notifications</h1>
         <p className="text-body-sm text-secondary">Activity always gets every notification. These settings choose what is emailed to you, in every workspace.</p>
       </header>

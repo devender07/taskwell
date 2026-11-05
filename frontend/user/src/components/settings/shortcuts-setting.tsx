@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Checkbox } from '@tether/shared/checkbox'
+import { Checkbox } from '@taskwell/shared/checkbox'
 import { setSingleKeyShortcuts, singleKeyShortcuts } from '@/components/app/shortcuts'
 
 export function ShortcutsSetting() {

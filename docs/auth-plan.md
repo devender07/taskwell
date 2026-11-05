@@ -4,12 +4,12 @@ Scope: auth for the user app: sign-up, password sign-in, email-code sign-in, Goo
 
 ## Infra
 
-`docker-compose.yml` at the repo root, compose project `name: tether` so it shows as one group in Docker Desktop.
+`docker-compose.yml` at the repo root, compose project `name: taskwell` so it shows as one group in Docker Desktop.
 
 | Service | Image | Container | Host port | Notes |
 |---|---|---|---|---|
-| postgres | `postgres:18-alpine` | `tether-postgres` | `5433` → 5432 | 5432 is taken by another project. User/password/db `tether`. Volume `tether-pgdata` mounted at `/var/lib/postgresql` (PG 18 layout). Healthcheck `pg_isready`. |
-| mailpit | `axllent/mailpit:v1.27` | `tether-mailpit` | `1025` SMTP, `8025` web inbox | Dev SMTP server; every email lands at http://localhost:8025. |
+| postgres | `postgres:18-alpine` | `taskwell-postgres` | `5433` → 5432 | 5432 is taken by another project. User/password/db `taskwell`. Volume `taskwell-pgdata` mounted at `/var/lib/postgresql` (PG 18 layout). Healthcheck `pg_isready`. |
+| mailpit | `axllent/mailpit:v1.27` | `taskwell-mailpit` | `1025` SMTP, `8025` web inbox | Dev SMTP server; every email lands at http://localhost:8025. |
 
 Start: `docker compose up -d` from the repo root.
 
@@ -19,7 +19,7 @@ Only bootstrap values come from env (the service needs them before it can reach 
 
 | Env | Default | |
 |---|---|---|
-| `DATABASE_URL` | `postgres://tether:tether@localhost:5433/tether?sslmode=disable` | |
+| `DATABASE_URL` | `postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable` | |
 | `PORT` | `8090` | 8080 is taken locally |
 
 Everything else lives in the `system_config` table and is read from the DB when used (no restart after an admin edits it; the admin app will manage this table later).
@@ -42,7 +42,7 @@ Seeded keys (dev values point at mailpit):
 | `smtp_port` | `1025` | |
 | `smtp_username` | `` | |
 | `smtp_password` | `` | yes |
-| `smtp_from` | `Tether <no-reply@tether.local>` | |
+| `smtp_from` | `Taskwell <no-reply@taskwell.local>` | |
 | `app_base_url` | `http://localhost:5173` | |
 | `refresh_ttl_hours` | `720` | |
 | `access_ttl_minutes` | `15` | |
@@ -70,8 +70,8 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 
 - All endpoints under `/api`. Request bodies are **FormData** (`multipart/form-data` or `application/x-www-form-urlencoded`; the server reads both via `r.FormValue`). Responses are JSON.
 - Tokens (all cookies HttpOnly, SameSite=Lax, Secure when `app_base_url` is https):
-  - `tether_access`: HS256 JWT (`iss=tether`, `sub=<user id>`, `exp`), Path=/api, lives `access_ttl_minutes`. Verified without a DB lookup; not revocable before it expires.
-  - `tether_refresh`: opaque random token, Path=/api/auth, lives `refresh_ttl_hours` from its last use. Only its SHA-256 is stored. Every refresh rotates it; an already-rotated token is accepted again within 10 s (parallel tabs, or a page that navigated away before the new cookies arrived); presenting it later revokes the whole sign-in family (theft detection).
+  - `taskwell_access`: HS256 JWT (`iss=taskwell`, `sub=<user id>`, `exp`), Path=/api, lives `access_ttl_minutes`. Verified without a DB lookup; not revocable before it expires.
+  - `taskwell_refresh`: opaque random token, Path=/api/auth, lives `refresh_ttl_hours` from its last use. Only its SHA-256 is stored. Every refresh rotates it; an already-rotated token is accepted again within 10 s (parallel tabs, or a page that navigated away before the new cookies arrived); presenting it later revokes the whole sign-in family (theft detection).
   - Remember me (`remember` = `on`/`true`/`1` on sign-in): persistent cookies, sign-in lasts `refresh_ttl_hours` (30 days). Otherwise both cookies are browser-session cookies and the sign-in is capped at `short_refresh_ttl_hours` (24 h). Both count from sign-in; refreshes keep the family's expiry. Sign-up always remembers.
   - The frontend retries any 401 (outside `/auth/*`) once after `POST /api/auth/refresh`.
 - User JSON: `{"id": "...", "name": "...", "email": "..."}`
@@ -88,7 +88,7 @@ auth_tokens(id uuid pk default uuidv7(), user_id uuid references users on delete
 | `POST /api/auth/password/reset` | `token`, `password` | `204`; revokes all refresh tokens of that user (access tokens run out within `access_ttl_minutes`) | 400; 401 `{"error":"This reset link is invalid or expired."}` |
 | `POST /api/auth/refresh` | — | `204`, new access + refresh cookies | `401`, clears cookies |
 | `POST /api/auth/signout` | — | `204`, clears both cookies, revokes the sign-in family | — |
-| `GET /api/auth/google` | `remember` (query, optional) | `302` to Google (state + PKCE in `tether_google` cookie) | `302` to `/signin?error=google_unavailable` when keys are empty |
+| `GET /api/auth/google` | `remember` (query, optional) | `302` to Google (state + PKCE in `taskwell_google` cookie) | `302` to `/signin?error=google_unavailable` when keys are empty |
 | `GET /api/auth/google/callback` | `code`, `state` (from Google) | `302` to `/`, signed in; finds user by Google id, else links the verified email, else creates the user | `302` to `/signin?error=google`; cancel → `/signin` |
 | `POST /api/me` | `name` | `200` user | 400 name errors; 401 |
 | `GET /api/me` | — | `200` user | `401` |
@@ -131,12 +131,12 @@ Sign-up no longer signs in:
 
 | Method | Path | FormData | Success | Errors |
 |---|---|---|---|---|
-| POST | `/api/auth/signup` | `name`, `email`, `password` | 202 `{"email"}`, sets `tether_signup` cookie (path `/api/auth/signup`, otp TTL), emails a 6-digit code | 400 fields, 409 `errors.email` (verified account exists), 429, 503 |
-| POST | `/api/auth/signup/verify` | `email`, `code` | 200 user, session cookies (remember on), default workspace created | 400 fields, 401 `error` (wrong/expired code, or no `tether_signup` cookie), 429 |
+| POST | `/api/auth/signup` | `name`, `email`, `password` | 202 `{"email"}`, sets `taskwell_signup` cookie (path `/api/auth/signup`, otp TTL), emails a 6-digit code | 400 fields, 409 `errors.email` (verified account exists), 429, 503 |
+| POST | `/api/auth/signup/verify` | `email`, `code` | 200 user, session cookies (remember on), default workspace created | 400 fields, 401 `error` (wrong/expired code, or no `taskwell_signup` cookie), 429 |
 
-- The user row is created unverified with no password; the code's hash covers a nonce held in the `tether_signup` cookie, so a code only works in the browser that signed up, and it carries the name and password to apply. Signing up again (also "Resend code") issues a new code; a verified email answers 409.
+- The user row is created unverified with no password; the code's hash covers a nonce held in the `taskwell_signup` cookie, so a code only works in the browser that signed up, and it carries the name and password to apply. Signing up again (also "Resend code") issues a new code; a verified email answers 409.
 - An email code sign-in, a reset link or Google proves ownership: the account becomes verified, pending sign-up codes are voided, and if it was never verified its name is replaced (Google name, or the email's local part). Signing up with someone else's address therefore gets the attacker nothing.
-- `tether-admin -promote` only promotes a verified email.
+- `taskwell-admin -promote` only promotes a verified email.
 
 Rate limits (429 `{"error": "Too many attempts. Try again later."}` with `Retry-After`):
 - Per client IP, in Postgres (`rate_limits`, shared by every instance): 20 burst, one more every 3 s, across signup, signup/verify, signin, otp send/verify, password forgot/reset/change. Admin sign-in: 10 burst, one every 6 s. The IP is the peer, or the last `X-Forwarded-For` entry when the peer is loopback or private (the proxy).

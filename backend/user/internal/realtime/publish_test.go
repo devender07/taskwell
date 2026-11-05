@@ -20,7 +20,7 @@ func TestWithOrigin(t *testing.T) {
 			h := WithOrigin(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = origin(r.Context()) }))
 			r := httptest.NewRequest(http.MethodPost, "/api/workspaces/acme/issues/ENG-1", nil)
 			if tt.header != "" {
-				r.Header.Set("X-Tether-Client", tt.header)
+				r.Header.Set("X-Taskwell-Client", tt.header)
 			}
 			h.ServeHTTP(httptest.NewRecorder(), r)
 			if got != tt.want {

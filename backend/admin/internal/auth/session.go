@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	cookieName = "tether_admin"
-	issuer     = "tether" // same issuer as the user service; the audience is what keeps the two apart
+	cookieName = "taskwell_admin"
+	issuer     = "taskwell" // same issuer as the user service; the audience is what keeps the two apart
 	audience   = "admin"
 	ttl        = 8 * time.Hour    // a sign-in's absolute lifetime
 	idle       = time.Hour        // a sign-in unused this long ends

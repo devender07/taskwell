@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Logo } from '@tether/shared/logo'
+import { Logo } from '@taskwell/shared/logo'
 import { api } from '@/api'
 import './app.css'
 

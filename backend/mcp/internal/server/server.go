@@ -1,10 +1,11 @@
-// Package server is Tether's MCP server: tools that read and change issues by calling the user service's REST API
+// Package server is Taskwell's MCP server: tools that read and change issues by calling the user service's REST API
 // with the caller's personal API token (docs/mcp-plan.md).
 //
 // server.go registers the tools, api.go is the REST client and text.go converts descriptions and comments.
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,8 +20,10 @@ import (
 )
 
 // Handler serves /mcp: stateless streamable HTTP, a server per request whose tools call apiURL with that request's
-// Authorization header. A request without a personal API token gets 401 before reaching the SDK.
-func Handler(apiURL, appURL string, client *http.Client) http.Handler {
+// Authorization header. A request without a personal API token gets 401 before reaching the SDK, pointing OAuth
+// clients at the protected resource metadata (see Metadata).
+func Handler(apiURL, appURL, mcpURL string, client *http.Client) http.Handler {
+	challenge := `Bearer resource_metadata="` + strings.TrimRight(mcpURL, "/") + `/.well-known/oauth-protected-resource/mcp"`
 	cache := mcp.NewSchemaCache()
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		t := &tools{api: &api{base: strings.TrimRight(apiURL, "/"), auth: r.Header.Get("Authorization"), client: client},
@@ -31,12 +34,25 @@ func Handler(apiURL, appURL string, client *http.Client) http.Handler {
 		scheme, tok, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		if !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(strings.TrimSpace(tok), "tth_") {
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("WWW-Authenticate", challenge)
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"error":"Send a Tether API token: Authorization: Bearer tth_…"}`))
+			_, _ = w.Write([]byte(`{"error":"Send a Taskwell API token: Authorization: Bearer tth_…"}`))
 			return
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// Metadata serves the RFC 9728 protected resource metadata for /mcp at mcpURL: the user API at authURL is its
+// authorization server.
+func Metadata(mcpURL, authURL string) http.HandlerFunc {
+	body, _ := json.Marshal(map[string]any{"resource": strings.TrimRight(mcpURL, "/") + "/mcp",
+		"authorization_servers":    []string{strings.TrimRight(authURL, "/")},
+		"bearer_methods_supported": []string{"header"}, "scopes_supported": []string{"taskwell"}})
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
 }
 
 // tools holds one request's API client; every tool is a method.
@@ -48,9 +64,9 @@ type tools struct {
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true}
 
 func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "tether", Title: "Tether", Version: "1.0.0"}, &mcp.ServerOptions{SchemaCache: cache})
+	s := mcp.NewServer(&mcp.Implementation{Name: "taskwell", Title: "Taskwell", Version: "1.0.0"}, &mcp.ServerOptions{SchemaCache: cache})
 	mcp.AddTool(s, &mcp.Tool{Name: "list_workspaces", Annotations: readOnly,
-		Description: "List the Tether workspaces you belong to. Every other tool takes a workspace slug from here."}, t.listWorkspaces)
+		Description: "List the Taskwell workspaces you belong to. Every other tool takes a workspace slug from here."}, t.listWorkspaces)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Annotations: readOnly,
 		Description: "List a workspace's active projects with their keys (the ENG in ENG-142)."}, t.listProjects)
 	mcp.AddTool(s, &mcp.Tool{Name: "workspace_options", Annotations: readOnly,
@@ -58,7 +74,7 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "search_issues", Annotations: readOnly,
 		Description: "Find issues by identifier (ENG-142) or words in the title, optionally in one project. Returns up to 20."}, t.searchIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_issues", Annotations: readOnly,
-		Description: "List a project's issues, newest first, optionally filtered by status, assignee, label or priority."}, t.listIssues)
+		Description: "List a project's issues in its manual order (or sort), optionally filtered by status, assignee, label or priority."}, t.listIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "my_issues", Annotations: readOnly,
 		Description: "List the issues assigned to you in a workspace's active projects."}, t.myIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "watching_issues", Annotations: readOnly,
@@ -70,6 +86,10 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 			"To file a bug from a failed test result, use the case's title and put the result's summary and reproduction steps in the description."}, t.createIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "update_issue",
 		Description: "Change an issue. Only the fields you give change; an empty assignee, due_date, parent or cycle clears it, labels replaces all labels."}, t.updateIssue)
+	mcp.AddTool(s, &mcp.Tool{Name: "reorder_issues",
+		Description: "Change a project's manual issue order (list_issues' default). Give identifiers to put them in that order: the first stays " +
+			"where it is and each next one moves right after the one before it. Or give identifier with after (the issue it goes right after) " +
+			"or before (the issue it goes right before). Returns the moved issues in order."}, t.reorderIssues)
 	mcp.AddTool(s, &mcp.Tool{Name: "add_comment", Description: "Comment on an issue."}, t.addComment)
 	t.issueTools(s)
 	t.projectTools(s)
@@ -99,6 +119,16 @@ type listIn struct {
 	Assignee  string `json:"assignee,omitempty" jsonschema:"member's email or name"`
 	Label     string `json:"label,omitempty" jsonschema:"label name"`
 	Priority  string `json:"priority,omitempty" jsonschema:"none, urgent, high, medium or low"`
+	Sort      string `json:"sort,omitempty" jsonschema:"manual (the default), priority, updated, created or due"`
+}
+
+type reorderIssuesIn struct {
+	Workspace   string   `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
+	Project     string   `json:"project" jsonschema:"project key, such as ENG"`
+	Identifiers []string `json:"identifiers,omitempty" jsonschema:"issue identifiers in the order they should be; the first stays put"`
+	Identifier  string   `json:"identifier,omitempty" jsonschema:"the one issue to move, with after or before"`
+	After       string   `json:"after,omitempty" jsonschema:"identifier of the issue it goes right after"`
+	Before      string   `json:"before,omitempty" jsonschema:"identifier of the issue it goes right before"`
 }
 
 type issueIn struct {
@@ -118,6 +148,8 @@ type createIn struct {
 	Labels      []string `json:"labels,omitempty" jsonschema:"label names"`
 	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier, making this a sub-issue"`
 	Cycle       *string  `json:"cycle,omitempty" jsonschema:"cycle number in the project, from list_cycles"`
+	After       string   `json:"after,omitempty" jsonschema:"identifier of the issue it goes right after in the manual order; last when left out"`
+	Before      string   `json:"before,omitempty" jsonschema:"identifier of the issue it goes right before in the manual order"`
 }
 
 type updateIn struct {
@@ -398,7 +430,8 @@ func (t *tools) listIssues(ctx context.Context, _ *mcp.CallToolRequest, in listI
 		keep = append(keep, func(i issue) bool { return i.Priority != nil && *i.Priority == p })
 	}
 	var is []issue
-	if err := t.api.get(ctx, ws(in.Workspace, "projects", in.Project, "issues"), nil, &is); err != nil {
+	sort := url.Values{"sort": {cmp.Or(strings.ToLower(strings.TrimSpace(in.Sort)), "manual")}}
+	if err := t.api.get(ctx, ws(in.Workspace, "projects", in.Project, "issues"), sort, &is); err != nil {
 		return nil, nil, err
 	}
 	is = slices.DeleteFunc(is, func(i issue) bool {
@@ -451,6 +484,10 @@ func (t *tools) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in crea
 	if in.Description != nil && strings.TrimSpace(*in.Description) == "" {
 		form.Del("description") // nothing to clear on a new issue
 	}
+	if in.After != "" || in.Before != "" {
+		form.Set("after", strings.TrimSpace(in.After))
+		form.Set("before", strings.TrimSpace(in.Before))
+	}
 	var i issue
 	if err := t.api.post(ctx, ws(in.Workspace, "projects", in.Project, "issues"), form, &i); err != nil {
 		return nil, nil, err
@@ -473,6 +510,45 @@ func (t *tools) updateIssue(ctx context.Context, _ *mcp.CallToolRequest, in upda
 		return nil, nil, err
 	}
 	return result(t.out(in.Workspace, i))
+}
+
+func (t *tools) reorderIssues(ctx context.Context, _ *mcp.CallToolRequest, in reorderIssuesIn) (*mcp.CallToolResult, any, error) {
+	// A bare number is an issue in the project.
+	ident := func(s string) string {
+		if s = strings.TrimSpace(s); s != "" && strings.Trim(s, "0123456789") == "" {
+			return strings.TrimSpace(in.Project) + "-" + s
+		}
+		return s
+	}
+	type step struct{ identifier, after, before string }
+	var steps []step
+	switch {
+	case len(in.Identifiers) >= 2:
+		for k := 1; k < len(in.Identifiers); k++ {
+			steps = append(steps, step{ident(in.Identifiers[k]), ident(in.Identifiers[k-1]), ""})
+		}
+	case in.Identifier != "" && (in.After != "" || in.Before != ""):
+		steps = []step{{ident(in.Identifier), ident(in.After), ident(in.Before)}}
+	default:
+		return nil, nil, errors.New("Give identifiers (two or more, in order), or identifier with after or before.")
+	}
+	var moved []issue
+	for _, s := range steps {
+		var i issue
+		if err := t.api.post(ctx, ws(in.Workspace, "issues", s.identifier, "move"), url.Values{"after": {s.after}, "before": {s.before}}, &i); err != nil {
+			done := "None were moved."
+			if len(moved) > 0 {
+				ids := make([]string, len(moved))
+				for k, m := range moved {
+					ids[k] = m.Identifier
+				}
+				done = fmt.Sprintf("Moved %d: %s.", len(ids), strings.Join(ids, ", "))
+			}
+			return nil, nil, fmt.Errorf("Moving %s failed: %w\n%s", s.identifier, err, done)
+		}
+		moved = append(moved, i)
+	}
+	return result(t.outs(in.Workspace, moved))
 }
 
 func (t *tools) addComment(ctx context.Context, _ *mcp.CallToolRequest, in commentIn) (*mcp.CallToolResult, any, error) {

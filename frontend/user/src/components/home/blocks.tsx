@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { Button } from '@tether/shared/button'
-import { Pagination } from '@tether/shared/pagination'
-import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath } from '@/api'
+import { Button } from '@taskwell/shared/button'
+import { Pagination } from '@taskwell/shared/pagination'
+import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issue, type NotificationPage, type Project, type ProjectStats, type Status, type Workspace, workspacePath, mcpUrl } from '@/api'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
@@ -10,11 +10,13 @@ import { PROVIDER_NAME } from '@/components/issues/pull-requests'
 import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
 import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
+import { HealthPill, healthLabel } from '@/components/projects/updates'
+import { CopyButton } from '@/components/settings/integrations'
 import { localDate, readRecent } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
 
-function Card({ title, action, footer, bodyRef, className = '', children }: { title: string; action?: ReactNode; footer?: ReactNode; bodyRef?: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
+export function Card({ title, action, footer, bodyRef, className = '', children }: { title: string; action?: ReactNode; footer?: ReactNode; bodyRef?: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
   const id = useId()
   return (
     <section aria-labelledby={id} className={`home-card bg-surface border rounded-lg overflow-hidden ${className}`} style={{ minWidth: 0 }}>
@@ -28,7 +30,7 @@ function Card({ title, action, footer, bodyRef, className = '', children }: { ti
   )
 }
 
-function Empty({ text, children }: { text: string; children?: ReactNode }) {
+export function Empty({ text, children }: { text: string; children?: ReactNode }) {
   return (
     <div className="grid gap-4 px-6 py-6" style={{ justifyItems: 'start' }}>
       <p className="text-body-sm text-secondary m-0">{text}</p>
@@ -223,6 +225,7 @@ function useFitRows(ref: RefObject<HTMLElement | null>, fallback: number) {
 }
 
 function activityText(item: ActivityItem) {
+  if (item.type === 'project_update') return <>posted an update on <span className="text-primary font-510">{item.project.name}</span> · {healthLabel(item.health)}</>
   const subject = <IssueName issue={item.issue} />
   if (item.type === 'comment') return <>commented on {subject}</>
   return eventText(item, (i) => <span className="text-primary">{i.identifier}</span>, subject)
@@ -295,7 +298,8 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
               <li key={`${item.type}:${item.id}`}>
                 <FeedRow
                   workspace={workspace}
-                  identifier={item.issue.identifier}
+                  identifier={item.type === 'project_update' ? undefined : item.issue.identifier}
+                  project={item.type === 'project_update' ? item.project.key : undefined}
                   actor={item.actor}
                   actorName={item.type === 'event' ? eventActor(item) : undefined}
                   text={text}
@@ -314,7 +318,7 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
 export function RecentlyViewed({ workspace, issues }: { workspace: string; issues: Issue[] }) {
   const [recent, setRecent] = useState(() => readRecent(workspace))
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => e.key === `tether:recent:${workspace}` && setRecent(readRecent(workspace))
+    const onStorage = (e: StorageEvent) => e.key === `taskwell:recent:${workspace}` && setRecent(readRecent(workspace))
     addEventListener('storage', onStorage)
     return () => removeEventListener('storage', onStorage)
   }, [workspace])
@@ -366,6 +370,7 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
                 <Link to="/$workspace/projects/$key" params={{ workspace: workspace.slug, key: p.key }} className="home-project">
                   <span className="flex items-center gap-3" style={{ minWidth: 0 }}>
                     <span className="text-label text-primary ellipsis flex-grow">{p.name}</span>
+                    <HealthPill health={p.health} />
                     <span className="issue-id flex-noshrink">{p.key}</span>
                   </span>
                   <span
@@ -391,6 +396,29 @@ export function Projects({ workspace, projects, stats }: { workspace: Workspace;
           })}
         </ul>
       )}
+    </Card>
+  )
+}
+
+export function ConnectClaude() {
+  const url = mcpUrl()
+  const command = `claude mcp add --transport http taskwell ${url}`
+  return (
+    <Card title="Connect Claude">
+      <div className="grid gap-3 px-6 py-4">
+        {[
+          { label: 'MCP URL', text: url },
+          { label: 'command', text: command },
+        ].map(({ label, text }) => (
+          <div key={label} className="flex items-center gap-3">
+            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, wordBreak: 'break-all' }}>
+              {text}
+            </code>
+            <CopyButton text={text} label={`Copy ${label}`} />
+          </div>
+        ))}
+        <p className="text-caption text-secondary m-0">The first use opens your browser to sign in and allow access.</p>
+      </div>
     </Card>
   )
 }

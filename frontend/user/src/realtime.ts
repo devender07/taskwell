@@ -1,8 +1,8 @@
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@tether/shared/realtime'
-import { createSocket } from '@tether/shared/socket'
-import { api, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
+import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@taskwell/shared/realtime'
+import { createSocket } from '@taskwell/shared/socket'
+import { api, homePath, refreshAccess, sessionEnded, setClient, type PersonRef, type Workspace } from '@/api'
 
 // One WebSocket per tab (docs/realtime-plan.md): events name the REST paths that changed and the tab refetches
 // the ones it has loaded; it also carries live description editing and who's viewing an issue.
@@ -14,13 +14,14 @@ type Handlers = {
   onClose: () => void
   onPresence: (viewers: Viewer[]) => void
 }
-type Channel = Handlers & { workspace: string; issue: string; uuid: string | null; id: Uint8Array | null }
+export type CollabKind = 'issue' | 'note'
+type Channel = Handlers & { workspace: string; kind: CollabKind; key: string; uuid: string | null; id: Uint8Array | null }
 type Message =
   | RealtimeEvent
   | { type: 'hello'; client: string }
   | { type: 'pong' | 'resync' | 'error' }
-  | { type: 'collab.joined'; issue: string; id: string }
-  | { type: 'collab.error'; issue: string }
+  | { type: 'collab.joined'; issue?: string; note?: string; id: string }
+  | { type: 'collab.error'; issue?: string; note?: string }
   | { type: 'presence'; issue: string; viewers: Viewer[] }
   | Typing
 export type Typing = { type: 'typing'; chat: string; thread: string | null; user: PersonRef }
@@ -68,9 +69,9 @@ const loadedBy = (m: AnyRouteMatch) =>
   m.routeId === '/_app' ? APP_PATHS : (loaded.get(keyOf(m)) ?? [])
 const keyOf = (m: AnyRouteMatch) => matchKey(m.routeId, m.fullPath, m.params, m.loaderDeps)
 
-// Issue lists and Home's activity and project counts refetch at most every 3s, so a teammate typing doesn't reload
-// them on every save.
-const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|watching|activity|project-stats)$/
+// Issue lists, notes, and Home's activity and project counts refetch at most every 3s, so someone typing (a live
+// note saves every second) doesn't reload them on every save.
+const LIST = /^\/workspaces\/[^/]+\/(projects\/[^/]+\/issues|my-issues|watching|activity|project-stats|notes)$/
 // The chat list and its unread count refetch at most every second, so a busy chat doesn't reload them per message.
 const CHATS = /^\/workspaces\/[^/]+\/chats(\/unread-count)?$/
 
@@ -84,8 +85,10 @@ const push = coalescer(
   { throttle: (p) => (LIST.test(p) ? 3000 : CHATS.test(p) ? 1000 : undefined) },
 )
 
-const join = (ch: Channel) => send({ type: 'collab.join', workspace: ch.workspace, issue: ch.issue })
-const channel = (issue: string) => [...channels].find((c) => c.issue === issue)
+const join = (ch: Channel) => send({ type: 'collab.join', workspace: ch.workspace, [ch.kind]: ch.key })
+// Collab replies name the note for a note session, else the issue.
+const channel = (msg: { issue?: string; note?: string }) =>
+  [...channels].find((c) => (msg.note ? c.kind === 'note' && c.key === msg.note : c.kind === 'issue' && c.key === msg.issue))
 
 function onEvent(e: RealtimeEvent) {
   const paths = eventPaths(e, client)
@@ -101,7 +104,7 @@ function onEvent(e: RealtimeEvent) {
     const name = app?.workspaces?.find((w) => w.slug === workspace)?.name ?? workspace
     notice = `You no longer have access to ${name}.`
     workspace = undefined
-    void router.navigate({ to: '/' })
+    void homePath().then((href) => router?.navigate({ href }))
     return
   }
   push(paths)
@@ -116,7 +119,7 @@ function onMessage(msg: Message) {
       onEvent(msg)
       break
     case 'collab.joined': {
-      const ch = channel(msg.issue)
+      const ch = channel(msg)
       if (!ch) {
         send({ type: 'collab.leave', issue: msg.id })
         break
@@ -127,10 +130,10 @@ function onMessage(msg: Message) {
       break
     }
     case 'collab.error':
-      channel(msg.issue)?.onClose()
+      channel(msg)?.onClose()
       break
     case 'presence':
-      channel(msg.issue)?.onPresence(msg.viewers)
+      channel({ issue: msg.issue })?.onPresence(msg.viewers)
       break
     case 'typing':
       for (const fn of typists) fn(msg)
@@ -224,10 +227,10 @@ export function onTyping(fn: (t: Typing) => void) {
   return () => void typists.delete(fn)
 }
 
-// Live editing of one issue's description over the shared socket. onOpen fires on every (re)join, followed by the
-// stored updates and `ready`; onClose when the socket drops. Re-joins by itself on reconnect.
-export function joinCollab(workspace: string, issue: string, handlers: Handlers) {
-  const ch: Channel = { ...handlers, workspace, issue, uuid: null, id: null }
+// Live editing of one issue's description or note's body over the shared socket. onOpen fires on every (re)join,
+// followed by the stored updates and `ready`; onClose when the socket drops. Re-joins by itself on reconnect.
+export function joinCollab(workspace: string, kind: CollabKind, key: string, handlers: Handlers) {
+  const ch: Channel = { ...handlers, workspace, kind, key, uuid: null, id: null }
   channels.add(ch)
   join(ch)
   return {

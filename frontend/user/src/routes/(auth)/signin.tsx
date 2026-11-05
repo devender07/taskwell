@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Tabs } from '@tether/shared/tabs'
+import { Tabs } from '@taskwell/shared/tabs'
 import { redirectIfSignedIn, safeRedirect } from '@/api'
 import { AuthCard, FormError, GoogleButton, OrDivider } from '@/components/auth/auth-card'
 import { OtpForm } from '@/components/auth/otp-form'
@@ -41,7 +41,7 @@ function SignIn() {
 
   return (
     <AuthCard
-      title="Sign in to Tether"
+      title="Sign in to Taskwell"
       subtitle="Welcome back. Choose how you'd like to continue."
       footer={
         <>

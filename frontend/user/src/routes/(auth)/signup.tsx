@@ -17,7 +17,7 @@ function SignUp() {
   return (
     <AuthCard
       title="Create your account"
-      subtitle="Set up Tether for you and your team."
+      subtitle="Set up Taskwell for you and your team."
       footer={
         <>
           Already have an account? <Link to="/signin" search={redirect ? { redirect } : {}} className="auth-link">Sign in</Link>

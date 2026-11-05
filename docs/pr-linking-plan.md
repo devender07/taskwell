@@ -2,7 +2,7 @@
 
 Scope: a workspace connects GitHub and/or GitLab with a webhook. Pull requests (GitHub) and merge requests (GitLab) that mention an issue identifier (`ENG-142`) are linked to that issue and shown on it. When a linked PR opens, the issue can move to a chosen status; when it merges, the issue moves to a chosen done status. Builds on the issues plan; uses this repo's own webhook endpoint, so there's no OAuth app or GitHub App to register.
 
-Out of scope: GitHub App / OAuth install flow, repo pickers, commits and branches without a PR, review status and CI checks, mapping GitHub users to Tether users, creating branches or PRs from Tether, two-way sync (closing an issue doesn't close the PR).
+Out of scope: GitHub App / OAuth install flow, repo pickers, commits and branches without a PR, review status and CI checks, mapping GitHub users to Taskwell users, creating branches or PRs from Taskwell, two-way sync (closing an issue doesn't close the PR).
 
 ## How linking works
 

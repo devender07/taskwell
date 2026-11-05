@@ -1,6 +1,6 @@
 # MCP server plan
 
-Scope: let AI clients (Claude Code, Cursor, VS Code, Claude Desktop) read and change Tether issues through the Model Context Protocol. Two parts:
+Scope: let AI clients (Claude Code, Cursor, VS Code, Claude Desktop) read and change Taskwell issues through the Model Context Protocol. Two parts:
 
 1. **Personal API tokens** in the user service: a user creates a token in Settings, and any `/api` request carrying `Authorization: Bearer tth_…` is signed in as that user. Every existing permission check applies unchanged.
 2. **MCP server** in a new Go module `backend/mcp/`: a stateless streamable-HTTP MCP endpoint at `/mcp` that forwards the caller's bearer token to the user API. It holds no database connection and no business logic; every tool is one or a few REST calls.
@@ -32,7 +32,7 @@ No `system_config` keys.
 - `auth.Handler.Authenticate`: when the request has `Authorization: Bearer tth_…`, look up `sha256(token)` joined to `users` with `suspended_at is null`; return that user ID, or `""` (→ 401) when unknown, revoked or suspended. A bearer header that isn't `tth_…` is `""` too. No cookie fallback once a bearer header is present.
 - `last_used_at` is updated at most once a minute per token (`… where last_used_at is null or last_used_at < now() - interval '1 minute'`).
 - `ponytail:` one indexed lookup per bearer request; cache like `alive` if MCP traffic shows up in DB load.
-- The token endpoints below and everything under `/api/auth/` and `/api/me/password` require a cookie session: a bearer request gets 403 `{"error":"Use the Tether app for this."}`. A leaked token can't mint more tokens or change the password.
+- The token endpoints below and everything under `/api/auth/` and `/api/me/password` require a cookie session: a bearer request gets 403 `{"error":"Use the Taskwell app for this."}`. A leaked token can't mint more tokens or change the password.
 - `CheckOrigin` needs no change: non-browser requests carry neither `Origin` nor `Sec-Fetch-Site` and already pass.
 - Password change / reset keeps tokens (they're revoked individually). Suspension blocks them via the join.
 - At most 25 tokens per user.
@@ -53,13 +53,13 @@ Messages for `name`: `Name the token.` · `Use 60 characters or fewer.`
 
 ## MCP server (`backend/mcp/`)
 
-Module `github.com/devender07/tether/backend/mcp`, added to `backend/go.work`. Entry `cmd/mcp/main.go`, logic in `internal/server/` (`server.go` registers tools, `api.go` is the REST client, `text.go` converts descriptions). Dependency: `github.com/modelcontextprotocol/go-sdk` (approved).
+Module `github.com/devender07/taskwell/backend/mcp`, added to `backend/go.work`. Entry `cmd/mcp/main.go`, logic in `internal/server/` (`server.go` registers tools, `api.go` is the REST client, `text.go` converts descriptions). Dependency: `github.com/modelcontextprotocol/go-sdk` (approved).
 
-Config (env): `PORT` (default `8095`), `TETHER_API_URL` (default `http://localhost:8090`), `APP_ENV`. Logs to stdout with `slog`.
+Config (env): `PORT` (default `8095`), `TASKWELL_API_URL` (default `http://localhost:8090`), `APP_ENV`. Logs to stdout with `slog`.
 
 - `POST/GET /mcp`: the SDK's streamable HTTP handler, `Stateless: true`. A request without `Authorization: Bearer tth_…` gets 401 before reaching the SDK. The server per request is built with an API client that carries that request's header, so tools never see other users' tokens.
 - `GET /healthz`: 200.
-- REST errors become tool results with `IsError: true` and the API's message text (`error`, or the `errors` map joined as `field: message`). 401 from the API → "Your Tether token is invalid or revoked."
+- REST errors become tool results with `IsError: true` and the API's message text (`error`, or the `errors` map joined as `field: message`). 401 from the API → "Your Taskwell token is invalid or revoked."
 - Descriptions and comments in: plain text, split on blank lines into Tiptap paragraph nodes (`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":…}]}]}`). `ponytail:` no markdown; parse it if models send formatting that matters.
 - Descriptions and comments out: plain text (a ~25-line port of `doc.PlainText`, since `user/internal` can't be imported).
 - Tool outputs are compact JSON (drop ids the model doesn't need except where a later call needs them).
@@ -82,7 +82,7 @@ Tools (every one but `list_workspaces` takes `workspace`, the slug). Names, not 
 
 Tool results include the issue's web URL (`{app_base_url}/{workspace}/issue/{identifier}`) where there is one; the MCP server takes `APP_URL` env (default `http://localhost:5173`) for that.
 
-Deploy: `deploy/backend.Dockerfile` builds it with `SVC=mcp` if the Dockerfile allows, else the smallest change that does; `deploy/docker-compose.prod.yml` gets an `mcp` service (`TETHER_API_URL=http://user:8090`); `deploy/Caddyfile` routes `/mcp` on `APP_HOST` to `mcp:8095` with `flush_interval -1`. Dev: Vite proxies `/mcp` to `http://localhost:8095`.
+Deploy: `deploy/backend.Dockerfile` builds it with `SVC=mcp` if the Dockerfile allows, else the smallest change that does; `deploy/docker-compose.prod.yml` gets an `mcp` service (`TASKWELL_API_URL=http://user:8090`); `deploy/Caddyfile` routes `/mcp` on `APP_HOST` to `mcp:8095` with `flush_interval -1`. Dev: Vite proxies `/mcp` to `http://localhost:8095`.
 
 ## Frontend (user app)
 
@@ -92,8 +92,8 @@ Route `/{workspace}/settings/api-tokens` (`routes/_app/$workspace/_main/settings
 
 | Where | Behaviour |
 |---|---|
-| Page | Title "API tokens", one line: "Tokens let AI tools like Claude Code act as you in Tether. Anyone with a token can do what you can." List rows: name, "Created Nov 2", "Last used 3 hours ago" / "Never used", "Revoke" button. Empty: "No tokens yet." "New token" button (pink CTA). |
-| New token dialog | Name input (placeholder `Claude Code on my laptop`), "Create token". On success the dialog shows the secret in a mono read-only field with "Copy", a warning "Copy it now. You won't see it again.", and a setup snippet with copy: `claude mcp add --transport http tether {origin}/mcp --header "Authorization: Bearer {secret}"`. "Done" closes. |
+| Page | Title "API tokens", one line: "Tokens let AI tools like Claude Code act as you in Taskwell. Anyone with a token can do what you can." List rows: name, "Created Nov 2", "Last used 3 hours ago" / "Never used", "Revoke" button. Empty: "No tokens yet." "New token" button (pink CTA). |
+| New token dialog | Name input (placeholder `Claude Code on my laptop`), "Create token". On success the dialog shows the secret in a mono read-only field with "Copy", a warning "Copy it now. You won't see it again.", and a setup snippet with copy: `claude mcp add --transport http taskwell {origin}/mcp --header "Authorization: Bearer {secret}"`. "Done" closes. |
 | Revoke | Confirm "Revoke {name}? Tools using it stop working." → delete. |
 
 ## Verification
@@ -109,7 +109,7 @@ Same rules as above: tools call the existing REST API with the caller's token, t
 ### AI testing (the main ask)
 
 Two ways an AI client tests an issue:
-1. **Tether runs it**: `run_ai_test` starts an AI run (Tether's own Claude drives the sandboxed Chrome, spends the workspace's monthly limit). `get_test_run` with `wait_seconds` polls until it finishes.
+1. **Taskwell runs it**: `run_ai_test` starts an AI run (Taskwell's own Claude drives the sandboxed Chrome, spends the workspace's monthly limit). `get_test_run` with `wait_seconds` polls until it finishes.
 2. **The client runs it**: the client tests with its own tools, then records the outcome as a manual run: `start_manual_test_run` returns one result per case, and `mark_test_result` sets each to passed / failed / skipped with a note.
 
 | Tool | Inputs | Calls |
@@ -123,7 +123,7 @@ Two ways an AI client tests an issue:
 | `run_ai_test` | `workspace`, `identifier`, `case_id?` (one case only), `regenerate?` (bool: Claude rewrites the cases first) | `POST …/test-runs` `kind=ai` |
 | `start_manual_test_run` | `workspace`, `identifier` | `POST …/test-runs` `kind=manual` |
 | `mark_test_result` | `workspace`, `run_id`, `result_id`, `status` (passed/failed/skipped), `note?` | `POST …/test-runs/{id}/results/{result_id}` |
-| `get_test_run` | `workspace`, `run_id`, `wait_seconds?` (0–120: poll every 3 s until the run isn't pending/running) | `GET …/test-runs/{id}`: status, counts, cost, error, each result with summary, reproduction steps and screenshot URLs (absolute, `TETHER_API_URL`-relative paths made app links) |
+| `get_test_run` | `workspace`, `run_id`, `wait_seconds?` (0–120: poll every 3 s until the run isn't pending/running) | `GET …/test-runs/{id}`: status, counts, cost, error, each result with summary, reproduction steps and screenshot URLs (absolute, `TASKWELL_API_URL`-relative paths made app links) |
 | `list_test_runs` | `workspace`, `identifier` | `GET …/issues/{identifier}/test-runs` (first page) |
 | `cancel_test_run` | `workspace`, `run_id` | `POST …/test-runs/{id}/cancel` |
 | `ai_test_usage` | `workspace` | `GET …/ai-usage` |
@@ -154,9 +154,9 @@ Verification: `go vet`, `go test` (extend the in-memory test with `create_test_c
 
 ## Phase 3: tests view (MCP Apps)
 
-`get_test_run` and `list_test_cases` carry `_meta.ui.resourceUri = ui://tether/tests.html`, so hosts that support MCP Apps (Claude Desktop, claude.ai) render the run or the cases inline; their JSON text stays for text-only clients, and the same JSON goes in `structuredContent` for the view.
+`get_test_run` and `list_test_cases` carry `_meta.ui.resourceUri = ui://taskwell/tests.html`, so hosts that support MCP Apps (Claude Desktop, claude.ai) render the run or the cases inline; their JSON text stays for text-only clients, and the same JSON goes in `structuredContent` for the view.
 
 - `backend/mcp/internal/server/tests.html`, embedded with `go:embed`: no build step. It imports the ext-apps `App` client from unpkg (pinned `@2.0.4/app-with-deps`; the resource declares `csp.resourceDomains: ["https://unpkg.com"]`). `ponytail:` CDN; bundle it into the file if a host blocks unpkg.
-- Run view: status, counts, cost, error; per result its summary or note, reproduction steps (open for failures), the case's steps and expected result, and "Show screenshots". "Refresh" on an unfinished run calls `get_test_run` with a 30 s wait. Cases view: each case with its steps and last result. "Open in Tether" asks the host to open the issue.
-- Screenshots need the caller's Tether sign-in, which the view's iframe doesn't have: the app-only tool `get_test_screenshot` (`visibility: ["app"]`, hidden from the model) fetches an `/api/files/` path with the token and returns it as image content. Any other URL is refused.
+- Run view: status, counts, cost, error; per result its summary or note, reproduction steps (open for failures), the case's steps and expected result, and "Show screenshots". "Refresh" on an unfinished run calls `get_test_run` with a 30 s wait. Cases view: each case with its steps and last result. "Open in Taskwell" asks the host to open the issue.
+- Screenshots need the caller's Taskwell sign-in, which the view's iframe doesn't have: the app-only tool `get_test_screenshot` (`visibility: ["app"]`, hidden from the model) fetches an `/api/files/` path with the token and returns it as image content. Any other URL is refused.
 - Theme: host CSS variables first, DESIGN.md tokens as the fallback for dark and light.

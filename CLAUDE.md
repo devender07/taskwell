@@ -1,6 +1,6 @@
-# Tether
+# Taskwell
 
-Project management tool for SaaS companies. Early stage: no code yet, only this file and DESIGN.md.
+Project management tool for SaaS companies. Phases 1–6 and most of Later are built; `task.md` is the checklist of what exists, check it before proposing features.
 
 ## Design source of truth
 
@@ -14,7 +14,7 @@ Quick reference:
 - Radius: pill `9999px` for buttons, `6px` inputs, `8px` cards, `0` full-width sections
 - Breakpoints 640 / 1024 / 1440. Z-index 1, 2-3, 50, 100+, 995-997
 - Contrast 4.5:1, touch targets 44px, line-height >= 1.4x
-- Sentence case for all UI text and user-facing messages: headings, buttons, labels, tabs, menus, placeholders, page titles, errors and email subjects ("Create account", "Forgot password?", not "Create Account"). Only proper nouns keep capitals (Tether, Google).
+- Sentence case for all UI text and user-facing messages: headings, buttons, labels, tabs, menus, placeholders, page titles, errors and email subjects ("Create account", "Forgot password?", not "Create Account"). Only proper nouns keep capitals (Taskwell, Google).
 
 ## Product scope
 
@@ -27,7 +27,7 @@ Build order, do not skip ahead:
 5. Keyboard-first: command palette, quick-create, fast search
 6. Notifications (email and in-app)
 
-Later: cycles/sprints, GitHub/GitLab PR linking, Slack, roadmap view, customer feedback intake, public API and webhooks.
+Later: cycles/sprints, GitHub/GitLab PR linking, roadmap view, customer feedback intake, public API and webhooks are built. Still open: Slack.
 
 Not building until a customer asks: time tracking, gantt, resource planning, custom fields, SSO/SAML, automation builder, multiple issue types, portfolios.
 
@@ -63,31 +63,31 @@ Small fixes and follow-ups to a shipped feature don't need a plan or agents.
 
 ```
 backend/            Go workspace (go.work)
-  admin/            module github.com/devender07/tether/backend/admin, entry cmd/admin
-  user/             module github.com/devender07/tether/backend/user,  entry cmd/user
-  shared/           module github.com/devender07/tether/backend/shared: code every service uses (obs, env)
+  admin/            module github.com/devender07/taskwell/backend/admin, entry cmd/admin
+  user/             module github.com/devender07/taskwell/backend/user,  entry cmd/user
+  shared/           module github.com/devender07/taskwell/backend/shared: code every service uses (obs, env)
 frontend/           npm workspaces (shared, admin, user)
-  shared/           @tether/shared: src/styles/tokens.css (DESIGN.md), src/components/<name>/<name>.tsx (one folder per component, css alongside)
-  admin/            @tether/admin: Vite + React 19 + TanStack Router, port 5174
-  user/             @tether/user:  Vite + React 19 + TanStack Router, port 5173
+  shared/           @taskwell/shared: src/styles/tokens.css (DESIGN.md), src/components/<name>/<name>.tsx (one folder per component, css alongside)
+  admin/            @taskwell/admin: Vite + React 19 + TanStack Router, port 5174
+  user/             @taskwell/user:  Vite + React 19 + TanStack Router, port 5173
 ```
 
 - Go: flat layout, `cmd/<svc>/main.go` wires and runs, logic goes in `internal/`. Manual constructor injection, no DI library. Config via env vars, logs to stdout.
 - Go feature packages (`internal/<feature>/`) split by role: `routes.go` mounts endpoints, `controller.go` holds HTTP handlers (parse, validate, respond, no SQL), `model.go` holds types and every SQL query. Helpers get their own file (e.g. `session.go`, `validate.go`). JSON responses, the signed-in handler wrapper and `IsUUID` come from `user/internal/web`; don't copy them into a package.
 - Run the whole backend from `backend/`: `make` (Postgres, Mailpit, Chrome, then user API, AI tester, admin API and MCP server; Ctrl+C stops all). `make build|vet|test|down`.
-- Build/vet from `backend/`: `go build github.com/devender07/tether/backend/admin/... github.com/devender07/tether/backend/user/...`
+- Build/vet from `backend/`: `go build github.com/devender07/taskwell/backend/admin/... github.com/devender07/taskwell/backend/user/...`
 - Frontend stack is fixed: Vite, React 19, TanStack Router with file-based routes. No UI kit, no CSS framework, no state library, no schema library. Ask before adding any dependency.
 - Imports: `@/` is the app's `src/` (both apps). Use it instead of `../`; same-folder `./` imports stay relative.
-- Icons: import from `@tether/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
-- Styling: utility classes from `@tether/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
+- Icons: import from `@taskwell/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
+- Styling: utility classes from `@taskwell/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
 - Frontend commands from `frontend/`: `npm run dev:user`, `npm run dev:admin`, `npm run build` (vite build + tsc per app).
 
 ## TanStack Router conventions
 
 - Routes live in `src/routes/`. `src/routes/` holds route files only; related pages share a `(group)` folder that doesn't change the URL (e.g. `routes/(auth)/signin.tsx` is `/signin`), and their parts (forms, CSS) go in `src/components/<group>/`. `src/routeTree.gen.ts` is generated by the Vite plugin and committed. Never edit it.
-- Router defaults in `src/router.tsx`: intent preloading, automatic code splitting, shared Pending / ErrorFallback / NotFound from `@tether/shared/boundaries`.
+- Router defaults in `src/router.tsx`: intent preloading, automatic code splitting, shared Pending / ErrorFallback / NotFound from `@taskwell/shared/boundaries`.
 - Shareable UI state (filters, view, sort, page) goes in the URL via `validateSearch` on the route that owns it.
-- Forms use `noValidate`; no browser validation attributes (`required`, `pattern`, `min`). Validate in the form action with `@tether/shared/validate` and pass messages to `<Input error>`.
+- Forms use `noValidate`; no browser validation attributes (`required`, `pattern`, `min`). Validate in the form action with `@taskwell/shared/validate` and pass messages to `<Input error>`.
 - Links using a `search={(prev) => ...}` reducer pass `from={Route.fullPath}` so `prev` is typed.
 
 ## Git identity

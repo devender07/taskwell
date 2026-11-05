@@ -40,7 +40,7 @@ type locator struct {
 // attribute (ids with long digit runs look generated, so they're skipped), plus its tag and name.
 func locateJS(ref int) string {
 	return `(() => {` + elementsJS + `
-  const el = document.querySelector('[data-tether-ref="` + strconv.Itoa(ref) + `"]'); if (!el) return null;
+  const el = document.querySelector('[data-taskwell-ref="` + strconv.Itoa(ref) + `"]'); if (!el) return null;
   const tag = el.tagName.toLowerCase();
   const only = s => { try { return document.querySelectorAll(s).length === 1 ? s : '' } catch { return '' } };
   let css = el.id && !/\d{3,}/.test(el.id) ? only('#' + CSS.escape(el.id)) : '';
@@ -66,14 +66,14 @@ func resolveJS(l *locator) string {
 	b, _ := json.Marshal(l)
 	return `(() => {` + elementsJS + `
   const L = ` + string(b) + `;
-  document.querySelectorAll('[data-tether-ref="` + strconv.Itoa(replayRef) + `"]').forEach(e => e.removeAttribute('data-tether-ref'));
+  document.querySelectorAll('[data-taskwell-ref="` + strconv.Itoa(replayRef) + `"]').forEach(e => e.removeAttribute('data-taskwell-ref'));
   let found = null;
   if (L.css) { const m = [...document.querySelectorAll(L.css)].filter(visible); if (m.length === 1) found = m[0]; }
   // ponytail: first match wins, so "Page 1" and "Page 2" both resolve to the first; record a css target if that bites
   const bare = s => s.replace(/\d+/g, '{n}');
   if (!found) found = [...document.querySelectorAll(sel)].find(el => visible(el) && el.tagName.toLowerCase() === L.tag && bare(nameOf(el)) === bare(L.name)) || null;
   if (!found) return false;
-  found.setAttribute('data-tether-ref', '` + strconv.Itoa(replayRef) + `'); return true;
+  found.setAttribute('data-taskwell-ref', '` + strconv.Itoa(replayRef) + `'); return true;
 })()`
 }
 

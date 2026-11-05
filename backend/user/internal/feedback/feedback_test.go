@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 func null(m json.RawMessage) bool { return m == nil || string(m) == "null" }
@@ -33,8 +33,8 @@ func TestFeedback(t *testing.T) {
 			p as (insert into projects (workspace_id, name, key, private)
 			      select id, n, k, pr from w, (values ('Web', 'WEB', false), ('Leadership', 'LEAD', true)) v(n, k, pr) returning id, key),
 			s as (select id from statuses where workspace_id = (select id from w) order by position limit 1),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s) from p returning id)
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s), 'V' from p returning id)
 			select id::text, slug from w`, ann).Scan(&wsID, &slug)
 	}); err != nil {
 		t.Fatal(err)
@@ -68,6 +68,7 @@ func TestFeedback(t *testing.T) {
 	type page struct {
 		Items   []Feedback `json:"items"`
 		HasMore bool       `json:"has_more"`
+		Total   int        `json:"total"`
 	}
 	list := func(user, query string) page {
 		t.Helper()
@@ -107,18 +108,23 @@ func TestFeedback(t *testing.T) {
 	if !strings.Contains(string(f.Issue), `"identifier":"WEB-1"`) || count() != 0 || len(list(bob, "state=linked").Items) != 1 {
 		t.Fatalf("linked %s", f.Issue)
 	}
-	var fs []Feedback
+	var fs page
 	do(bob, "GET", "/issues/WEB-1/feedback", nil, 200, &fs)
-	if len(fs) != 1 {
-		t.Fatalf("issue feedback %d", len(fs))
+	if len(fs.Items) != 1 || fs.Total != 1 || fs.HasMore {
+		t.Fatalf("issue feedback %+v", fs)
 	}
+	do(bob, "GET", "/issues/WEB-1/feedback?before="+f.ID, nil, 200, &fs)
+	if len(fs.Items) != 0 {
+		t.Fatalf("issue feedback before itself %+v", fs)
+	}
+	do(bob, "GET", "/issues/WEB-1/feedback?before=nope", nil, 400, nil)
 	do(bob, "GET", "/issues/LEAD-1/feedback", nil, 404, nil)
 	do(ann, "POST", "/feedback/"+f.ID, url.Values{"issue": {"LEAD-1"}}, 200, nil)
 	if p := list(bob, "state=linked"); len(p.Items) != 1 || !null(p.Items[0].Issue) {
 		t.Fatalf("Bob sees the private issue: %+v", p.Items)
 	}
 	do(ann, "GET", "/issues/LEAD-1/feedback", nil, 200, &fs)
-	if len(fs) != 1 || null(fs[0].Issue) {
+	if len(fs.Items) != 1 || null(fs.Items[0].Issue) {
 		t.Fatalf("Ann's LEAD-1 feedback %+v", fs)
 	}
 	do(bob, "POST", "/feedback/"+f.ID, url.Values{"issue": {""}}, 200, &f)

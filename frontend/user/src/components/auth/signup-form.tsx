@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { email, name, password, workspaceName } from '@tether/shared/validate'
-import { api, toFormErrors, type FieldErrors } from '@/api'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { email, name, password, workspaceName } from '@taskwell/shared/validate'
+import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
 type Values = { name: string; email: string; workspace: string }
@@ -63,7 +63,7 @@ export function SignupForm({ redirect }: { redirect?: string }) {
   const invited = redirect?.startsWith('/invite') ?? false // they join the inviter's workspace, so no name for their own
   const [state, submit, pending] = useActionState(async (prev: SignupState, form: FormData) => {
     const next = await signupAction(prev, form, invited)
-    if (next.done) await navigate({ href: redirect ?? '/' })
+    if (next.done) await navigate({ href: redirect ?? (await homePath()) })
     return next
   }, { step: 'details', values: { name: '', email: '', workspace: '' } })
   const { values, errors, error } = state

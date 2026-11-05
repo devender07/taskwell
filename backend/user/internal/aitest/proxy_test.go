@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/netguard"
+	"github.com/devender07/taskwell/backend/user/internal/netguard"
 )
 
 func TestAllowed(t *testing.T) {

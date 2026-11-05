@@ -11,11 +11,14 @@ type Permission struct {
 }
 
 const (
-	permWorkspaceEdit   = "workspace.edit"
+	// PermWorkspaceEdit gates renaming the workspace; it also lets a member edit and delete others' shared views.
+	PermWorkspaceEdit   = "workspace.edit"
 	permWorkspaceDelete = "workspace.delete"
-	permMembersInvite   = "members.invite"
-	permMembersManage   = "members.manage"
-	permRolesManage     = "roles.manage"
+	// permWorkspacesCreate lets a member create new workspaces; checked in SQL by can_create_workspace.
+	permWorkspacesCreate = "workspaces.create"
+	permMembersInvite    = "members.invite"
+	permMembersManage    = "members.manage"
+	permRolesManage      = "roles.manage"
 
 	// PermProjectsManage gates creating, editing and archiving projects.
 	PermProjectsManage = "projects.manage"
@@ -41,12 +44,15 @@ const (
 	PermIntegrationsManage = "integrations.manage"
 	// PermFeedbackManage gates the public feedback form and archiving and deleting feedback.
 	PermFeedbackManage = "feedback.manage"
+	// PermAnalyticsView lets a member see other members' analytics and the team page.
+	PermAnalyticsView = "analytics.view"
 )
 
 // catalog is every permission in display order.
 var catalog = []Permission{
-	{permWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
+	{PermWorkspaceEdit, "Workspace", "Edit workspace name and URL", true},
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
+	{permWorkspacesCreate, "Workspace", "Create new workspaces", true},
 	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
@@ -62,6 +68,7 @@ var catalog = []Permission{
 	{PermTestsManage, "Testing", "Edit test cases and run tests manually", true},
 	{PermAITestsManage, "Testing", "Manage test sites and test accounts", true},
 	{PermFeedbackManage, "Feedback", "Manage the feedback form, archive and delete feedback", true},
+	{PermAnalyticsView, "Analytics", "See other members' analytics and the team page", true},
 }
 
 func allPermissions() []string {
@@ -72,12 +79,23 @@ func allPermissions() []string {
 	return keys
 }
 
-// effective is a role's permissions: the whole catalog for Admin, the stored set otherwise.
+// effective is a role's permissions: the whole catalog for Admin, the stored set otherwise (never a guestDenied one
+// for Guest).
 func effective(builtin string, perms []string) []string {
-	if builtin == roleAdmin {
+	switch builtin {
+	case roleAdmin:
 		return allPermissions()
+	case roleGuest:
+		return slices.DeleteFunc(slices.Clone(perms), guestDenied)
 	}
 	return perms
+}
+
+// guestDenied reports whether a Guest role may not hold the permission: none of the Workspace, Members and
+// Analytics groups.
+func guestDenied(key string) bool {
+	i := slices.IndexFunc(catalog, func(p Permission) bool { return p.Key == key })
+	return i >= 0 && slices.Contains([]string{"Workspace", "Members", "Analytics"}, catalog[i].Group)
 }
 
 // Has reports whether perms includes key.

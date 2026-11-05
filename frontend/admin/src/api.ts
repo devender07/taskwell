@@ -1,7 +1,8 @@
 import { redirect } from '@tanstack/react-router'
-import { ApiError } from '@tether/shared/api-errors'
+import { ApiError } from '@taskwell/shared/api-errors'
+import { apiUrl } from '@taskwell/shared/api-url'
 
-export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@tether/shared/api-errors'
+export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
 export type Admin = { id: string; name: string; email: string }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
@@ -36,7 +37,7 @@ export const setClient = (id: string) => (client = id)
 export async function api<T = void>(path: string, body?: FormData): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', body, headers: client ? { 'X-Tether-Client': client } : undefined })
+    res = await fetch(apiUrl(`/api${path}`), { method: body ? 'POST' : 'GET', body, credentials: 'include', headers: client ? { 'X-Taskwell-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }

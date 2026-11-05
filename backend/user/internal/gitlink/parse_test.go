@@ -69,3 +69,14 @@ func TestParsePayloads(t *testing.T) {
 		t.Error("push handled")
 	}
 }
+
+func TestValidURL(t *testing.T) {
+	for url, want := range map[string]bool{
+		"https://github.com/acme/web/pull/1": true, "HTTP://gitlab.example/x/-/merge_requests/2": true,
+		"javascript:alert(1)": false, "data:text/html,x": false, "": false, "//evil.example": false,
+	} {
+		if got := valid(pr{Repo: "acme/web", Number: 1, URL: url}); got != want {
+			t.Errorf("valid(%q) = %v, want %v", url, got, want)
+		}
+	}
+}

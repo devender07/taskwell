@@ -4,14 +4,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 // Test account passwords are stored sealed (see the secret package), with "<workspace id>:<account id>" as
 // associated data so a sealed password moved to another row or workspace doesn't open.
 
 // devSecret stands in for TEST_SECRET_KEY outside production, so dev works without one.
-const devSecret = "tether dev test secret, never used in production"
+const devSecret = "taskwell dev test secret, never used in production"
 
 // Key derives the AES-256 key from TEST_SECRET_KEY, which production requires (32+ bytes).
 func Key(s string, prod bool) ([]byte, error) {
@@ -21,7 +21,7 @@ func Key(s string, prod bool) ([]byte, error) {
 	case s == "":
 		s = devSecret
 	}
-	return secret.Key("tether test accounts", s), nil
+	return secret.Key("taskwell test accounts", s), nil
 }
 
 func sealAD(workspaceID, accountID string) []byte { return []byte(workspaceID + ":" + accountID) }

@@ -16,6 +16,17 @@
   .issue-row-wide { display: none; }
 }
 
+/* A list row: its select checkbox, then the row link. The checkbox shows on hover and focus, while anything is
+   selected, and always on touch screens. */
+.issue-item { display: flex; align-items: center; }
+.issue-item > .issue-row { flex: 1; min-width: 0; padding-left: 0; }
+.issue-select { flex-shrink: 0; justify-content: center; width: 44px; height: 44px; opacity: 0; }
+.issue-item:hover .issue-select, .issue-item:focus-within .issue-select, [data-selecting] .issue-select { opacity: 1; }
+@media (hover: none) {
+  .issue-select { opacity: 1; }
+}
+
+
 .pr-state {
   padding: 0 8px;
   color: var(--text-2);
@@ -72,6 +83,9 @@
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border);
 }
+/* clip, not hidden, so the group header can stick under the issue toolbar. */
+.issue-group { overflow: clip; }
+.issue-group > h2 { position: sticky; top: var(--below-toolbar, 56px); z-index: 1; background: var(--surface); }
 /* A list group's header is a button that collapses it. */
 .issue-group-toggle { width: 100%; min-height: 44px; padding-left: 16px; color: var(--text); font: inherit; text-align: left; border: 0; cursor: pointer; }
 .issue-group-toggle[aria-expanded='true'] { border-bottom: 1px solid var(--border); }
@@ -105,8 +119,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
-  flex-shrink: 0;
-  width: 280px;
+  flex: 1 0 280px;
   min-height: 0;
   padding: 12px 0 0;
   background: var(--surface);
@@ -134,8 +147,15 @@
 @media (hover: hover) {
   .board-card:hover { border-color: rgba(255, 255, 255, 0.08); }
 }
-.board-card[data-draggable] { cursor: grab; }
-.board-card[data-dragging] { opacity: 0.4; }
+.board-card[data-draggable], .issue-row[data-draggable] { cursor: grab; }
+.issue-row[data-draggable] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.board-card[data-dragging], .issue-row[data-dragging] { opacity: 0.4; }
+[data-drop] { position: relative; }
+[data-drop]::before { content: ''; position: absolute; inset-inline: 0; z-index: 1; height: 2px; background: var(--link); border-radius: 9999px; pointer-events: none; }
+[data-drop='before']::before { top: -1px; }
+[data-drop='after']::before { bottom: -1px; }
+.board-cards > [data-drop='before']::before { top: -5px; }
+.board-cards > [data-drop='after']::before { bottom: -5px; }
 .board-ghost {
   position: fixed;
   top: 0;
@@ -171,3 +191,4 @@
 }
 .label-chip-remove:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
 .label-chip-remove:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.page-top.issue-toolbar { z-index: 2; margin-top: 0; padding-block: 8px; }

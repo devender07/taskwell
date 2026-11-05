@@ -18,15 +18,17 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/admin/internal/audit"
-	"github.com/devender07/tether/backend/admin/internal/auth"
-	"github.com/devender07/tether/backend/admin/internal/config"
-	"github.com/devender07/tether/backend/admin/internal/directory"
-	"github.com/devender07/tether/backend/admin/internal/realtime"
-	"github.com/devender07/tether/backend/admin/internal/stats"
-	"github.com/devender07/tether/backend/admin/internal/web"
-	"github.com/devender07/tether/backend/shared/env"
-	"github.com/devender07/tether/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/admin/internal/auth"
+	"github.com/devender07/taskwell/backend/admin/internal/config"
+	"github.com/devender07/taskwell/backend/admin/internal/directory"
+	"github.com/devender07/taskwell/backend/admin/internal/realtime"
+	"github.com/devender07/taskwell/backend/admin/internal/stats"
+	"github.com/devender07/taskwell/backend/admin/internal/web"
+	"github.com/devender07/taskwell/backend/shared/cors"
+	"github.com/devender07/taskwell/backend/shared/env"
+	"github.com/devender07/taskwell/backend/shared/obs"
+	"github.com/devender07/taskwell/backend/shared/totp"
 )
 
 func main() {
@@ -41,7 +43,7 @@ func main() {
 	if *healthcheck {
 		os.Exit(obs.Healthcheck(metricsAddr))
 	}
-	dbURL := env.Get("DATABASE_URL", "postgres://tether:tether@localhost:5433/tether?sslmode=disable")
+	dbURL := env.Get("DATABASE_URL", "postgres://taskwell:taskwell@localhost:5433/taskwell?sslmode=disable")
 	addr := ":" + env.Get("PORT", "8080")
 	secret := []byte(os.Getenv("ADMIN_JWT_SECRET"))
 	if prod && os.Getenv("DATABASE_URL") == "" {
@@ -57,6 +59,12 @@ func main() {
 	if prod && len(mfaSecret) < 32 {
 		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
 	}
+	// The admin app's URL when it's on another host than this API (its own subdomain of the same domain).
+	appURL := os.Getenv("ADMIN_APP_URL")
+	if appURL == "" && !prod {
+		appURL = "http://localhost:5174"
+	}
+	appOrigin := cors.Origin(appURL)
 	allowed, err := web.ParseAllowlist(os.Getenv("ADMIN_ALLOWED_IPS"))
 	if err != nil {
 		obs.Fatal("ADMIN_ALLOWED_IPS", "err", err)
@@ -136,6 +144,9 @@ func main() {
 	stats.New(pool, authenticate).Register(mux)
 	audit.New(pool, authenticate).Register(mux)
 	rtH := realtime.New(pool, authenticate)
+	if u, err := url.Parse(appOrigin); err == nil {
+		rtH.AppHost = u.Host
+	}
 	rtH.Register(mux)
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -155,11 +166,12 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		obs.WriteHTTP(w)
 		obs.WritePool(w, pool.Stat())
-		obs.Metric(w, "tether_realtime_sockets", "gauge", "Open admin realtime WebSockets.", "", float64(rtH.Sockets()))
+		obs.Metric(w, "taskwell_realtime_sockets", "gauge", "Open admin realtime WebSockets.", "", float64(rtH.Sockets()))
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(web.AllowIPs(allowed, withTimeouts(web.SameOrigin(realtime.WithOrigin(mux))))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(web.AllowIPs(allowed, cors.Allow(func(*http.Request) string { return appOrigin },
+		withTimeouts(web.SameOrigin(appOrigin, realtime.WithOrigin(mux)))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }
@@ -186,14 +198,14 @@ func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
 // derived from system_config's jwt_secret.
 func loadMFAKey(ctx context.Context, pool *pgxpool.Pool, envKey string) ([]byte, error) {
 	if envKey != "" {
-		return auth.MFAKey(envKey), nil
+		return totp.Key(envKey), nil
 	}
 	var s string
 	if err := pool.QueryRow(ctx, `select value from system_config where key = 'jwt_secret'`).Scan(&s); err != nil || s == "" {
 		return nil, fmt.Errorf("MFA_ENCRYPTION_KEY is unset and jwt_secret can't be read; start the user service once: %v", err)
 	}
 	slog.Warn("MFA_ENCRYPTION_KEY is unset: TOTP secrets are encrypted with a key derived from jwt_secret (dev only)")
-	return auth.MFAKey("jwt_secret:" + s), nil
+	return totp.Key("jwt_secret:" + s), nil
 }
 
 // printEnrolment shows a new factor to the operator, who passes it to the admin over a safe channel.

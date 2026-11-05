@@ -1,5 +1,5 @@
 {
-  "name": "@tether/admin",
+  "name": "@taskwell/admin",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@tanstack/react-router": "^1.132.0",
-    "@tether/shared": "*",
+    "@taskwell/shared": "*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

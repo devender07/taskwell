@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 // Runs against the s3_* defaults: the dev S3 store from `make up`.

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/netguard"
-	"github.com/devender07/tether/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/netguard"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
 // retryWaits is how long to wait after each failed attempt; a delivery fails for good once they run out.
@@ -120,7 +120,7 @@ func (h *Handler) sendNext(ctx context.Context) (bool, error) {
 	var sendErr string
 	if key, err := secret.Open(h.opts.Key, sealAD(j.wsID, j.webhookID), j.sealed); err != nil {
 		slog.Error("webhook secret unreadable", "webhook", j.webhookID, "err", err)
-		sendErr = "Tether couldn't read this webhook's secret. Roll the secret."
+		sendErr = "Taskwell couldn't read this webhook's secret. Roll the secret."
 	} else {
 		code, sendErr = h.post(ctx, j, key, time.Now())
 	}
@@ -150,10 +150,10 @@ func (h *Handler) post(ctx context.Context, j *job, key string, now time.Time) (
 		return 0, err.Error()
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Tether-Webhooks/1")
-	req.Header.Set("X-Tether-Event", j.event)
-	req.Header.Set("X-Tether-Delivery", j.id)
-	req.Header.Set("X-Tether-Signature", Sign(key, now, j.payload))
+	req.Header.Set("User-Agent", "Taskwell-Webhooks/1")
+	req.Header.Set("X-Taskwell-Event", j.event)
+	req.Header.Set("X-Taskwell-Delivery", j.id)
+	req.Header.Set("X-Taskwell-Signature", Sign(key, now, j.payload))
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return 0, err.Error()
@@ -169,7 +169,7 @@ func (h *Handler) post(ctx context.Context, j *job, key string, now time.Time) (
 	return resp.StatusCode, resp.Status
 }
 
-// Sign is the X-Tether-Signature header: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" keyed with the secret>.
+// Sign is the X-Taskwell-Signature header: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" keyed with the secret>.
 func Sign(key string, now time.Time, body []byte) string {
 	t := strconv.FormatInt(now.Unix(), 10)
 	mac := hmac.New(sha256.New, []byte(key))

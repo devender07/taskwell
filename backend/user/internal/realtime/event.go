@@ -13,7 +13,7 @@ type Event struct {
 	Kind      string    `json:"kind"`
 	Workspace string    `json:"workspace"` // the workspace's slug; "" for user-wide and admin events
 	Actor     string    `json:"actor"`
-	Origin    string    `json:"origin"` // the X-Tether-Client of the request that made the change, set by Publish
+	Origin    string    `json:"origin"` // the X-Taskwell-Client of the request that made the change, set by Publish
 	Paths     []string  `json:"paths"`
 	NewSlug   string    `json:"new_slug,omitempty"`
 	At        time.Time `json:"at"`
@@ -85,6 +85,9 @@ func ProjectIssues(slug, key string) string { return Project(slug, key) + "/issu
 // Milestones is the project's milestone list.
 func Milestones(slug, key string) string { return Project(slug, key) + "/milestones" }
 
+// ProjectUpdates is the project's written updates.
+func ProjectUpdates(slug, key string) string { return Project(slug, key) + "/updates" }
+
 // Roadmap is the workspace's roadmap: active projects with their dates, progress, cycles and milestones.
 func Roadmap(slug string) string { return Workspace(slug) + "/roadmap" }
 
@@ -103,6 +106,15 @@ func Feedback(slug string) string { return Workspace(slug) + "/feedback" }
 
 func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 
+// Views is the workspace's saved views: the caller's own and the shared ones.
+func Views(slug string) string { return Workspace(slug) + "/views" }
+
+// Notes is the caller's notes: their own and the ones shared with them.
+func Notes(slug string) string { return Workspace(slug) + "/notes" }
+
+// Templates is the workspace's issue templates.
+func Templates(slug string) string { return Workspace(slug) + "/templates" }
+
 // Watching is the list of issues the caller watches.
 func Watching(slug string) string { return Workspace(slug) + "/watching" }
 
@@ -117,6 +129,21 @@ func ProjectStats(slug string) string { return Workspace(slug) + "/project-stats
 func IssuePaths(slug, identifier, key string) []string {
 	return []string{Issue(slug, identifier), Timeline(slug, identifier), ProjectIssues(slug, key), MyIssues(slug),
 		Watching(slug), Activity(slug), ProjectStats(slug), Roadmap(slug)}
+}
+
+// MyInvites is the signed-in user's pending invites to other workspaces.
+func MyInvites() string { return "/me/invites" }
+
+// InvitesChanged tells the user's tabs their pending invites changed.
+func InvitesChanged(actorID, userID string) Event {
+	return Event{Kind: "invites.changed", Actor: actorID, Audience: ToUser(userID), Paths: []string{MyInvites()}}
+}
+
+// NotificationsChanged tells the recipient's tabs their notifications in the workspace changed.
+func NotificationsChanged(slug, actorID, recipientID string) Event {
+	ws := Workspace(slug)
+	return Event{Kind: "notifications.changed", Workspace: slug, Actor: actorID, Audience: ToUser(recipientID),
+		Paths: []string{ws + "/notifications", ws + "/notifications/unread-count"}}
 }
 
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it

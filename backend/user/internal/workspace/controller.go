@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (
@@ -19,6 +19,9 @@ const (
 	errEscalation = "You can't grant permissions you don't have."
 	errNoAdmin    = "A workspace needs at least one admin."
 	errSlugTaken  = "That URL is taken."
+
+	// ErrGuest answers a guest asking for something workspace-wide.
+	ErrGuest = "Guests can't see this."
 )
 
 type Handler struct {
@@ -48,6 +51,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	ws, err := h.model.create(r.Context(), userID, name, slug)
+	if errors.Is(err, errNoCreate) {
+		web.Err(w, http.StatusForbidden, "You don't have permission to create workspaces.")
+		return nil
+	}
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
@@ -73,7 +80,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, ok, err := h.access(w, r, userID, permWorkspaceEdit)
+	ws, ok, err := h.access(w, r, userID, PermWorkspaceEdit)
 	if !ok || err != nil {
 		return err
 	}
@@ -109,6 +116,14 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 		return nil, false, nil
 	}
 	return ws, true, nil
+}
+
+// DenyGuest writes a 403 and returns true when the caller is a guest of ws, for what's workspace-wide.
+func DenyGuest(w http.ResponseWriter, ws *Workspace) bool {
+	if ws.Guest {
+		web.Err(w, http.StatusForbidden, ErrGuest)
+	}
+	return ws.Guest
 }
 
 // Member returns the workspace with the user's role and permissions; nil when it's missing or the user isn't a member.

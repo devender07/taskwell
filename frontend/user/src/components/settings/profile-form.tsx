@@ -1,9 +1,9 @@
 import { useRouter } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { name as checkName } from '@tether/shared/validate'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { name as checkName } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 

@@ -5,13 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/realtime"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 	errForbidden         = "You don't have permission to do that."
 	errKeyTaken          = "That key is taken."
 	errPickedOutsider    = "Someone you picked isn't in this workspace."
-	errPublicMembers     = "Only private projects have members."
+	errPublicMembers     = "Public projects take guests only."
 	errMilestoneNotFound = "Milestone not found."
 	errArchivedProject   = "This project is archived."
 	errNotArchived       = "Archive the project before deleting it."
@@ -66,7 +67,7 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request, userID string) e
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, true)
-	if !ok || err != nil {
+	if !ok || err != nil || workspace.DenyGuest(w, ws) {
 		return err
 	}
 	in, ok := readForm(w, r)
@@ -166,13 +167,22 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 	return nil
 }
 
-// people lists everyone who can see the project, for assignee and mention pickers.
+// people lists everyone who can see the project, for assignee and mention pickers: those matching ?q= (name or
+// email), at most ?limit= (1-100; all without it).
 func (h *Handler) people(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, false)
 	if !ok || err != nil {
 		return err
 	}
-	ms, err := h.model.people(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	query := r.URL.Query()
+	limit := 0
+	if query.Has("limit") {
+		if limit, err = strconv.Atoi(query.Get("limit")); err != nil || limit < 1 || limit > 100 {
+			web.Err(w, http.StatusBadRequest, "limit must be from 1 to 100.")
+			return nil
+		}
+	}
+	ms, err := h.model.people(r.Context(), ws.ID, normKey(r.PathValue("key")), userID, strings.TrimSpace(query.Get("q")), limit)
 	if err != nil {
 		return err
 	}

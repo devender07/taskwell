@@ -1,13 +1,13 @@
 import { Link } from '@tanstack/react-router'
 import { startTransition, useActionState, useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { Input } from '@tether/shared/input'
-import { Popover } from '@tether/shared/popover'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { Textarea } from '@tether/shared/textarea'
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { feedbackBody, feedbackEmail, feedbackName } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Input } from '@taskwell/shared/input'
+import { Popover } from '@taskwell/shared/popover'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
+import { Textarea } from '@taskwell/shared/textarea'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { feedbackBody, feedbackEmail, feedbackName } from '@taskwell/shared/validate'
 import {
   api,
   can,
@@ -43,7 +43,7 @@ export const feedbackChanged = (slug: string, issues: (string | null | undefined
 
 // Page one comes from the loader; scrolling the end into view appends the page before the last item. A new page one
 // (a reload after a change) starts the list over.
-function useFeedbackPages(path: string, first: FeedbackPage) {
+export function useFeedbackPages(path: string, first: FeedbackPage) {
   const [extra, setExtra] = useState<{ base: FeedbackPage; items: Feedback[]; has_more: boolean; error?: string | null } | null>(null)
   const busy = useRef(false)
   const more = extra?.base === first ? extra : null
@@ -57,7 +57,7 @@ function useFeedbackPages(path: string, first: FeedbackPage) {
     busy.current = true
     const prev = more?.items ?? []
     try {
-      const next = await api<FeedbackPage>(`${path}&before=${encodeURIComponent(last)}`)
+      const next = await api<FeedbackPage>(`${path}${path.includes('?') ? '&' : '?'}before=${encodeURIComponent(last)}`)
       setExtra({ base: first, items: [...prev, ...next.items], has_more: next.has_more })
     } catch (e) {
       setExtra({ base: first, items: prev, has_more: false, error: toFormErrors(e).error })

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
 )
 
 const maxDays = 90

@@ -78,7 +78,7 @@ Rules:
 
 Issue JSON includes `can_edit` and `can_delete` computed for the caller.
 
-## Validation (same messages both sides; add to `@tether/shared/validate` + check, mirror in Go)
+## Validation (same messages both sides; add to `@taskwell/shared/validate` + check, mirror in Go)
 
 | Field | Rule | Message |
 |---|---|---|

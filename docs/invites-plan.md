@@ -54,8 +54,8 @@ Invite JSON: `{"id": "...", "email": "bob@acme.com", "invited_by": "Ada", "expir
 Order of checks for create/resend: membership + admin → validate → mail configured (503 before writing anything) → write → send. A send failure after writing is a 500 (the admin can resend).
 
 Email (plain text, via `mail.Mailer.Send`):
-- Subject: `{Inviter} invited you to {Workspace} on Tether`
-- Body: `{Inviter} invited you to join {Workspace} on Tether.\n\nAccept the invite:\n\n{app_base_url}/invite?token={token}\n\nThe link expires in {N} days.\n`
+- Subject: `{Inviter} invited you to {Workspace} on Taskwell`
+- Body: `{Inviter} invited you to join {Workspace} on Taskwell.\n\nAccept the invite:\n\n{app_base_url}/invite?token={token}\n\nThe link expires in {N} days.\n`
 
 ## Backend (`backend/user`)
 
@@ -67,7 +67,7 @@ Email (plain text, via `mail.Mailer.Send`):
 
 ## Frontend (user app)
 
-Validation: the shared `email` validator from `@tether/shared/validate` (no new validators).
+Validation: the shared `email` validator from `@taskwell/shared/validate` (no new validators).
 
 `api.ts`: add `Member`, `Invite` types.
 
@@ -76,7 +76,7 @@ Sidebar (`components/app/sidebar.tsx`): Settings group gets a third child, **Mem
 | Route | File | Behaviour |
 |---|---|---|
 | `/$workspace/settings/members` | `routes/_app/$workspace/_main/settings/members.tsx` | `loader`: `GET /api/workspaces/{slug}/members`. Page title "Members", subtitle "People in {workspace name}." Admins: an invite form at the top (email input + "Send invite" button, inline; "Invite sent to x." status on success, form clears, list reloads via `router.invalidate()`). Members list: avatar (shared `Avatar`), name, email, role ("Admin"/"Member"), current user marked "(you)". For admins a "Pending invites" section: email, "Invited by Ada · expires in 5 days" (or "Expired"), "Resend" and "Cancel" buttons (secondary/ghost); resend shows "Sent." next to it, cancel removes the row. Non-admins don't see invites or the form. |
-| `/invite?token=` | `routes/invite.tsx` (top level, outside `_app` and `(auth)`, works signed in or out) | `validateSearch` `{ token?: string }`. `loader`: `GET /api/invites/{token}` plus `getMe()` in parallel. Uses `AuthCard`. Title "Join {workspace}", subtitle "{invited_by} invited you to collaborate on Tether." (just "You've been invited…" if `invited_by` empty). States: **invalid** (404 or no token): `FormError` "This invite link is invalid or has expired." + link to `/`. **Signed out**: text "Sign in or create an account with {email} to accept." + "Sign in" (primary) → `/signin?redirect=<this url>` and "Create account" (secondary) → `/signup?redirect=<this url>`. **Signed in, email matches**: "Join workspace" button → `POST …/accept` → `router.invalidate()` then navigate to `/$workspace` of the returned slug. **Signed in, different email**: "You're signed in as {me.email}. This invite is for {email}." + "Switch account" button → `POST /api/auth/signout` then `/signin?redirect=<this url>`. |
+| `/invite?token=` | `routes/invite.tsx` (top level, outside `_app` and `(auth)`, works signed in or out) | `validateSearch` `{ token?: string }`. `loader`: `GET /api/invites/{token}` plus `getMe()` in parallel. Uses `AuthCard`. Title "Join {workspace}", subtitle "{invited_by} invited you to collaborate on Taskwell." (just "You've been invited…" if `invited_by` empty). States: **invalid** (404 or no token): `FormError` "This invite link is invalid or has expired." + link to `/`. **Signed out**: text "Sign in or create an account with {email} to accept." + "Sign in" (primary) → `/signin?redirect=<this url>` and "Create account" (secondary) → `/signup?redirect=<this url>`. **Signed in, email matches**: "Join workspace" button → `POST …/accept` → `router.invalidate()` then navigate to `/$workspace` of the returned slug. **Signed in, different email**: "You're signed in as {me.email}. This invite is for {email}." + "Switch account" button → `POST /api/auth/signout` then `/signin?redirect=<this url>`. |
 
 `/signin` and `/signup`: `validateSearch` gains `redirect?: string`, accepted only if it starts with `/` and not `//` (open-redirect guard). Password, email-code and sign-up forms navigate to `redirect` (via `navigate({ href: redirect })`) instead of `/` when set. The `method`-tab switch on signin must keep `redirect`. `redirectIfSignedIn` should also honour it.
 

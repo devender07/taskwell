@@ -1,15 +1,23 @@
-import { fullTime, relativeTime } from '@tether/shared/time'
-import { issuePath, type Feedback, type Workspace } from '@/api'
+import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { issuePath, type FeedbackPage, type Workspace } from '@/api'
+import { FormError } from '@/components/auth/auth-card'
 import { useLive } from '@/components/tests/tests'
 import { feedbackWho } from './feedback'
+import { useFeedbackPages } from './feedback-list'
 
 export function IssueFeedback({ workspace, identifier }: { workspace: Workspace; identifier: string }) {
-  const items = useLive<Feedback[]>(`${issuePath(workspace, identifier)}/feedback`).data ?? []
-  if (items.length === 0) return null
+  const path = `${issuePath(workspace, identifier)}/feedback`
+  const first = useLive<FeedbackPage>(path).data
+  return first?.items.length ? <FeedbackSection path={path} first={first} /> : null
+}
+
+// Page one is live; scrolling to the end loads older feedback.
+function FeedbackSection({ path, first }: { path: string; first: FeedbackPage }) {
+  const { items, hasMore, end, error } = useFeedbackPages(path, first)
   return (
     <section className="grid gap-4" aria-labelledby="customer-feedback-heading">
       <h2 id="customer-feedback-heading" className="text-label">
-        Customer feedback <span className="text-secondary">{items.length}</span>
+        Customer feedback <span className="text-secondary">{first.total ?? items.length}</span>
       </h2>
       <ul className="grid m-0 p-0 bg-surface border rounded-lg overflow-hidden" style={{ listStyle: 'none' }}>
         {items.map((f, i) => (
@@ -28,6 +36,8 @@ export function IssueFeedback({ workspace, identifier }: { workspace: Workspace;
           </li>
         ))}
       </ul>
+      {hasMore ? <div ref={end} aria-hidden /> : null}
+      <FormError>{error}</FormError>
     </section>
   )
 }

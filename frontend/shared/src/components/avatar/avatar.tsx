@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { apiUrl } from '../../api-url/api-url'
 
 // Initials in a circle, covered by the photo at `src` when it loads.
 export function Avatar({ name, size = 32, src }: { name: string; size?: number; src?: string | null }) {
@@ -19,7 +20,7 @@ export function Avatar({ name, size = 32, src }: { name: string; size?: number; 
       {initials || '?'}
       {src && failed !== src ? (
         <img
-          src={src}
+          src={apiUrl(src)}
           alt=""
           className="absolute"
           style={{ inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#3e3e44' }}

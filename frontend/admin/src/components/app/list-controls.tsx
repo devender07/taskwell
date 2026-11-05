@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Input } from '@tether/shared/input'
-import { Pagination } from '@tether/shared/pagination'
+import { Input } from '@taskwell/shared/input'
+import { Pagination } from '@taskwell/shared/pagination'
 import { PAGE_SIZE, type ListSearch } from '@/api'
 
 type Props = { to: '/users' | '/workspaces'; search: ListSearch; placeholder: string }

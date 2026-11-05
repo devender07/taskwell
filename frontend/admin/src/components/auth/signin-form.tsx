@@ -1,13 +1,13 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { email as checkEmail, required } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { email as checkEmail, required } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors } from '@/api'
 
 type State = { email: string; errors?: FieldErrors; error?: string | null }
 
-// Password first, then the authenticator code. The factor is set up by an operator with the tether-admin CLI.
+// Password first, then the authenticator code. The factor is set up by an operator with the taskwell-admin CLI.
 export function SigninForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
   const [mfa, setMfa] = useState(false)

@@ -3,6 +3,8 @@
 // reconnect with jittered backoff (1s doubling to 10s, reset once a socket stays up 10s), and reconnect at once when
 // the tab becomes visible again. Each app handles the messages.
 
+import { API_URL } from '../api-url/api-url'
+
 type Options = {
   binary?: boolean // frames arrive as ArrayBuffer
   // A message other than hello and pong (an ArrayBuffer when binary).
@@ -67,7 +69,9 @@ export function createSocket({ binary, onMessage, onHello, onDrop, stillSignedIn
   }
 
   function connect() {
-    const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/realtime`)
+    const url = new URL('/api/realtime', API_URL || location.href)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const sock = new WebSocket(url)
     if (binary) sock.binaryType = 'arraybuffer'
     ws = sock
     sock.onmessage = (e) => receive(e.data)

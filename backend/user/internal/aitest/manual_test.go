@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestManualRun walks cases (validation, order, permissions) and a manual run through to failed, then checks the
@@ -30,8 +30,8 @@ func TestManualRun(t *testing.T) {
 		return tx.QueryRow(ctx, `with w as (select id, slug from workspaces where created_by = $1),
 			p as (insert into projects (workspace_id, name, key) select id, 'Engineering', 'ENG' from w returning id),
 			s as (select id from statuses where workspace_id = (select id from w) order by position limit 1),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			      select (select id from w), p.id, 1, 'Sign in', (select id from s) from p returning id)
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			      select (select id from w), p.id, 1, 'Sign in', (select id from s), 'V' from p returning id)
 			select (select id::text from w), (select slug from w)`, ann).Scan(&wsID, &slug)
 	}); err != nil {
 		t.Fatal(err)

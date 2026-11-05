@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/doc"
 )
 
 // Handler is a signed-in request's handler; a returned error is logged and answered with a generic 500.

@@ -3,7 +3,7 @@ package realtime
 import (
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 func TestClaim(t *testing.T) {

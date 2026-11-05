@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestSession drives a tester session in real Chrome against a local site: it signs in with the sealed password,

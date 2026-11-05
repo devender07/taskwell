@@ -20,7 +20,7 @@ function WorkflowSettings() {
   const manage = can(workspace, 'workflow.manage')
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="flex flex-wrap items-end gap-4">
+      <header className="page-top flex flex-wrap items-end gap-4">
         <div className="grid gap-2 flex-grow" style={{ flexBasis: 320 }}>
           <h1 className="text-h2">Workflow</h1>
           <p className="text-body-sm text-secondary">The statuses issues move through, grouped by type.</p>

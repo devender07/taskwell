@@ -1,17 +1,18 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { Link, useLoaderData, useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { IconButton } from '@tether/shared/icon-button'
-import { Input } from '@tether/shared/input'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { groupName } from '@tether/shared/validate'
-import { XIcon } from '@tether/shared/icons'
-import { api, avatarSrc, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Input } from '@taskwell/shared/input'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
+import { groupName } from '@taskwell/shared/validate'
+import { ArrowLeftIcon, XIcon } from '@taskwell/shared/icons'
+import { api, avatarSrc, canViewMember, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { searchMembers, useMemberPages } from '@/components/workspace/member-pages'
 import { reloadRoutes } from '@/realtime'
+import '@/components/analytics/analytics.css'
 import './chat.css'
 
 type State = { errors?: FieldErrors; error?: string | null }
@@ -19,12 +20,15 @@ type State = { errors?: FieldErrors; error?: string | null }
 export const INBOX_ROUTES = ['/_app/$workspace/_main/inbox', '/_app/$workspace/_main/inbox/c/$chatId']
 export const chatsPath = (slug: string) => `${workspacePath(slug)}/chats`
 
-// Searches the workspace's members as you type, leaving out the ids in exclude.
-const loadPeople = (slug: string, exclude: string[]) => async (q: string, signal: AbortSignal) =>
-  (await searchMembers(slug, q, 20, signal)).filter((m) => !exclude.includes(m.id)).map((m) => ({ value: m.id, label: m.name, hint: m.email }))
+// Searches the workspace's members (or only its guests) as you type, leaving out the ids in exclude.
+// ponytail: guests are filtered from a 20-member search page, so a guest past it needs a longer name; add a guest filter to /members if that bites.
+const loadPeople = (slug: string, exclude: string[], guests?: boolean) => async (q: string, signal: AbortSignal) =>
+  (await searchMembers(slug, q, 20, signal))
+    .filter((m) => !exclude.includes(m.id) && (!guests || m.guest))
+    .map((m) => ({ value: m.id, label: m.name, hint: m.guest ? `${m.email} · Guest` : m.email }))
 
 // Picks several people: each pick adds a chip and clears the field for the next one.
-export function PeoplePicker({ slug, value, onChange, exclude, error }: { slug: string; value: PersonRef[]; onChange: (people: PersonRef[]) => void; exclude: string[]; error?: string | null }) {
+export function PeoplePicker({ slug, value, onChange, exclude, error, guests }: { slug: string; value: PersonRef[]; onChange: (people: PersonRef[]) => void; exclude: string[]; error?: string | null; guests?: boolean }) {
   const [round, setRound] = useState(0)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -36,8 +40,8 @@ export function PeoplePicker({ slug, value, onChange, exclude, error }: { slug: 
         key={round}
         label="People"
         placeholder="Type a name"
-        emptyText="No one else to add"
-        loadOptions={loadPeople(slug, [...exclude, ...value.map((p) => p.id)])}
+        emptyText={guests ? 'No other guests to add' : 'No one else to add'}
+        loadOptions={loadPeople(slug, [...exclude, ...value.map((p) => p.id)], guests)}
         error={error}
         onChange={(o) => {
           if (!o) return
@@ -269,6 +273,7 @@ const NO_PAGE = { members: [], invites: [], total: 0, has_more: false }
 // workspace, whose members page in from the API as you scroll). A group's creator can remove people.
 export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: Chat; me: string; onClose: () => void }) {
   const router = useRouter()
+  const ws = useLoaderData({ from: '/_app/$workspace' })
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -294,9 +299,9 @@ export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: C
   return (
     <section className="chat-main" aria-labelledby="chat-people-title">
       <header className="chat-header">
-        <button type="button" className="chat-back chat-back-button text-caption text-secondary" onClick={onClose}>
-          ← Back to chat
-        </button>
+        <IconButton aria-label="Back to chat" className="chat-icon-button chat-back" onClick={onClose}>
+          <ArrowLeftIcon />
+        </IconButton>
         <div className="grid flex-grow" style={{ minWidth: 0 }}>
           <h2 id="chat-people-title" className="chat-title ellipsis">Members</h2>
           <p className="text-caption text-secondary m-0 ellipsis">{workspace && !pages.loaded ? 'Loading…' : `${total} ${total === 1 ? 'person' : 'people'}${q ? ` matching “${q}”` : ` in ${chat.name}`}`}</p>
@@ -321,7 +326,13 @@ export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: C
               <Avatar name={p.name} size={32} src={avatarSrc(p.id)} />
               <span className="grid flex-grow" style={{ minWidth: 0 }}>
                 <span className="text-body-sm ellipsis">
-                  {p.name}
+                  {canViewMember(ws, p.id, me) ? (
+                    <Link to="/$workspace/members/$id" params={{ workspace: slug, id: p.id }} className="member-link">
+                      {p.name}
+                    </Link>
+                  ) : (
+                    p.name
+                  )}
                   {p.id === me ? <span className="text-secondary"> (you)</span> : null}
                   {chat.kind === 'group' && p.id === chat.created_by ? <span className="text-secondary"> · Created the group</span> : null}
                 </span>
@@ -396,11 +407,9 @@ export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean;
     await reloadRoutes(router, INBOX_ROUTES)
   }
   const [title, description, action] =
-    chat.kind === 'self'
-      ? ['Delete all notes?', "Every note here is deleted. This can't be undone.", 'Delete notes']
-      : chat.kind === 'group'
-        ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
-        : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
+    chat.kind === 'group'
+      ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
+      : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
   return (
     <Dialog open={open} onClose={onClose} title={title} description={description}>
       <FormError>{state.error}</FormError>

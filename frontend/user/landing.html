@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Taskwell: project management for software teams</title>
+    <meta name="description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Taskwell: project management for software teams" />
+    <meta property="og:description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
+    <meta name="twitter:card" content="summary" />
+    <script type="module" src="/src/landing/landing.ts"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="container flex items-center justify-between gap-6 site-header-inner">
+        <a href="#top" class="brand" aria-label="Taskwell home">
+          <img src="/favicon.svg" alt="" width="28" height="28" />
+          <span>Taskwell</span>
+        </a>
+        <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+          <span></span><span></span>
+        </button>
+        <nav id="site-nav" class="site-nav" aria-label="Main">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#ai">AI testing</a>
+          <a href="#integrations">Integrations</a>
+          <span class="site-nav-actions">
+            <a href="/signin" class="button button-ghost" data-signed-out>Sign in</a>
+            <a href="/signup" class="button button-secondary" data-signed-out>Get started</a>
+            <a href="/signin" class="button button-secondary" data-signed-in hidden>Go to dashboard</a>
+          </span>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section id="top" class="hero">
+        <div class="container hero-inner">
+          <p class="eyebrow reveal"><span class="dot" aria-hidden="true"></span> <span id="greeting">Built for SaaS teams that ship weekly</span></p>
+          <h1 class="display reveal">Plan it, build it, test it.<br /><span class="text-secondary">All in one place.</span></h1>
+          <p class="lead reveal">
+            Taskwell keeps issues, cycles, docs, chat and AI testing in one fast, keyboard-first workspace, so your team spends less time
+            updating tools and more time shipping.
+          </p>
+          <div class="flex flex-wrap gap-3 justify-center reveal">
+            <a href="/signup" class="button button-secondary button-lg" data-signed-out>Start for free</a>
+            <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
+            <a href="#features" class="button button-primary button-lg">See how it works</a>
+          </div>
+          <p class="text-caption text-secondary reveal">Press <kbd>C</kbd> anywhere in the app to create an issue.</p>
+        </div>
+
+        <div class="container">
+          <div class="app-frame reveal" aria-label="Preview of a Taskwell project board" role="img">
+            <div class="app-frame-bar" aria-hidden="true">
+              <span></span><span></span><span></span>
+              <p class="text-caption text-secondary">ENG · Board</p>
+            </div>
+            <div class="board" aria-hidden="true">
+              <div class="board-col">
+                <p class="board-col-title"><span class="status status-todo"></span>Todo <span class="count">3</span></p>
+                <div class="card-mock"><span class="issue-key">ENG-142</span><p>Invite teammates from Slack</p><span class="tags"><i class="tag">Feature</i><b class="prio">High</b></span></div>
+                <div class="card-mock"><span class="issue-key">ENG-139</span><p>Export cycle report as CSV</p><span class="tags"><i class="tag">Reports</i></span></div>
+                <div class="card-mock"><span class="issue-key">ENG-131</span><p>Dark mode for emails</p><span class="tags"><i class="tag">Design</i></span></div>
+              </div>
+              <div class="board-col">
+                <p class="board-col-title"><span class="status status-progress"></span>In progress <span class="count">2</span></p>
+                <div class="card-mock card-live"><span class="issue-key">ENG-128</span><p>Drag to reorder issues</p><span class="tags"><i class="tag">Feature</i><b class="prio prio-urgent">Urgent</b></span><span class="typing">Asha is editing…</span></div>
+                <div class="card-mock"><span class="issue-key">ENG-125</span><p>S3 uploads with presigned links</p><span class="tags"><i class="tag">Infra</i></span></div>
+              </div>
+              <div class="board-col">
+                <p class="board-col-title"><span class="status status-done"></span>Done <span class="count">2</span></p>
+                <div class="card-mock is-done"><span class="issue-key">ENG-120</span><p>Sign in with Google</p><span class="tags"><i class="tag tag-pass">AI test passed</i></span></div>
+                <div class="card-mock is-done"><span class="issue-key">ENG-117</span><p>Command palette</p><span class="tags"><i class="tag tag-pass">AI test passed</i></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="container grid gap-10">
+          <header class="section-head reveal">
+            <p class="eyebrow">Features</p>
+            <h2 class="heading">Everything a product team needs, nothing it doesn't</h2>
+            <p class="lead">No setup maze, no plugin store. The parts you use every day, made fast.</p>
+          </header>
+          <ul class="feature-grid">
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">☰</span>
+              <h3>Issues, list and board</h3>
+              <p>Status, assignee, priority, labels and due dates. Filter, group and drag issues into the order you want; everyone sees it live.</p>
+            </li>
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">↻</span>
+              <h3>Cycles</h3>
+              <p>Plan the next sprint, watch progress as it happens and roll unfinished work into the next cycle in one click.</p>
+            </li>
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">✎</span>
+              <h3>Live descriptions</h3>
+              <p>Write specs together in rich text. Cursors, mentions and comments update for everyone in real time.</p>
+            </li>
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">⌘</span>
+              <h3>Keyboard first</h3>
+              <p>A command palette, quick create and instant search. Get from idea to issue without touching the mouse.</p>
+            </li>
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">◎</span>
+              <h3>Chat beside the work</h3>
+              <p>Channels and direct messages that link straight to issues, so decisions stay next to the work they're about.</p>
+            </li>
+            <li class="feature reveal">
+              <span class="feature-icon" aria-hidden="true">▤</span>
+              <h3>Team analytics</h3>
+              <p>Workload, completed issues per week and cycle time for each member. Clear numbers, no leaderboards.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="workflow" class="section section-surface">
+        <div class="container split">
+          <div class="grid gap-6 reveal">
+            <p class="eyebrow">Workflow</p>
+            <h2 class="heading">Your process, not ours</h2>
+            <p class="lead">Shape Taskwell around how your team already works.</p>
+            <div class="tabs" role="tablist" aria-label="Workflow features">
+              <button type="button" role="tab" id="tab-statuses" aria-controls="panel-statuses" aria-selected="true">Statuses</button>
+              <button type="button" role="tab" id="tab-roles" aria-controls="panel-roles" aria-selected="false" tabindex="-1">Roles</button>
+              <button type="button" role="tab" id="tab-feedback" aria-controls="panel-feedback" aria-selected="false" tabindex="-1">Feedback</button>
+            </div>
+          </div>
+          <div class="tab-panels reveal">
+            <div role="tabpanel" id="panel-statuses" aria-labelledby="tab-statuses" class="panel">
+              <h3>Custom statuses and labels</h3>
+              <p>Add the steps your work really goes through, from triage to released, and colour-code labels for every area of the product.</p>
+              <ul class="checks">
+                <li>Backlog, todo, in progress, done and cancelled categories</li>
+                <li>Per-workspace labels with colours</li>
+                <li>Watch any issue to follow its changes</li>
+              </ul>
+            </div>
+            <div role="tabpanel" id="panel-roles" aria-labelledby="tab-roles" class="panel" hidden>
+              <h3>Roles with real permissions</h3>
+              <p>Start with Admin and Member, then build your own roles. Decide exactly who can create projects, edit any issue, run tests or see analytics.</p>
+              <ul class="checks">
+                <li>Private projects for sensitive work</li>
+                <li>Invite by email, with a role from the start</li>
+                <li>Control who can create new workspaces</li>
+              </ul>
+            </div>
+            <div role="tabpanel" id="panel-feedback" aria-labelledby="tab-feedback" class="panel" hidden>
+              <h3>Customer feedback, linked to issues</h3>
+              <p>Share a public feedback form, collect requests from customers and turn the good ones into issues without copy and paste.</p>
+              <ul class="checks">
+                <li>Public form with your own link</li>
+                <li>Link feedback to the issue that fixes it</li>
+                <li>Email and in-app notifications</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="ai" class="section">
+        <div class="container split">
+          <div class="terminal reveal" aria-label="Example AI test run" role="img">
+            <p class="terminal-line text-secondary">Running test: "Sign in with Google" · ENG-120</p>
+            <p class="terminal-line" data-step>→ Open the sign-in page</p>
+            <p class="terminal-line" data-step>→ Click "Continue with Google"</p>
+            <p class="terminal-line" data-step>→ Choose the test account</p>
+            <p class="terminal-line" data-step>→ Check the workspace home loads</p>
+            <p class="terminal-line terminal-pass" data-step>✓ Passed in 18s · screenshots saved</p>
+          </div>
+          <div class="grid gap-6 reveal">
+            <p class="eyebrow">AI testing</p>
+            <h2 class="heading">Write test cases in plain words. Let AI click through them.</h2>
+            <p class="lead">
+              Add test cases to an issue and Taskwell runs them in a real browser, step by step, with screenshots of every step. Save a run as a
+              script and replay it on every release.
+            </p>
+            <ul class="checks">
+              <li>Watch runs live as they happen</li>
+              <li>Test accounts and sites managed per workspace</li>
+              <li>Mark manual results alongside AI runs</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="integrations" class="section section-surface">
+        <div class="container grid gap-10">
+          <header class="section-head reveal">
+            <p class="eyebrow">Integrations</p>
+            <h2 class="heading">Fits the tools you already use</h2>
+          </header>
+          <ul class="integrations">
+            <li class="integration reveal"><h3>GitHub and GitLab</h3><p>Link pull requests to issues. Branch names and commit messages are one click away.</p></li>
+            <li class="integration reveal"><h3>Claude and MCP</h3><p>Connect Claude to your workspace in one command. It can read, create and update issues as you.</p></li>
+            <li class="integration reveal"><h3>Webhooks and API</h3><p>Send events anywhere and script your workflow with personal API tokens.</p></li>
+          </ul>
+          <pre class="code reveal"><code>claude mcp add --transport http taskwell %VITE_MCP_URL%</code><button type="button" class="copy" aria-label="Copy command" title="Copy command" data-copy="claude mcp add --transport http taskwell %VITE_MCP_URL%"><svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg><svg class="copied-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg></button></pre>
+        </div>
+      </section>
+
+      <section class="section cta">
+        <div class="container grid gap-6 justify-items-center text-center reveal">
+          <h2 class="display-sm">Bring your team together today</h2>
+          <p class="lead">Create a workspace in under a minute. Invite your team when you're ready.</p>
+          <a href="/signup" class="button button-secondary button-lg" data-signed-out>Get started</a>
+          <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container flex flex-wrap items-center justify-between gap-4">
+        <a href="#top" class="brand"><img src="/favicon.svg" alt="" width="24" height="24" /><span>Taskwell</span></a>
+        <p class="text-caption text-secondary m-0">© <span id="year"></span> Taskwell. Made for teams that ship.</p>
+      </div>
+    </footer>
+  </body>
+</html>

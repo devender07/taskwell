@@ -24,7 +24,7 @@ Each line prints `PASS`, `FAIL` or `SKIP`, and the process exits non-zero on any
 
 `user.mjs` creates one temporary issue (with about 110 comments for the paging check) and deletes it at the end, and deletes its chat messages (they stay as "This message was deleted." in the demo/Maya direct chat, since deletes are soft); the two images it uploads become unreferenced and the API's daily sweep removes them. It signs in twice (once through the form, once over the API). Sign-in is rate-limited per IP, so leave a little time between runs.
 
-`invite.mjs` signs demo in once over the API and signs up one new account (`invite-<timestamp>@tether.test`), reading both emails from Mailpit. At the end demo removes that member; the account itself stays, in no workspace, since the API has no way to delete a user.
+`invite.mjs` signs demo in once over the API and signs up one new account (`invite-<timestamp>@taskwell.test`), reading both emails from Mailpit. At the end demo removes that member; the account itself stays, in no workspace, since the API has no way to delete a user.
 
 ## Settings
 
@@ -34,7 +34,7 @@ Each line prints `PASS`, `FAIL` or `SKIP`, and the process exits non-zero on any
 | `CHROME_PATH` | `/usr/bin/google-chrome` |
 | `E2E_USER_URL`, `E2E_ADMIN_URL` | `http://localhost:5173`, `http://localhost:5174` |
 | `E2E_WORKSPACE`, `E2E_PROJECT` | `acme`, `ENG` |
-| `E2E_EMAIL`, `E2E_EMAIL_2`, `E2E_PASSWORD` | the seeded `demo@tether.test` (workspace admin and platform admin), `maya@tether.test` (member), `Demo12345` |
+| `E2E_EMAIL`, `E2E_EMAIL_2`, `E2E_PASSWORD` | the seeded `demo@taskwell.test` (workspace admin and platform admin), `maya@taskwell.test` (member), `Demo12345` |
 | `E2E_MAILPIT_URL` | `http://localhost:8025` |
 | `E2E_ADMIN_TOTP_SECRET` | none. This is the base32 setup key shown when the admin account enrolled in MFA. Without it, `admin.mjs` skips. Keep it out of the repo. |
 

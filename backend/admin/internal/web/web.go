@@ -47,16 +47,17 @@ func Private(auth Authenticator, fn func(w http.ResponseWriter, r *http.Request,
 }
 
 // SameOrigin rejects cross-site writes: a request other than GET, HEAD or OPTIONS passes only when the browser says
-// it is same-origin, or its Origin is this host. Browsers send Sec-Fetch-Site and Origin and pages can't forge them;
-// a request with neither isn't from a browser, so it carries no victim's cookie (curl and the CLI pass).
-func SameOrigin(next http.Handler) http.Handler {
+// it is same-origin, or its Origin is this host or app (the admin app on its own subdomain). Browsers send
+// Sec-Fetch-Site and Origin and pages can't forge them; a request with neither isn't from a browser, so it carries no
+// victim's cookie (curl and the CLI pass).
+func SameOrigin(app string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		site, origin := r.Header.Get("Sec-Fetch-Site"), r.Header.Get("Origin")
 		ok := r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
 			site == "same-origin" || site == "none" || (site == "" && origin == "")
 		if !ok && origin != "" {
 			u, err := url.Parse(origin)
-			ok = err == nil && u.Host == r.Host
+			ok = (err == nil && u.Host == r.Host) || (app != "" && origin == app)
 		}
 		if !ok {
 			WriteErr(w, http.StatusForbidden, "Cross-site request blocked.")

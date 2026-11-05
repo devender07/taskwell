@@ -15,9 +15,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestWebhooks sends signed GitHub deliveries against the scratch database (see dbtest): opening moves a closing
@@ -44,7 +44,7 @@ func TestWebhooks(t *testing.T) {
 	wsH := workspace.New(pool, dbtest.Auth, nil, nil)
 	issue.New(pool, dbtest.Auth, wsH.Member).Register(mux)
 	key, _ := Key("", "test jwt secret", false)
-	New(pool, key, func(context.Context) (string, error) { return "https://tether.test", nil }, dbtest.Auth, wsH.Member).Register(mux)
+	New(pool, key, func(context.Context) (string, error) { return "https://taskwell.test", nil }, dbtest.Auth, wsH.Member).Register(mux)
 	expect := func(step string, want int, user, method, path string, form url.Values, out any) {
 		t.Helper()
 		code, body := dbtest.Do(t, mux, user, method, "/api/workspaces/"+slug+path, form)
@@ -81,7 +81,7 @@ func TestWebhooks(t *testing.T) {
 		Secret      string
 	}
 	expect("connect", 200, ann, "POST", "/integrations/github", nil, &conn)
-	hookURL := strings.TrimPrefix(*conn.Integration.WebhookURL, "https://tether.test")
+	hookURL := strings.TrimPrefix(*conn.Integration.WebhookURL, "https://taskwell.test")
 	expect("bad status", 400, ann, "POST", "/integrations/github/settings", url.Values{"open_status": {"nope"}}, nil)
 	var in Integration
 	expect("settings", 200, ann, "POST", "/integrations/github/settings", url.Values{"open_status": {statusID}}, &in)

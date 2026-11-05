@@ -17,10 +17,10 @@ function WebhooksSettings() {
   const webhooks = Route.useLoaderData()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <h1 className="text-h2">Webhooks</h1>
         <p className="text-body-sm text-secondary">
-          Tether sends a signed POST to your URL when issues and comments change.{' '}
+          Taskwell sends a signed POST to your URL when issues and comments change.{' '}
           <Link to="/docs/api" hash="webhooks" style={{ color: 'var(--link)' }}>
             Read the webhook docs
           </Link>

@@ -62,11 +62,11 @@ func TestEmails(t *testing.T) {
 		ms[i] = message{kind: "assigned", actor: "Demo", identifier: fmt.Sprintf("ENG-%d", i/10), workspace: "Acme", slug: "acme"}
 	}
 	subject, body = digestEmail(ms, "http://app")
-	if subject != "Your Tether digest: 52 updates" || strings.Count(body, "- Demo assigned you") != 50 ||
+	if subject != "Your Taskwell digest: 52 updates" || strings.Count(body, "- Demo assigned you") != 50 ||
 		!strings.Contains(body, "and 2 more") || strings.Count(body, "Acme\n") != 1 || strings.Count(body, "/issue/ENG-") != 5 {
 		t.Errorf("digest: %q\n%s", subject, body)
 	}
-	if subject, _ := digestEmail(ms[:1], "http://app"); subject != "Your Tether digest: 1 update" {
+	if subject, _ := digestEmail(ms[:1], "http://app"); subject != "Your Taskwell digest: 1 update" {
 		t.Errorf("digest of one: %q", subject)
 	}
 }

@@ -2,14 +2,18 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestRecord runs Record against the scratch database (see dbtest): who gets what, and status collapsing.
@@ -25,8 +29,8 @@ func TestRecord(t *testing.T) {
 		return tx.QueryRow(ctx,
 			`with w as (select id from workspaces where created_by = $1),
 			      p as (insert into projects (workspace_id, name, key) select id, 'P', 'REC' from w returning id, workspace_id)
-			 insert into issues (workspace_id, project_id, number, title, status_id)
-			 select p.workspace_id, p.id, 1, 'T', (select id from statuses where workspace_id = p.workspace_id limit 1) from p
+			 insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			 select p.workspace_id, p.id, 1, 'T', (select id from statuses where workspace_id = p.workspace_id limit 1), 'V' from p
 			 returning workspace_id::text, id::text`, ann).Scan(&wsID, &issueID)
 	}); err != nil {
 		t.Fatal(err)
@@ -311,4 +315,58 @@ func TestChatEmail(t *testing.T) {
 	if got := queued(); len(got) != 0 {
 		t.Errorf("chat mention with chat emails off: %v", got)
 	}
+}
+
+// TestInviteNotification: "Not now" on an invite leaves an invite notification from the inviter, never emailed, that
+// says the invite is available until it's cancelled, and still names the invite and its workspace after.
+func TestInviteNotification(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
+	var team, teamSlug, own, ownSlug, inv string
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", "Invite team"); err != nil {
+			return err
+		}
+		if err := workspace.CreateFirst(ctx, tx, bob, "Bob", ""); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx,
+			`with a as (select id, slug from workspaces where created_by = $1), b as (select id, slug from workspaces where created_by = $2),
+			      i as (insert into workspace_invites (workspace_id, email, token_hash, invited_by, expires_at)
+			            select a.id, u.email, 'invite-note', $1, now() + interval '1 day' from a, users u where u.id = $2 returning id)
+			 select a.id::text, a.slug, b.id::text, b.slug, i.id::text from a, b, i`, ann, bob).Scan(&team, &teamSlug, &own, &ownSlug, &inv)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	workspace.New(pool, dbtest.Auth, nil, nil).Register(mux)
+	if code, body := dbtest.Do(t, mux, bob, "POST", "/api/me/invites/"+inv+"/dismiss", url.Values{"workspace": {ownSlug}}); code != 204 {
+		t.Fatalf("dismiss: %d %s", code, body)
+	}
+	m := &model{db: pool}
+	invite := func(want string) {
+		t.Helper()
+		ns, _, err := m.list(ctx, bob, own, "", false)
+		if err != nil || len(ns) != 1 || ns[0].Kind != "invite" {
+			t.Fatalf("inbox %+v %v", ns, err)
+		}
+		if got := string(ns[0].Invite); got != want {
+			t.Errorf("invite %s, want %s", got, want)
+		}
+		if js, _ := json.Marshal(ns[0]); !strings.Contains(string(js), `"issue":null,"chat":null,"project":null`) ||
+			!strings.Contains(string(ns[0].Actor), ann) {
+			t.Errorf("notification %s", js)
+		}
+	}
+	invite(`{"id" : "` + inv + `", "workspace" : "Invite team", "available" : true}`)
+	var emailable bool
+	if err := pool.QueryRow(ctx, `select bool_or(`+wanted+`) from notifications n left join notification_settings s on s.user_id = n.user_id
+		left join issues i on i.id = n.issue_id where n.user_id = $1`, bob).Scan(&emailable); err != nil || emailable {
+		t.Errorf("invite notification emailable: %v %v", emailable, err)
+	}
+	if code, body := dbtest.Do(t, mux, ann, "DELETE", "/api/workspaces/"+teamSlug+"/invites/"+inv, nil); code != 204 {
+		t.Fatalf("cancel: %d %s", code, body)
+	}
+	invite(`{"id" : "` + inv + `", "workspace" : "Invite team", "available" : false}`)
 }

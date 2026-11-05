@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tether tests</title>
+<title>Taskwell tests</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -55,7 +55,7 @@
     from "https://unpkg.com/@modelcontextprotocol/ext-apps@2.0.4/app-with-deps";
 
   const root = document.getElementById("root");
-  const app = new App({ name: "Tether tests", version: "1.0.0" });
+  const app = new App({ name: "Taskwell tests", version: "1.0.0" });
   let args = {};
 
   // el builds an element; strings become text nodes, so tool data never becomes HTML.
@@ -67,7 +67,7 @@
   const show = (...kids) => root.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
   const pill = (status) => el("span", { className: `pill ${status}` }, status.replace("_", " "));
   const list = (items) => el("ol", {}, items.map((s) => el("li", {}, s)));
-  const openButton = (url) => url && el("button", { onclick: () => app.openLink({ url }) }, "Open in Tether");
+  const openButton = (url) => url && el("button", { onclick: () => app.openLink({ url }) }, "Open in Taskwell");
 
   function screenshots(urls) {
     if (!urls?.length) return null;

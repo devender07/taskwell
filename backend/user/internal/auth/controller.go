@@ -10,15 +10,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/devender07/tether/backend/user/internal/mail"
-	"github.com/devender07/tether/backend/user/internal/secret"
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/shared/totp"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 const (
@@ -44,6 +46,11 @@ type Handler struct {
 	secret []byte // JWT_SECRET; nil falls back to system_config's jwt_secret (dev)
 	lim    limits
 	alive  *aliveCache
+
+	// APIURL is the API's public URL, where Google sends the browser back; "" means app_base_url's host serves it.
+	APIURL string
+	// MFAKey seals two-factor secrets (totp.Key).
+	MFAKey []byte
 }
 
 // New takes the access token key (nil in dev, see jwtSecret) and onUserCreated, run inside the transaction that
@@ -60,7 +67,7 @@ func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
 func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	name, email, pw := r.FormValue("name"), r.FormValue("email"), r.FormValue("password")
-	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up joins the inviter's
+	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up leaves it out
 	if errs := fieldErrors("name", checkName(name), "email", web.CheckEmail(email), "password", checkPassword(pw),
 		"workspace_name", checkWorkspaceName(wsName)); errs != nil {
 		web.Fields(w, http.StatusBadRequest, errs)
@@ -89,9 +96,9 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	nonce := secret.NewToken()
-	subject := "Your Tether verification code: " + code
-	body := fmt.Sprintf("Your Tether verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
-		"It expires in %d minutes. If you didn't sign up for Tether, ignore this email.\n", code, minutes)
+	subject := "Your Taskwell verification code: " + code
+	body := fmt.Sprintf("Your Taskwell verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
+		"It expires in %d minutes. If you didn't sign up for Taskwell, ignore this email.\n", code, minutes)
 	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), wsName, secret.Hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
 		// Answer exactly as for a new address, so sign-up can't tell who has an account; tell the owner instead.
@@ -122,7 +129,7 @@ func (h *Handler) signupTakenMail(ctx context.Context) (subject, body string, er
 	}
 	base = strings.TrimRight(base, "/")
 	return "Someone tried to sign up with your email",
-		fmt.Sprintf("Someone tried to create a Tether account with this email, but you already have one.\n\n"+
+		fmt.Sprintf("Someone tried to create a Taskwell account with this email, but you already have one.\n\n"+
 			"Sign in instead:\n\n%s/signin\n\nForgot your password? Reset it here:\n\n%s/forgot-password\n\n"+
 			"If this wasn't you, you can ignore this email. Your account hasn't changed.\n", base, base), nil
 }
@@ -156,11 +163,23 @@ func (h *Handler) signupVerify(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Path: "/api/auth/signup", MaxAge: -1, HttpOnly: true})
-	if err := h.startSession(ctx, w, u.ID, true); errors.Is(err, errSuspended) {
+	return h.afterFirstStep(w, r, *u, true)
+}
+
+// afterFirstStep finishes a first-step sign-in (password, email code, sign-up): it answers the user, or
+// {"mfa_required": true} when two-factor is on and POST /api/auth/mfa comes next.
+func (h *Handler) afterFirstStep(w http.ResponseWriter, r *http.Request, u User, remember bool) error {
+	mfa, err := h.begin(r.Context(), w, u.ID, remember)
+	if errors.Is(err, errSuspended) {
 		web.Err(w, http.StatusForbidden, errSuspendedMsg)
 		return nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return err
+	}
+	if mfa {
+		web.JSON(w, http.StatusOK, map[string]bool{"mfa_required": true})
+		return nil
 	}
 	web.JSON(w, http.StatusOK, u)
 	return nil
@@ -204,14 +223,7 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		web.Err(w, http.StatusUnauthorized, errBadLogin)
 		return nil
 	}
-	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
-		web.Err(w, http.StatusForbidden, errSuspendedMsg)
-		return nil
-	} else if err != nil {
-		return err
-	}
-	web.JSON(w, http.StatusOK, u)
-	return nil
+	return h.afterFirstStep(w, r, u, remember(r))
 }
 
 func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
@@ -228,8 +240,8 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return h.sendSecret(w, r, web.NormEmail(email), purposeCode, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
-		return "Your Tether sign-in code: " + code,
-			fmt.Sprintf("Your Tether sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), nil
+		return "Your Taskwell sign-in code: " + code,
+			fmt.Sprintf("Your Taskwell sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), nil
 	})
 }
 
@@ -249,8 +261,8 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 			return "", "", err
 		}
 		link := strings.TrimRight(base, "/") + "/reset-password?token=" + url.QueryEscape(token)
-		return "Reset your Tether password",
-			fmt.Sprintf("Reset your Tether password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), nil
+		return "Reset your Taskwell password",
+			fmt.Sprintf("Reset your Taskwell password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), nil
 	})
 }
 
@@ -312,14 +324,7 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 		web.Err(w, http.StatusUnauthorized, errBadCode)
 		return nil
 	}
-	if err := h.startSession(r.Context(), w, u.ID, remember(r)); errors.Is(err, errSuspended) {
-		web.Err(w, http.StatusForbidden, errSuspendedMsg)
-		return nil
-	} else if err != nil {
-		return err
-	}
-	web.JSON(w, http.StatusOK, u)
-	return nil
+	return h.afterFirstStep(w, r, *u, remember(r))
 }
 
 func (h *Handler) reset(w http.ResponseWriter, r *http.Request) error {
@@ -373,8 +378,8 @@ func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return h.sendSecret(w, r, p.Email, purposePasswordSet, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
-		return "Your Tether code to add a password: " + code,
-			fmt.Sprintf("Your code to add a password to your Tether account is %s\n\nIt expires in %d minutes. "+
+		return "Your Taskwell code to add a password: " + code,
+			fmt.Sprintf("Your code to add a password to your Taskwell account is %s\n\nIt expires in %d minutes. "+
 				"If you didn't ask for it, someone may be signed in to your account: sign out of every device by "+
 				"resetting your password.\n", code, minutes), nil
 	})
@@ -501,14 +506,14 @@ func (h *Handler) emailCode(w http.ResponseWriter, r *http.Request) error {
 	if err := h.model.startEmailChange(ctx, p.ID, email, secret.Hash(oldCode), secret.Hash(newCodeV), minutes); err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Tether code to change your email: "+oldCode,
-		fmt.Sprintf("Someone asked to change your Tether account's email to %s. Your code to allow it is %s\n\n"+
+	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Taskwell code to change your email: "+oldCode,
+		fmt.Sprintf("Someone asked to change your Taskwell account's email to %s. Your code to allow it is %s\n\n"+
 			"It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your account, "+
 			"so reset your password to sign them out.\n", email, oldCode, minutes)); err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Tether code to confirm this email: "+newCodeV,
-		fmt.Sprintf("Your code to make this your Tether account's email is %s\n\nIt expires in %d minutes. "+
+	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Taskwell code to confirm this email: "+newCodeV,
+		fmt.Sprintf("Your code to make this your Taskwell account's email is %s\n\nIt expires in %d minutes. "+
 			"If you didn't ask for it, you can ignore this email.\n", newCodeV, minutes)); err != nil {
 		return err
 	}
@@ -559,8 +564,8 @@ func (h *Handler) changeEmail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, from, "Your Tether email was changed",
-		fmt.Sprintf("Your Tether account's email was just changed from %s to %s, and other devices were signed out.\n\n"+
+	if err := h.mail.Enqueue(ctx, h.model.db, from, "Your Taskwell email was changed",
+		fmt.Sprintf("Your Taskwell account's email was just changed from %s to %s, and other devices were signed out.\n\n"+
 			"If this wasn't you, contact your workspace admin right away.\n\n%s\n", from, to, strings.TrimRight(base, "/"))); err != nil {
 		return err
 	}
@@ -593,9 +598,9 @@ func (h *Handler) passwordChangedMail(ctx context.Context, email string, added b
 	if err != nil {
 		return err
 	}
-	subject, what := "Your Tether password was changed", "The password for your Tether account was just changed."
+	subject, what := "Your Taskwell password was changed", "The password for your Taskwell account was just changed."
 	if added {
-		subject, what = "A password was added to your Tether account", "A password was just added to your Tether account."
+		subject, what = "A password was added to your Taskwell account", "A password was just added to your Taskwell account."
 	}
 	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
 		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",
@@ -729,28 +734,39 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.startSession(ctx, w, u.ID, parts[2] == "1"); errors.Is(err, errSuspended) {
+	mfa, err := h.begin(ctx, w, u.ID, parts[2] == "1")
+	if errors.Is(err, errSuspended) {
 		http.Redirect(w, r, base+"/signin?error=suspended", http.StatusFound)
 		return nil
 	} else if err != nil {
 		return err
 	}
-	next, _ := base64.RawURLEncoding.DecodeString(parts[3])
-	http.Redirect(w, r, base+safeRedirect(string(next)), http.StatusFound)
+	b, _ := base64.RawURLEncoding.DecodeString(parts[3])
+	next := safeRedirect(string(b))
+	if mfa {
+		to := base + "/signin/2fa"
+		if next != "/signin" {
+			to += "?redirect=" + url.QueryEscape(next)
+		}
+		http.Redirect(w, r, to, http.StatusFound)
+		return nil
+	}
+	http.Redirect(w, r, base+next, http.StatusFound)
 	return nil
 }
 
-// safeRedirect returns v when it is a path on this site ("/invite?token=…"), else "/". It refuses "//host" and
-// "/\host" (browsers treat both as another host) and control characters. Mirrors the frontend's safeRedirect.
+// safeRedirect returns v when it is a path on this site ("/invite?token=…"), else "/signin", which sends a signed-in
+// user on to their workspace. It refuses "//host" and "/\host" (browsers treat both as another host) and control
+// characters. Mirrors the frontend's safeRedirect.
 func safeRedirect(v string) string {
 	if len(v) > 2048 || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") ||
 		strings.ContainsFunc(v, func(c rune) bool { return c == '\\' || c < 0x20 || c == 0x7f }) {
-		return "/"
+		return "/signin"
 	}
 	return v
 }
 
-// googleConfig reads the OAuth client from system_config; the redirect URI is derived from app_base_url.
+// googleConfig reads the OAuth client from system_config; the redirect URI is on APIURL (or app_base_url).
 func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error) {
 	base, err := h.cfg.Get(ctx, "app_base_url")
 	if err != nil {
@@ -765,7 +781,11 @@ func (h *Handler) googleConfig(ctx context.Context) (googleConfig, string, error
 	if err != nil {
 		return googleConfig{}, "", err
 	}
-	return googleConfig{clientID: id, clientSecret: clientSecret, redirectURI: base + "/api/auth/google/callback"}, base, nil
+	api := base
+	if h.APIURL != "" {
+		api = strings.TrimRight(h.APIURL, "/")
+	}
+	return googleConfig{clientID: id, clientSecret: clientSecret, redirectURI: api + "/api/auth/google/callback"}, base, nil
 }
 
 // updateMe changes the signed-in user's name; the email changes through emailCode and changeEmail.
@@ -822,7 +842,7 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := apiTokenPrefix + secret.NewToken()
 	t, err := h.model.insertAPIToken(r.Context(), userID, strings.TrimSpace(name), secret.Hash(tok))
-	if errors.Is(err, errTooManyTokens) {
+	if errors.Is(err, ErrTooManyTokens) {
 		web.Err(w, http.StatusConflict, fmt.Sprintf("You have %d tokens. Revoke one first.", maxAPITokens))
 		return nil
 	}
@@ -872,3 +892,323 @@ func (h *Handler) signedOut(w http.ResponseWriter, r *http.Request) error {
 }
 
 // --- responses ---
+
+// --- two-factor ---
+
+const (
+	errMFACode     = "That code didn't match. Try the newest one."
+	errMFARecovery = "That recovery code didn't match."
+	errMFATimedOut = "Your sign-in timed out. Start again."
+	errMFAIsOn     = "Two-factor is already on."
+	errMFAIsOff    = "Two-factor is off."
+	errMFANoSetup  = "Start setting up two-factor again."
+	mfaIssuer      = "Taskwell"
+)
+
+// mfaVerify finishes a sign-in waiting for its second step (the taskwell_mfa cookie) with a code from the
+// authenticator app or a recovery code, and starts the session. mfaMaxFails wrong codes end the pending sign-in; the
+// user's wrong codes across sign-ins count toward the usual lockout too.
+func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	var c *mfaClaims
+	if ck, err := r.Cookie(mfaCookie); err == nil {
+		key, err := h.jwtSecret(ctx)
+		if err != nil {
+			return err
+		}
+		c, _ = parseMFA(key, ck.Value) // expired or forged: timed out
+	}
+	timedOut := func() error {
+		if err := h.setMFACookie(ctx, w, "", -1); err != nil {
+			return err
+		}
+		web.Err(w, http.StatusUnauthorized, errMFATimedOut)
+		return nil
+	}
+	if c == nil {
+		return timedOut()
+	}
+	code, recovery, field, msg, ok := mfaInput(r)
+	if !ok {
+		web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
+		return nil
+	}
+	if n, err := h.model.failures(ctx, "mfa:"+c.ID); err != nil {
+		return err
+	} else if n >= mfaMaxFails {
+		return timedOut()
+	}
+	if locked, err := h.locked(w, r, "mfa-user:"+c.Subject); err != nil || locked {
+		return err
+	}
+	res, err := h.model.mfa(ctx, h.MFAKey, c.Subject, code, recovery, nil)
+	if err != nil && !errors.Is(err, errMFAOff) {
+		return err
+	}
+	if !res.ok {
+		for _, k := range []string{"mfa:" + c.ID, "mfa-user:" + c.Subject} {
+			if err := h.model.fail(ctx, k); err != nil {
+				return err
+			}
+		}
+		if n, err := h.model.failures(ctx, "mfa:"+c.ID); err != nil {
+			return err
+		} else if n >= mfaMaxFails {
+			return timedOut()
+		}
+		web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
+		return nil
+	}
+	if err := h.setMFACookie(ctx, w, "", -1); err != nil {
+		return err
+	}
+	p, err := h.model.profile(ctx, c.Subject)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return timedOut()
+	}
+	if err := h.startSession(ctx, w, p.ID, c.Remember); errors.Is(err, errSuspended) {
+		web.Err(w, http.StatusForbidden, errSuspendedMsg)
+		return nil
+	} else if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, p.User)
+	return nil
+}
+
+// mfaInput reads code (from the app) or else recovery_code. When neither is usable ok is false and field and msg say
+// what to fix; otherwise they are the message a wrong one gets.
+func mfaInput(r *http.Request) (code, recovery, field, msg string, ok bool) {
+	code, recovery = strings.TrimSpace(r.FormValue("code")), strings.TrimSpace(r.FormValue("recovery_code"))
+	switch {
+	case code != "":
+		if m := checkCode(code); m != "" {
+			return "", "", "code", m, false
+		}
+		return code, "", "code", errMFACode, true
+	case recovery != "":
+		if len(recovery) > 64 {
+			return "", "", "recovery_code", errMFARecovery, false
+		}
+		return "", recovery, "recovery_code", errMFARecovery, true
+	}
+	return "", "", "code", checkCode(""), false
+}
+
+// mfaStatus answers whether two-factor is on and how many recovery codes are left.
+func (h *Handler) mfaStatus(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	on, left, err := h.model.mfaStatus(r.Context(), p.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"enabled": on, "recovery_left": left})
+	return nil
+}
+
+// mfaSetup starts (or restarts) turning two-factor on and answers the new secret. It takes the password, or for an
+// account without one an email_code from passwordCode, so a stolen session alone can't tie the account to a new app.
+func (h *Handler) mfaSetup(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	if on, _, err := h.model.mfaStatus(ctx, p.ID); err != nil {
+		return err
+	} else if on {
+		web.Err(w, http.StatusConflict, errMFAIsOn)
+		return nil
+	}
+	if p.HasPassword {
+		pw := r.FormValue("password")
+		if pw == "" {
+			web.Fields(w, http.StatusBadRequest, map[string]string{"password": "Password is required."})
+			return nil
+		}
+		if locked, err := h.locked(w, r, "pw:"+p.Email); err != nil || locked {
+			return err
+		}
+		old, err := h.model.passwordHash(ctx, p.ID)
+		if err != nil {
+			return err
+		}
+		if old == nil || bcrypt.CompareHashAndPassword([]byte(*old), []byte(pw)) != nil {
+			if err := h.model.fail(ctx, "pw:"+p.Email); err != nil {
+				return err
+			}
+			web.Fields(w, http.StatusBadRequest, map[string]string{"password": "Wrong password."})
+			return nil
+		}
+	} else {
+		code := strings.TrimSpace(r.FormValue("email_code"))
+		if msg := checkCode(code); msg != "" {
+			web.Fields(w, http.StatusBadRequest, map[string]string{"email_code": msg})
+			return nil
+		}
+		if locked, err := h.locked(w, r, "code:"+p.Email); err != nil || locked {
+			return err
+		}
+		if ok, err := h.model.useUserCode(ctx, p.ID, purposePasswordSet, secret.Hash(code)); err != nil {
+			return err
+		} else if !ok {
+			if err := h.model.fail(ctx, "code:"+p.Email); err != nil {
+				return err
+			}
+			web.Fields(w, http.StatusBadRequest, map[string]string{"email_code": errBadCode})
+			return nil
+		}
+	}
+	s := totp.NewSecret()
+	sealed, err := totp.Seal(h.MFAKey, p.ID, s)
+	if err != nil {
+		return err
+	}
+	if err := h.model.startMFA(ctx, p.ID, sealed); errors.Is(err, errMFAOn) {
+		web.Err(w, http.StatusConflict, errMFAIsOn)
+		return nil
+	} else if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]string{"secret": s, "otpauth_url": totp.URL(mfaIssuer, p.Email, s)})
+	return nil
+}
+
+// mfaEnable turns two-factor on with a code from the app just set up, and answers the recovery codes (shown once).
+func (h *Handler) mfaEnable(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	if msg := checkCode(code); msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": msg})
+		return nil
+	}
+	if locked, err := h.locked(w, r, "mfa-user:"+p.ID); err != nil || locked {
+		return err
+	}
+	codes, hashes := totp.NewRecoveryCodes()
+	ok, err := h.model.enableMFA(ctx, h.MFAKey, p.ID, code, hashes, time.Now())
+	switch {
+	case errors.Is(err, errMFAOn):
+		web.Err(w, http.StatusConflict, errMFAIsOn)
+		return nil
+	case errors.Is(err, errMFAOff):
+		web.Err(w, http.StatusConflict, errMFANoSetup)
+		return nil
+	case err != nil:
+		return err
+	case !ok:
+		if err := h.model.fail(ctx, "mfa-user:"+p.ID); err != nil {
+			return err
+		}
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": errMFACode})
+		return nil
+	}
+	if err := h.mfaMail(ctx, p.Email, true); err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string][]string{"recovery_codes": codes})
+	return nil
+}
+
+// mfaDisable turns two-factor off with a code from the app or a recovery code, and signs out the other sessions.
+func (h *Handler) mfaDisable(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	code, recovery, field, msg, ok := mfaInput(r)
+	if !ok {
+		web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
+		return nil
+	}
+	if locked, err := h.locked(w, r, "mfa-user:"+p.ID); err != nil || locked {
+		return err
+	}
+	keep := "" // this sign-in: the refresh cookie doesn't come to /api/me
+	if c, err := h.access(r); err != nil {
+		return err
+	} else if c != nil {
+		keep = c.SID
+	}
+	ok, err = h.model.disableMFA(ctx, h.MFAKey, p.ID, code, recovery, keep)
+	if errors.Is(err, errMFAOff) {
+		web.Err(w, http.StatusConflict, errMFAIsOff)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !ok {
+		if err := h.model.fail(ctx, "mfa-user:"+p.ID); err != nil {
+			return err
+		}
+		web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
+		return nil
+	}
+	if err := h.mfaMail(ctx, p.Email, false); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// mfaRecovery replaces the recovery codes with a new set, given a code from the app.
+func (h *Handler) mfaRecovery(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	if msg := checkCode(code); msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": msg})
+		return nil
+	}
+	if locked, err := h.locked(w, r, "mfa-user:"+p.ID); err != nil || locked {
+		return err
+	}
+	codes, hashes := totp.NewRecoveryCodes()
+	ok, err := h.model.replaceRecovery(ctx, h.MFAKey, p.ID, code, hashes)
+	if errors.Is(err, errMFAOff) {
+		web.Err(w, http.StatusConflict, errMFAIsOff)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !ok {
+		if err := h.model.fail(ctx, "mfa-user:"+p.ID); err != nil {
+			return err
+		}
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": errMFACode})
+		return nil
+	}
+	web.JSON(w, http.StatusOK, map[string][]string{"recovery_codes": codes})
+	return nil
+}
+
+// mfaMail tells the owner two-factor was turned on or off, in case it wasn't them.
+func (h *Handler) mfaMail(ctx context.Context, email string, on bool) error {
+	base, err := h.cfg.Get(ctx, "app_base_url")
+	if err != nil {
+		return err
+	}
+	subject, what := "Two-factor sign-in turned off", "Two-factor sign-in was just turned off for your Taskwell account, and other devices were signed out."
+	if on {
+		subject, what = "Two-factor sign-in turned on", "Two-factor sign-in was just turned on for your Taskwell account. Signing in now also asks for a code from your authenticator app."
+	}
+	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
+		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",
+		what, strings.TrimRight(base, "/")))
+}

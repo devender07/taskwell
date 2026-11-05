@@ -132,9 +132,9 @@ const digestLines = 50
 
 // digestEmail returns the subject and body of one user's digest; ms is ordered by workspace, then issue.
 func digestEmail(ms []message, base string) (subject, body string) {
-	subject = fmt.Sprintf("Your Tether digest: %d updates", len(ms))
+	subject = fmt.Sprintf("Your Taskwell digest: %d updates", len(ms))
 	if len(ms) == 1 {
-		subject = "Your Tether digest: 1 update"
+		subject = "Your Taskwell digest: 1 update"
 	}
 	var b strings.Builder
 	last := message{}

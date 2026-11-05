@@ -1,6 +1,5 @@
-import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { Logo } from '@tether/shared/logo'
+import { Logo } from '@taskwell/shared/logo'
 import { REFERENCE, type Endpoint } from './reference'
 import './docs.css'
 
@@ -27,7 +26,7 @@ const PAYLOAD = `{
 
 const NODE = `import crypto from 'node:crypto'
 
-// body: the raw request body, before JSON.parse. header: X-Tether-Signature.
+// body: the raw request body, before JSON.parse. header: X-Taskwell-Signature.
 export function verify(body, header, secret) {
   const parts = Object.fromEntries(header.split(',').map((p) => p.split('=')))
   const t = Number(parts.t)
@@ -47,7 +46,7 @@ const GO = `import (
 	"time"
 )
 
-// body: the raw request body. header: X-Tether-Signature.
+// body: the raw request body. header: X-Taskwell-Signature.
 func verify(body []byte, header, secret string) bool {
 	var t, sig string
 	for _, part := range strings.Split(header, ",") {
@@ -130,9 +129,9 @@ export function ApiDocs() {
   return (
     <div className="docs-layout">
       <header className="docs-header flex items-center gap-4 px-6">
-        <Link to="/" aria-label="Tether home" className="flex">
+        <a href="/" aria-label="Taskwell home" className="flex">
           <Logo size={24} />
-        </Link>
+        </a>
         <span className="text-secondary text-body-sm">API reference</span>
       </header>
       <nav className="docs-nav" aria-label="On this page">
@@ -144,7 +143,7 @@ export function ApiDocs() {
       </nav>
       <main className="docs-main grid gap-12">
         <header className="grid gap-2">
-          <h1 className="text-h2 m-0">Tether API</h1>
+          <h1 className="text-h2 m-0">Taskwell API</h1>
           <p className="text-body-sm text-secondary m-0">Read and change your workspace from scripts and services, and get events pushed to you with webhooks.</p>
         </header>
 
@@ -208,7 +207,7 @@ export function ApiDocs() {
 
         <Section id="webhooks" title="Webhooks">
           <p className="text-body-sm m-0">
-            Add a webhook in Settings → Webhooks (needs the manage integrations permission). Tether POSTs a JSON event to your HTTPS URL whenever one of its chosen events happens, from the app, the API, AI tools or a linked pull request.
+            Add a webhook in Settings → Webhooks (needs the manage integrations permission). Taskwell POSTs a JSON event to your HTTPS URL whenever one of its chosen events happens, from the app, the API, AI tools or a linked pull request.
           </p>
           <Table
             head={['Event', 'When']}
@@ -242,10 +241,10 @@ export function ApiDocs() {
             head={['Header', 'Value']}
             rows={[
               ['Content-Type', 'application/json'],
-              ['User-Agent', 'Tether-Webhooks/1'],
-              ['X-Tether-Event', 'The event, e.g. issue.updated.'],
-              ['X-Tether-Delivery', 'The delivery id. A redelivery has a new id.'],
-              ['X-Tether-Signature', <code className="docs-mono">{'t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">'}</code>],
+              ['User-Agent', 'Taskwell-Webhooks/1'],
+              ['X-Taskwell-Event', 'The event, e.g. issue.updated.'],
+              ['X-Taskwell-Delivery', 'The delivery id. A redelivery has a new id.'],
+              ['X-Taskwell-Signature', <code className="docs-mono">{'t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">'}</code>],
             ]}
           />
           <h3 className="text-label m-0">Delivery and retries</h3>

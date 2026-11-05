@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { relativeTime } from '@tether/shared/time'
+import { relativeTime } from '@taskwell/shared/time'
 import { formatDate, listQuery, validateListSearch, type UserRow } from '@/api'
 import { Pager, SearchForm } from '@/components/app/list-controls'
 import { SuspendButton } from '@/components/users/suspend-button'

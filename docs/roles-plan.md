@@ -80,7 +80,7 @@ Shapes:
 | `DELETE /api/workspaces/{slug}/members/{userId}` | `members.manage`, or the caller themself (leave) | — | `204` | 403; 404 member not found; 409 last admin |
 | `POST /api/workspaces/{slug}/invites` (changed) | `members.invite` | `email`, `role_id` (optional; default Member) | as before; invite JSON now has `role` | as before, plus 400 `role_id` "Choose a role.", 403 escalation |
 
-Role name validation (Go and `@tether/shared/validate` `roleName`): trimmed, required → `Role name is required.`; ≤ 40 chars → `Role name must be 40 characters or fewer.`
+Role name validation (Go and `@taskwell/shared/validate` `roleName`): trimmed, required → `Role name is required.`; ≤ 40 chars → `Role name must be 40 characters or fewer.`
 
 Everything else from the workspaces and invites plans stays, except their admin checks become permission checks: workspace update → `workspace.edit`, delete → `workspace.delete`, invites (create/resend/cancel and seeing the `invites` list) → `members.invite`. Accepting an invite gives the invite's role (Member if null).
 

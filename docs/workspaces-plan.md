@@ -82,7 +82,7 @@ Routes (all under the signed-in `_app` layout, which already has the navbar):
 | Route | File | Behaviour |
 |---|---|---|
 | `/` | `routes/_app/index.tsx` | `beforeLoad`: `GET /api/workspaces`; none → redirect `/new-workspace`; else redirect `/$workspace` of the first (most recent). No component. |
-| `/new-workspace` | `routes/_app/new-workspace.tsx` | Create form: "Workspace name", "Workspace URL" with a `tether.app/` prefix shown before the input, prefilled by `slugify(name)` until edited. Submit → `POST /api/workspaces` → `router.invalidate()` → navigate to `/$workspace`. Title "Create a workspace"; if the user has none, subtitle explains it's needed to start. |
+| `/new-workspace` | `routes/_app/new-workspace.tsx` | Create form: "Workspace name", "Workspace URL" with a `taskwell.dev/` prefix shown before the input, prefilled by `slugify(name)` until edited. Submit → `POST /api/workspaces` → `router.invalidate()` → navigate to `/$workspace`. Title "Create a workspace"; if the user has none, subtitle explains it's needed to start. |
 | `/$workspace` | `routes/_app/$workspace.tsx` | Layout. `loader`: `GET /api/workspaces/{slug}`; 404 → `throw notFound()`. Exposes the workspace to children. Renders `<Outlet />`. |
 | `/$workspace/` | `routes/_app/$workspace/index.tsx` | Home: "Hi {user name}" and the workspace name. Placeholder for projects. |
 | `/$workspace/settings` | `routes/_app/$workspace/settings.tsx` | "Workspace settings" → general: name + URL form. Admins can save (`POST /api/workspaces/{slug}`), then navigate to the new slug if it changed and show "Saved."; members see the values read-only with a note that only admins can change them. |

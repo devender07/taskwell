@@ -85,7 +85,7 @@ export const REFERENCE: Group[] = [
         returns: '200 project',
       },
       { method: 'POST', path: `${project}/archive`, about: 'Archive it. POST …/unarchive restores it.', returns: '200 project' },
-      { method: 'GET', path: `${project}/people`, about: 'Everyone who can see the project: who you can assign and mention.', returns: '200 [person]' },
+      { method: 'GET', path: `${project}/people`, about: 'Everyone who can see the project: who you can assign and mention. q matches name or email; limit (1-100) caps the list.', returns: '200 [person]' },
     ],
   },
   {

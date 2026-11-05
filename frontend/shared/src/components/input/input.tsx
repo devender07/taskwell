@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, type ComponentProps } from 'react'
 import { useFieldError } from './field-error'
 import './input.css'
 
-// prefix: fixed text shown inside the field before the value, e.g. "tether.app/".
+// prefix: fixed text shown inside the field before the value, e.g. "taskwell.dev/".
 // onDebouncedChange: called with the value once typing pauses for `debounce` ms (default 300), e.g. for a search.
 type InputProps = Omit<ComponentProps<'input'>, 'prefix'> & {
   label?: string

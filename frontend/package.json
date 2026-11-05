@@ -1,5 +1,5 @@
 {
-  "name": "tether-frontend",
+  "name": "taskwell-frontend",
   "private": true,
   "workspaces": [
     "shared",

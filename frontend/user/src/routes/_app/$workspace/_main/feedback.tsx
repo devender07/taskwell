@@ -1,7 +1,7 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { Tabs } from '@tether/shared/tabs'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { Tabs } from '@taskwell/shared/tabs'
 import { feedbackListPath, type FeedbackPage, type FeedbackState } from '@/api'
 import { loaderApi } from '@/realtime'
 import { AddFeedbackDialog, FeedbackList } from '@/components/feedback/feedback-list'
@@ -34,7 +34,7 @@ function FeedbackPageView() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start', minWidth: 0 }}>
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="page-top flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-h2">Feedback</h1>
         <Button onClick={() => navigate({ search: (prev) => ({ ...prev, add: true }), resetScroll: false })}>Add feedback</Button>
       </header>

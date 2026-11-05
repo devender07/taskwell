@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 )
 
 // TestRoleAndMemberRules runs the roles and members endpoints against the scratch database (see dbtest).

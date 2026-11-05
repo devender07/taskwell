@@ -3,10 +3,10 @@ package auth
 import (
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/shared/cors"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // CheckOrigin rejects cross-site writes to /api: a request other than GET, HEAD or OPTIONS passes only when the
@@ -45,16 +45,16 @@ func sameOrigin(r *http.Request, base string) bool {
 		return true
 	}
 	if origin != "" {
-		return origin == originOf(base)
+		return origin == cors.Origin(base)
 	}
 	return site == ""
 }
 
-// originOf is the URL's scheme://host[:port], as browsers send it in Origin.
-func originOf(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+// AppOrigin is app_base_url's origin, the web app's: it may call the API from its own subdomain. "" when unreadable.
+func (h *Handler) AppOrigin(r *http.Request) string {
+	base, err := h.cfg.Get(r.Context(), "app_base_url")
+	if err != nil {
 		return ""
 	}
-	return u.Scheme + "://" + u.Host
+	return cors.Origin(base)
 }

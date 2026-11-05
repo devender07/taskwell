@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/react'
+import { API_URL, apiUrl } from '../../api-url/api-url.ts'
 
 export type Doc = JSONContent
 
@@ -23,11 +24,29 @@ export function measure(doc: Doc): { length: number; empty: boolean } {
 // Uploaded files are the only images and the only relative links a document may hold.
 export const FILE_URL = /^\/api\/files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[^/?#]+$/i
 
-// An image's src as rendered: dropped unless it is an uploaded file, whether the doc came from JSON, a paste or Yjs.
-export const imageSrc = (src: unknown) => (typeof src === 'string' && FILE_URL.test(src) ? src : null)
+// An image's src as rendered, on the API's host: dropped unless it is an uploaded file, whether the doc came from
+// JSON, a paste or Yjs.
+export const imageSrc = (src: unknown) => (typeof src === 'string' && FILE_URL.test(src) ? apiUrl(src) : null)
+
+// The stored path of a rendered file URL, so copying an image within the editor keeps it.
+export const filePath = (url: string) => (API_URL && url.startsWith(API_URL + '/') ? url.slice(API_URL.length) : url)
 
 const SAFE_HREF = /^(https?:\/\/|mailto:)/i
 
 // Links may point at the web, email or an uploaded file; anything else (javascript:, data:, relative paths) is not a link.
 export const isAllowedHref = (url: string) => SAFE_HREF.test(url) || FILE_URL.test(url)
-export const linkHref = (href: unknown) => (typeof href === 'string' && isAllowedHref(href) ? href : undefined)
+export const linkHref = (href: unknown) => (typeof href === 'string' && isAllowedHref(href) ? apiUrl(href) : undefined)
+
+// The doc with its nth checklist item (in document order, outer before nested) checked or unchecked.
+export function toggleTask(doc: Doc, n: number): Doc {
+  let i = 0
+  const walk = (node: Doc): Doc => {
+    const hit = node.type === 'taskItem' && i++ === n
+    return {
+      ...node,
+      ...(hit && { attrs: { ...node.attrs, checked: node.attrs?.checked !== true } }),
+      ...(node.content && { content: node.content.map(walk) }),
+    }
+  }
+  return walk(doc)
+}

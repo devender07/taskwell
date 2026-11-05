@@ -1,7 +1,7 @@
 import { useRouter } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Button } from '@taskwell/shared/button'
 import { api, bumpAvatar, toFormErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 

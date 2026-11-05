@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { ApiError, api } from '@/api'
 import { AuthCard, FormError } from '@/components/auth/auth-card'
 import { PublicFeedbackForm } from '@/components/feedback/public-form'
@@ -18,7 +18,7 @@ export const Route = createFileRoute('/f/$token')({
 
 function Unavailable() {
   return (
-    <AuthCard title="Feedback form unavailable" subtitle="Ask whoever shared it for a new link." footer={<Link to="/" className="auth-link">Go to Tether</Link>}>
+    <AuthCard title="Feedback form unavailable" subtitle="Ask whoever shared it for a new link." footer={<a href="/" className="auth-link">Go to Taskwell</a>}>
       <FormError>This feedback form isn't available.</FormError>
     </AuthCard>
   )

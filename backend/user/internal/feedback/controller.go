@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/tether/backend/user/internal/issue"
-	"github.com/devender07/tether/backend/user/internal/web"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -41,13 +41,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) er
 		return err
 	}
 	q := r.URL.Query()
-	var before *string
-	if b := q.Get("before"); b != "" {
-		if !web.IsUUID(b) {
-			web.Err(w, http.StatusBadRequest, "Invalid cursor.")
-			return nil
-		}
-		before = &b
+	before, ok := cursor(w, r)
+	if !ok {
+		return nil
 	}
 	items, more, err := h.model.list(r.Context(), ws.ID, userID, q.Get("state"), strings.TrimSpace(q.Get("q")), before)
 	if err != nil {
@@ -163,12 +159,29 @@ func (h *Handler) issueFeedback(w http.ResponseWriter, r *http.Request, userID s
 		web.Err(w, http.StatusNotFound, errNoIssue)
 		return nil
 	}
-	fs, err := h.model.forIssue(r.Context(), ws.ID, userID, ref.id)
+	before, ok := cursor(w, r)
+	if !ok {
+		return nil
+	}
+	fs, more, total, err := h.model.forIssue(r.Context(), ws.ID, userID, ref.id, before)
 	if err != nil {
 		return err
 	}
-	web.JSON(w, http.StatusOK, fs)
+	web.JSON(w, http.StatusOK, map[string]any{"items": fs, "has_more": more, "total": total})
 	return nil
+}
+
+// cursor reads ?before= (a feedback id), writing a 400 and returning ok=false when it isn't one.
+func cursor(w http.ResponseWriter, r *http.Request) (*string, bool) {
+	b := r.URL.Query().Get("before")
+	if b == "" {
+		return nil, true
+	}
+	if !web.IsUUID(b) {
+		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
+		return nil, false
+	}
+	return &b, true
 }
 
 func (h *Handler) form(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -276,6 +289,8 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm st
 		return nil, false, err
 	case ws == nil:
 		web.Err(w, http.StatusNotFound, errNoWorkspace)
+		return nil, false, nil
+	case workspace.DenyGuest(w, ws):
 		return nil, false, nil
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
 		web.Err(w, http.StatusForbidden, errForbidden)

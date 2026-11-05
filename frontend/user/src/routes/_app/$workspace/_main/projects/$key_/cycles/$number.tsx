@@ -1,26 +1,27 @@
 import { createFileRoute, notFound, redirect, useLoaderData, useRouter } from '@tanstack/react-router'
-import { BackLink } from '@tether/shared/back-link'
+import { BackLink } from '@taskwell/shared/back-link'
 import { startTransition, useActionState, useState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { IconButton } from '@tether/shared/icon-button'
-import { Popover } from '@tether/shared/popover'
-import { SmartAutocomplete } from '@tether/shared/smart-autocomplete'
-import { MoreIcon } from '@tether/shared/icons'
-import { ApiError, can, cyclesPath, projectPeoplePath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Member, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { Button } from '@taskwell/shared/button'
+import { Dialog } from '@taskwell/shared/dialog'
+import { IconButton } from '@taskwell/shared/icon-button'
+import { Popover } from '@taskwell/shared/popover'
+import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
+import { MoreIcon } from '@taskwell/shared/icons'
+import { ApiError, can, cyclesPath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
+import { peopleSearch } from '@/components/workspace/member-pages'
 import { FormError } from '@/components/auth/auth-card'
 import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
 import { CreateIssueForm } from '@/components/issues/issue-form'
 import { IssueView } from '@/components/issues/issue-view'
-import { issuePageQuery, validateViewSearch, type IssuePage } from '@/components/issues/view-search'
+import { defaultSort, issuePageQuery, validateViewSearch, type IssuePage } from '@/components/issues/view-search'
 import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/$number')({
   validateSearch: validateViewSearch,
-  loaderDeps: ({ search }) => ({ query: issuePageQuery(search) }),
+  loaderDeps: ({ search }) => ({ search }),
   loader: async (ctx) => {
     const { params } = ctx
     if (!/^\d+$/.test(params.number)) throw notFound()
@@ -29,15 +30,15 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
     const list = cyclesPath(params.workspace, params.key)
     const source = `${list}/${params.number}/issues`
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
-    trackPath(ctx, `${path}/members`)
-    const [project, { cycle, issues }, page, cycles, statuses, labels, members] = await Promise.all([
-      loaderApi<Project>(ctx, projectPath),
+    const projectReq = loaderApi<Project>(ctx, projectPath)
+    const sort = ctx.deps.search.sort ?? projectReq.then(defaultSort)
+    const [project, { cycle, issues }, page, cycles, statuses, labels] = await Promise.all([
+      projectReq,
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
-      loaderApi<IssuePage>(ctx, `${source}?${ctx.deps.query}`),
+      Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
-      loaderApi<Member[]>(ctx, projectPeoplePath(params.workspace, params.key)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -46,18 +47,18 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
       throw redirect({
         to: '/$workspace/projects/$key/cycles/$number',
         params: { workspace: params.workspace, key: project.key, number: params.number },
-        search: (prev) => prev,
+        search: true,
         replace: true,
       })
     }
-    return { project, cycle, issues, page, source, cycles, statuses, labels, members }
+    return { project, cycle, issues, page, source, cycles, statuses, labels }
   },
   component: CyclePage,
 })
 
 function CyclePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, cycle, issues, page, source, cycles, statuses, labels, members } = Route.useLoaderData()
+  const { project, cycle, issues, page, source, cycles, statuses, labels } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [dialog, setDialog] = useState<'edit' | 'delete' | 'issue' | null>(null)
@@ -69,7 +70,7 @@ function CyclePage() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <BackLink to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }}>
           {project.name} cycles
         </BackLink>
@@ -117,11 +118,11 @@ function CyclePage() {
           <p className="text-body-sm text-secondary">No issues in this cycle.</p>
         </div>
       ) : (
-        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} members={members} userId={user.id} search={search} />
+        <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} defaultSort={defaultSort(project)} manual />
       )}
       {create ? (
         <Dialog open={dialog === 'issue'} onClose={close} title="New issue" wide>
-          <CreateIssueForm workspace={workspace} project={project} cycle={cycle} statuses={statuses} labels={labels} members={members} />
+          <CreateIssueForm workspace={workspace} project={project} cycle={cycle} statuses={statuses} labels={labels} people={peopleSearch(workspace.slug, project.key)} />
         </Dialog>
       ) : null}
       {manage ? (

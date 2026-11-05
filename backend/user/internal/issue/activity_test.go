@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/tether/backend/user/internal/dbtest"
-	"github.com/devender07/tether/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 // TestActivity pages the merged feed of events and comments with tied timestamps, and checks that description
@@ -33,8 +33,8 @@ func TestActivity(t *testing.T) {
 			      select id, n, k, a from w, (values ('Engineering', 'ENG', null::timestamptz), ('Old', 'OLD', now())) v(n, k, a)
 			      returning id, key),
 			s as (select id from statuses where workspace_id = (select id from w) order by position limit 1),
-			i as (insert into issues (workspace_id, project_id, number, title, status_id)
-			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s) from p returning id, title)
+			i as (insert into issues (workspace_id, project_id, number, title, status_id, rank)
+			      select (select id from w), p.id, 1, p.key || ' issue', (select id from s), 'V' from p returning id, title)
 			select (select id::text from w), (select slug from w),
 			       (select id::text from i where title = 'ENG issue'), (select id::text from i where title = 'OLD issue')`, ann).
 			Scan(&wsID, &slug, &live, &archived)
@@ -56,6 +56,8 @@ func TestActivity(t *testing.T) {
 		       now() - interval '1 day' + (n / 5) * interval '1 second' from generate_series(1, 25) n`, live, ann)
 	exec(`insert into issue_events (issue_id, actor_id, kind) values ($1, $3, 'description'), ($2, $3, 'title')`, live, archived, ann)
 	exec(`insert into comments (issue_id, author_id, body) values ($1, $2, '{}')`, archived, ann)
+	exec(`insert into project_updates (project_id, author_id, health, body, created_at)
+		select project_id, $2, 'at_risk', '{}', now() - interval '2 days' from issues where id in ($1, $3)`, live, ann, archived)
 
 	mux := http.NewServeMux()
 	New(pool, dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, nil).Member).Register(mux)
@@ -64,7 +66,7 @@ func TestActivity(t *testing.T) {
 		return dbtest.Do(t, mux, user, "GET", "/api/workspaces/"+slug+"/activity"+query, nil)
 	}
 	seen := map[string]bool{}
-	comments := 0
+	comments, updates := 0, 0
 	before := ""
 	var last time.Time
 	for pages := 0; ; pages++ {
@@ -98,6 +100,12 @@ func TestActivity(t *testing.T) {
 			}
 			seen[a.ID], last = true, a.CreatedAt
 			switch {
+			case a.Type == "project_update":
+				if a.Project == nil || a.Project.Key != "ENG" || a.Health != "at_risk" || a.Actor == nil || a.Issue != nil {
+					t.Errorf("project update %+v", a)
+				}
+				updates++
+				continue
 			case a.Type == "comment" && (a.Excerpt == nil || *a.Excerpt != "hello"):
 				t.Errorf("comment excerpt %v", a.Excerpt)
 			case a.Type == "comment":
@@ -118,8 +126,8 @@ func TestActivity(t *testing.T) {
 		}
 		before = p.Items[len(p.Items)-1].CreatedAt.Format(time.RFC3339Nano)
 	}
-	if len(seen) != 95 || comments != 25 {
-		t.Errorf("paged %d items (%d comments), want 95 (25)", len(seen), comments)
+	if len(seen) != 96 || comments != 25 || updates != 1 {
+		t.Errorf("paged %d items (%d comments, %d updates), want 96 (25, 1)", len(seen), comments, updates)
 	}
 	if code, _ := get(ann, "?before=yesterday"); code != 400 {
 		t.Errorf("bad before: %d", code)

@@ -1,26 +1,58 @@
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useActionState, useState } from 'react'
-import { Avatar } from '@tether/shared/avatar'
-import { Button } from '@tether/shared/button'
-import { Dialog } from '@tether/shared/dialog'
-import { Logo } from '@tether/shared/logo'
-import { Popover } from '@tether/shared/popover'
-import { CheckIcon, ChevronDownIcon } from '@tether/shared/icons'
+import { Link, useMatch, useNavigate, useParams } from '@tanstack/react-router'
+import { createContext, use, useActionState, useState, type ReactNode } from 'react'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Logo } from '@taskwell/shared/logo'
+import { Popover } from '@taskwell/shared/popover'
+import { CheckIcon, ChevronDownIcon, MenuIcon, SearchIcon, XIcon } from '@taskwell/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
+import { JoinInviteButton } from '@/components/invite/invite-actions'
+import { useMyInvites } from '@/components/invite/invite-prompt'
 import { NotificationsBell } from './notifications-bell'
+import { isApple, openWorkspacePalette, paletteKey } from './shortcuts'
 import './navbar.css'
 
+// Whether the app sidebar is open as the mobile menu; the navbar's button toggles it.
+const MenuContext = createContext<[boolean, (open: boolean) => void]>([false, () => {}])
+export const useMenu = () => use(MenuContext)
+export function MenuProvider({ children }: { children: ReactNode }) {
+  return <MenuContext value={useState(false)}>{children}</MenuContext>
+}
+
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
+  const current = useParams({ strict: false }).workspace
+  const inWorkspace = !!current
+  const home = current ?? workspaces[0]?.slug
+  const hasSidebar = useMatch({ from: '/_app/$workspace/_main', shouldThrow: false })
+  const [menuOpen, setMenuOpen] = useMenu()
   return (
     <header className="navbar sticky top-0 z-sticky flex items-center justify-between px-4">
       <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
-        <Link to="/" aria-label="Tether home" className="navbar-home">
+        {hasSidebar ? (
+          <button
+            type="button"
+            className="navbar-menu"
+            aria-controls="app-sidebar"
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? <XIcon size={20} /> : <MenuIcon size={20} />}
+          </button>
+        ) : null}
+        <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Taskwell home" className="navbar-home">
           <Logo size={24} />
         </Link>
-        <WorkspaceSwitcher workspaces={workspaces} />
       </div>
       <div className="flex items-center gap-2">
+        {inWorkspace ? (
+          <button type="button" className="navbar-search" aria-label="Search issues and projects" aria-keyshortcuts={isApple ? 'Meta+K' : 'Control+K'} onClick={openWorkspacePalette}>
+            <SearchIcon size={16} />
+            <span className="navbar-search-label">Search issues and projects</span>
+            <kbd className="kbd">{paletteKey}</kbd>
+          </button>
+        ) : null}
         <NotificationsBell />
         <Popover
           aria-label="Account"
@@ -31,7 +63,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
             </button>
           )}
         >
-          <AccountMenu user={user} />
+          {(close) => <AccountMenu user={user} onNavigate={close} />}
         </Popover>
       </div>
     </header>
@@ -39,10 +71,11 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
 }
 
 // Only inside /$workspace routes; an unknown slug (not found) shows no switcher either.
-function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
+export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Workspace[]; canCreate: boolean }) {
   const slug = useParams({ strict: false }).workspace
   const current = workspaces.find((w) => w.slug === slug)
   const [creating, setCreating] = useState(false)
+  const invites = useMyInvites()
   if (!current) return null
   const closeDialog = () => setCreating(false)
 
@@ -52,10 +85,14 @@ function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
         aria-label="Workspaces"
         placement="bottom-start"
         trigger={(props) => (
-          <Button variant="ghost" aria-label={`Workspace: ${current.name}`} style={{ minWidth: 0, color: 'var(--text)', fontWeight: 510 }} {...props}>
-            <span className="ellipsis" style={{ maxWidth: 200 }}>{current.name}</span>
-            <ChevronDownIcon size={14} strokeWidth={2} />
-          </Button>
+          <button type="button" className="workspace-switcher" aria-label={`Workspace: ${current.name}`} {...props}>
+            <span className="text-caption text-secondary">Workspace</span>
+            <span className="flex items-center gap-2">
+              <span className="ellipsis font-510 flex-grow" style={{ marginLeft: 8, fontSize: 12 }}>{current.name}</span>
+              {invites.length ? <span className="text-caption text-accent flex-noshrink">{invites.length === 1 ? '1 invite' : `${invites.length} invites`}</span> : null}
+              <ChevronDownIcon size={14} strokeWidth={2} className="flex-noshrink text-secondary" />
+            </span>
+          </button>
         )}
       >
         {(close) => (
@@ -72,16 +109,36 @@ function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
                 onClick={close}
               >
                 <span className="ellipsis">{w.name}</span>
+                {w.guest ? <span className="text-caption text-secondary flex-noshrink" style={{ marginLeft: 'auto' }}>Guest</span> : null}
                 {w.id === current.id ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
               </Link>
             ))}
+            {invites.length ? (
+              <>
+                <hr className="popover-divider" />
+                <p className="popover-title">Invites</p>
+                {invites.map((i) => (
+                  <div key={i.id} className="popover-item justify-between gap-2">
+                    <span className="grid" style={{ minWidth: 0 }}>
+                      <span className="ellipsis">{i.workspace.name}</span>
+                      {i.invited_by ? <span className="text-caption text-secondary ellipsis">From {i.invited_by}</span> : null}
+                    </span>
+                    <JoinInviteButton id={i.id} onJoin={close} />
+                  </div>
+                ))}
+              </>
+            ) : null}
             <hr className="popover-divider" />
-            <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
-              Workspace settings
-            </Link>
-            <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
-              Create workspace
-            </button>
+            {current.guest ? null : (
+              <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
+                Workspace settings
+              </Link>
+            )}
+            {canCreate ? (
+              <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
+                Create workspace
+              </button>
+            ) : null}
           </nav>
         )}
       </Popover>
@@ -92,8 +149,9 @@ function WorkspaceSwitcher({ workspaces }: { workspaces: Workspace[] }) {
   )
 }
 
-function AccountMenu({ user }: { user: User }) {
+function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
   const navigate = useNavigate()
+  const slug = useParams({ strict: false }).workspace
   const [error, signOut, pending] = useActionState(async () => {
     try {
       await endSession()
@@ -114,6 +172,11 @@ function AccountMenu({ user }: { user: User }) {
         </div>
       </div>
       <hr className="popover-divider" />
+      {slug ? (
+        <Link to="/$workspace/members/$id" params={{ workspace: slug, id: user.id }} className="popover-item" onClick={onNavigate}>
+          View your analytics
+        </Link>
+      ) : null}
       <form action={signOut}>
         <button type="submit" className="popover-item" disabled={pending}>
           {pending ? 'Signing out…' : 'Sign out'}

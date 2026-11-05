@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/devender07/tether/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 // urlTTL is how long a presigned URL works. CacheFor is how long a redirect to one may be cached: less, so a cached

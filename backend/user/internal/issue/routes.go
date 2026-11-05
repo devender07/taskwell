@@ -3,13 +3,13 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
-// activity events and collab.go relays live edits (joined over the realtime socket). Changes record their notifications with notify.Record.
+// activity events, rank.go computes manual-order ranks, trash.go serves the trash and collab.go joins live editing of descriptions (the collab package, over the realtime socket). Changes record their notifications with notify.Record.
 package issue
 
 import (
 	"net/http"
 
-	"github.com/devender07/tether/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/web"
 )
 
 // maxBody fits a 50,000-character description even when URL-encoded.
@@ -38,15 +38,23 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/watching", h.wrap(h.watching))
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/cycles/{number}/issues", h.wrap(h.cycleIssues))
 	mux.HandleFunc("GET /api/workspaces/{slug}/activity", h.wrap(h.activity))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/bulk", h.wrap(h.bulk))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.update))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}", h.wrap(h.delete))
+	mux.HandleFunc("GET /api/workspaces/{slug}/trash", h.wrap(h.trash))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/trash", h.wrap(h.emptyTrash))
+	mux.HandleFunc("POST /api/workspaces/{slug}/trash/{identifier}/restore", h.wrap(h.restore))
+	mux.HandleFunc("DELETE /api/workspaces/{slug}/trash/{identifier}", h.wrap(h.purge))
+	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/move", h.wrap(h.move))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/links", h.wrap(h.link))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/links/{other}", h.wrap(h.unlink))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/watch", h.wrap(h.watch(true)))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/issues/{identifier}/watch", h.wrap(h.watch(false)))
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/timeline", h.wrap(h.timeline))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/comments", h.wrap(h.createComment))
+	mux.HandleFunc("POST /api/workspaces/{slug}/import/csv", web.Wrap(h.authenticate, maxImportFile+1<<20, h.importCSV))
+	mux.HandleFunc("POST /api/workspaces/{slug}/import/github", h.wrap(h.importGitHub))
 	mux.HandleFunc("POST /api/workspaces/{slug}/comments/{id}", h.wrap(h.updateComment))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/comments/{id}", h.wrap(h.deleteComment))
 }

@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
-import { Button } from '@tether/shared/button'
-import { Input } from '@tether/shared/input'
-import { password } from '@tether/shared/validate'
+import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
+import { password } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors } from '@/api'
+import { askToReviewTokens } from '@/components/settings/review-tokens'
 import { FormError } from './auth-card'
 
 type ResetState = { errors?: FieldErrors; error?: string | null }
@@ -18,6 +19,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     } catch (e) {
       return toFormErrors(e)
     }
+    askToReviewTokens()
     await navigate({ to: '/signin', search: { method: 'password', reset: true } })
     return {}
   }, {})

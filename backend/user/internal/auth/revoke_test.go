@@ -48,13 +48,13 @@ func TestSafeRedirect(t *testing.T) {
 	for in, want := range map[string]string{
 		"/invite?token=abc": "/invite?token=abc",
 		"/":                 "/",
-		"":                  "/",
-		"//evil.com":        "/",
-		"/\\evil.com":       "/",
-		"https://evil.com":  "/",
-		"/\t/evil.com":      "/",
-		"/\n/evil.com":      "/",
-		"invite":            "/",
+		"":                  "/signin",
+		"//evil.com":        "/signin",
+		"/\\evil.com":       "/signin",
+		"https://evil.com":  "/signin",
+		"/\t/evil.com":      "/signin",
+		"/\n/evil.com":      "/signin",
+		"invite":            "/signin",
 	} {
 		if got := safeRedirect(in); got != want {
 			t.Errorf("safeRedirect(%q) = %q, want %q", in, got, want)

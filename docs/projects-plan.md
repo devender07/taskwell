@@ -65,7 +65,7 @@ Project JSON: `{"id": "...", "name": "Engineering", "key": "ENG", "description":
 
 `api.ts`: `Project` type.
 
-Shared: add `Textarea` to `frontend/shared/src/components/textarea/` styled like `Input` (`label`, `error` props; min-height 96px; vertical resize), exported as `@tether/shared/textarea`.
+Shared: add `Textarea` to `frontend/shared/src/components/textarea/` styled like `Input` (`label`, `error` props; min-height 96px; vertical resize), exported as `@taskwell/shared/textarea`.
 
 Sidebar (`components/app/sidebar.tsx`): add **Projects** (folder icon, same style as Home) between Home and Settings, linking to `/$workspace/projects`; active on any `/projects` route.
 
