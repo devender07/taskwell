@@ -67,7 +67,7 @@ func New(db *pgxpool.Pool, cfg *sysconfig.Store, m *mail.Mailer, secret []byte,
 func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	name, email, pw := r.FormValue("name"), r.FormValue("email"), r.FormValue("password")
-	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up joins the inviter's
+	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up leaves it out
 	if errs := fieldErrors("name", checkName(name), "email", web.CheckEmail(email), "password", checkPassword(pw),
 		"workspace_name", checkWorkspaceName(wsName)); errs != nil {
 		web.Fields(w, http.StatusBadRequest, errs)

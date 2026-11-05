@@ -237,6 +237,7 @@ type Notification struct {
 	Issue     json.RawMessage `json:"issue"`   // null for chat kinds
 	Chat      json.RawMessage `json:"chat"`    // {id, kind, name}; null for issue kinds
 	Project   json.RawMessage `json:"project"` // {key, name}; project_added only
+	Invite    json.RawMessage `json:"invite"`  // {id, workspace, available}; invite only
 	Data      json.RawMessage `json:"data"`
 	Read      bool            `json:"read"`
 	CreatedAt time.Time       `json:"created_at"`
@@ -259,10 +260,15 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string, no
 		          'status', status_json(s)) end,
 		        case when c.id is not null then json_build_object('id', c.id, 'kind', c.kind, 'name', chat_name(c, n.user_id)) end,
 		        case when pr.id is not null then json_build_object('key', pr.key, 'name', pr.name) end,
+		        case when n.kind = 'invite' then json_build_object('id', coalesce(n.invite_id::text, n.data ->> 'invite_id'),
+		          'workspace', coalesce(iw.name, n.data ->> 'workspace'),
+		          'available', iv.id is not null and iv.expires_at > now()
+		            and not exists (select 1 from workspace_members im where im.workspace_id = iv.workspace_id and im.user_id = n.user_id)) end,
 		        n.data, n.read_at is not null, n.created_at
 		 from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
 		 left join statuses s on s.id = i.status_id left join chats c on c.id = n.chat_id
 		 left join projects pr on pr.id = n.project_id
+		 left join workspace_invites iv on iv.id = n.invite_id left join workspaces iw on iw.id = iv.workspace_id
 		 where n.user_id = $1 and n.workspace_id = $2 and ($3 = '' or n.id < $3::uuid) and not ($5 and n.chat_id is not null)
 		   and `+seen+`
 		 order by n.id desc limit $4`, userID, workspaceID, before, pageSize+1, noChat)
@@ -271,7 +277,7 @@ func (m *model) list(ctx context.Context, userID, workspaceID, before string, no
 	}
 	ns, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Notification, error) {
 		var n Notification
-		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Chat, &n.Project, &n.Data, &n.Read, &n.CreatedAt)
+		err := row.Scan(&n.ID, &n.Kind, &n.Actor, &n.Issue, &n.Chat, &n.Project, &n.Invite, &n.Data, &n.Read, &n.CreatedAt)
 		n.CreatedAt = n.CreatedAt.UTC()
 		return n, err
 	})
@@ -297,9 +303,7 @@ func (m *model) unreadCount(ctx context.Context, userID, workspaceID string) (in
 
 // changed tells the recipient's tabs their notifications in the workspace changed.
 func changed(slug, actorID, recipientID string) realtime.Event {
-	ws := realtime.Workspace(slug)
-	return realtime.Event{Kind: "notifications.changed", Workspace: slug, Actor: actorID, Audience: realtime.ToUser(recipientID),
-		Paths: []string{ws + "/notifications", ws + "/notifications/unread-count"}}
+	return realtime.NotificationsChanged(slug, actorID, recipientID)
 }
 
 // setRead marks the user's notifications in the workspace with the ids (all of them when all is true) read or unread.
@@ -395,9 +399,10 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 // --- email worker ---
 
 const (
-	// wanted is whether the recipient's settings s (left joined) want the notification n emailed at all. A direct
+	// wanted is whether the recipient's settings s (left joined) want the notification n emailed at all; an invite one
+	// never is (it's the in-app prompt's leftover). A direct
 	// message read before its email was due isn't emailed, nor one about an issue i (left joined) they can't see.
-	wanted = `(` + seen + ` and (coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
+	wanted = `(n.kind <> 'invite' and ` + seen + ` and (coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
 		when 'status' then s.status when 'comment' then s.comments when 'chat_mention' then s.mentions and s.chat
 		when 'project_added' then s.assignments else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
 	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.

@@ -131,6 +131,21 @@ func IssuePaths(slug, identifier, key string) []string {
 		Watching(slug), Activity(slug), ProjectStats(slug), Roadmap(slug)}
 }
 
+// MyInvites is the signed-in user's pending invites to other workspaces.
+func MyInvites() string { return "/me/invites" }
+
+// InvitesChanged tells the user's tabs their pending invites changed.
+func InvitesChanged(actorID, userID string) Event {
+	return Event{Kind: "invites.changed", Actor: actorID, Audience: ToUser(userID), Paths: []string{MyInvites()}}
+}
+
+// NotificationsChanged tells the recipient's tabs their notifications in the workspace changed.
+func NotificationsChanged(slug, actorID, recipientID string) Event {
+	ws := Workspace(slug)
+	return Event{Kind: "notifications.changed", Workspace: slug, Actor: actorID, Audience: ToUser(recipientID),
+		Paths: []string{ws + "/notifications", ws + "/notifications/unread-count"}}
+}
+
 // SessionRevoked closes the user's sockets after a sign-out, password change or reset (the admin service publishes it
 // on suspension too). The tabs whose sign-in is still live reconnect; the others can't.
 func SessionRevoked(userID string) Event {

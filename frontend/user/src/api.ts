@@ -56,6 +56,7 @@ export type Issue = {
   due_date: string | null
   labels: Label[]
   created_by: PersonRef | null
+  assigned_by: PersonRef | null
   created_at: string
   updated_at: string
   can_edit: boolean
@@ -164,6 +165,8 @@ export type Notification = {
   | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
   | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
   | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
+  // available: the invite still exists, hasn't expired, and the user hasn't joined.
+  | { kind: 'invite'; issue: null; chat: null; project: null; invite: { id: string; workspace: string; available: boolean } }
 )
 export type NotificationPage = { notifications: Notification[]; has_more: boolean }
 type ActivityBase = { id: string; created_at: string; actor: PersonRef | null; issue: { identifier: string; title: string; status: Status } }
@@ -418,6 +421,16 @@ export const redeliver = (workspace: string, id: string, delivery: string) =>
 
 export type MfaStatus = { enabled: boolean; recovery_left: number }
 export const mfaPath = '/me/mfa'
+
+// Invites for the signed-in user's email that they haven't dismissed, oldest first.
+export type PendingInvite = { id: string; workspace: { name: string }; invited_by: string; role: RoleRef; guest: boolean; expires_at: string }
+export const myInvitesPath = '/me/invites'
+export const acceptMyInvite = (id: string) => api<Workspace>(`${myInvitesPath}/${encodeURIComponent(id)}/accept`, new FormData())
+export const dismissMyInvite = (id: string, workspace: string) => {
+  const form = new FormData()
+  form.set('workspace', workspace)
+  return api(`${myInvitesPath}/${encodeURIComponent(id)}/dismiss`, form)
+}
 
 export const tokensPath = '/me/tokens'
 export function createToken(name: string) {

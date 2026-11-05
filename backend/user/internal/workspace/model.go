@@ -300,8 +300,8 @@ func scanInvite(row pgx.Row) (Invite, error) {
 	return inv, err
 }
 
-// invites returns the workspace's invites, expired included, newest first. An invite whose person already joined (by
-// signing up with that email, see joinInvited) isn't pending any more: its link still lands them here, but it's hidden.
+// invites returns the workspace's invites, expired included, newest first. An invite whose person already joined
+// another way isn't pending any more: its link still lands them here, but it's hidden.
 func (m *model) invites(ctx context.Context, workspaceID string) ([]Invite, error) {
 	rows, err := m.db.Query(ctx,
 		`with i as (select * from workspace_invites v where workspace_id = $1 and not exists (select 1 from workspace_members m
@@ -423,6 +423,9 @@ func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, rol
 			ws.ID, email, invitedBy, roleID, tokenHash, days, projectIDs)); err != nil {
 			return err
 		}
+		if err := inviteTouched(ctx, tx, inv.ID, invitedBy); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, invitedBy))
 	})
 	if err != nil {
@@ -447,6 +450,9 @@ func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, to
 			ws.ID, id, tokenHash, days)); err != nil {
 			return err
 		}
+		if err := inviteTouched(ctx, tx, inv.ID, actorID); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, actorID))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -465,6 +471,9 @@ func (m *model) cancelInvite(ctx context.Context, ws *Workspace, actorID, id str
 	}
 	deleted := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := inviteTouched(ctx, tx, id, actorID); err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `delete from workspace_invites where workspace_id = $1 and id = $2`, ws.ID, id)
 		if deleted = tag.RowsAffected() == 1; err != nil || !deleted {
 			return err
@@ -493,8 +502,7 @@ func (m *model) inviteInfo(ctx context.Context, tokenHash []byte) (*InviteInfo, 
 	return &info, nil
 }
 
-// accept adds the user to the invite's workspace with the invite's role (keeping any existing role), and a guest to
-// its projects, and deletes the invite.
+// accept joins the user to the workspace of the invite with this token (see join).
 // Returns nil when the token is unknown or expired, and errWrongEmail plus the invite's email when the user's differs.
 func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*Workspace, string, error) {
 	var ws *Workspace
@@ -515,30 +523,8 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 		if userEmail != inviteEmail {
 			return errWrongEmail
 		}
-		if _, err := tx.Exec(ctx,
-			`insert into workspace_members (workspace_id, user_id, role_id)
-			 select i.workspace_id, $2, coalesce(i.role_id, r.id)
-			   from workspace_invites i join workspace_roles r on r.workspace_id = i.workspace_id and r.builtin = 'member'
-			  where i.id = $1
-			 on conflict do nothing`, id, userID); err != nil {
-			return err
-		}
-		if err := joinGuestProjects(ctx, tx, userID, []string{id}); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `delete from workspace_invites where id = $1`, id); err != nil {
-			return err
-		}
-		w, err := scanWorkspace(tx.QueryRow(ctx,
-			`select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, workspaceID, userID))
-		if err != nil {
-			return err
-		}
-		ws = &w
-		if err := realtime.Publish(ctx, tx, invitesChanged(ws, userID)); err != nil {
-			return err
-		}
-		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(userID))
+		ws, err = join(ctx, tx, userID, id, workspaceID)
+		return err
 	})
 	if errors.Is(err, errWrongEmail) {
 		return nil, inviteEmail, err
@@ -547,6 +533,193 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 		return nil, "", fmt.Errorf("accept invite: %w", err)
 	}
 	return ws, inviteEmail, nil
+}
+
+// join adds the user to the invite's workspace with the invite's role (keeping any existing role), and a guest to its
+// projects, and deletes the invite with its invite notifications, in tx. Returns the workspace as the user sees it.
+func join(ctx context.Context, tx pgx.Tx, userID, inviteID, workspaceID string) (*Workspace, error) {
+	if _, err := tx.Exec(ctx,
+		`insert into workspace_members (workspace_id, user_id, role_id)
+		 select i.workspace_id, $2, coalesce(i.role_id, r.id)
+		   from workspace_invites i join workspace_roles r on r.workspace_id = i.workspace_id and r.builtin = 'member'
+		  where i.id = $1
+		 on conflict do nothing`, inviteID, userID); err != nil {
+		return nil, err
+	}
+	if err := joinGuestProjects(ctx, tx, userID, []string{inviteID}); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `delete from notifications n using workspaces w
+		where n.invite_id = $1 and w.id = n.workspace_id returning n.user_id::text, w.slug`, inviteID)
+	if err != nil {
+		return nil, err
+	}
+	type note struct{ user, slug string }
+	notes, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (note, error) {
+		var n note
+		return n, r.Scan(&n.user, &n.slug)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `delete from workspace_invites where id = $1`, inviteID); err != nil {
+		return nil, err
+	}
+	ws, err := scanWorkspace(tx.QueryRow(ctx,
+		`select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, workspaceID, userID))
+	if err != nil {
+		return nil, err
+	}
+	events := []realtime.Event{invitesChanged(&ws, userID), realtime.AdminWorkspaces(userID), realtime.InvitesChanged(userID, userID)}
+	for _, n := range notes {
+		events = append(events, realtime.NotificationsChanged(n.slug, userID, n.user))
+	}
+	for _, e := range events {
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return nil, err
+		}
+	}
+	return &ws, nil
+}
+
+// inviteTouched tells the invited person's tabs, when they have an account, that their pending invites changed, and
+// the tabs of whoever holds an invite notification for it that its availability may have. Call it in the
+// transaction that changes the invite, before a delete.
+func inviteTouched(ctx context.Context, tx pgx.Tx, inviteID, actorID string) error {
+	rows, err := tx.Query(ctx,
+		`select u.id::text, '' from workspace_invites i join users u on u.email = i.email where i.id = $1
+		 union all
+		 select n.user_id::text, w.slug from notifications n join workspaces w on w.id = n.workspace_id where n.invite_id = $1`,
+		inviteID)
+	if err != nil {
+		return fmt.Errorf("invite audience: %w", err)
+	}
+	type to struct{ user, slug string }
+	tos, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (to, error) {
+		var t to
+		return t, r.Scan(&t.user, &t.slug)
+	})
+	if err != nil {
+		return fmt.Errorf("invite audience: %w", err)
+	}
+	for _, t := range tos {
+		e := realtime.InvitesChanged(actorID, t.user)
+		if t.slug != "" {
+			e = realtime.NotificationsChanged(t.slug, actorID, t.user)
+		}
+		if err := realtime.Publish(ctx, tx, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PendingInvite is an invite to another workspace for the signed-in user's email, as the invite prompt shows it.
+type PendingInvite struct {
+	ID        string `json:"id"`
+	Workspace struct {
+		Name string `json:"name"`
+	} `json:"workspace"`
+	InvitedBy string    `json:"invited_by"` // "" once the inviter is deleted
+	Role      RoleRef   `json:"role"`
+	Guest     bool      `json:"guest"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// mine joins invites i to the user $1 they're for, whose email must be verified (whoever owns the inbox owns the invite).
+const mine = ` join users me on me.email = i.email and me.id = $1 and me.email_verified_at is not null`
+
+// myInvites returns the user's unexpired, undismissed invites to workspaces they aren't in, oldest first.
+func (m *model) myInvites(ctx context.Context, userID string) ([]PendingInvite, error) {
+	rows, err := m.db.Query(ctx,
+		`select i.id::text, w.name, coalesce(u.name, ''), r.id::text, r.name, r.builtin is not distinct from 'guest', i.expires_at
+		   from workspace_invites i`+mine+`
+		   join workspaces w on w.id = i.workspace_id
+		   left join users u on u.id = i.invited_by
+		   join workspace_roles r on r.workspace_id = i.workspace_id and (r.id = i.role_id or i.role_id is null and r.builtin = 'member')
+		  where i.expires_at > now() and i.dismissed_at is null
+		    and not exists (select 1 from workspace_members m where m.workspace_id = i.workspace_id and m.user_id = $1)
+		  order by i.created_at, i.id`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list my invites: %w", err)
+	}
+	invs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PendingInvite, error) {
+		var p PendingInvite
+		err := row.Scan(&p.ID, &p.Workspace.Name, &p.InvitedBy, &p.Role.ID, &p.Role.Name, &p.Guest, &p.ExpiresAt)
+		p.ExpiresAt = p.ExpiresAt.UTC()
+		return p, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list my invites: %w", err)
+	}
+	return invs, nil
+}
+
+// acceptByID joins the user to the workspace of their unexpired invite with the id (see join); nil when there's no
+// such invite for their email.
+func (m *model) acceptByID(ctx context.Context, userID, id string) (*Workspace, error) {
+	if !web.IsUUID(id) {
+		return nil, nil
+	}
+	var ws *Workspace
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var workspaceID string
+		err := tx.QueryRow(ctx, `select i.workspace_id::text from workspace_invites i`+mine+`
+			where i.id = $2 and i.expires_at > now() for update of i`, userID, id).Scan(&workspaceID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		ws, err = join(ctx, tx, userID, id, workspaceID)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("accept invite: %w", err)
+	}
+	return ws, nil
+}
+
+// dismiss records the user's "Not now" on their unexpired invite with the id: the first time, it sets dismissed_at
+// and leaves an invite notification from the inviter in ws, the workspace the user is in. False when there's no
+// such invite for their email.
+func (m *model) dismiss(ctx context.Context, userID, id string, ws *Workspace) (bool, error) {
+	if !web.IsUUID(id) {
+		return false, nil
+	}
+	found := false
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var dismissed bool
+		err := tx.QueryRow(ctx, `select i.dismissed_at is not null from workspace_invites i`+mine+`
+			where i.id = $2 and i.expires_at > now() for update of i`, userID, id).Scan(&dismissed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if found = true; dismissed {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `update workspace_invites set dismissed_at = now() where id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx,
+			`insert into notifications (user_id, workspace_id, invite_id, actor_id, kind, data)
+			 select $1, $2, i.id, i.invited_by, 'invite', jsonb_build_object('invite_id', i.id, 'workspace', w.name)
+			   from workspace_invites i join workspaces w on w.id = i.workspace_id where i.id = $3`, userID, ws.ID, id); err != nil {
+			return err
+		}
+		if err := realtime.Publish(ctx, tx, realtime.NotificationsChanged(ws.Slug, userID, userID)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.InvitesChanged(userID, userID))
+	})
+	if err != nil {
+		return false, fmt.Errorf("dismiss invite: %w", err)
+	}
+	return found, nil
 }
 
 // --- roles ---

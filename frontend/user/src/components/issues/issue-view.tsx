@@ -26,7 +26,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@taskwell/shared/icons'
 import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
+import { AssignedBy, LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
 import {
   FILTER_KEYS,
   PRIORITY_ORDER,
@@ -624,6 +624,7 @@ function CardBody({ issue }: { issue: Issue }) {
         <Assignee issue={issue} />
       </span>
       <span className="text-label text-primary ellipsis-2">{issue.title}</span>
+      <AssignedBy issue={issue} />
       {issue.labels.length || issue.priority || issue.due_date ? (
         <span className="flex flex-wrap items-center gap-2">
           <LabelDots issue={issue} />
@@ -662,7 +663,7 @@ function Board({ workspace, groups, by, ordered, hint, onMove, onPlace, onKey, m
       const top = board.getBoundingClientRect().top + window.scrollY
       const main = board.closest('main')
       const gap = main ? parseFloat(getComputedStyle(main).paddingBottom) : 24
-      board.style.height = `max(320px, calc(100dvh - ${Math.round(top + gap)}px))`
+      board.style.height = `min(700px, max(600px, calc(100dvh - ${Math.round(top + gap)}px)))`
     }
     fit()
     const ro = new ResizeObserver(fit)

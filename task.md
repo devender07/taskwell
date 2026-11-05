@@ -11,6 +11,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Continue with Google (code done; add `google_client_id` / `google_client_secret` in `system_config` to turn it on)
 - [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`taskwell.dev/acme`), switcher, settings (rename, change URL), admin/member role on membership
 - [x] Team invites: invite by email from Settings → Members, accept link (`/invite`, email must match), resend or cancel; member list
+- [x] Invite prompt (docs/invite-prompt-plan.md): sign-up never auto-joins; pending invites show a "Join <workspace>?" prompt, "Not now" leaves a Join row in the Taskwell bot
 - [x] Roles: built-in Admin and Member plus custom roles with permissions (Settings → Roles), change role, remove member, leave
 - [x] Profile: name, change or set password (Settings → Profile; signs out other devices)
 - [x] Avatar upload (Settings → Profile; initials when none)

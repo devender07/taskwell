@@ -1,7 +1,6 @@
 import { Link, useMatch, useNavigate, useParams } from '@tanstack/react-router'
 import { createContext, use, useActionState, useState, type ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
-import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { Logo } from '@taskwell/shared/logo'
 import { Popover } from '@taskwell/shared/popover'
@@ -83,10 +82,13 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
         aria-label="Workspaces"
         placement="bottom-start"
         trigger={(props) => (
-          <Button variant="ghost" aria-label={`Workspace: ${current.name}`} style={{ minWidth: 0, color: 'var(--text)', fontWeight: 510 }} {...props}>
-            <span className="ellipsis" style={{ maxWidth: 200 }}>{current.name}</span>
-            <ChevronDownIcon size={14} strokeWidth={2} />
-          </Button>
+          <button type="button" className="workspace-switcher" aria-label={`Workspace: ${current.name}`} {...props}>
+            <span className="text-caption text-secondary">Workspace</span>
+            <span className="flex items-center gap-2">
+              <span className="ellipsis font-510 flex-grow" style={{ marginLeft: 8, fontSize: 12 }}>{current.name}</span>
+              <ChevronDownIcon size={14} strokeWidth={2} className="flex-noshrink text-secondary" />
+            </span>
+          </button>
         )}
       >
         {(close) => (

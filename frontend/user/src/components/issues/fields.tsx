@@ -32,6 +32,8 @@ export const assigneeOptions = (members: Member[]): Option[] => [
 export const loadAssignees = (people: PeopleSearch) => async (q: string, signal: AbortSignal) => assigneeOptions(await people(q, signal))
 export const assigneeOption = (a: PersonRef | null): Option | null => (a ? { value: a.id, label: a.name } : null)
 
+export const AssignedBy = ({ issue }: { issue: { assignee: PersonRef | null; assigned_by: PersonRef | null } }) =>
+  issue.assignee && issue.assigned_by ? <span className="text-caption text-secondary ellipsis">Assigned by {issue.assigned_by.name}</span> : null
 export const priorityLabel = (p: number) => PRIORITIES.find((x) => x.value === p)?.label ?? 'No priority'
 export const categoryLabel = (c: StatusCategory) => CATEGORIES.find((x) => x.value === c)?.label ?? c
 

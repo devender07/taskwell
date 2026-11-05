@@ -193,6 +193,55 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
+// myInvites lists the caller's pending invites to other workspaces, for the invite prompt.
+func (h *Handler) myInvites(w http.ResponseWriter, r *http.Request, userID string) error {
+	invs, err := h.model.myInvites(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	if invs == nil {
+		invs = []PendingInvite{}
+	}
+	web.JSON(w, http.StatusOK, invs)
+	return nil
+}
+
+func (h *Handler) acceptMyInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.acceptByID(r.Context(), userID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	web.JSON(w, http.StatusOK, ws)
+	return nil
+}
+
+// dismissMyInvite is the prompt's "Not now": the invite stays as a notification in the form's workspace, the one
+// the caller is in.
+func (h *Handler) dismissMyInvite(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.model.membership(r.Context(), userID, normSlug(r.FormValue("workspace")))
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		web.Err(w, http.StatusNotFound, errNotFound)
+		return nil
+	}
+	found, err := h.model.dismiss(r.Context(), userID, r.PathValue("id"), ws)
+	if err != nil {
+		return err
+	}
+	if !found {
+		web.Err(w, http.StatusNotFound, errInviteInvalid)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 // assignable returns the workspace's role with this id ("" is Member) when the caller may give it to someone.
 // Otherwise it writes a 400 (no such role) or 403 (escalation) and returns ok=false.
 func (h *Handler) assignable(w http.ResponseWriter, r *http.Request, ws *Workspace, id string) (*Role, bool, error) {

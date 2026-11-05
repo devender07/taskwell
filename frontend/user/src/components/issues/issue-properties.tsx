@@ -8,7 +8,7 @@ import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFor
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
+import { AssignedBy, LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 import '@/components/analytics/analytics.css'
 
@@ -88,9 +88,10 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             onChange={(o) => {
               const id = o?.value ?? ''
               if (id === (issue.assignee?.id ?? '')) return
-              update('assignee_id', [id], { assignee: o && id ? { id, name: o.label } : null })
+              update('assignee_id', [id], { assignee: o && id ? { id, name: o.label } : null, assigned_by: { id: user.id, name: user.name } })
             }}
           />
+          <AssignedBy issue={issue} />
           <DatePicker
             label="Due date"
             placeholder="No due date"
@@ -157,6 +158,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             ) : (
               <span className="text-secondary">No assignee</span>
             )}
+            <AssignedBy issue={issue} />
           </Property>
           <Property label="Due date">
             {issue.due_date ? <span className={late ? 'text-accent' : undefined}>{formatDate(issue.due_date)}</span> : <span className="text-secondary">No due date</span>}

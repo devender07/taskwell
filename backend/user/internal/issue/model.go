@@ -98,8 +98,10 @@ type Issue struct {
 	Labels      []Label         `json:"labels"`
 	Cycle       *CycleRef       `json:"cycle"`
 	CreatedBy   *Person         `json:"created_by"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	// AssignedBy made the last assignee change, else whoever created it assigned; null when unassigned.
+	AssignedBy *Person   `json:"assigned_by"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	// DescriptionGeneration counts REST writes of the description; the collab ready frame carries it too, so an
 	// editor that was offline across one drops its stale document instead of merging it back.
 	DescriptionGeneration int    `json:"description_generation"`
@@ -157,7 +159,10 @@ const (
 	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
-	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation, i.rank, i.project_id::text
+	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation, i.rank, i.project_id::text,
+	case when i.assignee_id is not null then (select json_build_object('id', ab.id, 'name', ab.name) from users ab
+	  where ab.id = coalesce((select e.actor_id from issue_events e where e.issue_id = i.id and e.kind = 'assignee'
+	                          order by e.id desc limit 1), i.created_by)) end
 	from issues i join projects p on p.id = i.project_id join statuses s on s.id = i.status_id
 	left join users a on a.id = i.assignee_id left join users c on c.id = i.created_by`
 )
@@ -168,7 +173,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
 		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
 		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration,
-		&i.Rank, &i.projectID)
+		&i.Rank, &i.projectID, &i.AssignedBy)
 	if aID != nil {
 		i.Assignee = &Person{*aID, *aName}
 	}
