@@ -6,6 +6,7 @@ import '@taskwell/shared/icon-button' // its CSS, for the back link
 import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
 import { useUnread } from '@/components/app/unread'
 import { FeedRow, notificationTarget, notificationText, notificationActorName } from './feed-row'
+import { extractDataFromArray, idSet } from '@taskwell/shared/list'
 
 export const botPath = (slug: string) => `${workspacePath(slug)}/notifications?exclude=chat`
 
@@ -14,8 +15,8 @@ export const botPath = (slug: string) => `${workspacePath(slug)}/notifications?e
 export function TaskwellBot({ slug, page }: { slug: string; page: NotificationPage }) {
   const { refresh } = useUnread()
   const [older, setOlder] = useState<NotificationPage | null>(null)
-  const ids = new Set(page.notifications.map((n) => n.id))
-  const items = [...page.notifications, ...(older?.notifications.filter((n) => !ids.has(n.id)) ?? [])]
+  const ids = idSet(page.notifications)
+  const items = [...page.notifications, ...extractDataFromArray(older, 'notifications', []).filter((n) => !ids.has(n.id))]
   const more = older ? older.has_more : page.has_more
   const unread = items.filter((n) => !n.read).map((n) => n.id)
 
@@ -38,7 +39,7 @@ export function TaskwellBot({ slug, page }: { slug: string; page: NotificationPa
     loading.current = true
     try {
       const next = await api<NotificationPage>(`${botPath(slug)}&before=${encodeURIComponent(last.id)}`)
-      setOlder((o) => ({ notifications: [...(o?.notifications ?? []), ...next.notifications], has_more: next.has_more }))
+      setOlder((o) => ({ notifications: [...extractDataFromArray(o, 'notifications', []), ...next.notifications], has_more: next.has_more }))
       setError(null)
     } catch (e) {
       setError(toFormErrors(e).error)

@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -164,7 +165,7 @@ type CommentCardProps = { workspace: Workspace; project: string; comment: Commen
 function CommentCard({ workspace, project, comment, mentions, onChange }: CommentCardProps) {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const author = comment.author?.name ?? 'Someone'
+  const author = extractDataFromArray(comment.author, 'name', 'Someone')
 
   return (
     <article className="grid gap-2 p-4 bg-surface border rounded-lg" aria-label={`Comment by ${author}`}>

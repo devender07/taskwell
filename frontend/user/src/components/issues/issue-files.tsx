@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useCallback, useEffect, useState } from 'react'
 import { apiUrl } from '@taskwell/shared/api-url'
 import { Button } from '@taskwell/shared/button'
@@ -108,7 +109,7 @@ export function IssueFiles({ state }: { state: IssueFilesState }) {
           ))}
         </ul>
       ) : null}
-      <Dialog open={!!removing} onClose={() => setRemoving(null)} title={`Delete ${removing?.name ?? 'file'}?`} description="This can't be undone.">
+      <Dialog open={!!removing} onClose={() => setRemoving(null)} title={`Delete ${extractDataFromArray(removing, 'name', 'file')}?`} description="This can't be undone.">
         <div className="grid gap-4">
           {error ? (
             <p role="alert" className="text-caption text-accent m-0">

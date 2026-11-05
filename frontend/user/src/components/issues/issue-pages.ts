@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, toFormErrors, type Issue } from '@/api'
 import type { IssuePage } from './view-search'
+import { idSet, extractDataFromArray } from '@taskwell/shared/list'
 
 type Extra = { issues: Issue[]; offset: number; has_more: boolean; error?: string }
 
@@ -22,7 +23,7 @@ export function useIssuePages(page: IssuePage, source: string, query: string) {
       const keys = busy.current.keys
       if (!first || keys.has(key) || own?.error || !(own ? own.has_more : first.has_more)) return
       keys.add(key)
-      const offset = first.issues.length + (own?.offset ?? 0)
+      const offset = first.issues.length + (extractDataFromArray(own, 'offset', 0))
       const update = (fn: (e: Extra) => Extra) => {
         if (latest.current.page !== page) return
         setExtra((prev) => {
@@ -33,7 +34,7 @@ export function useIssuePages(page: IssuePage, source: string, query: string) {
       try {
         const next = await api<{ issues: Issue[]; has_more: boolean }>(`${source}?${query}&in=${encodeURIComponent(key)}&offset=${offset}`)
         update((e) => {
-          const ids = new Set(e.issues.map((i) => i.id))
+          const ids = idSet(e.issues)
           return { issues: [...e.issues, ...next.issues.filter((i) => !ids.has(i.id))], offset: e.offset + next.issues.length, has_more: next.has_more }
         })
       } catch (err) {
@@ -52,7 +53,7 @@ export function useIssuePages(page: IssuePage, source: string, query: string) {
       groups: page.groups.map((g) => {
         const e = groups[g.key]
         if (!e) return g
-        const ids = new Set(g.issues.map((i) => i.id))
+        const ids = idSet(g.issues)
         return { ...g, issues: [...g.issues, ...e.issues.filter((i) => !ids.has(i.id))], has_more: e.has_more }
       }),
     }

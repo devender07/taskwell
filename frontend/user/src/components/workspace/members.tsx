@@ -14,6 +14,8 @@ import { FormError } from '@/components/auth/auth-card'
 import { type MemberPage, useMemberPages } from './member-pages'
 import '@/components/analytics/analytics.css'
 import '@/components/projects/projects.css'
+import { byId } from '@taskwell/shared/list'
+import { DAY } from '@taskwell/shared/time'
 
 type InviteState = { email: string; sent?: string; errors?: FieldErrors; error?: string | null }
 
@@ -115,7 +117,7 @@ export function MemberList({ workspace, roles, projects, page, userId, query, on
 function MemberRow({ workspace, roles, projects, member, self }: { workspace: Workspace; roles: Role[]; projects: Project[]; member: Member; self: boolean }) {
   const router = useRouter()
   const navigate = useNavigate()
-  const current = roles.find((r) => r.id === member.role.id)
+  const current = byId(roles, member.role.id)
   const manage = can(workspace, 'members.manage') && (self || (current !== undefined && grantable(workspace, current)))
   const path = `${workspacePath(workspace.slug)}/members/${encodeURIComponent(member.id)}`
   const options = roleOptions(workspace, roles)
@@ -335,7 +337,6 @@ function PendingInvite({ slug, invite }: { slug: string; invite: Invite }) {
   )
 }
 
-const DAY = 24 * 60 * 60 * 1000
 
 function describe(invite: Invite) {
   const days = Math.ceil((Date.parse(invite.expires_at) - Date.now()) / DAY)

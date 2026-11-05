@@ -4,6 +4,7 @@ import { ApiError, deliveriesPath, webhooksPath, type Webhook, type WebhookDeliv
 import { loaderApi } from '@/realtime'
 import { ActiveToggle, EventChips } from '@/components/settings/webhooks'
 import { Deliveries, WebhookActions } from '@/components/settings/webhooks-detail'
+import { byId } from '@taskwell/shared/list'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/webhooks/$id')({
   loader: async (ctx) => {
@@ -15,7 +16,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/webhooks/$
         throw e
       }),
     ])
-    const webhook = webhooks.find((w) => w.id === id)
+    const webhook = byId(webhooks, id)
     if (!webhook || !deliveries) throw notFound()
     return { webhook, deliveries }
   },

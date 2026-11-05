@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -96,7 +97,7 @@ function Section({ title, add, empty, pinned, chats, slug, me, workspaceName }: 
 export function ChatAvatar({ chat, me, workspaceName, size = 24 }: { chat: Chat; me: User; workspaceName: string; size?: number }) {
   if (chat.kind === 'direct') {
     const other = chat.members.find((m) => m.id !== me.id) ?? chat.members[0]
-    return <Avatar name={other?.name ?? chat.name} size={size} src={other && avatarSrc(other.id)} />
+    return <Avatar name={extractDataFromArray(other, 'name', chat.name)} size={size} src={other && avatarSrc(other.id)} />
   }
   return <Avatar name={chat.kind === 'workspace' ? workspaceName : chat.name} size={size} />
 }

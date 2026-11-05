@@ -32,6 +32,7 @@ import { refOption, searchIssues, subscribeIssues } from '@/components/issues/re
 import { ConfirmButton } from '@/components/tests/tests'
 import { feedbackPrefill, feedbackWho } from './feedback'
 import '@/components/issues/issues.css'
+import { extractDataFromArray, idSet } from '@taskwell/shared/list'
 
 // This tab's own writes skip their realtime events, so it refetches the list, the sidebar count and the issues' sections itself.
 export const feedbackChanged = (slug: string, issues: (string | null | undefined)[] = []) =>
@@ -47,15 +48,15 @@ export function useFeedbackPages(path: string, first: FeedbackPage) {
   const [extra, setExtra] = useState<{ base: FeedbackPage; items: Feedback[]; has_more: boolean; error?: string | null } | null>(null)
   const busy = useRef(false)
   const more = extra?.base === first ? extra : null
-  const ids = new Set(first.items.map((f) => f.id))
-  const items = [...first.items, ...(more?.items.filter((f) => !ids.has(f.id)) ?? [])]
+  const ids = idSet(first.items)
+  const items = [...first.items, ...extractDataFromArray(more, 'items', []).filter((f) => !ids.has(f.id))]
   const hasMore = more ? more.has_more : first.has_more
   const last = items.at(-1)?.id
 
   const load = useCallback(async () => {
     if (busy.current || !last) return
     busy.current = true
-    const prev = more?.items ?? []
+    const prev = extractDataFromArray(more, 'items', [])
     try {
       const next = await api<FeedbackPage>(`${path}${path.includes('?') ? '&' : '?'}before=${encodeURIComponent(last)}`)
       setExtra({ base: first, items: [...prev, ...next.items], has_more: next.has_more })

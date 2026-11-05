@@ -9,6 +9,7 @@ import { reloadPage, subscribePaths } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import { useUndoDelete } from '@/components/issues/undo-delete'
 import './shortcuts.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 export type Mode = 'root' | 'status' | 'assignee' | 'priority' | 'labels'
 export type IssueContext = { issue: Issue; statuses: Status[]; labels: Label[] }
@@ -165,10 +166,12 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   const groups: Group[] = []
   if (mode === 'root') {
     const data = found?.data
-    if (data?.issues.length) {
+    const foundIssues = extractDataFromArray(data, 'issues', [])
+    const foundProjects = extractDataFromArray(data, 'projects', [])
+    if (foundIssues.length) {
       groups.push({
         label: q ? 'Issues' : 'Recent',
-        items: data.issues.map((i) => ({
+        items: foundIssues.map((i) => ({
           id: `issue-${i.id}`,
           label: i.title,
           lead: (
@@ -182,10 +185,10 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         })),
       })
     }
-    if (data?.projects.length) {
+    if (foundProjects.length) {
       groups.push({
         label: 'Projects',
-        items: data.projects.map((p) => ({
+        items: foundProjects.map((p) => ({
           id: `project-${p.key}`,
           label: p.name,
           lead: <span className="issue-id flex-noshrink">{p.key}</span>,
@@ -199,7 +202,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
     actions.push({ value: 'my-issues', label: 'Go to My issues', run: () => go('my-issues') })
     actions.push({ value: 'projects', label: 'Go to Projects', run: () => go('projects') })
     actions.push({ value: 'roadmap', label: 'Go to Roadmap', run: () => go('roadmap') })
-    const current = cycles?.key === projectKey ? cycles?.list.find((c) => c.state === 'current') : undefined
+    const current = cycles?.key === projectKey ? extractDataFromArray(cycles, 'list', []).find((c) => c.state === 'current') : undefined
     if (current) {
       actions.push({
         value: 'current-cycle',
@@ -283,15 +286,15 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
       groups.push({
         label: 'Status',
         items: opts.map((o) => {
-          const status = ctx.statuses.find((s) => s.id === o.value)!
+          const status = byId(ctx.statuses, o.value)!
           return { id: o.value, label: o.label, lead: <StatusIcon status={status} />, checked: o.value === issue.status.id, run: () => save('status_id', [o.value]) }
         }),
       })
     } else if (mode === 'assignee') {
-      const opts = filterOptions(assigneeOptions(people?.list ?? []), q)
+      const opts = filterOptions(assigneeOptions(extractDataFromArray(people, 'list', [])), q)
       groups.push({
         label: 'Assignee',
-        items: opts.map((o) => ({ id: o.value || 'none', label: o.label, hint: o.hint, checked: o.value === (issue.assignee?.id ?? ''), run: () => save('assignee_id', [o.value]) })),
+        items: opts.map((o) => ({ id: o.value || 'none', label: o.label, hint: o.hint, checked: o.value === (extractDataFromArray(issue.assignee, 'id', '')), run: () => save('assignee_id', [o.value]) })),
       })
     } else if (mode === 'priority') {
       const opts = filterOptions(priorityOptions, q)
@@ -308,7 +311,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
           return {
             id: o.value,
             label: o.label,
-            lead: <LabelDot color={ctx.labels.find((l) => l.id === o.value)!.color} />,
+            lead: <LabelDot color={byId(ctx.labels, o.value)!.color} />,
             checked,
             run: () => {
               const prev = labelIds

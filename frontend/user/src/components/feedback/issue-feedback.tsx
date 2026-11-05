@@ -4,11 +4,12 @@ import { FormError } from '@/components/auth/auth-card'
 import { useLive } from '@/components/tests/tests'
 import { feedbackWho } from './feedback'
 import { useFeedbackPages } from './feedback-list'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 export function IssueFeedback({ workspace, identifier }: { workspace: Workspace; identifier: string }) {
   const path = `${issuePath(workspace, identifier)}/feedback`
   const first = useLive<FeedbackPage>(path).data
-  return first?.items.length ? <FeedbackSection path={path} first={first} /> : null
+  return first && extractDataFromArray(first, 'items', []).length ? <FeedbackSection path={path} first={first} /> : null
 }
 
 // Page one is live; scrolling to the end loads older feedback.

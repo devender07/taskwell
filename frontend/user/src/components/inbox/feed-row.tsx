@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -30,7 +31,7 @@ type FeedRowProps = {
 
 // One line of who did what to which issue or chat, linking to it: the notifications popover and Home's blocks.
 export function FeedRow({ workspace, identifier = '', chat, project, invite, actor, actorName, text, excerpt, at, unread, onClick }: FeedRowProps) {
-  const name = actor?.name ?? actorName ?? 'Someone'
+  const name = extractDataFromArray(actor, 'name', actorName ?? 'Someone')
   // Taskwell's own reminders show its logo and read without a name: "WEB-12 Title is due tomorrow".
   const bot = !actor && name === 'Taskwell'
   const body = (
@@ -98,7 +99,7 @@ export function notificationText(n: Notification): ReactNode {
     case 'status':
       return (
         <>
-          moved {issue} from {n.data.from?.name ?? 'another status'} to {n.data.to?.name ?? n.issue.status.name}
+          moved {issue} from {extractDataFromArray(n.data.from, 'name', 'another status')} to {extractDataFromArray(n.data.to, 'name', n.issue.status.name)}
         </>
       )
     case 'comment':

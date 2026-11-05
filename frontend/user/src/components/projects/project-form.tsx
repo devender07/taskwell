@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useNavigate, useRouteContext, useRouter } from '@tanstack/react-router'
 import { useActionState, useId, useState, type ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -22,12 +23,12 @@ export function ProjectForm({ workspace, project, onDone, aside }: { workspace: 
   const formId = useId()
   const navigate = useNavigate()
   const router = useRouter()
-  const [name, setName] = useState(project?.name ?? '')
-  const [editedKey, setEditedKey] = useState(project?.key ?? null)
-  const [description, setDescription] = useState(project?.description ?? '')
-  const [secret, setSecret] = useState(project?.private ?? false)
-  const [startDate, setStartDate] = useState(project?.start_date ?? '')
-  const [targetDate, setTargetDate] = useState(project?.target_date ?? '')
+  const [name, setName] = useState(extractDataFromArray(project, 'name', ''))
+  const [editedKey, setEditedKey] = useState(extractDataFromArray(project, 'key', null))
+  const [description, setDescription] = useState(extractDataFromArray(project, 'description', ''))
+  const [secret, setSecret] = useState(extractDataFromArray(project, 'private', false))
+  const [startDate, setStartDate] = useState(extractDataFromArray(project, 'start_date', ''))
+  const [targetDate, setTargetDate] = useState(extractDataFromArray(project, 'target_date', ''))
   const [picked, setPicked] = useState<PersonRef[]>([])
   const { user } = useRouteContext({ from: '/_app' })
   const key = editedKey ?? projectKey(name)

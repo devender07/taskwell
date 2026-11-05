@@ -78,6 +78,7 @@ frontend/           npm workspaces (shared, admin, user)
 - Build/vet from `backend/`: `go build github.com/devender07/taskwell/backend/admin/... github.com/devender07/taskwell/backend/user/...`
 - Frontend stack is fixed: Vite, React 19, TanStack Router with file-based routes. No UI kit, no CSS framework, no state library, no schema library. Ask before adding any dependency.
 - Imports: `@/` is the app's `src/` (both apps). Use it instead of `../`; same-folder `./` imports stay relative.
+- Helpers live in `@taskwell/shared`, one place each: `/list` (`extractDataFromArray` for reading fields with a default, `byId`, `idSet`, `isEmpty`, `isUndefined`), `/time` (`relativeTime`, `clockTime`, `shortDate`, `DAY`), `/validate` (form checks), `/api-url`. Look there before writing a small helper in a component, and add a new shared one there (with a `*.check.ts`) instead of copying it between files.
 - Icons: import from `@taskwell/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
 - Styling: utility classes from `@taskwell/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
 - Frontend commands from `frontend/`: `npm run dev:user`, `npm run dev:admin`, `npm run build` (vite build + tsc per app).

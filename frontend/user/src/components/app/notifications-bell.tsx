@@ -6,6 +6,7 @@ import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
 import { FeedRow, notificationText, notificationActorName, notificationTarget } from '@/components/inbox/feed-row'
 import { subscribePaths } from '@/realtime'
 import { useUnread } from './unread'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 const SHOWN = 10
 
@@ -56,7 +57,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
     refresh()
   }
 
-  const items = page?.notifications.slice(0, SHOWN) ?? []
+  const items = extractDataFromArray(page, 'notifications', []).slice(0, SHOWN)
   return (
     <div className="grid">
       <div className="notifications-header">

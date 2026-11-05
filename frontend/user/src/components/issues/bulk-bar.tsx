@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -42,7 +43,7 @@ export function BulkBar({ workspace, issues, choices, onClear, onDone }: Props) 
     return null
   }, null)
   const send = (...fields: [string, string][]) => startTransition(() => run({ ids: issues.map((i) => i.identifier), fields }))
-  const options = (key: Choice['key']) => choices.find((c) => c.key === key)?.options ?? []
+  const options = (key: Choice['key']) => extractDataFromArray(choices.find((c) => c.key === key), 'options', [])
   const cycles = options('cycle')
   const labels = options('label')
 

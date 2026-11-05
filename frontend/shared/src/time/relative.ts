@@ -1,4 +1,10 @@
-const DAY = 86_400_000
+export const DAY = 86_400_000
+
+// "3:05 PM" in the browser's locale.
+export const clockTime = (at: string | Date) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+
+// "Oct 12" in the browser's locale.
+export const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 
 // "just now", "5m ago", "3h ago", "yesterday", then a short date ("Oct 12", "Oct 12, 2025" in other years) in local
 // time and the browser's locale, like every other date in the app. `locale` is for tests.

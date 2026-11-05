@@ -6,7 +6,7 @@ import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
 import { Popover } from '@taskwell/shared/popover'
 import { RichText, type Doc } from '@taskwell/shared/rich-text'
-import { fullTime, relativeTime } from '@taskwell/shared/time'
+import { clockTime, fullTime, relativeTime, shortDate } from '@taskwell/shared/time'
 import { messageBody } from '@taskwell/shared/validate'
 import { ArrowLeftIcon, MessageIcon, MoreIcon, PinIcon, SendIcon, SmileIcon } from '@taskwell/shared/icons'
 import { api, avatarSrc, toFormErrors, uploadFile, type Chat, type IssueRef, type Message, type MessagePage, type Replies, type User, workspacePath } from '@/api'
@@ -19,6 +19,7 @@ import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog
 import { ChatAvatar } from './chat-list'
 import { searchMembers } from '@/components/workspace/member-pages'
 import './chat.css'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 const EMOJI = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅']
 const FROM = '/$workspace/inbox/c/$chatId'
@@ -45,8 +46,6 @@ const messagePath = (slug: string, id: string) => `${workspacePath(slug)}/messag
 // ProseMirror marks every Esc and some arrow keys handled, so "was this key for an open @ or # list" is asked of the DOM.
 const suggesting = () => !!document.querySelector('.rich-editor-mentions')
 const nearBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40
-const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 const PIN_DAYS = [1, 7, 30]
 // A pin in place is only its pinner's to change (anyone's when the pinner is unknown).
 const ownsPin = (m: Message, me: string) => !m.pinned_by || m.pinned_by.id === me
@@ -247,7 +246,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
           <section className="chat-main" aria-label={chat.name}>
             <div>
               <ChatHeader workspaceName={workspaceName} />
-              {page.pinned?.length ?<PinnedBar pinned={page.pinned} /> : null}
+              {extractDataFromArray(page, 'pinned', []).length ? <PinnedBar pinned={extractDataFromArray(page, 'pinned', [])} /> : null}
             </div>
             <div className="chat-scroll-wrap">
               <div ref={scroller} className="chat-scroll" onScroll={onScroll} onClick={followIssueLink(navigate)}>
@@ -421,7 +420,7 @@ function PinnedBar({ pinned }: { pinned: Message[] }) {
           <PinIcon size={16} className="flex-noshrink" />
           <span className="text-caption text-primary font-510 flex-noshrink">{pinned.length} pinned</span>
           <span className="text-caption text-secondary ellipsis">
-            {latest.author?.name ?? 'Someone'}: {docText(latest.body)}
+            {extractDataFromArray(latest.author, 'name', 'Someone')}: {docText(latest.body)}
           </span>
         </button>
       )}
@@ -438,7 +437,7 @@ function PinnedBar({ pinned }: { pinned: Message[] }) {
                 onClick={() => (close(), navigate({ search: (prev) => ({ ...prev, message: m.id, thread: undefined }) }))}
               >
                 <span className="flex items-baseline gap-2">
-                  <span className="text-label text-primary ellipsis">{m.author?.name ?? 'Someone'}</span>
+                  <span className="text-label text-primary ellipsis">{extractDataFromArray(m.author, 'name', 'Someone')}</span>
                   <span className="text-caption text-secondary flex-noshrink">{m.pinned_by ? `pinned by ${firstName(m.pinned_by.name)} · ` : ''}until {shortDate(m.pinned_until!)}</span>
                 </span>
                 <span className="text-caption text-secondary ellipsis-2">{docText(m.body)}</span>
@@ -464,7 +463,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
   const [error, setError] = useState<string | null>(null)
   const editing = ctx.editing === msg.id
   const pinnable = !msg.parent_id && (!msg.pinned_until || ownsPin(msg, ctx.me.id))
-  const name = msg.author?.name ?? 'Someone'
+  const name = extractDataFromArray(msg.author, 'name', 'Someone')
   const openThread = () => navigate({ search: (prev) => ({ ...prev, thread: msg.id, message: undefined }) })
 
   async function react(emoji: string, mine: boolean) {
@@ -501,7 +500,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
       <div className="chat-msg-gutter">
         {compact ? (
           <time dateTime={msg.created_at} title={fullTime(msg.created_at)} className="chat-msg-hover-time text-caption text-secondary">
-            {clock(msg.created_at)}
+            {clockTime(msg.created_at)}
           </time>
         ) : (
           <Avatar name={name} size={32} src={msg.author && avatarSrc(msg.author.id)} />
@@ -512,7 +511,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
           <header className="flex items-baseline gap-2">
             <span className="text-label text-primary ellipsis">{name}</span>
             <time dateTime={msg.created_at} title={fullTime(msg.created_at)} className="text-caption text-secondary flex-noshrink">
-              {clock(msg.created_at)}
+              {clockTime(msg.created_at)}
             </time>
           </header>
         )}
@@ -921,7 +920,7 @@ function ThreadPanel({ rootId }: { rootId: string }) {
 
   useEffect(() => heading.current?.focus(), [])
 
-  const replies = data ? [...(older?.replies.filter((r) => !data.replies[0] || r.id < data.replies[0].id) ?? []), ...data.replies] : []
+  const replies = data ? [...extractDataFromArray(older, 'replies', []).filter((r) => !data.replies[0] || r.id < data.replies[0].id), ...data.replies] : []
   const hasMore = older ? older.has_more : data?.has_more
   const lastReply = replies.at(-1)?.id
 

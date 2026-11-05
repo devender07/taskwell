@@ -5,6 +5,7 @@ import type { TestRun } from '@/api'
 import { RunStatusPill, formatCost, runFinished, useLive } from '@/components/tests/tests'
 import { useRealtime } from '@/realtime'
 import { workspacePath } from '@/api'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 // Outside _app so the popup has no navbar or sidebar; the API answers 401 when signed out.
 export const Route = createFileRoute('/live/$workspace/$run')({
@@ -19,8 +20,8 @@ function LiveView() {
   const [attempt, setAttempt] = useState(0)
   const [broken, setBroken] = useState(false)
   const streaming = run?.kind !== 'manual' && run?.status === 'running'
-  const current = run?.results.find((r) => r.status === 'running')
-  const done = run?.results.filter((r) => !['pending', 'running'].includes(r.status)).length ?? 0
+  const current = extractDataFromArray(run, 'results', []).find((r) => r.status === 'running')
+  const done = extractDataFromArray(run, 'results', []).filter((r) => !['pending', 'running'].includes(r.status)).length
 
   useEffect(() => {
     if (run) document.title = `Live: ${run.issue.identifier} · Taskwell`
@@ -56,7 +57,7 @@ function LiveView() {
         <span className="text-label text-primary ellipsis flex-grow">
           {run ? `${run.issue.identifier} · ${current?.title ?? run.issue.title}` : 'Live test run'}
         </span>
-        {run?.results.length ? <span className="text-caption text-secondary flex-noshrink">{`${done} of ${run.results.length} cases`}</span> : null}
+        {extractDataFromArray(run, 'results', []).length ? <span className="text-caption text-secondary flex-noshrink">{`${done} of ${extractDataFromArray(run, 'results', []).length} cases`}</span> : null}
         {run?.cost_usd != null ? <span className="text-caption text-secondary flex-noshrink">{formatCost(run.cost_usd)}</span> : null}
         {run ? <RunStatusPill status={run.status} /> : null}
       </header>

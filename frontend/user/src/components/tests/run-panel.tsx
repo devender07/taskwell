@@ -24,6 +24,7 @@ import { singleKeyShortcuts, typing, useShortcuts } from '@/components/app/short
 import { refetchPaths } from '@/realtime'
 import { CaseText, ResultIcon, RunStatusPill, bugPrefill, formatCost, runFinished, useLive } from './tests'
 import './tests.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type Mark = 'passed' | 'failed' | 'skipped'
 const KEYS: Record<string, Mark> = { p: 'passed', f: 'failed', s: 'skipped' }
@@ -45,7 +46,7 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
   const { createPrefilled } = useShortcuts()
 
   const result =
-    run?.results.find((r) => r.id === selected) ?? run?.results.find((r) => r.status === 'running' || r.status === 'pending') ?? run?.results[0]
+    byId(extractDataFromArray(run, 'results', []), selected) ?? extractDataFromArray(run, 'results', []).find((r) => r.status === 'running' || r.status === 'pending') ?? extractDataFromArray(run, 'results', [])[0]
   const finished = run ? runFinished(run.status) : true
   const markable = run?.kind === 'manual' && !finished && can(workspace, 'tests.manage') && Boolean(result)
   const cancellable = run && !finished && can(workspace, run.kind === 'ai' ? 'ai_tests.run' : 'tests.manage')
@@ -202,11 +203,11 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
           {result.marked_at ? <> {relativeTime(result.marked_at)}</> : null}
         </p>
       ) : null}
-      {result.reproduction?.length ? (
+      {extractDataFromArray(result, 'reproduction', []).length ? (
         <div className="grid gap-1">
           <h4 className="text-caption text-secondary m-0">Reproduction</h4>
           <ol className="text-body-sm m-0 grid gap-1" style={{ paddingLeft: 20 }}>
-            {result.reproduction.map((s, i) => (
+            {extractDataFromArray(result, 'reproduction', []).map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ol>

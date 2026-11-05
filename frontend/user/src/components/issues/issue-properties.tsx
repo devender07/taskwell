@@ -11,6 +11,7 @@ import { FormError } from '@/components/auth/auth-card'
 import { AssignedBy, LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 import '@/components/analytics/analytics.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
 type Patch = { form: FormData; next: Partial<Issue> }
@@ -45,7 +46,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
 
   const late = overdue(issue.due_date, issue.status.category)
   const edit = issue.can_edit
-  const parentable = !issue.sub_issues?.length
+  const parentable = !extractDataFromArray(issue, 'sub_issues', []).length
 
   async function loadParents(q: string, signal: AbortSignal) {
     const refs = await searchIssues(workspace, saved.identifier, saved.project.key)(q, signal)
@@ -70,7 +71,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             options={statusOpts}
             value={statusOpts.find((o) => o.value === issue.status.id) ?? null}
             onChange={(o) => {
-              const status = statuses.find((s) => s.id === o?.value)
+              const status = byId(statuses, o?.value)
               if (status && status.id !== issue.status.id) update('status_id', [status.id], { status })
             }}
           />
@@ -86,8 +87,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             loadOptions={loadAssignees(people)}
             value={assigneeOption(issue.assignee)}
             onChange={(o) => {
-              const id = o?.value ?? ''
-              if (id === (issue.assignee?.id ?? '')) return
+              const id = extractDataFromArray(o, 'value', '')
+              if (id === (extractDataFromArray(issue.assignee, 'id', ''))) return
               update('assignee_id', [id], { assignee: o && id ? { id, name: o.label } : null, assigned_by: { id: user.id, name: user.name } })
             }}
           />
@@ -106,8 +107,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
               subscribe={subscribeIssues(workspace)}
               value={issue.parent ? refOption(issue.parent) : null}
               onChange={(o) => {
-                const id = o?.value ?? ''
-                if (id === (issue.parent?.identifier ?? '')) return
+                const id = extractDataFromArray(o, 'value', '')
+                if (id === (extractDataFromArray(issue.parent, 'identifier', ''))) return
                 update('parent', [id], { parent: found.current.get(id) ?? null })
               }}
             />
@@ -119,8 +120,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
             value={issue.cycle ? cycleOption(issue.cycle) : null}
             onChange={(o) => {
-              const id = o?.value ?? ''
-              if (id === (issue.cycle?.id ?? '')) return
+              const id = extractDataFromArray(o, 'value', '')
+              if (id === (extractDataFromArray(issue.cycle, 'id', ''))) return
               update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
             }}
           />
@@ -143,7 +144,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
                 options={statusOpts}
                 value={statusOpts.find((o) => o.value === issue.status.id) ?? null}
                 onChange={(o) => {
-                  const status = statuses.find((s) => s.id === o?.value)
+                  const status = byId(statuses, o?.value)
                   if (status && status.id !== issue.status.id) update('status_id', [status.id], { status })
                 }}
               />

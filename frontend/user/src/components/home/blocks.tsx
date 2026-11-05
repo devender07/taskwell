@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -336,7 +337,7 @@ export function RecentlyViewed({ workspace, issues }: { workspace: string; issue
                 <IssueLine workspace={workspace} identifier={r.identifier}>
                   {issue ? <StatusIcon status={issue.status} label={issue.status.name} /> : null}
                   <span className="issue-id flex-noshrink">{r.identifier}</span>
-                  <span className="text-label text-primary ellipsis flex-grow">{issue?.title ?? r.title}</span>
+                  <span className="text-label text-primary ellipsis flex-grow">{extractDataFromArray(issue, 'title', r.title)}</span>
                 </IssueLine>
               </li>
             )

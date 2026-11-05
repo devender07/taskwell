@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState, type ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -141,7 +142,7 @@ function AddLink({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const form = new FormData()
-    form.set('type', type?.value ?? '')
+    form.set('type', extractDataFromArray(type, 'value', ''))
     form.set('issue', target?.value ?? '')
     try {
       await api<Issue>(`${issuePath(workspace, issue.identifier)}/links`, form)

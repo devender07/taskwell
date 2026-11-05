@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -165,8 +166,8 @@ function StatusSettings({ workspace, integration, statuses }: Props) {
   const done = statuses.filter((s) => s.category === 'completed')
   const openOptions: Option[] = [{ value: '', label: "Don't move" }, ...statuses.map((s) => ({ value: s.id, label: s.name }))]
   const mergeOptions: Option[] = done.map((s) => ({ value: s.id, label: s.name }))
-  const openValue = integration.open_status?.id ?? ''
-  const mergeValue = integration.merge_status?.id ?? done[0]?.id ?? ''
+  const openValue = extractDataFromArray(integration.open_status, 'id', '')
+  const mergeValue = extractDataFromArray(integration.merge_status, 'id', extractDataFromArray(done[0], 'id', ''))
 
   const [{ errors, error }, save, pending] = useActionState(async (_prev: State, next: Settings): Promise<State> => {
     const form = new FormData()
@@ -182,7 +183,7 @@ function StatusSettings({ workspace, integration, statuses }: Props) {
   }, {})
 
   const change = (patch: Partial<Settings>) =>
-    startTransition(() => save({ open_status: openValue, merge_status: integration.merge_status?.id ?? '', ...patch }))
+    startTransition(() => save({ open_status: openValue, merge_status: extractDataFromArray(integration.merge_status, 'id', ''), ...patch }))
 
   return (
     <div className="grid gap-3">

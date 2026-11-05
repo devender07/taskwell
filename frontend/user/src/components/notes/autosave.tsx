@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fullTime } from '@taskwell/shared/time'
+import { clockTime, fullTime } from '@taskwell/shared/time'
 
 const DELAY_MS = 500
 
@@ -32,7 +32,6 @@ export function useAutosave(save: () => Promise<boolean>) {
   return { saving, schedule, flush }
 }
 
-const clock = (d: Date) => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
 // "Saving…", or when it was last saved (and by whom, when someone else): the time today, else the date and time.
 export function SavedAt({ saving, at, by }: { saving: boolean; at: string | null; by?: string }) {
@@ -42,7 +41,7 @@ export function SavedAt({ saving, at, by }: { saving: boolean; at: string | null
   const today = d.toDateString() === new Date().toDateString()
   return (
     <span className="text-caption text-secondary" role="status">
-      Last saved <time dateTime={at} title={fullTime(at)}>{today ? clock(d) : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${clock(d)}`}</time>
+      Last saved <time dateTime={at} title={fullTime(at)}>{today ? clockTime(d) : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${clockTime(d)}`}</time>
       {by ? ` by ${by}` : null}
     </span>
   )

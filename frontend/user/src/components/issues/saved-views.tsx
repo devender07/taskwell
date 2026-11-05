@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { deepEqual, defaultParseSearch, useLoaderData, useLocation, useRouter, type AnyRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -100,7 +101,7 @@ type State = { errors?: FieldErrors; error?: string | null }
 // Saves a new view of `path`, or renames `view`.
 function ViewForm({ workspace, view, path, onDone }: { workspace: Workspace; view?: SavedView; path: string; onDone: () => void }) {
   const router = useRouter()
-  const [name, setName] = useState(view?.name ?? '')
+  const [name, setName] = useState(extractDataFromArray(view, 'name', ''))
   const [shared, setShared] = useState(false)
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const invalid = viewName(name)
