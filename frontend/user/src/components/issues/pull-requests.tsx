@@ -29,7 +29,7 @@ export function PullRequests({ issue }: { issue: Issue }) {
       <ul className="grid m-0 p-0 bg-surface border rounded-lg overflow-hidden" style={{ listStyle: 'none' }}>
         {prs.map((pr) => (
           <li key={`${pr.provider}:${pr.repo}#${pr.number}`}>
-            <a href={pr.url} target="_blank" rel="noreferrer" className="issue-row">
+            <a href={/^https?:\/\//i.test(pr.url) ? pr.url : undefined} target="_blank" rel="noreferrer" className="issue-row">
               <span className="text-secondary inline-grid">
                 <ProviderIcon provider={pr.provider} />
               </span>

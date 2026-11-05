@@ -5,6 +5,7 @@ import { Input } from '@taskwell/shared/input'
 import { password as checkPassword, required } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
+import { askToReviewTokens } from './review-tokens'
 
 type State = { errors?: FieldErrors; error?: string | null; saved?: boolean }
 
@@ -26,6 +27,7 @@ export function PasswordForm({ user }: { user: User }) {
       return toFormErrors(e)
     }
     if (!user.has_password) await router.invalidate()
+    if (user.has_password) askToReviewTokens()
     return { saved: true }
   }, {})
 

@@ -156,4 +156,8 @@ func parseGitLab(event string, body []byte) (p pr, ok bool, err error) {
 }
 
 // valid reports whether the delivery names a pull request we can store.
-func valid(p pr) bool { return p.Repo != "" && p.Number > 0 && p.URL != "" }
+// valid also requires an http(s) URL, since the issue page links to it (a javascript: URL would run on click).
+func valid(p pr) bool {
+	u := strings.ToLower(p.URL)
+	return p.Repo != "" && p.Number > 0 && (strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://"))
+}
