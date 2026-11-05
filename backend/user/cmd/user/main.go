@@ -37,6 +37,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/oauth"
 	"github.com/devender07/taskwell/backend/user/internal/project"
+	"github.com/devender07/taskwell/backend/user/internal/projectfile"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sweep"
@@ -225,6 +226,7 @@ func main() {
 	fileH := file.New(pool, files, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	fileH.Register(mux)
+	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })

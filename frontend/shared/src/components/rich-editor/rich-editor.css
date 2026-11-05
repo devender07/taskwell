@@ -10,7 +10,6 @@
 /* What Tiptap's injected .ProseMirror styles give the editor, for the JSON renderer (rich-text.tsx). */
 .rich-text { position: relative; overflow-wrap: anywhere; white-space: pre-wrap; white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: 'liga' 0; }
 .rich-text pre { white-space: pre-wrap; }
-.rich-editor-content > * + * { margin-top: var(--space-2); }
 .rich-editor-content h1 { font: 590 20px/26.6px var(--font); margin-top: var(--space-4); }
 .rich-editor-content h2 { font: 590 16px/24px var(--font); margin-top: var(--space-4); }
 .rich-editor-content h3 { font: 510 15px/24px var(--font); margin-top: var(--space-3); }
@@ -24,7 +23,14 @@
 .rich-editor-content hr { border: 0; border-top: 1px solid rgba(var(--ink), 0.08); margin-block: var(--space-4); }
 .rich-editor-content a { color: var(--text); text-decoration: underline; text-decoration-color: var(--link); text-underline-offset: 2px; }
 .rich-editor-content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
-.rich-editor-content img.ProseMirror-selectednode { outline: 2px solid var(--link); outline-offset: 2px; }
+.rich-editor-content img.ProseMirror-selectednode, .rich-editor-content [data-resize-container].ProseMirror-selectednode img { outline: 2px solid var(--link); outline-offset: 2px; }
+.rich-editor-content [data-resize-wrapper] { max-width: 100%; }
+.rich-editor-resize { width: 12px; height: 12px; margin: -6px; background: var(--link); border: 2px solid var(--bg); border-radius: 9999px; opacity: 0; touch-action: none; }
+.rich-editor-resize::before { content: ''; position: absolute; inset: -16px; } /* 44px touch target */
+.rich-editor-resize[data-resize-handle='bottom-right'] { cursor: nwse-resize; }
+.rich-editor-resize[data-resize-handle='bottom-left'] { cursor: nesw-resize; }
+[data-resize-wrapper]:hover .rich-editor-resize, .ProseMirror-selectednode .rich-editor-resize, [data-resize-state='true'] .rich-editor-resize { opacity: 1; }
+@media (hover: none) { .rich-editor-resize { opacity: 1; } }
 .rich-editor-content [data-type='mention'] { padding: 0 var(--space-1); color: #fff; font-weight: 510; background: var(--link); border-radius: 4px; }
 .rich-editor-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

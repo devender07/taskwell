@@ -207,6 +207,8 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         run: () => go(`projects/${encodeURIComponent(cycles!.key)}/cycles/${current.number}`),
       })
     }
+    if (projectKey) actions.push({ value: 'files', label: 'Go to project files', run: () => go(`projects/${encodeURIComponent(projectKey)}/files`) })
+    actions.push({ value: 'all-files', label: 'Go to Files', run: () => go('files') })
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
     actions.push({ value: 'notes', label: 'Go to Notes', run: () => go('notes') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })

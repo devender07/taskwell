@@ -238,6 +238,12 @@ export const viewName: Check = (v) => {
   return s.length > 60 ? 'Use 60 characters or fewer.' : null
 }
 
+export const folderName: Check = (v) => {
+  const s = v.trim()
+  if (!s) return 'Enter a name.'
+  return s.length > 100 ? 'Use 100 characters or fewer.' : null
+}
+
 export const projectUpdateBody = (empty: boolean, length: number) =>
   empty ? 'Write an update.' : length > 10000 ? 'Update must be 10,000 characters or fewer.' : null
 

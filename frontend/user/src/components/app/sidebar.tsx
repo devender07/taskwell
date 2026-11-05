@@ -1,5 +1,5 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
 import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
@@ -64,6 +64,10 @@ export function AppSidebar({ workspace }: { workspace: string }) {
       <Link to="/$workspace/projects" params={{ workspace }} aria-current={current('projects')}>
         <FolderIcon />
         Projects
+      </Link>
+      <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
+        <FileIcon />
+        Files
       </Link>
       {guest ? null : (
         <>

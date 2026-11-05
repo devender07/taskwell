@@ -510,3 +510,10 @@ export const UserPlusIcon = (props: IconProps) => (
     <path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6" />
   </Icon>
 )
+
+export const UploadIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 15V4M7 9l5-5 5 5" />
+    <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+  </Icon>
+)

@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { RichEditor, seedYDoc, yDocToJSON } from '@taskwell/shared/rich-editor'
 import { issueDescription } from '@taskwell/shared/validate'
-import { api, issuePath, uploadFile, type Issue } from '@/api'
+import { api, issuePath, type Issue } from '@/api'
 import { reloadPage } from '@/realtime'
 import { REMOTE, caretColor, connectCollab, type CollabState } from './collab'
 import { StaticDescription, type DescriptionProps } from './description'
@@ -19,7 +19,7 @@ const NOTICES = {
 
 // The live description editor (loaded lazily by ./description); `onViewers` (a stable setter) gets the other people
 // who have this issue open.
-export default function LiveDescription({ workspace, issue, user, people: mentions, onViewers }: DescriptionProps) {
+export default function LiveDescription({ workspace, issue, user, people: mentions, onViewers, onFiles }: DescriptionProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [live, setLive] = useState<CollabState | null>(null)
   const [offline, setOffline] = useState(false)
@@ -113,7 +113,7 @@ export default function LiveDescription({ workspace, issue, user, people: mentio
               placeholder="Add a description… Type @ to mention someone"
               mentions={mentions}
               minHeight={160}
-              upload={(file) => uploadFile(workspace.slug, file)}
+              onFiles={onFiles}
               onChange={(doc, length) => {
                 const error = issueDescription(length)
                 long.current = !!error

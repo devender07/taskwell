@@ -36,6 +36,13 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("get = %d %q %v", res.StatusCode, got, res.Header)
 	}
 
+	if err := s.SetHeaders(ctx, id, "text/plain", `attachment; filename="b.txt"`); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := http.Get(u); err != nil || res.Header.Get("Content-Disposition") != `attachment; filename="b.txt"` {
+		t.Fatalf("after SetHeaders: %v %v", res, err)
+	}
+
 	var old []string
 	if err := s.Old(ctx, time.Now().Add(time.Minute), func(keys []string) error { old = append(old, keys...); return nil }); err != nil {
 		t.Fatal(err)

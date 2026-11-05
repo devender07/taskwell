@@ -33,6 +33,8 @@ func TestCheckDoc(t *testing.T) {
 		{"too deep", `{"type":"doc","content":[` + nested + `]}`, "Description has unsupported content.", true},
 		{"too long", para(`{"type":"text","text":"` + strings.Repeat("é", 49999) + `"},{"type":"mention","attrs":{"id":"u","label":"ab"}}`), "Description must be 50,000 characters or fewer.", true},
 		{"image", `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + file + `","alt":"Shot"}}]}`, "", false},
+		{"resized image", `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + file + `","width":320}}]}`, "", false},
+		{"bad image width", `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + file + `","width":"wide"}}]}`, "Description has unsupported content.", true},
 		{"image in list", `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"image","attrs":{"src":"` + file + `"}}]}]}]}`, "", false},
 		{"image external src", `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://evil.dev/x.png"}}]}`, "Description has unsupported content.", true},
 		{"image traversal src", `{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/../x"}}]}`, "Description has unsupported content.", true},
