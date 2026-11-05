@@ -5,10 +5,11 @@ import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { Logo } from '@taskwell/shared/logo'
 import { Popover } from '@taskwell/shared/popover'
-import { CheckIcon, ChevronDownIcon, MenuIcon, XIcon } from '@taskwell/shared/icons'
+import { CheckIcon, ChevronDownIcon, MenuIcon, SearchIcon, XIcon } from '@taskwell/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { NotificationsBell } from './notifications-bell'
+import { isApple, openWorkspacePalette, paletteKey } from './shortcuts'
 import './navbar.css'
 
 // Whether the app sidebar is open as the mobile menu; the navbar's button toggles it.
@@ -19,7 +20,9 @@ export function MenuProvider({ children }: { children: ReactNode }) {
 }
 
 export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
-  const home = useParams({ strict: false }).workspace ?? workspaces[0]?.slug
+  const current = useParams({ strict: false }).workspace
+  const inWorkspace = !!current
+  const home = current ?? workspaces[0]?.slug
   const hasSidebar = useMatch({ from: '/_app/$workspace/_main', shouldThrow: false })
   const [menuOpen, setMenuOpen] = useMenu()
   return (
@@ -42,6 +45,13 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
         </Link>
       </div>
       <div className="flex items-center gap-2">
+        {inWorkspace ? (
+          <button type="button" className="navbar-search" aria-label="Search issues and projects" aria-keyshortcuts={isApple ? 'Meta+K' : 'Control+K'} onClick={openWorkspacePalette}>
+            <SearchIcon size={16} />
+            <span className="navbar-search-label">Search issues and projects</span>
+            <kbd className="kbd">{paletteKey}</kbd>
+          </button>
+        ) : null}
         <NotificationsBell />
         <Popover
           aria-label="Account"

@@ -36,3 +36,17 @@ const SAFE_HREF = /^(https?:\/\/|mailto:)/i
 // Links may point at the web, email or an uploaded file; anything else (javascript:, data:, relative paths) is not a link.
 export const isAllowedHref = (url: string) => SAFE_HREF.test(url) || FILE_URL.test(url)
 export const linkHref = (href: unknown) => (typeof href === 'string' && isAllowedHref(href) ? apiUrl(href) : undefined)
+
+// The doc with its nth checklist item (in document order, outer before nested) checked or unchecked.
+export function toggleTask(doc: Doc, n: number): Doc {
+  let i = 0
+  const walk = (node: Doc): Doc => {
+    const hit = node.type === 'taskItem' && i++ === n
+    return {
+      ...node,
+      ...(hit && { attrs: { ...node.attrs, checked: node.attrs?.checked !== true } }),
+      ...(node.content && { content: node.content.map(walk) }),
+    }
+  }
+  return walk(doc)
+}

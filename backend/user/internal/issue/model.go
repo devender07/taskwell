@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/collab"
 	"github.com/devender07/taskwell/backend/user/internal/db"
 	"github.com/devender07/taskwell/backend/user/internal/doc"
 	"github.com/devender07/taskwell/backend/user/internal/notify"
@@ -303,6 +305,7 @@ type pageQuery struct {
 	statuses, assignees, labels, cycles []string
 	priorities                          []int
 	noAssignee, noCycle                 bool
+	text                                string // matches the identifier, or within the title or description
 }
 
 // Group is one group of a paged list: its key, how many issues it has and a page of them.
@@ -375,6 +378,10 @@ func (m *model) page(ctx context.Context, q pageQuery, where string, args ...any
 	oneOf(`i.cycle_id`, `uuid`, q.cycles, len(q.cycles), q.noCycle)
 	if len(q.labels) > 0 {
 		where += ` and exists(select 1 from issue_labels il where il.issue_id = i.id and il.label_id = any(` + arg(q.labels) + `::uuid[]))`
+	}
+	if q.text != "" {
+		where += ` and (upper(p.key || '-' || i.number) = upper(` + arg(q.text) + `)` +
+			` or i.title ilike ` + arg("%"+escapeLike(q.text)+"%") + ` or i.description_text ilike $` + strconv.Itoa(len(args)) + `)`
 	}
 	group := groupBy[q.group]
 	if q.in != nil {
@@ -720,15 +727,8 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 		return err
 	}
 	if f.setDescription {
-		// The live document is replaced: every instance resets the issue's editors so they reload it, and the next
-		// one seeds it from the new description (a recent seed's claim would hold that off for 10s).
-		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `update issues set seed_claimed_at = null where id = $1`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `select pg_notify('collab', $1)`, notePrefix(id, noteReset)); err != nil {
+		// The live document is replaced (see collab.Store.Reset).
+		if err := docs.Reset(ctx, tx, id); err != nil {
 			return err
 		}
 	}
@@ -1355,107 +1355,17 @@ func (m *model) importIssues(ctx context.Context, workspaceID, projectID, actorI
 
 // --- live editing ---
 
-type docUpdate struct {
-	id   int64
-	data []byte
-}
+// docs is where issue descriptions keep their live state.
+var docs = collab.Store{Updates: "issue_doc_updates", Key: "issue_id", Docs: "issues", Channel: "collab"}
 
-// docUpdates returns the issue's stored Yjs updates, oldest first.
-func (m *model) docUpdates(ctx context.Context, issueID string) ([]docUpdate, error) {
-	rows, err := m.db.Query(ctx, `select id, data from issue_doc_updates where issue_id = $1 order by id`, issueID)
-	if err != nil {
-		return nil, fmt.Errorf("list doc updates: %w", err)
+// saveFrame stores a live session's save frame as the issue's description; one that fails the check is dropped.
+func (m *model) saveFrame(ctx context.Context, issueID, actorID string, body []byte) error {
+	d, msg := checkDescription(body)
+	if msg != "" {
+		slog.Warn("collab save rejected", "issue", issueID, "reason", msg)
+		return nil
 	}
-	us, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (docUpdate, error) {
-		var u docUpdate
-		err := row.Scan(&u.id, &u.data)
-		return u, err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list doc updates: %w", err)
-	}
-	return us, nil
-}
-
-// addDocUpdate stores an update and returns its id; ok is false when the issue's stored updates would pass maxStored.
-func (m *model) addDocUpdate(ctx context.Context, issueID string, data []byte) (id int64, ok bool, err error) {
-	err = m.db.QueryRow(ctx,
-		`insert into issue_doc_updates (issue_id, data)
-		 select $1, $2 where (select coalesce(sum(octet_length(data)), 0) from issue_doc_updates where issue_id = $1)
-		                     + octet_length($2::bytea) <= $3
-		 returning id`, issueID, data, maxStored).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("add doc update: %w", err)
-	}
-	return id, true, nil
-}
-
-// docUpdate returns one stored update's data; nil when it's gone (compacted).
-func (m *model) docUpdate(ctx context.Context, id int64) ([]byte, error) {
-	var data []byte
-	err := m.db.QueryRow(ctx, `select data from issue_doc_updates where id = $1`, id).Scan(&data)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("load doc update: %w", err)
-	}
-	return data, nil
-}
-
-// notify sends payload to every API instance listening on collab.
-func (m *model) notify(ctx context.Context, payload string) error {
-	if _, err := m.db.Exec(ctx, `select pg_notify('collab', $1)`, payload); err != nil {
-		return fmt.Errorf("notify collab: %w", err)
-	}
-	return nil
-}
-
-// claimSeed claims seeding the issue's live document when nothing is stored yet and no fresh claim exists.
-// A concurrent claim waits on the row lock, then sees the new seed_claimed_at and fails.
-func (m *model) claimSeed(ctx context.Context, issueID string) (bool, error) {
-	tag, err := m.db.Exec(ctx,
-		`update issues set seed_claimed_at = now()
-		 where id = $1 and (seed_claimed_at is null or seed_claimed_at < now() - interval '10 seconds')
-		   and not exists (select 1 from issue_doc_updates where issue_id = $1)`, issueID)
-	if err != nil {
-		return false, fmt.Errorf("claim seed: %w", err)
-	}
-	return tag.RowsAffected() == 1, nil
-}
-
-// renewSeed extends a seed claim that's still held.
-func (m *model) renewSeed(ctx context.Context, issueID string) error {
-	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = now() where id = $1 and seed_claimed_at is not null`, issueID)
-	if err != nil {
-		return fmt.Errorf("renew seed claim: %w", err)
-	}
-	return nil
-}
-
-// setSeedClaim refreshes the seed claim (handed to another editor here) or clears it (free for any instance).
-func (m *model) setSeedClaim(ctx context.Context, issueID string, claimed bool) error {
-	_, err := m.db.Exec(ctx, `update issues set seed_claimed_at = case when $2 then now() end where id = $1`, issueID, claimed)
-	if err != nil {
-		return fmt.Errorf("set seed claim: %w", err)
-	}
-	return nil
-}
-
-// compactDoc replaces the issue's updates with the ids, the ones the client loaded, with data, their merged state.
-// Deleting by id rather than "up to" keeps an update that committed after the client's load.
-func (m *model) compactDoc(ctx context.Context, issueID string, ids []int64, data []byte) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `delete from issue_doc_updates where issue_id = $1 and id = any($2)`, issueID, ids); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `insert into issue_doc_updates (issue_id, data) values ($1, $2)`, issueID, data)
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("compact doc: %w", err)
-	}
-	return nil
+	return m.saveDescription(ctx, issueID, actorID, d)
 }
 
 // saveDescription sets the issue's description (nil clears it), logging the actor's edit and notifying the newly

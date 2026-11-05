@@ -3,7 +3,7 @@
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond)
 // and model.go owns every SQL query. doc.go checks rich-text descriptions and comments, events.go diffs changes into
-// activity events, rank.go computes manual-order ranks, trash.go serves the trash and collab.go relays live edits (joined over the realtime socket). Changes record their notifications with notify.Record.
+// activity events, rank.go computes manual-order ranks, trash.go serves the trash and collab.go joins live editing of descriptions (the collab package, over the realtime socket). Changes record their notifications with notify.Record.
 package issue
 
 import (

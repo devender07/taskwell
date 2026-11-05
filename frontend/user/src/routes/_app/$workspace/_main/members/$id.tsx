@@ -26,7 +26,7 @@ function MemberPage() {
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
       {data ? (
         <>
-          <header className="flex items-center gap-4">
+          <header className="page-top flex items-center gap-4">
             <Avatar name={data.member.name} size={48} src={avatarSrc(data.member.id)} />
             <div className="grid" style={{ minWidth: 0 }}>
               <h1 className="text-h2 ellipsis">{data.member.name}</h1>

@@ -34,7 +34,7 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
 }
 const SETTINGS = ['Profile', 'Notifications', 'API tokens', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
 // Actions for pages a guest can't use.
-const GUEST_HIDDEN = new Set(['roadmap', 'inbox', 'feedback', 'add-feedback', 'new-message', 'new-group', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels', 'Integrations', 'Feedback form'])
+const GUEST_HIDDEN = new Set(['roadmap', 'inbox', 'notes', 'feedback', 'add-feedback', 'new-message', 'new-group', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels', 'Integrations', 'Feedback form'])
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -208,6 +208,7 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
       })
     }
     actions.push({ value: 'inbox', label: 'Go to Inbox', run: () => go('inbox') })
+    actions.push({ value: 'notes', label: 'Go to Notes', run: () => go('notes') })
     for (const c of chats) actions.push({ value: `chat-${c.id}`, label: `Go to ${c.name}`, run: () => go(`inbox/c/${encodeURIComponent(c.id)}`) })
     actions.push({ value: 'feedback', label: 'Go to Feedback', run: () => go('feedback') })
     actions.push({ value: 'add-feedback', label: 'Add feedback', run: () => go('feedback?add=true') })

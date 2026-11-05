@@ -31,6 +31,10 @@ const HELP = [
   ['Esc', 'Close'],
 ]
 
+// The mounted workspace's palette, for the navbar (it sits above the workspace layout, outside this context).
+let paletteOpener: (() => void) | null = null
+export const openWorkspacePalette = () => paletteOpener?.()
+
 type Actions = { openPalette: () => void; openCreate: () => void; createPrefilled: (prefill: Prefill) => void }
 const ShortcutsContext = createContext<Actions>({ openPalette() {}, openCreate() {}, createPrefilled() {} })
 export const useShortcuts = () => use(ShortcutsContext)
@@ -77,6 +81,11 @@ export function Shortcuts({ children }: { children: ReactNode }) {
     : undefined
 
   const actions = useMemo<Actions>(() => ({ openPalette: () => setPalette('root'), openCreate: () => setCreating({}), createPrefilled: (prefill) => setCreating({ prefill }) }), [])
+
+  useEffect(() => {
+    paletteOpener = actions.openPalette
+    return () => void (paletteOpener = null)
+  }, [actions])
 
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return

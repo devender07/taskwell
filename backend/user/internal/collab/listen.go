@@ -1,4 +1,4 @@
-package issue
+package collab
 
 import (
 	"context"
@@ -10,14 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 )
 
-// Live-editing frames cross API instances as notifications on the Postgres channel collab:
-// "<instance> <issue id> b <items>" carries a session's batched frames (see outbox), comma-separated, each
+// Live-editing frames cross API instances as notifications on the store's Postgres channel:
+// "<instance> <doc id> b <items>" carries a session's batched frames (see outbox), comma-separated, each
 // "a<base64 tagged frame>" for awareness and updates small enough to fit, "u<update id>" for a stored update that
-// doesn't; "<instance> <issue id> c " tells every instance, the sender too, to reset the issue's editors (a REST
-// description write replaced the live document).
+// doesn't; "<instance> <doc id> c " tells every instance, the sender too, to reset the document's editors (a REST
+// write replaced the live document).
 const (
 	noteBatch = "b"
 	noteReset = "c"
@@ -27,9 +29,9 @@ const (
 // instance tells this process's notifications from other instances'.
 var instance = rand.Text()
 
-func notePrefix(issueID, kind string) string { return instance + " " + issueID + " " + kind + " " }
+func notePrefix(docID, kind string) string { return instance + " " + docID + " " + kind + " " }
 
-type note struct{ instance, issueID, kind, arg string }
+type note struct{ instance, docID, kind, arg string }
 
 func parseNote(s string) (note, bool) {
 	f := strings.SplitN(s, " ", 4)
@@ -39,10 +41,10 @@ func parseNote(s string) (note, bool) {
 	return note{f[0], f[1], f[2], f[3]}, true
 }
 
-// batchNotes joins items into as few notifications for the issue as fit in maxNote each. An item too long to fit
+// batchNotes joins items into as few notifications for the document as fit in maxNote each. An item too long to fit
 // in one is dropped: callers keep items under maxItem.
-func batchNotes(issueID string, items []string) []string {
-	prefix := notePrefix(issueID, noteBatch)
+func batchNotes(docID string, items []string) []string {
+	prefix := notePrefix(docID, noteBatch)
 	var out []string
 	var b strings.Builder
 	for _, it := range items {
@@ -79,7 +81,7 @@ func frameItem(frame []byte) string {
 
 // Listen relays other instances' live-editing frames to the connections here until ctx ends,
 // reconnecting with backoff when its Postgres connection drops.
-func (h *Handler) Listen(ctx context.Context) {
+func (h *Hub) Listen(ctx context.Context) {
 	loads := make(chan note, loadQueue)
 	go h.loadUpdates(ctx, loads)
 	wait := time.Second
@@ -104,22 +106,22 @@ func (h *Handler) Listen(ctx context.Context) {
 // loadQueue bounds the stored updates waiting to be loaded and relayed.
 const loadQueue = 256
 
-// listen holds one connection out of the pool, listening on collab, until it fails. It relays inline frames itself
+// listen holds one connection out of the pool, listening on the store's channel, until it fails. It relays inline frames itself
 // and queues stored updates on loads, so it never waits on a query and Postgres's notification queue keeps draining.
-func (h *Handler) listen(ctx context.Context, loads chan<- note) (bool, error) {
-	pc, err := h.model.db.Acquire(ctx)
+func (h *Hub) listen(ctx context.Context, loads chan<- note) (bool, error) {
+	pc, err := h.db.Acquire(ctx)
 	if err != nil {
 		return false, fmt.Errorf("acquire: %w", err)
 	}
 	conn := pc.Hijack() // a listening connection never goes back to the pool
 	defer conn.Close(context.WithoutCancel(ctx))
-	if _, err := conn.Exec(ctx, "listen collab"); err != nil {
+	if _, err := conn.Exec(ctx, "listen "+pgx.Identifier{h.store.Channel}.Sanitize()); err != nil {
 		return false, fmt.Errorf("listen: %w", err)
 	}
 	h.listening.Store(true)
 	defer h.listening.Store(false)
 	// Notifications sent while nothing listened are lost: end every connection so its editor reloads.
-	h.hub.closeAll(realtime.ResyncSpread)
+	h.closeAll(realtime.ResyncSpread)
 	for {
 		n, err := conn.WaitForNotification(ctx)
 		if err != nil {
@@ -129,16 +131,16 @@ func (h *Handler) listen(ctx context.Context, loads chan<- note) (bool, error) {
 	}
 }
 
-// relay broadcasts another instance's frames to the connections here on their issue and queues stored updates'
-// loads, or closes the issue's editors. When the queue is full the issue's editors here are closed, so they reload
+// relay broadcasts another instance's frames to the connections here on their document and queues stored updates'
+// loads, or resets the document's editors. When the queue is full its editors here are closed, so they reload
 // instead of missing the update.
-func (h *Handler) relay(payload string, loads chan<- note) {
+func (h *Hub) relay(payload string, loads chan<- note) {
 	n, ok := parseNote(payload)
-	if !ok || !h.hub.has(n.issueID) {
+	if !ok || !h.has(n.docID) {
 		return
 	}
 	if n.kind == noteReset {
-		h.hub.resetRoom(n.issueID)
+		h.resetRoom(n.docID)
 		return
 	}
 	if n.kind != noteBatch || n.instance == instance {
@@ -148,26 +150,26 @@ func (h *Handler) relay(payload string, loads chan<- note) {
 		switch {
 		case strings.HasPrefix(it, "a"):
 			if frame, err := base64.StdEncoding.DecodeString(it[1:]); err == nil {
-				h.hub.broadcast(n.issueID, nil, frame)
+				h.broadcast(n.docID, nil, frame)
 			}
 		case strings.HasPrefix(it, "u"):
 			select {
-			case loads <- note{n.instance, n.issueID, "u", it[1:]}:
+			case loads <- note{n.instance, n.docID, "u", it[1:]}:
 			default:
-				slog.Warn("collab relay queue full", "issue", n.issueID)
-				h.hub.closeRoom(n.issueID)
+				slog.Warn("collab relay queue full", "doc", n.docID)
+				h.closeRoom(n.docID)
 				return
 			}
 		}
 	}
 }
 
-// Listening reports whether the collab LISTEN is connected.
-func (h *Handler) Listening() bool { return h.listening.Load() }
+// Listening reports whether the LISTEN on the store's channel is connected.
+func (h *Hub) Listening() bool { return h.listening.Load() }
 
 // loadUpdates loads and relays the queued stored updates until ctx ends. An update that's gone (compacted) or fails
-// to load closes the issue's editors here, so they reload rather than diverge.
-func (h *Handler) loadUpdates(ctx context.Context, loads <-chan note) {
+// to load closes the document's editors here, so they reload rather than diverge.
+func (h *Hub) loadUpdates(ctx context.Context, loads <-chan note) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -178,16 +180,16 @@ func (h *Handler) loadUpdates(ctx context.Context, loads <-chan note) {
 				continue
 			}
 			qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			data, err := h.model.docUpdate(qctx, id)
+			data, err := h.docUpdate(qctx, id)
 			cancel()
 			if err != nil {
-				slog.Error("collab relay failed", "issue", n.issueID, "err", err)
+				slog.Error("collab relay failed", "doc", n.docID, "err", err)
 			}
 			if data == nil {
-				h.hub.closeRoom(n.issueID)
+				h.closeRoom(n.docID)
 				continue
 			}
-			h.hub.broadcast(n.issueID, nil, tag(msgUpdate, n.issueID, data))
+			h.broadcast(n.docID, nil, tag(msgUpdate, n.docID, data))
 		}
 	}
 }

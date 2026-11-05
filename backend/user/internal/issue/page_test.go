@@ -127,6 +127,10 @@ func TestPagedLists(t *testing.T) {
 	check("/projects/ENG/issues?limit=5&group=none&cycle=none&status="+s0, 2, map[string]string{"all": "2 [5 2] false"})
 	check("/projects/ENG/issues?limit=5&group=none&assignee=none&status="+s1, 1, map[string]string{"all": "1 [4] false"})
 	check("/projects/ENG/issues?limit=5&status="+s1+"&priority=0", 0, map[string]string{})
+	// q matches the identifier (any case) or the title; a % is a literal.
+	check("/projects/ENG/issues?limit=5&group=none&q=eng-3", 1, map[string]string{"all": "1 [3] false"})
+	check("/projects/ENG/issues?limit=5&group=none&q=ISSUE%204", 1, map[string]string{"all": "1 [4] false"})
+	check("/projects/ENG/issues?limit=5&group=none&q=%25", 0, map[string]string{})
 	for _, q := range []string{"limit=0", "limit=101", "limit=x", "limit=5&group=label", "limit=5&sort=title", "limit=5&in=all&offset=-1"} {
 		get("/projects/ENG/issues?"+q, 400, nil)
 	}

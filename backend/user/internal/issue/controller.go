@@ -10,11 +10,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/collab"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -40,14 +40,14 @@ type Handler struct {
 	model        *model
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
-	hub          *hub
-	listening    atomic.Bool // the collab LISTEN is up
+	collab       *collab.Hub
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.
 func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
-	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member, hub: &hub{rooms: map[string]*room{}}}
+	m := &model{db: db}
+	return &Handler{model: m, authenticate: authenticate, member: member, collab: collab.New(db, docs, m.saveFrame)}
 }
 
 // --- issues ---
@@ -251,9 +251,12 @@ func paged(w http.ResponseWriter, r *http.Request, userID string, perms []string
 }
 
 // readPage parses a paged list's query; ok=false for a bad limit (1-100), offset, group or sort. Filter values that
-// can't match (not an id, a priority out of range) are dropped; "me" is the user.
+// can't match (not an id, a priority out of range) are dropped; "me" is the user; q is the text search.
 func readPage(v url.Values, userID string) (pageQuery, bool) {
 	q := pageQuery{group: cmp.Or(v.Get("group"), "status"), sort: cmp.Or(v.Get("sort"), "priority")}
+	if t := []rune(strings.TrimSpace(v.Get("q"))); len(t) > 0 {
+		q.text = string(t[:min(len(t), maxQuery)])
+	}
 	limit, err := strconv.Atoi(v.Get("limit"))
 	_, okGroup := groupBy[q.group]
 	_, okSort := sortBy[q.sort]

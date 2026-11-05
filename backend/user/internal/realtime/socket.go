@@ -29,17 +29,17 @@ const (
 	statusReauth websocket.StatusCode = 4001
 )
 
-// Collab is one connection's live editing of one issue (the issue package's Session).
+// Collab is one connection's live editing of one issue description or note body (a collab.Session).
 type Collab interface {
-	ID() string          // the issue's uuid
+	ID() string          // the document's uuid
 	WorkspaceID() string // its workspace's id
 	Start(ctx context.Context) error
 	Frame(ctx context.Context, data []byte) error // a binary frame from the client, tag included
 	Leave(ctx context.Context)
 }
 
-// JoinFunc checks that the user may open the workspace's issue and returns its session, not yet started; nil and
-// the message to show when they can't.
+// JoinFunc checks that the user may open the workspace's issue or note and returns its session, not yet started; nil
+// and the message to show when they can't.
 type JoinFunc func(ctx context.Context, c *Conn, userID, slug, identifier string) (Collab, string, error)
 
 // Conn is one tab's socket. The hub queues events on events and live-editing frames on frames (kept in order);
@@ -183,8 +183,8 @@ func (h *Handler) read(ctx context.Context, ws *websocket.Conn, c *Conn) error {
 			return nil
 		}
 		var m struct {
-			Type, Workspace, Issue, Chat string
-			Thread                       *string
+			Type, Workspace, Issue, Note, Chat string
+			Thread                             *string
 		}
 		if json.Unmarshal(data, &m) != nil {
 			continue
@@ -195,7 +195,11 @@ func (h *Handler) read(ctx context.Context, ws *websocket.Conn, c *Conn) error {
 		case "subscribe":
 			err = h.subscribe(ctx, c, m.Workspace)
 		case "collab.join":
-			err = h.join(ctx, c, m.Workspace, m.Issue)
+			if m.Note != "" && h.JoinNote != nil {
+				err = h.join(ctx, c, h.JoinNote, "note", m.Workspace, m.Note)
+			} else {
+				err = h.join(ctx, c, h.joinFn, "issue", m.Workspace, m.Issue)
+			}
 		case "collab.leave":
 			err = h.leave(ctx, c, m.Issue)
 		case "typing":
@@ -220,9 +224,9 @@ func (h *Handler) subscribe(ctx context.Context, c *Conn, slug string) error {
 	return nil
 }
 
-// join opens live editing of the issue: collab.joined, the viewers, then the stored document and ready.
-// Joining an issue again restarts it.
-func (h *Handler) join(ctx context.Context, c *Conn, slug, identifier string) error {
+// join opens live editing of the issue or note (kind, the key its replies carry): collab.joined, the viewers (issues
+// only), then the stored document and ready. Joining a document again restarts it.
+func (h *Handler) join(ctx context.Context, c *Conn, joinFn JoinFunc, kind, slug, identifier string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Suspension or a revoked sign-in also closes the socket through SessionRevoked; this covers a missed event.
@@ -232,20 +236,23 @@ func (h *Handler) join(ctx context.Context, c *Conn, slug, identifier string) er
 		c.reauth()
 		return nil
 	}
-	s, msg, err := h.joinFn(ctx, c, c.userID, slug, identifier)
+	s, msg, err := joinFn(ctx, c, c.userID, slug, identifier)
 	if err != nil {
 		return err
 	}
 	if s == nil {
-		return c.push(ctx, frame{websocket.MessageText, text(map[string]string{"type": "collab.error", "issue": identifier, "error": msg})})
+		return c.push(ctx, frame{websocket.MessageText, text(map[string]string{"type": "collab.error", kind: identifier, "error": msg})})
 	}
 	id := s.ID()
 	if old := c.joined[id]; old != nil {
 		old.Leave(ctx)
 	}
 	c.joined[id] = s
-	if err := c.push(ctx, frame{websocket.MessageText, text(map[string]string{"type": "collab.joined", "issue": identifier, "id": id})}); err != nil {
+	if err := c.push(ctx, frame{websocket.MessageText, text(map[string]string{"type": "collab.joined", kind: identifier, "id": id})}); err != nil {
 		return err
+	}
+	if kind != "issue" {
+		return s.Start(ctx)
 	}
 	h.hub.joinIssue(c, id, identifier)
 	if err := h.model.view(ctx, c.id, id, c.userID, instance); err != nil {

@@ -1,4 +1,4 @@
-// Package chat implements the workspace's chat: the workspace chat everyone is in, each member's notes, direct
+// Package chat implements the workspace's chat: the workspace chat everyone is in, direct
 // messages and private groups, with threaded replies, reactions and read markers. Mentions and direct messages notify
 // through notify.RecordChat; every change is published to the chat's audience, which also receives typing (Audience).
 //

@@ -97,27 +97,25 @@ func TestChat(t *testing.T) {
 		return m
 	}
 
-	// The workspace chat and notes come first, created on demand; notes are private.
+	// The workspace chat comes first, created on demand.
 	cs := chats(ann)
-	if len(cs) != 2 || cs[0].Kind != "workspace" || cs[1].Kind != "self" || cs[1].Name != "Notes" || string(cs[0].Members) != "[]" {
+	if len(cs) != 1 || cs[0].Kind != "workspace" || string(cs[0].Members) != "[]" {
 		t.Fatalf("ann's chats: %+v", cs)
 	}
-	general, annNotes := cs[0].ID, cs[1].ID
-	if again := chats(ann); len(again) != 2 || again[0].ID != general {
+	general := cs[0].ID
+	if again := chats(ann); len(again) != 1 || again[0].ID != general {
 		t.Fatal("listing again made more chats")
 	}
-	errOf(bob, "GET", "/chats/"+annNotes, nil, 404)
 	errOf(out, "GET", "/chats", nil, 404)
 	if got := errOf(out, "GET", "/chats/"+general, nil, 404); got != `{"error":"Workspace not found."}` {
 		t.Errorf("outsider: %s", got)
 	}
-	errOf(bob, "POST", "/chats/"+annNotes+"/messages", url.Values{"body": {text("x")}}, 404)
 
 	// Direct chats: one per pair, whoever starts it.
 	var d1, d2 Chat
 	do(ann, "POST", "/chats/direct", url.Values{"user_id": {bob}}, 200, &d1)
 	do(bob, "POST", "/chats/direct", url.Values{"user_id": {ann}}, 200, &d2)
-	if d1.ID != d2.ID || d1.Kind != "direct" || d1.Name != "Bob" || d2.Name != "Ann" || len(chats(bob)) != 3 {
+	if d1.ID != d2.ID || d1.Kind != "direct" || d1.Name != "Bob" || d2.Name != "Ann" || len(chats(bob)) != 2 {
 		t.Fatalf("direct: %+v %+v", d1, d2)
 	}
 	for _, u := range []string{out, ann, "nope"} {
@@ -354,8 +352,7 @@ func TestChat(t *testing.T) {
 		}
 	}
 
-	// Deleting a whole chat: the workspace chat never, a group only by its creator, a direct chat by either person,
-	// Notes by their owner (they come back empty).
+	// Deleting a whole chat: the workspace chat never, a group only by its creator, a direct chat by either person.
 	errOf(ann, "DELETE", "/chats/"+general, nil, 403)
 	var dg, dd Chat
 	do(ann, "POST", "/chats", url.Values{"name": {"Temp"}, "member_ids": {cat}}, 201, &dg)
@@ -369,11 +366,6 @@ func TestChat(t *testing.T) {
 	post(ann, dd.ID, text("hi"), "")
 	do(cat, "DELETE", "/chats/"+dd.ID, nil, 204, nil)
 	errOf(ann, "GET", "/chats/"+dd.ID, nil, 404)
-	errOf(out, "DELETE", "/chats/"+annNotes, nil, 404)
-	do(ann, "DELETE", "/chats/"+annNotes, nil, 204, nil)
-	if cs := chats(ann); len(cs) < 2 || cs[1].Kind != "self" || cs[1].ID == annNotes {
-		t.Errorf("notes after delete: %+v", cs)
-	}
 
 	// Leaving the workspace ends access everywhere.
 	if _, err := pool.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id = $2`, wsID, bob); err != nil {

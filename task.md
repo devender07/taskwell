@@ -68,6 +68,21 @@ Legend: `[x]` done, `[ ]` to do.
 
 - [x] Inbox is the workspace chat: workspace chat and personal notes by default, direct messages, private groups, @person and #issue mentions, attachments, reactions, threads, edit/delete, typing, unread counts, live; notifications live on as Activity; chat mentions and unread DMs notify and email
 
+## Notes
+
+Plans: `docs/notes-plan.md`, `docs/notes-collab-plan.md`.
+
+- [x] Notes page (replaces the private Notes chat; old notes moved over): card grid with pinned and others, title, rich text with checklists, color, per-person pin, archive and labels, search and label filters, full-screen popup kept in the URL, autosave with last saved time
+- [x] Sharing: same live note for everyone on it (Yjs, named carets), "Can edit" / "Can view" per person (owner changes roles), "From <owner>" on shared cards, avatars of everyone on the note
+- [x] Select notes for bulk archive and delete
+
+## Editor and pages
+
+- [x] Editor: link and table tools, list buttons toggle and convert lists in place, tools that don't fit go in a "More formatting" menu
+- [x] Sticky page headers on every workspace page (border once the page scrolls under them)
+- [x] Search box on issue lists (identifier, title, description; in the URL) and on Projects; navbar "Search issues and projects" opens the palette
+- [x] Two-factor setup shows a QR code
+
 ## Testing
 
 Plan: `docs/ai-testing-plan.md`.

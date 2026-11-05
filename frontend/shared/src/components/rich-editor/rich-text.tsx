@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
-import { imageSrc, linkHref, type Doc } from './doc'
+import { imageSrc, linkHref, toggleTask, type Doc } from './doc'
 import './rich-editor.css'
 
 export type { Doc }
@@ -8,8 +8,19 @@ type Mark = NonNullable<Doc['marks']>[number]
 
 // A saved document as the read-only editor would show it (same elements and classes), without a ProseMirror view.
 // `issueHref` turns `#ENG-12` issue mentions into links; without it they are plain text.
-export function RichText({ doc, 'aria-label': ariaLabel, issueHref }: { doc: Doc; 'aria-label'?: string; issueHref?: (identifier: string) => string }) {
-  const ctx: Ctx = { issueHref }
+// `onToggleTask` makes checklist items clickable: it gets the doc with that item flipped. Without it they're read-only.
+export function RichText({
+  doc,
+  'aria-label': ariaLabel,
+  issueHref,
+  onToggleTask,
+}: {
+  doc: Doc
+  'aria-label'?: string
+  issueHref?: (identifier: string) => string
+  onToggleTask?: (doc: Doc) => void
+}) {
+  const ctx: Ctx = { issueHref, task: 0, toggle: onToggleTask && ((n) => onToggleTask(toggleTask(doc, n))) }
   return (
     <div className="rich-editor rich-editor-readonly">
       <div className="rich-editor-content rich-text" role="textbox" aria-readonly="true" aria-multiline="true" aria-label={ariaLabel}>
@@ -19,7 +30,7 @@ export function RichText({ doc, 'aria-label': ariaLabel, issueHref }: { doc: Doc
   )
 }
 
-type Ctx = { issueHref?: (identifier: string) => string }
+type Ctx = { issueHref?: (identifier: string) => string; task: number; toggle?: (n: number) => void }
 
 const blocks = (nodes: Doc[] | undefined, ctx: Ctx) => nodes?.map((n, i) => block(n, i, ctx))
 
@@ -42,6 +53,26 @@ function block(n: Doc, key: number, ctx: Ctx): ReactNode {
       )
     case 'listItem':
       return <li key={key}>{blocks(n.content, ctx)}</li>
+    case 'taskList':
+      return (
+        <ul key={key} data-type="taskList">
+          {blocks(n.content, ctx)}
+        </ul>
+      )
+    case 'taskItem': {
+      const i = ctx.task++
+      const toggle = ctx.toggle
+      const checked = a.checked === true
+      return (
+        <li key={key} data-type="taskItem" data-checked={checked}>
+          <label>
+            <input type="checkbox" checked={checked} disabled={!toggle} onChange={toggle && (() => toggle(i))} />
+            <span />
+          </label>
+          <div>{blocks(n.content, ctx)}</div>
+        </li>
+      )
+    }
     case 'blockquote':
       return <blockquote key={key}>{blocks(n.content, ctx)}</blockquote>
     case 'codeBlock':
@@ -50,6 +81,26 @@ function block(n: Doc, key: number, ctx: Ctx): ReactNode {
           <code className={a.language ? `language-${a.language}` : undefined}>{n.content?.map((t) => t.text ?? '').join('')}</code>
         </pre>
       )
+    case 'table':
+      return (
+        <div key={key} className="tableWrapper">
+          <table>
+            <tbody>{blocks(n.content, ctx)}</tbody>
+          </table>
+        </div>
+      )
+    case 'tableRow':
+      return <tr key={key}>{blocks(n.content, ctx)}</tr>
+    case 'tableHeader':
+    case 'tableCell': {
+      const Cell = n.type === 'tableHeader' ? 'th' : 'td'
+      const span = (v: unknown) => (typeof v === 'number' && v > 1 ? v : undefined)
+      return (
+        <Cell key={key} colSpan={span(a.colspan)} rowSpan={span(a.rowspan)}>
+          {blocks(n.content, ctx)}
+        </Cell>
+      )
+    }
     case 'horizontalRule':
       return <hr key={key} />
     case 'image':

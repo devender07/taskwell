@@ -253,3 +253,14 @@ export const startsOn: Check = (v) => (dueDate(v) || !v || v < new Date().toLoca
 
 export const sixDigitCode: Check = (v) => (/^\d{6}$/.test(v.replace(/\s/g, '')) ? null : 'Enter the 6-digit code.')
 export const recoveryCode: Check = (v) => (v.trim() ? null : 'Enter a recovery code.')
+
+export const noteTitle: Check = (v) => (v.trim().length > 200 ? 'Use 200 characters or fewer.' : null)
+export const noteBody = (length: number) => (length > 20000 ? 'Use 20,000 characters or fewer.' : null)
+// A new label for a note that already has `labels`.
+export const noteLabel = (v: string, labels: string[]) => {
+  const s = v.trim()
+  if (!s) return 'Enter a label.'
+  if (s.length > 30) return 'Use 30 characters or fewer.'
+  if (labels.length >= 20) return 'Use up to 20 labels of 30 characters or fewer.'
+  return null
+}

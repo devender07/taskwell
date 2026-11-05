@@ -15,6 +15,7 @@ export type ViewSearch = {
   label?: string
   priority?: string | number
   cycle?: string
+  q?: string // text search: an identifier, or words in the title or description
 }
 
 export type PageGroup = { key: string; count: number; issues: Issue[]; has_more: boolean }
@@ -46,6 +47,8 @@ export function validateViewSearch(search: Record<string, unknown>): ViewSearch 
     const v = filterParam(filterValues(search, key).filter(VALID[key]))
     if (v !== undefined) (out as Record<FilterKey, unknown>)[key] = v
   }
+  const q = typeof search.q === 'string' || typeof search.q === 'number' ? String(search.q).trim().slice(0, 200) : ''
+  if (q) out.q = q
   return out
 }
 
@@ -70,12 +73,13 @@ export const defaultSort = (project?: { manual_order: boolean }): SortBy => (pro
 export function issuePageQuery(search: ViewSearch, mine?: boolean, fallback: SortBy = 'priority') {
   const q = new URLSearchParams({ limit: '50', group: viewGroup(search, mine), sort: search.sort ?? fallback })
   for (const key of pageFilters(mine)) if (search[key] !== undefined) q.set(key, String(search[key]))
+  if (search.q) q.set('q', search.q)
   return q.toString()
 }
 
 const pageFilters = (mine?: boolean) => (mine ? FILTER_KEYS.filter((k) => k !== 'assignee' && k !== 'cycle') : FILTER_KEYS)
 
-export const hasFilters = (search: ViewSearch, mine?: boolean) => pageFilters(mine).some((k) => search[k] !== undefined)
+export const hasFilters = (search: ViewSearch, mine?: boolean) => !!search.q || pageFilters(mine).some((k) => search[k] !== undefined)
 
 export function filterParam(values: string[]) {
   if (values.length === 0) return undefined

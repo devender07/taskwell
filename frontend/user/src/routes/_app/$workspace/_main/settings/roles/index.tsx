@@ -13,7 +13,7 @@ function RolesSettings() {
   const roles = Route.useLoaderData()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="flex items-end justify-between gap-4">
+      <header className="page-top flex items-end justify-between gap-4">
         <div className="grid gap-2">
           <h1 className="text-h2">Roles</h1>
           <p className="text-body-sm text-secondary">What people in {workspace.name} can do.</p>

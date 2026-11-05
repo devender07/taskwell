@@ -32,7 +32,7 @@ function TeamPage() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-1">
+      <header className="page-top grid gap-1">
         <h1 className="text-h2">Team</h1>
         <p className="text-body-sm text-secondary m-0">Open work and what each member finished recently.</p>
       </header>

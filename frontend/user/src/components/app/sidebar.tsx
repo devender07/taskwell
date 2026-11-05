@@ -1,5 +1,5 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
 import { useMenu, WorkspaceSwitcher } from './navbar'
@@ -56,6 +56,10 @@ export function AppSidebar({ workspace }: { workspace: string }) {
             Inbox
             {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
           </Link>
+          <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
+            <NoteIcon />
+            Notes
+          </Link>
           <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
             <FeedbackIcon />
             Feedback
@@ -77,6 +81,20 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           Roadmap
         </Link>
       )}
+      {team && !guest ? (
+        <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
+          <UsersIcon />
+          Team
+        </Link>
+      ) : null}
+      <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
+        <SettingsIcon />
+        Settings
+      </Link>
+      <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
+        <TrashIcon />
+        Trash
+      </Link>
       {views.length ? (
         <>
           <h2 className="sidebar-heading">Views</h2>
@@ -98,20 +116,6 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           })}
         </>
       ) : null}
-      {team && !guest ? (
-        <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
-          <UsersIcon />
-          Team
-        </Link>
-      ) : null}
-      <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
-        <SettingsIcon />
-        Settings
-      </Link>
-      <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
-        <TrashIcon />
-        Trash
-      </Link>
     </nav>
   )
 }

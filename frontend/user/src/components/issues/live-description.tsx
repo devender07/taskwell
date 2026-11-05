@@ -6,19 +6,11 @@ import { RichEditor, seedYDoc, yDocToJSON } from '@taskwell/shared/rich-editor'
 import { issueDescription } from '@taskwell/shared/validate'
 import { api, issuePath, uploadFile, type Issue } from '@/api'
 import { reloadPage } from '@/realtime'
-import { REMOTE, connectCollab, type CollabState } from './collab'
+import { REMOTE, caretColor, connectCollab, type CollabState } from './collab'
 import { StaticDescription, type DescriptionProps } from './description'
 import { useUnsavedPrompt } from './timeline'
 
 type Session = { doc: Y.Doc; awareness: Awareness }
-
-const CARET_COLORS = ['--accent', '--success', '--link']
-
-function caretColor(id: string) {
-  let h = 0
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0
-  return getComputedStyle(document.documentElement).getPropertyValue(CARET_COLORS[Math.abs(h) % CARET_COLORS.length]!).trim()
-}
 
 const NOTICES = {
   tooLarge: 'That change was too large to save (over 256 KB), so it was undone.',
@@ -61,7 +53,7 @@ export default function LiveDescription({ workspace, issue, user, people: mentio
       clearTimeout(timer)
       if (dirty && !discard && !long.current && conn.save(JSON.stringify(yDocToJSON(doc)))) dirty = false
     }
-    const conn = connectCollab(slug, identifier, doc, awareness, (s) => {
+    const conn = connectCollab(slug, 'issue', identifier, doc, awareness, (s) => {
       if (!s) return setOffline(true)
       if (s.seed && seed.current && doc.getXmlFragment('default').length === 0) {
         seeding = true

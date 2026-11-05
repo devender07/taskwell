@@ -101,7 +101,7 @@ const chatQuery = `
 	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null order by m.id desc limit 1) lm on true
 	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or r.user_id is not null)
 	  and ($3::uuid is null or c.id = $3)
-	order by c.kind = 'workspace' desc, c.kind = 'self' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
+	order by c.kind = 'workspace' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
 
 func (m *model) queryChats(ctx context.Context, userID, wsID string, chatID *string) ([]Chat, error) {
 	rows, err := m.db.Query(ctx, chatQuery, userID, wsID, chatID)
@@ -140,16 +140,10 @@ func excerpt(body []byte) string {
 	return text
 }
 
-// list returns the user's chats in the workspace, first creating the workspace chat and their notes if missing.
+// list returns the user's chats in the workspace, first creating the workspace chat if missing.
 func (m *model) list(ctx context.Context, userID, wsID string) ([]Chat, error) {
 	if _, err := m.db.Exec(ctx, `insert into chats (workspace_id, kind) values ($1, 'workspace') on conflict do nothing`, wsID); err != nil {
 		return nil, fmt.Errorf("add workspace chat: %w", err)
-	}
-	if _, err := m.db.Exec(ctx,
-		`with c as (insert into chats (workspace_id, kind, pair, created_by) values ($1, 'self', $2::text, $2::uuid)
-		   on conflict do nothing returning id)
-		 insert into chat_members (chat_id, user_id) select id, $2::uuid from c`, wsID, userID); err != nil {
-		return nil, fmt.Errorf("add notes chat: %w", err)
 	}
 	return m.queryChats(ctx, userID, wsID, nil)
 }

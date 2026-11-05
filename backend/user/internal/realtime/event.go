@@ -109,6 +109,9 @@ func MyIssues(slug string) string { return Workspace(slug) + "/my-issues" }
 // Views is the workspace's saved views: the caller's own and the shared ones.
 func Views(slug string) string { return Workspace(slug) + "/views" }
 
+// Notes is the caller's notes: their own and the ones shared with them.
+func Notes(slug string) string { return Workspace(slug) + "/notes" }
+
 // Templates is the workspace's issue templates.
 func Templates(slug string) string { return Workspace(slug) + "/templates" }
 

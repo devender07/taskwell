@@ -14,10 +14,10 @@ import './chat.css'
 
 type Props = { slug: string; workspaceName: string; user: User; chats: Chat[]; bot: NotificationPage; dialog?: 'group' | 'message' }
 
-// The inbox's left column: the workspace chat, Notes, then groups and direct messages, Taskwell's first.
+// The inbox's left column: the workspace chat, then groups and direct messages, Taskwell's first.
 export function ChatList({ slug, workspaceName, user, chats, bot, dialog }: Props) {
   const navigate = useNavigate()
-  const top = chats.filter((c) => c.kind === 'workspace' || c.kind === 'self')
+  const top = chats.filter((c) => c.kind === 'workspace')
   const groups = chats.filter((c) => c.kind === 'group')
   const direct = chats.filter((c) => c.kind === 'direct')
   const setDialog = (d?: 'group' | 'message') => navigate({ to: '.', search: (prev: Record<string, unknown>) => ({ ...prev, new: d }), replace: true })
@@ -93,13 +93,12 @@ function Section({ title, add, empty, pinned, chats, slug, me, workspaceName }: 
   )
 }
 
-// The person or initials a chat shows: the other person in a direct chat, you in Notes.
+// The person or initials a chat shows: the other person in a direct chat.
 export function ChatAvatar({ chat, me, workspaceName, size = 24 }: { chat: Chat; me: User; workspaceName: string; size?: number }) {
   if (chat.kind === 'direct') {
     const other = chat.members.find((m) => m.id !== me.id) ?? chat.members[0]
     return <Avatar name={other?.name ?? chat.name} size={size} src={other && avatarSrc(other.id)} />
   }
-  if (chat.kind === 'self') return <Avatar name={me.name} size={size} src={me.avatar_url} />
   return <Avatar name={chat.kind === 'workspace' ? workspaceName : chat.name} size={size} />
 }
 
@@ -155,7 +154,7 @@ function ChatRow({ slug, chat, me, workspaceName }: { slug: string; chat: Chat; 
           </span>
           <span className="flex items-center gap-2">
             <span className="text-caption text-secondary ellipsis flex-grow">
-              {last ? `${last.author?.id === me.id ? 'You: ' : last.author && chat.kind !== 'direct' ? `${last.author.name}: ` : ''}${last.excerpt}` : chat.kind === 'self' ? 'Only you can see this' : 'No messages yet'}
+              {last ? `${last.author?.id === me.id ? 'You: ' : last.author && chat.kind !== 'direct' ? `${last.author.name}: ` : ''}${last.excerpt}` : 'No messages yet'}
             </span>
             {unread ? (
               <span className="chat-pill" data-mentioned={chat.mentioned || undefined} aria-hidden>

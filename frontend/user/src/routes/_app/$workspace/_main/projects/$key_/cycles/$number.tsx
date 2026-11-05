@@ -70,7 +70,7 @@ function CyclePage() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <BackLink to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }}>
           {project.name} cycles
         </BackLink>

@@ -1,4 +1,4 @@
-const HIDDEN = ['inbox', 'feedback', 'roadmap', 'team', 'members']
+const HIDDEN = ['inbox', 'notes', 'feedback', 'roadmap', 'team', 'members']
 export const GUEST_SETTINGS = ['profile', 'notifications', 'api-tokens']
 
 // The workspace pages a guest can't use, by pathname (`/<workspace>/<section>/…`): their links are hidden and the

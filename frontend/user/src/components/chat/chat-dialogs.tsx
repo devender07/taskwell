@@ -407,11 +407,9 @@ export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean;
     await reloadRoutes(router, INBOX_ROUTES)
   }
   const [title, description, action] =
-    chat.kind === 'self'
-      ? ['Delete all notes?', "Every note here is deleted. This can't be undone.", 'Delete notes']
-      : chat.kind === 'group'
-        ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
-        : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
+    chat.kind === 'group'
+      ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
+      : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
   return (
     <Dialog open={open} onClose={onClose} title={title} description={description}>
       <FormError>{state.error}</FormError>

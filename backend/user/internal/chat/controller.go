@@ -209,8 +209,8 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 	return nil
 }
 
-// deleteChat deletes the chat and all its messages for everyone in it: a direct chat by either person, Notes by its
-// owner, a group by its creator. The workspace chat can't be deleted.
+// deleteChat deletes the chat and all its messages for everyone in it: a direct chat by either person,
+// a group by its creator. The workspace chat can't be deleted.
 func (h *Handler) deleteChat(w http.ResponseWriter, r *http.Request, userID string) error {
 	sc, c, err := h.chat(w, r, userID)
 	if c == nil || err != nil {

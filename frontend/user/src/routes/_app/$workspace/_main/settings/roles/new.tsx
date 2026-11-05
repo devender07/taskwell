@@ -14,7 +14,7 @@ function NewRole() {
   const catalog = Route.useLoaderData()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <BackLink to="/$workspace/settings/roles" params={{ workspace: workspace.slug }}>
           Roles
         </BackLink>

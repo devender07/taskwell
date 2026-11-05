@@ -1,4 +1,4 @@
-package issue
+package collab
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 func TestNote(t *testing.T) {
 	n, ok := parseNote(notePrefix("issue-1", noteBatch) + "aAQI=")
-	if !ok || n.instance != instance || n.issueID != "issue-1" || n.kind != noteBatch || n.arg != "aAQI=" {
+	if !ok || n.instance != instance || n.docID != "issue-1" || n.kind != noteBatch || n.arg != "aAQI=" {
 		t.Fatalf("round trip: %+v %v", n, ok)
 	}
 	if _, ok := parseNote("too short"); ok {
@@ -20,7 +20,7 @@ func TestNote(t *testing.T) {
 }
 
 func TestLeaveHandsOffSeed(t *testing.T) {
-	hb := &hub{rooms: map[string]*room{}}
+	hb := &Hub{rooms: map[string]*room{}}
 	newClient := func(canEdit bool) *client { return &client{peer: &fakePeer{}, canEdit: canEdit} }
 	seeder, reader, editor := newClient(true), newClient(false), newClient(true)
 	for _, c := range []*client{seeder, reader, editor} {
@@ -85,7 +85,7 @@ func TestBatchNotes(t *testing.T) {
 			t.Fatalf("note of %d bytes", len(p))
 		}
 		n, ok := parseNote(p)
-		if !ok || n.kind != noteBatch || n.issueID != id {
+		if !ok || n.kind != noteBatch || n.docID != id {
 			t.Fatalf("bad note %.80q", p)
 		}
 		items = append(items, strings.Split(n.arg, ",")...)
@@ -96,8 +96,8 @@ func TestBatchNotes(t *testing.T) {
 }
 
 func TestOutboxCoalescesAwareness(t *testing.T) {
-	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
-	s := &Session{h: h, c: &client{}, issue: &Issue{ID: "i"}}
+	h := &Hub{rooms: map[string]*room{}}
+	s := &Session{h: h, c: &client{}, doc: Doc{ID: "i"}}
 	s.out.awareAt = time.Now() // just sent one
 	s.awareness([]byte{1})
 	s.awareness([]byte{2})
@@ -149,9 +149,9 @@ func TestAllowRate(t *testing.T) {
 }
 
 func TestFrameDropsAwarenessTooBigToRelay(t *testing.T) {
-	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
+	h := &Hub{rooms: map[string]*room{}}
 	id := "00000000-0000-0000-0000-000000000001"
-	s := &Session{h: h, c: &client{}, issue: &Issue{ID: id}}
+	s := &Session{h: h, c: &client{}, doc: Doc{ID: id}}
 	if err := s.Frame(context.Background(), tag(msgAwareness, id, make([]byte, maxItem))); err != nil {
 		t.Fatal(err)
 	}
@@ -177,23 +177,23 @@ func (p *recPeer) Close()                                  {}
 
 func TestResetRoomIgnoresTheOldDocument(t *testing.T) {
 	id := "00000000-0000-0000-0000-000000000001"
-	h := &Handler{hub: &hub{rooms: map[string]*room{}}, model: &model{}}
+	h := &Hub{rooms: map[string]*room{}}
 	p := &recPeer{}
-	s := &Session{h: h, c: &client{peer: p, canEdit: true}, issue: &Issue{ID: id}}
-	h.hub.join(id, s.c)
-	h.hub.seeding(id, s.c)
-	h.hub.resetRoom(id)
+	s := &Session{h: h, c: &client{peer: p, canEdit: true}, doc: Doc{ID: id}}
+	h.join(id, s.c)
+	h.seeding(id, s.c)
+	h.resetRoom(id)
 	if len(p.frames) != 1 || p.frames[0][0] != msgReset || len(p.frames[0]) != tagLen {
 		t.Fatalf("frames %v, want one reset", p.frames)
 	}
-	if h.hub.seedPending(id) {
+	if h.seedPending(id) {
 		t.Fatal("a reset room still waits for its seed")
 	}
-	// The model has no pool: storing the update would panic.
+	// The hub has no pool: storing the update would panic.
 	if err := s.Frame(context.Background(), tag(msgUpdate, id, []byte{1})); err != nil {
 		t.Fatal(err)
 	}
-	if seeding, _ := h.hub.leave(id, s.c); seeding {
+	if seeding, _ := h.leave(id, s.c); seeding {
 		t.Fatal("a reset client left as the seeder")
 	}
 }

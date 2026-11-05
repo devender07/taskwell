@@ -805,7 +805,16 @@ func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID
 		if _, err = tx.Exec(ctx, `delete from saved_views where workspace_id = $1 and user_id = $2`, ws.ID, userID); err != nil {
 			return err
 		}
-		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {
+		if _, err = tx.Exec(ctx, `delete from note_members where user_id = $2 and note_id in (select id from notes where workspace_id = $1)`,
+			ws.ID, userID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `delete from notes where workspace_id = $1 and owner_id = $2`, ws.ID, userID); err != nil {
+			return err
+		}
+		// Notes: their shared notes leave everyone's page, and they leave others'.
+		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members",
+			realtime.Notes(ws.Slug))); err != nil {
 			return err
 		}
 		gone := event(ws, actorID, "workspace.removed", "/workspaces")

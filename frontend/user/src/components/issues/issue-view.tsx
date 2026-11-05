@@ -17,6 +17,7 @@ import {
 } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
+import { Input } from '@taskwell/shared/input'
 import { Checkbox } from '@taskwell/shared/checkbox'
 import { Popover } from '@taskwell/shared/popover'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
@@ -299,6 +300,15 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
           value={sort}
           onChange={(v) => setSearch({ ...search, sort: v === defaultSort ? undefined : (v as SortBy) })}
         />
+        <div style={{ width: 220 }}>
+          <Input
+            type="search"
+            aria-label="Search issues"
+            placeholder="Search issues"
+            defaultValue={search.q}
+            onDebouncedChange={(v) => navigate({ to: '.', search: { ...search, q: v.trim() || undefined }, replace: true })}
+          />
+        </div>
         <FilterMenu choices={choices} search={search} onChange={setFilter} />
         <ViewMenu workspace={workspace} />
         <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>

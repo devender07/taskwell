@@ -1,8 +1,20 @@
-import { useRouter, type ErrorComponentProps } from '@tanstack/react-router'
+import { useRouter, useRouterState, type ErrorComponentProps } from '@tanstack/react-router'
 import { Button } from '../button/button'
+import './boundaries.css'
 
 export function Pending() {
-  return <div role="status" className="grid place-center min-h-screen text-caption text-secondary">Loading…</div>
+  return (
+    <div role="status" className="grid place-center min-h-screen">
+      <span className="page-spinner" aria-hidden />
+      <span className="sr-only">Loading…</span>
+    </div>
+  )
+}
+
+// A bar across the top while a navigation loads its code and data; it only appears if that takes over 150ms.
+export function NavigationProgress() {
+  const loading = useRouterState({ select: (s) => s.status === 'pending' })
+  return loading ? <div className="nav-progress" aria-hidden /> : null
 }
 
 export function ErrorFallback({ error, reset }: ErrorComponentProps) {

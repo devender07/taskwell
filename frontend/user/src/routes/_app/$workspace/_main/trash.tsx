@@ -40,7 +40,7 @@ function Trash() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="page-top flex flex-wrap items-end justify-between gap-4">
         <div className="grid gap-2">
           <h1 className="text-h2">Trash</h1>
           <p className="text-body-sm text-secondary">Deleted issues stay here for 30 days, then they're gone for good.</p>

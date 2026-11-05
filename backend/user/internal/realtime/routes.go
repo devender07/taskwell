@@ -1,6 +1,6 @@
 // Package realtime keeps one WebSocket per signed-in tab. It carries events naming the REST paths a change touched
 // (published with Publish inside the change's transaction, fanned out by every instance's LISTEN), live editing of
-// issue descriptions (handed to the issue package through a JoinFunc) and who's viewing an issue.
+// issue descriptions and note bodies (handed to their packages through a JoinFunc) and who's viewing an issue.
 //
 // routes.go mounts the socket, socket.go serves it, hub.go indexes the connections, listen.go fans notifications out,
 // publish.go and event.go build events, presence.go tracks viewers, typing.go relays typing in chats and model.go owns
@@ -40,6 +40,8 @@ type Handler struct {
 	// ChatAudience, when set, returns who sees the chat with the id (ToWorkspace or ToUser audiences), or nil when the
 	// user can't open it. Typing frames go to that audience.
 	ChatAudience func(ctx context.Context, userID, chatID string) ([]string, error)
+	// JoinNote, when set, joins live editing of a note's body, like the issue join passed to New.
+	JoinNote JoinFunc
 	// AppOrigin, when set, returns the web app's origin, whose tabs may open sockets from their own subdomain.
 	AppOrigin func(*http.Request) string
 }

@@ -27,7 +27,7 @@ function WebhookDetail() {
   const { webhook, deliveries } = Route.useLoaderData()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-3">
+      <header className="page-top grid gap-3">
         <BackLink to="/$workspace/settings/webhooks" params={{ workspace }}>
           Webhooks
         </BackLink>

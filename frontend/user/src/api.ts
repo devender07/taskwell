@@ -120,12 +120,12 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
 )
 // One page, newest first by page; each list oldest first. `?before=` an item's created_at fetches the page before it.
 export type Timeline = { comments: Comment[]; events: IssueEvent[]; has_more: boolean }
-export type ChatKind = 'workspace' | 'self' | 'direct' | 'group'
+export type ChatKind = 'workspace' | 'direct' | 'group'
 export type Chat = {
   id: string
   kind: ChatKind
   name: string
-  members: PersonRef[] // direct: both; group: all; self: you; workspace: none (it's everyone)
+  members: PersonRef[] // direct: both; group: all; workspace: none (it's everyone)
   created_by: string | null
   unread: number
   mentioned: boolean
@@ -236,6 +236,50 @@ export const emptyTrash = (workspace: string) => api(trashPath(workspace), undef
 export type SavedView = { id: string; name: string; path: string; shared: boolean; owner: PersonRef; can_edit: boolean }
 export const viewsPath = (workspace: string) => `${workspacePath(workspace)}/views`
 export const viewPath = (workspace: string, id: string) => `${viewsPath(workspace)}/${encodeURIComponent(id)}`
+
+// pinned, archived and labels are the caller's own; members is everyone but the owner. can_delete: the caller owns it;
+// can_edit: the caller owns it or is an 'edit' member (a viewer can still pin, archive and label it).
+export type NoteRole = 'edit' | 'view'
+export type Note = {
+  id: string
+  title: string
+  body: Doc | null
+  color: string
+  owner: PersonRef
+  members: (PersonRef & { role: NoteRole })[]
+  pinned: boolean
+  archived: boolean
+  labels: string[]
+  can_delete: boolean
+  can_edit: boolean
+  created_at: string
+  updated_at: string
+  updated_by: PersonRef | null
+}
+export const notesPath = (workspace: string) => `${workspacePath(workspace)}/notes`
+const notePath = (workspace: string, id: string) => `${notesPath(workspace)}/${encodeURIComponent(id)}`
+// Only the fields given change; pinned/archived are '1' or '0', labels a JSON array, body a doc's JSON or ''.
+export function saveNote(workspace: string, fields: Record<string, string>, id?: string) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.set(k, v)
+  return api<Note>(id ? notePath(workspace, id) : notesPath(workspace), form)
+}
+// The owner deletes it for everyone; anyone else leaves it.
+export const deleteNote = (workspace: string, id: string) => api(notePath(workspace, id), undefined, 'DELETE')
+export function addNoteMember(workspace: string, id: string, userId: string, role: NoteRole) {
+  const form = new FormData()
+  form.set('user_id', userId)
+  form.set('role', role)
+  return api<Note>(`${notePath(workspace, id)}/members`, form)
+}
+// Owner only.
+export function setNoteMemberRole(workspace: string, id: string, userId: string, role: NoteRole) {
+  const form = new FormData()
+  form.set('role', role)
+  return api<Note>(`${notePath(workspace, id)}/members/${encodeURIComponent(userId)}`, form)
+}
+export const removeNoteMember = (workspace: string, id: string, userId: string) =>
+  api(`${notePath(workspace, id)}/members/${encodeURIComponent(userId)}`, undefined, 'DELETE')
 
 export type ImportSource = 'linear' | 'jira' | 'csv' | 'github'
 // imported and first: only once imported, not on a dry run. row: the CSV data row (1-based) or the GitHub issue number.

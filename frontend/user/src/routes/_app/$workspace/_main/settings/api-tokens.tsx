@@ -12,7 +12,7 @@ function ApiTokensSettings() {
   const tokens = Route.useLoaderData()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <h1 className="text-h2">API tokens</h1>
         <p className="text-body-sm text-secondary">Tokens let AI tools like Claude Code act as you in Taskwell. Anyone with a token can do what you can.{' '}
           <Link to="/docs/api" style={{ color: 'var(--link)' }}>

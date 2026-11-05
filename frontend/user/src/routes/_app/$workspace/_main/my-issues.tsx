@@ -43,7 +43,7 @@ function MyIssues() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
-      <h1 className="text-h2">My issues</h1>
+      <h1 className="page-top text-h2">My issues</h1>
       <Tabs
         aria-label="Issues shown"
         className="w-fit"

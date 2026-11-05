@@ -33,6 +33,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/gitlink"
 	"github.com/devender07/taskwell/backend/user/internal/issue"
 	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/note"
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/oauth"
 	"github.com/devender07/taskwell/backend/user/internal/project"
@@ -131,6 +132,8 @@ func main() {
 	issueH.Register(mux)
 	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
 	view.New(pool, authenticate, wsH.Member).Register(mux)
+	noteH := note.New(pool, authenticate, wsH.Member)
+	noteH.Register(mux)
 	templateH := template.New(pool, authenticate, wsH.Member)
 	templateH.Register(mux)
 	jwtSecret := string(secret)
@@ -172,6 +175,7 @@ func main() {
 	work, stopWork := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Go(func() { issueH.Listen(work) })
+	wg.Go(func() { noteH.Listen(work) })
 	rtH := realtime.New(pool, func(r *http.Request) (realtime.Session, error) {
 		s, err := authH.Session(r)
 		obs.SetUser(r.Context(), s.UserID)
@@ -191,6 +195,13 @@ func main() {
 			}
 			return s, "", nil
 		})
+	rtH.JoinNote = func(ctx context.Context, c *realtime.Conn, userID, slug, id string) (realtime.Collab, string, error) {
+		s, msg, err := noteH.Join(ctx, c, userID, slug, id)
+		if s == nil {
+			return nil, msg, err
+		}
+		return s, "", nil
+	}
 	rtH.OnRevoke(authH.Forget)
 	if n, err := strconv.Atoi(os.Getenv("WS_MAX_CONNS_PER_USER")); err == nil && n > 0 {
 		realtime.MaxConnsPerUser = n
@@ -227,7 +238,7 @@ func main() {
 			http.Error(w, "database: "+err.Error(), http.StatusServiceUnavailable)
 		case !rtH.Listening():
 			http.Error(w, "realtime listener down", http.StatusServiceUnavailable)
-		case !issueH.Listening():
+		case !issueH.Listening() || !noteH.Listening():
 			http.Error(w, "collab listener down", http.StatusServiceUnavailable)
 		default:
 			io.WriteString(w, "ok\n") //nolint:errcheck // the client's gone

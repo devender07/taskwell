@@ -27,6 +27,7 @@ import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$worksp
 import { Route as AppWorkspaceMainFeedbackRouteImport } from './routes/_app/$workspace/_main/feedback'
 import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$workspace/_main/inbox'
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
+import { Route as AppWorkspaceMainNotesRouteImport } from './routes/_app/$workspace/_main/notes'
 import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$workspace/_main/roadmap'
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
@@ -148,6 +149,11 @@ const AppWorkspaceMainMyIssuesRoute =
     path: '/my-issues',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainNotesRoute = AppWorkspaceMainNotesRouteImport.update({
+  id: '/notes',
+  path: '/notes',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
 const AppWorkspaceMainRoadmapRoute = AppWorkspaceMainRoadmapRouteImport.update({
   id: '/roadmap',
   path: '/roadmap',
@@ -343,6 +349,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
+  '/$workspace/notes': typeof AppWorkspaceMainNotesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
@@ -391,6 +398,7 @@ export interface FileRoutesByTo {
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
+  '/$workspace/notes': typeof AppWorkspaceMainNotesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
@@ -440,6 +448,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/feedback': typeof AppWorkspaceMainFeedbackRoute
   '/_app/$workspace/_main/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
+  '/_app/$workspace/_main/notes': typeof AppWorkspaceMainNotesRoute
   '/_app/$workspace/_main/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
@@ -491,6 +500,7 @@ export interface FileRouteTypes {
     | '/$workspace/feedback'
     | '/$workspace/inbox'
     | '/$workspace/my-issues'
+    | '/$workspace/notes'
     | '/$workspace/roadmap'
     | '/$workspace/settings'
     | '/$workspace/team'
@@ -539,6 +549,7 @@ export interface FileRouteTypes {
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
     | '/$workspace/my-issues'
+    | '/$workspace/notes'
     | '/$workspace/roadmap'
     | '/$workspace/team'
     | '/$workspace/trash'
@@ -587,6 +598,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/feedback'
     | '/_app/$workspace/_main/inbox'
     | '/_app/$workspace/_main/my-issues'
+    | '/_app/$workspace/_main/notes'
     | '/_app/$workspace/_main/roadmap'
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/team'
@@ -760,6 +772,13 @@ declare module '@tanstack/react-router' {
       path: '/my-issues'
       fullPath: '/$workspace/my-issues'
       preLoaderRoute: typeof AppWorkspaceMainMyIssuesRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/notes': {
+      id: '/_app/$workspace/_main/notes'
+      path: '/notes'
+      fullPath: '/$workspace/notes'
+      preLoaderRoute: typeof AppWorkspaceMainNotesRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/roadmap': {
@@ -1055,6 +1074,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainFeedbackRoute: typeof AppWorkspaceMainFeedbackRoute
   AppWorkspaceMainInboxRoute: typeof AppWorkspaceMainInboxRouteWithChildren
   AppWorkspaceMainMyIssuesRoute: typeof AppWorkspaceMainMyIssuesRoute
+  AppWorkspaceMainNotesRoute: typeof AppWorkspaceMainNotesRoute
   AppWorkspaceMainRoadmapRoute: typeof AppWorkspaceMainRoadmapRoute
   AppWorkspaceMainSettingsRoute: typeof AppWorkspaceMainSettingsRouteWithChildren
   AppWorkspaceMainTeamRoute: typeof AppWorkspaceMainTeamRoute
@@ -1072,6 +1092,7 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainFeedbackRoute: AppWorkspaceMainFeedbackRoute,
   AppWorkspaceMainInboxRoute: AppWorkspaceMainInboxRouteWithChildren,
   AppWorkspaceMainMyIssuesRoute: AppWorkspaceMainMyIssuesRoute,
+  AppWorkspaceMainNotesRoute: AppWorkspaceMainNotesRoute,
   AppWorkspaceMainRoadmapRoute: AppWorkspaceMainRoadmapRoute,
   AppWorkspaceMainSettingsRoute: AppWorkspaceMainSettingsRouteWithChildren,
   AppWorkspaceMainTeamRoute: AppWorkspaceMainTeamRoute,

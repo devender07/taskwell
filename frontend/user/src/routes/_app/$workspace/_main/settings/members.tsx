@@ -29,7 +29,7 @@ function MembersSettings() {
   const invite = can(workspace, 'members.invite')
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <h1 className="text-h2">Members</h1>
         <p className="text-body-sm text-secondary">People in {workspace.name}.</p>
       </header>

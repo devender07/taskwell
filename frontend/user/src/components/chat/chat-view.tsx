@@ -90,7 +90,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
     slug,
     chat,
     me,
-    mentions: chat.kind === 'workspace' ? (q) => searchMembers(slug, q) : chat.kind === 'self' ? [] : chat.members,
+    mentions: chat.kind === 'workspace' ? (q) => searchMembers(slug, q) : chat.members,
     issues: async (q) => {
       const refs = await api<IssueRef[]>(`${workspacePath(slug)}/issues?${new URLSearchParams({ q })}`)
       return refs.map((r) => ({ id: r.identifier, label: r.identifier, title: r.title }))
@@ -231,7 +231,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
 
   // A deleted message only stays as a placeholder while it has replies to hold.
   const rows = groupMessages(items.filter((m) => !m.deleted || m.reply_count > 0))
-  const placeholder = chat.kind === 'self' ? 'Write a note' : `Message ${chat.kind === 'direct' ? firstName(chat.name) : chat.name}`
+  const placeholder = `Message ${chat.kind === 'direct' ? firstName(chat.name) : chat.name}`
 
   return (
     <ChatContext value={ctx}>
@@ -300,13 +300,11 @@ function composerFocus(root: Element | null) {
 function ChatStart({ workspaceName }: { workspaceName: string }) {
   const { chat } = use(ChatContext)
   const text =
-    chat.kind === 'self'
-      ? 'Notes are just for you: drafts, links, reminders.'
-      : chat.kind === 'workspace'
-        ? `This is the start of ${workspaceName}'s chat. Everyone in the workspace is here.`
-        : chat.kind === 'direct'
-          ? `This is the start of your conversation with ${chat.name}.`
-          : `This is the start of ${chat.name}.`
+    chat.kind === 'workspace'
+      ? `This is the start of ${workspaceName}'s chat. Everyone in the workspace is here.`
+      : chat.kind === 'direct'
+        ? `This is the start of your conversation with ${chat.name}.`
+        : `This is the start of ${chat.name}.`
   return <p className="text-caption text-secondary m-0 px-6 pt-6 pb-2">{text}</p>
 }
 
@@ -330,11 +328,9 @@ function ChatHeader({ workspaceName }: { workspaceName: string }) {
     ? [['rename', 'Rename group'], ['add', 'Add people'], ['people', 'People'], ['leave', 'Leave group'], ...(chat.created_by === me.id ? [['delete', 'Delete group'] as const] : [])]
     : chat.kind === 'direct'
       ? [['delete', 'Delete chat']]
-      : chat.kind === 'self'
-        ? [['delete', 'Delete notes']]
-        : [['people', 'Members']]
+      : [['people', 'Members']]
   const subtitle =
-    chat.kind === 'self' ? 'Only you can see this' : chat.kind === 'workspace' ? `Everyone in ${workspaceName}` : group ? `${chat.members.length} people` : null
+    chat.kind === 'workspace' ? `Everyone in ${workspaceName}` : group ? `${chat.members.length} people` : null
   const faces = chat.members.slice(0, 5)
   const extra = chat.members.length - faces.length
   return (
@@ -856,7 +852,7 @@ function Composer({ thread, placeholder, editable }: { thread: string | null; pl
   function onChange(doc: Doc | null, length: number) {
     setDraft({ doc, length })
     const now = Date.now()
-    if (ctx.chat.kind !== 'self' && root.current?.contains(document.activeElement) && now - lastTyping.current > TYPING_EVERY_MS) {
+    if (root.current?.contains(document.activeElement) && now - lastTyping.current > TYPING_EVERY_MS) {
       lastTyping.current = now
       sendTyping(ctx.chat.id, thread)
     }

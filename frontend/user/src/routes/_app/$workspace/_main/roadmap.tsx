@@ -29,7 +29,7 @@ function RoadmapPage() {
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start', minWidth: 0 }}>
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="page-top flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-h2">Roadmap</h1>
         {projects.length > 0 ? (
           <div className="flex flex-wrap items-center gap-3">

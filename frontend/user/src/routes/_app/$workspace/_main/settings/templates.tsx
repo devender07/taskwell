@@ -23,7 +23,7 @@ function TemplatesSettings() {
   const manage = can(workspace, 'workflow.manage')
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start', minWidth: 0 }}>
-      <header className="grid gap-2">
+      <header className="page-top grid gap-2">
         <h1 className="text-h2">Templates</h1>
         <p className="text-body-sm text-secondary">Prefill new issues, or create one on a schedule.</p>
       </header>
