@@ -53,8 +53,9 @@ func (m msgRef) root() string {
 
 // access is whether the user (a workspace member) may open chat c: everyone but guests in the workspace chat, members
 // elsewhere.
+// The workspace chat goes by role alone: a member's read marker there (chat_members) outlives a change to Guest.
 const access = `(c.kind = 'workspace' and not is_guest(c.workspace_id, $1)
-	or exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
+	or c.kind <> 'workspace' and exists (select 1 from chat_members a where a.chat_id = c.id and a.user_id = $1))`
 
 // --- chats ---
 
@@ -99,7 +100,7 @@ const chatQuery = `
 	left join lateral (
 	  select (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = m.author_id) author, m.body, m.created_at
 	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null order by m.id desc limit 1) lm on true
-	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or r.user_id is not null)
+	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or c.kind <> 'workspace' and r.user_id is not null)
 	  and ($3::uuid is null or c.id = $3)
 	order by c.kind = 'workspace' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
 
@@ -599,7 +600,7 @@ func visible(ctx context.Context, tx pgx.Tx, wsID string, c ref, body json.RawMe
 	rows, err := tx.Query(ctx,
 		`select u::text from unnest($1::uuid[]) u
 		 where exists (select 1 from workspace_members wm where wm.workspace_id = $2 and wm.user_id = u)
-		   and ($4 = 'workspace' and not is_guest($2, u) or exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
+		   and ($4 = 'workspace' and not is_guest($2, u) or $4 <> 'workspace' and exists (select 1 from chat_members cm where cm.chat_id = $3 and cm.user_id = u))`,
 		ids, wsID, c.id, c.kind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("check mentions: %w", err)
