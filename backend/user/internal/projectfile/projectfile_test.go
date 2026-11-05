@@ -191,6 +191,16 @@ func TestFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	upload(mia, api+"/files", "on-issue.png", map[string]string{"project": "WEB", "issue": issueID}, 404)
+	upload(mia, api+"/files", "on-issue.png", map[string]string{"project": "WEB"}, 404)
+	// Archived: read-only for everyone, managers included.
+	upload(ann, web+"/files", "late.png", nil, 403)
+	do(ann, "POST", web+"/folders", url.Values{"name": {"Late"}}, 403)
+	do(ann, "POST", web+"/files/"+id(spec), url.Values{"name": {"late.png"}}, 403)
+	do(ann, "DELETE", web+"/files/"+id(spec), nil, 403)
+	do(ann, "DELETE", web+"/folders/"+id(design), nil, 403)
+	if f := do(ann, "GET", web+"/files", nil, 200)["files"].([]any); len(f) == 0 || f[0].(map[string]any)["can_edit"] != false {
+		t.Fatalf("archived listing = %v", f)
+	}
 	if _, err := pool.Exec(ctx, `update projects set archived_at = null where workspace_id = $1 and key = 'WEB'`, wsID); err != nil {
 		t.Fatal(err)
 	}

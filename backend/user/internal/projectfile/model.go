@@ -59,13 +59,17 @@ type Crumb struct {
 
 // viewer is who's asking: they can edit what they made, or anything with projects.manage.
 type viewer struct {
-	id     string
-	manage bool
+	id       string
+	manage   bool
+	readOnly bool // the project is archived
 }
 
-func (v viewer) owns(p *Person) bool { return v.manage || p != nil && p.ID == v.id }
+func (v viewer) owns(p *Person) bool { return !v.readOnly && (v.manage || p != nil && p.ID == v.id) }
 
-type project struct{ id, key string }
+type project struct {
+	id, key  string
+	archived bool
+}
 
 type model struct{ db *pgxpool.Pool }
 
@@ -105,8 +109,8 @@ func scanFile(row pgx.Row, v viewer) (File, error) {
 // project returns the workspace's project with the key (old keys too) when the viewer can see it, else nil.
 func (m *model) project(ctx context.Context, workspaceID, key, viewerID string) (*project, error) {
 	var p project
-	err := m.db.QueryRow(ctx, `select id::text, key from projects where workspace_id = $1 and key = canonical_key($1, $2)
-		and can_see_project(id, $3)`, workspaceID, key, viewerID).Scan(&p.id, &p.key)
+	err := m.db.QueryRow(ctx, `select id::text, key, archived_at is not null from projects where workspace_id = $1
+		and key = canonical_key($1, $2) and can_see_project(id, $3)`, workspaceID, key, viewerID).Scan(&p.id, &p.key, &p.archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

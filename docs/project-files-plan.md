@@ -133,7 +133,7 @@ Sentence case everywhere.
 - **Upload progress:** each upload shows "Uploading…" until it finishes or fails, with no percentage. Real progress
   needs XMLHttpRequest, which would bypass the token refresh.
 - **Opening a file:** clicking a file opens its `url` in a new tab, with no full-size viewer in the page.
-- **Archived projects:** files in an archived project can still be changed.
+- **Archived projects:** read-only. Uploads, new folders, renames, moves and deletes return 403 "This project is archived.", `can_edit` is false, and editor uploads linked to the project return 404.
 - **Images and videos only:** every upload (Files, issue and comment attachments) must sniff as PNG, JPEG, GIF, WebP,
   MP4 or WebM, else `400 {"errors": {"file": "Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be
   uploaded."}}`. Videos are served inline like images.

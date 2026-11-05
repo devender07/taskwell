@@ -26,6 +26,7 @@ const (
 	errForbidden       = "You don't have permission to do that."
 	errNotYours        = "You can only change your own files."
 	errNotEmptyMsg     = "Move or delete what's inside first."
+	errArchived        = "This project is archived."
 )
 
 // Upload is the file handler's Upload.
@@ -277,12 +278,17 @@ func (h *Handler) project(w http.ResponseWriter, r *http.Request, userID string)
 		web.Err(w, http.StatusNotFound, errProjectNotFound)
 		return req{}, false, nil
 	}
-	return req{ws: ws, p: p, v: viewer{id: userID, manage: workspace.Has(ws.Permissions, workspace.PermProjectsManage)}}, true, nil
+	return req{ws: ws, p: p, v: viewer{id: userID, manage: workspace.Has(ws.Permissions, workspace.PermProjectsManage), readOnly: p.archived}}, true, nil
 }
 
-// contribute is project for adding files and folders, which needs comments.create; it writes a 403 without.
+// contribute is project for adding files and folders, which needs comments.create and a project that isn't
+// archived; it writes a 403 otherwise.
 func (h *Handler) contribute(w http.ResponseWriter, r *http.Request, userID string) (req, bool, error) {
 	q, ok, err := h.project(w, r, userID)
+	if ok && q.p.archived {
+		web.Err(w, http.StatusForbidden, errArchived)
+		return req{}, false, nil
+	}
 	if ok && !workspace.Has(q.ws.Permissions, workspace.PermCommentsCreate) {
 		web.Err(w, http.StatusForbidden, errForbidden)
 		return req{}, false, nil
@@ -307,6 +313,10 @@ func (h *Handler) editFile(w http.ResponseWriter, r *http.Request, userID string
 		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return req{}, nil, false, nil
 	}
+	if q.p.archived {
+		web.Err(w, http.StatusForbidden, errArchived)
+		return req{}, nil, false, nil
+	}
 	if !f.CanEdit {
 		web.Err(w, http.StatusForbidden, errNotYours)
 		return req{}, nil, false, nil
@@ -328,6 +338,10 @@ func (h *Handler) editFolder(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	if d == nil {
 		web.Err(w, http.StatusNotFound, errFolderNotFound)
+		return req{}, nil, false, nil
+	}
+	if q.p.archived {
+		web.Err(w, http.StatusForbidden, errArchived)
 		return req{}, nil, false, nil
 	}
 	if !d.CanEdit {

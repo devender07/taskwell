@@ -72,10 +72,10 @@ func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
 }
 
 // project returns the id and current key of the workspace's project with the key (old keys too) when the viewer can
-// see it; "" when not.
+// see it and it isn't archived; "" when not.
 func (m *model) project(ctx context.Context, workspaceID, key, viewerID string) (id, current string, err error) {
 	err = m.db.QueryRow(ctx, `select id::text, key from projects where workspace_id = $1 and key = canonical_key($1, $2)
-		and can_see_project(id, $3)`, workspaceID, strings.ToUpper(key), viewerID).Scan(&id, &current)
+		and can_see_project(id, $3) and archived_at is null`, workspaceID, strings.ToUpper(key), viewerID).Scan(&id, &current)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", nil
 	}
@@ -85,11 +85,10 @@ func (m *model) project(ctx context.Context, workspaceID, key, viewerID string) 
 	return id, current, nil
 }
 
-// issue says whether the id is a live issue in the project, and the project isn't archived.
+// issue says whether the id is a live issue in the project.
 func (m *model) issue(ctx context.Context, projectID, id string) (bool, error) {
 	var ok bool
-	err := m.db.QueryRow(ctx, `select exists (select 1 from issues i join projects p on p.id = i.project_id
-		where i.id = $1 and i.project_id = $2 and p.archived_at is null)`, id, projectID).Scan(&ok)
+	err := m.db.QueryRow(ctx, `select exists (select 1 from issues where id = $1 and project_id = $2)`, id, projectID).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("find issue: %w", err)
 	}
