@@ -301,7 +301,7 @@ function ChatStart({ workspaceName }: { workspaceName: string }) {
   const { chat } = use(ChatContext)
   const text =
     chat.kind === 'workspace'
-      ? `This is the start of ${workspaceName}'s chat. Everyone in the workspace is here.`
+      ? `This is the start of the ${workspaceName} chat. Everyone in the workspace is here.`
       : chat.kind === 'direct'
         ? `This is the start of your conversation with ${chat.name}.`
         : `This is the start of ${chat.name}.`

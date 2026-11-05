@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"maps"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/devender07/taskwell/backend/user/internal/doc"
 )
@@ -48,7 +51,7 @@ func Wrap(authenticate func(*http.Request) (string, error), maxBody int64, fn Ha
 			err = fn(w, r, userID)
 		}
 		if err != nil {
-			fail(w, r, err)
+			Fail(w, r, err)
 		}
 	}
 }
@@ -58,12 +61,18 @@ func Public(maxBody int64, fn func(w http.ResponseWriter, r *http.Request) error
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		if err := fn(w, r); err != nil {
-			fail(w, r, err)
+			Fail(w, r, err)
 		}
 	}
 }
 
-func fail(w http.ResponseWriter, r *http.Request, err error) {
+// Fail answers a handler's error: a 400 when Postgres refused the text sent (a NUL character, which it can't store,
+// in any field), else a logged 500.
+func Fail(w http.ResponseWriter, r *http.Request, err error) {
+	if pe := (*pgconn.PgError)(nil); errors.As(err, &pe) && (pe.Code == "22021" || pe.Code == "22P05") {
+		Err(w, http.StatusBadRequest, "Text can't contain null characters.")
+		return
+	}
 	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 	Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 }

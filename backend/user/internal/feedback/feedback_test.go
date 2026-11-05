@@ -127,7 +127,9 @@ func TestFeedback(t *testing.T) {
 	if len(fs.Items) != 1 || null(fs.Items[0].Issue) {
 		t.Fatalf("Ann's LEAD-1 feedback %+v", fs)
 	}
-	do(bob, "POST", "/feedback/"+f.ID, url.Values{"issue": {""}}, 200, &f)
+	do(bob, "POST", "/feedback/"+f.ID, url.Values{"issue": {""}}, 403, nil) // off an issue Bob can't see
+	do(bob, "POST", "/feedback/"+f.ID, url.Values{"issue": {"web-1"}}, 403, nil)
+	do(ann, "POST", "/feedback/"+f.ID, url.Values{"issue": {""}}, 200, &f)
 	if !null(f.Issue) || count() != 1 {
 		t.Fatal("unlink")
 	}

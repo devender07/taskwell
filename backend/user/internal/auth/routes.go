@@ -5,7 +5,6 @@
 package auth
 
 import (
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -62,8 +61,7 @@ func (h *Handler) wrap(fn func(http.ResponseWriter, *http.Request) error) http.H
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		if err := fn(w, r); err != nil {
-			slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			web.Err(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+			web.Fail(w, r, err)
 		}
 	}
 }

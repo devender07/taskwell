@@ -26,6 +26,8 @@ const (
 	PermIssuesCreate = "issues.create"
 	// PermIssuesEditAny lets a member edit and delete issues they neither created nor are assigned.
 	PermIssuesEditAny = "issues.edit_any"
+	// PermIssuesStatusAny lets a member change the status of any issue they can see (QA reopening work), nothing else.
+	PermIssuesStatusAny = "issues.status_any"
 	// PermWorkflowManage gates creating, editing, reordering and deleting statuses and labels.
 	PermWorkflowManage = "workflow.manage"
 	// PermCommentsCreate gates commenting on issues and editing one's own comments.
@@ -60,6 +62,7 @@ var catalog = []Permission{
 	{PermProjectsManage, "Projects", "Create, edit and archive projects", true},
 	{PermIssuesCreate, "Issues", "Create issues", true},
 	{PermIssuesEditAny, "Issues", "Edit and delete anyone's issues", true},
+	{PermIssuesStatusAny, "Issues", "Change the status of anyone's issues", true},
 	{PermWorkflowManage, "Issues", "Manage statuses and labels", true},
 	{PermCyclesManage, "Cycles", "Create, edit and delete cycles", true},
 	{PermCommentsCreate, "Comments", "Comment on issues", true},

@@ -29,8 +29,7 @@ export function NoteComposer({ onStart }: { onStart: (checklist: boolean) => voi
 }
 
 // The new note, full screen. It's created by the first autosave (500ms after typing stops), then updated; an
-// empty one is never created.
-// ponytail: the URL stays ?note=new after the first save, so a reload opens a blank note (the saved one is in the grid).
+// empty one is never created. Once created, the URL names it, so a reload opens the saved note.
 export function NewNoteDialog({ slug, checklist, label, onDone }: { slug: string; checklist: boolean; label?: string; onDone: () => void }) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState<{ doc: Doc | null; length: number }>({ doc: null, length: 0 })
@@ -53,6 +52,12 @@ export function NewNoteDialog({ slug, checklist, label, onDone }: { slug: string
     if (!id.current && label) fields.labels = JSON.stringify([label])
     try {
       const n = await saveNote(slug, fields, id.current ?? undefined)
+      if (!id.current) {
+        // Not through the router: that would swap this popup for the saved note's while it's being typed in.
+        const url = new URL(location.href)
+        url.searchParams.set('note', n.id)
+        history.replaceState(history.state, '', url)
+      }
       id.current = n.id
       saved.current = snap
       setSavedAt(n.updated_at)

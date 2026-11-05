@@ -74,8 +74,8 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           {editing ? (
             <EditIssueForm workspace={workspace} issue={issue} onDone={() => setEditing(false)} />
           ) : (
-            <header className="flex items-start justify-between gap-4">
-              <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
+            <header className="flex flex-wrap items-start justify-between gap-4">
+              <h1 className="text-h2" style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>{issue.title}</h1>
               <div className="flex items-start gap-2 flex-noshrink">
                 <Viewers viewers={viewers} />
                 <WatchButton key={issue.id} workspace={workspace} issue={issue} />

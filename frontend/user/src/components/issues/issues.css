@@ -18,7 +18,7 @@
 
 /* A list row: its select checkbox, then the row link. The checkbox shows on hover and focus, while anything is
    selected, and always on touch screens. */
-.issue-item { display: flex; align-items: center; }
+.issue-item { display: flex; align-items: center; min-width: 0; }
 .issue-item > .issue-row { flex: 1; min-width: 0; padding-left: 0; }
 .issue-select { flex-shrink: 0; justify-content: center; width: 44px; height: 44px; opacity: 0; }
 .issue-item:hover .issue-select, .issue-item:focus-within .issue-select, [data-selecting] .issue-select { opacity: 1; }

@@ -47,7 +47,7 @@ export type Issue = {
   identifier: string
   number: number
   rank: string
-  project: { key: string; name: string }
+  project: { key: string; name: string; archived: boolean }
   title: string
   description: Doc | null
   status: Status
@@ -61,6 +61,7 @@ export type Issue = {
   updated_at: string
   can_edit: boolean
   can_delete: boolean
+  can_change_status: boolean // can_edit, or issues.status_any (QA reopening work)
   watching: boolean
   watchers?: PersonRef[]
   parent: IssueRef | null

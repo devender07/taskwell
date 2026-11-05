@@ -117,17 +117,20 @@ func publishRun(ctx context.Context, tx pgx.Tx, issueID, runID, actorID string, 
 
 // --- issues ---
 
-type issueRef struct{ id, identifier, title string }
+type issueRef struct {
+	id, identifier, title string
+	archived              bool // its project is archived: tests can be read, not changed or run
+}
 
 // issue returns the workspace's issue with the project key (or an old key) and number; nil when there's none or the
 // viewer can't see it.
 func (m *model) issue(ctx context.Context, workspaceID, key string, number int, viewerID string) (*issueRef, error) {
 	var i issueRef
-	err := m.db.QueryRow(ctx, `select i.id::text, p.key || '-' || i.number, i.title
+	err := m.db.QueryRow(ctx, `select i.id::text, p.key || '-' || i.number, i.title, p.archived_at is not null
 		from issues i join projects p on p.id = i.project_id
 		where i.workspace_id = $1 and p.key = canonical_key($1, $2) and i.number = $3 and can_see_project(p.id, $4)`,
 		workspaceID, key, number, viewerID).
-		Scan(&i.id, &i.identifier, &i.title)
+		Scan(&i.id, &i.identifier, &i.title, &i.archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

@@ -327,7 +327,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, i, ok, err := h.editable(w, r, userID)
+	ws, i, ok, err := h.editable(w, r, userID, "status_id")
 	if !ok || err != nil {
 		return err
 	}
@@ -356,7 +356,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 // move places the issue in its project's manual order right after the form's after issue, else right before its
 // before issue, applying status_id, assignee_id and priority like update when they're present.
 func (h *Handler) move(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, i, ok, err := h.editable(w, r, userID)
+	ws, i, ok, err := h.editable(w, r, userID, "status_id", "after", "before")
 	if !ok || err != nil {
 		return err
 	}
@@ -415,7 +415,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) 
 		return err
 	}
 	if allow(i, userID, ws.Permissions); !i.CanDelete {
-		web.Err(w, http.StatusForbidden, errForbidden)
+		web.Err(w, http.StatusForbidden, denied(i))
 		return nil
 	}
 	if err := h.model.delete(r.Context(), i.ID, userID); err != nil {
@@ -476,6 +476,8 @@ func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) er
 		errs["issue"] = errIssueNotFound
 	case other.ID == i.ID:
 		errs["issue"] = "An issue can't block itself."
+	case other.Project.Archived:
+		errs["issue"] = "That issue's project is archived."
 	}
 	if !web.Check(w, errs) {
 		return nil
@@ -543,14 +545,27 @@ func (h *Handler) find(ctx context.Context, workspaceID, identifier, viewerID st
 	return h.model.get(ctx, workspaceID, key, number, viewerID)
 }
 
-// editable is issue, plus a 403 unless the caller may edit it.
-func (h *Handler) editable(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, *Issue, bool, error) {
+// editable is issue, plus a 403 unless the caller may edit it. statusOnly are the form fields a request may send
+// to pass on can_change_status alone (a status change, and where a board drop puts it).
+func (h *Handler) editable(w http.ResponseWriter, r *http.Request, userID string, statusOnly ...string) (*workspace.Workspace, *Issue, bool, error) {
 	ws, i, ok, err := h.issue(w, r, userID)
 	if !ok || err != nil {
 		return nil, nil, false, err
 	}
-	if allow(i, userID, ws.Permissions); !i.CanEdit {
-		web.Err(w, http.StatusForbidden, errForbidden)
+	allow(i, userID, ws.Permissions)
+	if !i.CanEdit && i.CanChangeStatus && len(statusOnly) > 0 {
+		_ = r.ParseMultipartForm(maxBody)
+		_, status := r.PostForm["status_id"]
+		only := status
+		for k := range r.PostForm {
+			only = only && slices.Contains(statusOnly, k)
+		}
+		if only {
+			return ws, i, true, nil
+		}
+	}
+	if !i.CanEdit {
+		web.Err(w, http.StatusForbidden, denied(i))
 		return nil, nil, false, nil
 	}
 	return ws, i, true, nil
@@ -603,12 +618,26 @@ func checkParent(w http.ResponseWriter, err error) bool {
 }
 
 // allow sets the caller's can_edit and can_delete: issues.edit_any, or they created it; editing also when it's
-// assigned to them.
+// assigned to them or they assigned it (so handing it on doesn't lock them out). can_change_status adds
+// issues.status_any. Nobody changes an issue in an archived project.
 func allow(i *Issue, userID string, perms []string) {
+	if i.Project.Archived {
+		i.CanEdit, i.CanDelete, i.CanChangeStatus = false, false, false
+		return
+	}
+	defer func() { i.CanChangeStatus = i.CanEdit || workspace.Has(perms, workspace.PermIssuesStatusAny) }()
 	editAny := workspace.Has(perms, workspace.PermIssuesEditAny)
 	creator := i.CreatedBy != nil && i.CreatedBy.ID == userID
 	i.CanDelete = editAny || creator
-	i.CanEdit = i.CanDelete || i.Assignee != nil && i.Assignee.ID == userID
+	i.CanEdit = i.CanDelete || i.Assignee != nil && (i.Assignee.ID == userID || i.AssignedBy != nil && i.AssignedBy.ID == userID)
+}
+
+// denied is the 403 message for a change allow refused.
+func denied(i *Issue) string {
+	if i.Project.Archived {
+		return errArchivedProject
+	}
+	return errForbidden
 }
 
 // readFields returns the issue fields present in the form, or writes a 400 with field errors and returns ok=false.

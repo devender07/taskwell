@@ -215,7 +215,9 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request, _ string) error
 		}
 	}
 	if fileID == "" {
-		web.Err(w, http.StatusNotFound, errFileNotFound)
+		// No body: this answers an <img>, and a JSON body there is blocked as cross-origin data (ERR_BLOCKED_BY_ORB)
+		// instead of just failing to the initials fallback. Cached like a photo, so it isn't asked again per render.
+		w.WriteHeader(http.StatusNotFound)
 		return nil
 	}
 	http.Redirect(w, r, URL(fileID, "avatar"), http.StatusFound)

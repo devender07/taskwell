@@ -159,8 +159,8 @@ type Start = { kind: RunKind; regenerate?: boolean; caseId?: string }
 
 export function TestsSection({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const navigate = useNavigate()
-  const manage = can(workspace, 'tests.manage')
-  const runAi = can(workspace, 'ai_tests.run')
+  const manage = can(workspace, 'tests.manage') && !issue.project.archived
+  const runAi = can(workspace, 'ai_tests.run') && !issue.project.archived
   const cases = useLive<TestCase[]>(testCasesPath(workspace, issue.identifier))
   const runs = useLive<RunPage>(testRunsPath(workspace, issue.identifier))
   const sites = useLive<TestSite[]>(runAi ? testSitesPath(workspace) : null)

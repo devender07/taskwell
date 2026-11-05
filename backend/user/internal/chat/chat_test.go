@@ -124,6 +124,17 @@ func TestChat(t *testing.T) {
 		}
 	}
 	errOf(cat, "GET", "/chats/"+d1.ID, nil, 404)
+	// Someone who leaves the workspace can't be messaged in your old direct chat.
+	dan := dbtest.User(t, pool, "Dan")
+	dbtest.Join(t, pool, wsID, dan, "member")
+	var gone Chat
+	do(ann, "POST", "/chats/direct", url.Values{"user_id": {dan}}, 200, &gone)
+	if _, err := pool.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id = $2`, wsID, dan); err != nil {
+		t.Fatal(err)
+	}
+	if got := errOf(ann, "POST", "/chats/"+gone.ID+"/messages", url.Values{"body": {`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"hi"}]}]}`}}, 403); !strings.Contains(got, "no longer in this workspace") {
+		t.Errorf("message to a member who left: %s", got)
+	}
 
 	// Groups: create, rename, add, remove by the creator only, leave; the last one out deletes it.
 	for form, want := range map[string]string{

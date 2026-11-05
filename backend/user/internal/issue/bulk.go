@@ -56,6 +56,10 @@ func (h *Handler) bulk(w http.ResponseWriter, r *http.Request, userID string) er
 		allow(&is[i], userID, ws.Permissions)
 		if del && !is[i].CanDelete || !del && !is[i].CanEdit {
 			verb := map[bool]string{true: "delete", false: "edit"}[del]
+			if is[i].Project.Archived {
+				web.Err(w, http.StatusForbidden, is[i].Identifier+" is in an archived project.")
+				return nil
+			}
 			web.Err(w, http.StatusForbidden, "You can't "+verb+" "+is[i].Identifier+".")
 			return nil
 		}

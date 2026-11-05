@@ -410,7 +410,7 @@ export function ConnectClaude() {
           { label: 'command', text: command },
         ].map(({ label, text }) => (
           <div key={label} className="flex items-center gap-3">
-            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, wordBreak: 'break-all' }}>
+            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, overflowWrap: 'anywhere' }}>
               {text}
             </code>
             <CopyButton text={text} label={`Copy ${label}`} />

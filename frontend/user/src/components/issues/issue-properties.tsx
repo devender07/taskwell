@@ -136,12 +136,27 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
         </>
       ) : (
         <>
-          <Property label="Status">
-            <span className="flex items-center gap-2">
-              <StatusIcon status={issue.status} />
-              {issue.status.name}
-            </span>
-          </Property>
+          {issue.can_change_status ? (
+            <>
+              <SmartAutocomplete
+                label="Status"
+                options={statusOpts}
+                value={statusOpts.find((o) => o.value === issue.status.id) ?? null}
+                onChange={(o) => {
+                  const status = statuses.find((s) => s.id === o?.value)
+                  if (status && status.id !== issue.status.id) update('status_id', [status.id], { status })
+                }}
+              />
+              <FormError>{error}</FormError>
+            </>
+          ) : (
+            <Property label="Status">
+              <span className="flex items-center gap-2">
+                <StatusIcon status={issue.status} />
+                {issue.status.name}
+              </span>
+            </Property>
+          )}
           <Property label="Priority">{priorityLabel(issue.priority)}</Property>
           <Property label="Assignee">
             {issue.assignee ? (

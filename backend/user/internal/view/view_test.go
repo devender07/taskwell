@@ -41,7 +41,10 @@ func TestViews(t *testing.T) {
 		if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `select id::text, slug from workspaces where created_by = $1`, ann).Scan(&wsID, &slug)
+		return tx.QueryRow(ctx, `with w as (select id, slug from workspaces where created_by = $1),
+			p as (insert into projects (workspace_id, name, key, private)
+			      select id, n, k, pr from w, (values ('Web', 'WEB', false), ('Lead', 'LEAD', true)) v(n, k, pr))
+			select id::text, slug from w`, ann).Scan(&wsID, &slug)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +115,16 @@ func TestViews(t *testing.T) {
 	annShared := save(ann, "Ann shared", true)
 	if got := names(mia); !strings.Contains(got, "Ann shared:false") {
 		t.Errorf("mia sees %s", got)
+	}
+	// A shared view of a private project shows only to those who can see the project.
+	if err := json.Unmarshal([]byte(do(ann, "POST", "", url.Values{"name": {"Leads"}, "path": {"/projects/lead?view=board"}, "shared": {"1"}}, 201)), new(View)); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(mia); strings.Contains(got, "Leads") {
+		t.Errorf("mia sees the private project's view: %s", got)
+	}
+	if got := names(ann); !strings.Contains(got, "Leads") {
+		t.Errorf("ann lost her view: %s", got)
 	}
 	do(mia, "POST", "/"+annShared.ID, url.Values{"name": {"x"}}, 403)
 	do(mia, "DELETE", "/"+annShared.ID, nil, 403)
