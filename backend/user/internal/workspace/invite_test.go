@@ -12,7 +12,7 @@ import (
 )
 
 // TestMyInvites: the invite prompt's list, accept and dismiss act only on the caller's own unexpired invites;
-// dismissing hides the invite and leaves one invite notification however often it's repeated, and accepting joins
+// dismissing flags the invite and leaves one invite notification however often it's repeated, and accepting joins
 // the workspace and deletes that notification.
 func TestMyInvites(t *testing.T) {
 	pool := dbtest.Pool(t)
@@ -95,8 +95,8 @@ func TestMyInvites(t *testing.T) {
 	if n := notes(); n != 1 {
 		t.Fatalf("invite notifications after two dismissals: %d, want 1", n)
 	}
-	if invs := list(bob); len(invs) != 0 {
-		t.Fatalf("Bob's invites after dismissing: %+v, want none", invs)
+	if invs := list(bob); len(invs) != 1 || !invs[0].Dismissed {
+		t.Fatalf("Bob's invites after dismissing: %+v, want it flagged dismissed", invs)
 	}
 
 	var ws Workspace

@@ -624,20 +624,22 @@ type PendingInvite struct {
 	Role      RoleRef   `json:"role"`
 	Guest     bool      `json:"guest"`
 	ExpiresAt time.Time `json:"expires_at"`
+	Dismissed bool      `json:"dismissed"` // "Not now": listed in the switcher, not prompted again
 }
 
 // mine joins invites i to the user $1 they're for, whose email must be verified (whoever owns the inbox owns the invite).
 const mine = ` join users me on me.email = i.email and me.id = $1 and me.email_verified_at is not null`
 
-// myInvites returns the user's unexpired, undismissed invites to workspaces they aren't in, oldest first.
+// myInvites returns the user's unexpired invites to workspaces they aren't in, oldest first; dismissed ones are flagged.
 func (m *model) myInvites(ctx context.Context, userID string) ([]PendingInvite, error) {
 	rows, err := m.db.Query(ctx,
-		`select i.id::text, w.name, coalesce(u.name, ''), r.id::text, r.name, r.builtin is not distinct from 'guest', i.expires_at
+		`select i.id::text, w.name, coalesce(u.name, ''), r.id::text, r.name, r.builtin is not distinct from 'guest', i.expires_at,
+		        i.dismissed_at is not null
 		   from workspace_invites i`+mine+`
 		   join workspaces w on w.id = i.workspace_id
 		   left join users u on u.id = i.invited_by
 		   join workspace_roles r on r.workspace_id = i.workspace_id and (r.id = i.role_id or i.role_id is null and r.builtin = 'member')
-		  where i.expires_at > now() and i.dismissed_at is null
+		  where i.expires_at > now()
 		    and not exists (select 1 from workspace_members m where m.workspace_id = i.workspace_id and m.user_id = $1)
 		  order by i.created_at, i.id`, userID)
 	if err != nil {
@@ -645,7 +647,7 @@ func (m *model) myInvites(ctx context.Context, userID string) ([]PendingInvite, 
 	}
 	invs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PendingInvite, error) {
 		var p PendingInvite
-		err := row.Scan(&p.ID, &p.Workspace.Name, &p.InvitedBy, &p.Role.ID, &p.Role.Name, &p.Guest, &p.ExpiresAt)
+		err := row.Scan(&p.ID, &p.Workspace.Name, &p.InvitedBy, &p.Role.ID, &p.Role.Name, &p.Guest, &p.ExpiresAt, &p.Dismissed)
 		p.ExpiresAt = p.ExpiresAt.UTC()
 		return p, err
 	})

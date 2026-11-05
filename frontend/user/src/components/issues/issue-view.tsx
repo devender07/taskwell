@@ -183,6 +183,24 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
     return () => window.removeEventListener('keydown', onSelectKey)
   }, [])
 
+  // The toolbar sticks under the page's own sticky header, and list group headers under the toolbar (--below-toolbar).
+  const toolbar = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const bar = toolbar.current
+    const head = bar?.closest('main')?.querySelector<HTMLElement>(':scope > .page-top')
+    if (!bar || !head) return
+    const fit = () => {
+      const top = parseFloat(getComputedStyle(head).top) + head.offsetHeight
+      bar.style.top = `${top}px`
+      root.current?.style.setProperty('--below-toolbar', `${top + bar.offsetHeight}px`)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(head)
+    ro.observe(bar)
+    return () => ro.disconnect()
+  }, [])
+
   const choices: Choice[] = [
     { key: 'status', title: 'Status', options: statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> })) },
     ...(mine
@@ -280,54 +298,56 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
 
   return (
     <div ref={root} className="grid gap-4" style={picked.length ? { paddingBottom: 96 } : undefined}>
-      <div className="flex flex-wrap items-center gap-3">
-        <Tabs
-          aria-label="View"
-          className="w-fit"
-          items={[...views]}
-          value={view}
-          onChange={(v) => setSearch({ ...search, view: v === 'board' ? 'board' : undefined })}
-        />
-        <Select
-          label="Group"
-          options={groupOptions}
-          value={group}
-          onChange={(v) => setSearch({ ...search, group: v === 'status' ? undefined : (v as ViewSearch['group']) })}
-        />
-        <Select
-          label="Sort"
-          options={manual ? sortOptions : sortOptions.slice(1)}
-          value={sort}
-          onChange={(v) => setSearch({ ...search, sort: v === defaultSort ? undefined : (v as SortBy) })}
-        />
-        <div style={{ width: 220 }}>
-          <Input
-            type="search"
-            aria-label="Search issues"
-            placeholder="Search issues"
-            defaultValue={search.q}
-            onDebouncedChange={(v) => navigate({ to: '.', search: { ...search, q: v.trim() || undefined }, replace: true })}
+      <div ref={toolbar} className="page-top issue-toolbar grid gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs
+            aria-label="View"
+            className="w-fit"
+            items={[...views]}
+            value={view}
+            onChange={(v) => setSearch({ ...search, view: v === 'board' ? 'board' : undefined })}
           />
+          <Select
+            label="Group"
+            options={groupOptions}
+            value={group}
+            onChange={(v) => setSearch({ ...search, group: v === 'status' ? undefined : (v as ViewSearch['group']) })}
+          />
+          <Select
+            label="Sort"
+            options={manual ? sortOptions : sortOptions.slice(1)}
+            value={sort}
+            onChange={(v) => setSearch({ ...search, sort: v === defaultSort ? undefined : (v as SortBy) })}
+          />
+          <div style={{ width: 220 }}>
+            <Input
+              type="search"
+              aria-label="Search issues"
+              placeholder="Search issues"
+              defaultValue={search.q}
+              onDebouncedChange={(v) => navigate({ to: '.', search: { ...search, q: v.trim() || undefined }, replace: true })}
+            />
+          </div>
+          <FilterMenu choices={choices} search={search} onChange={setFilter} />
+          <ViewMenu workspace={workspace} />
+          <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>
+            {page.total} {page.total === 1 ? 'issue' : 'issues'}
+          </span>
         </div>
-        <FilterMenu choices={choices} search={search} onChange={setFilter} />
-        <ViewMenu workspace={workspace} />
-        <span className="text-caption text-secondary" style={{ marginLeft: 'auto' }}>
-          {page.total} {page.total === 1 ? 'issue' : 'issues'}
-        </span>
+        {active.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {active.map((c) => (
+              <button key={c.key} type="button" className="filter-chip" aria-label={`Remove ${c.title.toLowerCase()} filter`} onClick={() => setFilter(c.key, [])}>
+                {c.title}: {c.values.map((v) => c.options.find((o) => o.value === v)?.label).join(', ')}
+                <span aria-hidden>×</span>
+              </button>
+            ))}
+            <Button variant="ghost" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          </div>
+        ) : null}
       </div>
-      {active.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {active.map((c) => (
-            <button key={c.key} type="button" className="filter-chip" aria-label={`Remove ${c.title.toLowerCase()} filter`} onClick={() => setFilter(c.key, [])}>
-              {c.title}: {c.values.map((v) => c.options.find((o) => o.value === v)?.label).join(', ')}
-              <span aria-hidden>×</span>
-            </button>
-          ))}
-          <Button variant="ghost" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        </div>
-      ) : null}
       <FormError>{error}</FormError>
       {view === 'board' ? (
         <Board
@@ -428,7 +448,7 @@ function IssueList({ workspace, groups, by, ordered, hint, onPlace, onKey, more,
           const open = by === 'none' || !collapsed.has(`${by}:${g.key}`)
           const mark = dropMark(g.issues, drag, g.key)
           return (
-            <section key={g.key} data-group={g.key} className="bg-surface border rounded-lg overflow-hidden" aria-label={by === 'none' ? 'Issues' : g.label}>
+            <section key={g.key} data-group={g.key} className="issue-group bg-surface border rounded-lg" aria-label={by === 'none' ? 'Issues' : g.label}>
               {by === 'none' ? null : (
                 <h2 className="m-0">
                   <button
@@ -582,6 +602,9 @@ export const IssueRow = memo(function IssueRow({ workspace, issue, group = '', d
       <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
       {issue.priority ? <span className="text-caption text-secondary flex-noshrink">{priorityLabel(issue.priority)}</span> : null}
       <DueDate issue={issue} />
+      <span className="issue-row-wide flex-noshrink ellipsis" style={{ maxWidth: 160 }}>
+        <AssignedBy issue={issue} />
+      </span>
       <Assignee issue={issue} />
     </Link>
   )
@@ -610,7 +633,7 @@ function DueDate({ issue }: { issue: Issue }) {
 function Assignee({ issue }: { issue: Issue }) {
   if (!issue.assignee) return null
   return (
-    <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assignee.name} className="inline-grid flex-noshrink">
+    <span role="img" aria-label={`Assigned to ${issue.assignee.name}`} title={issue.assigned_by ? `${issue.assignee.name}, assigned by ${issue.assigned_by.name}` : issue.assignee.name} className="inline-grid flex-noshrink">
       <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
     </span>
   )

@@ -11,7 +11,7 @@ Legend: `[x]` done, `[ ]` to do.
 - [x] Continue with Google (code done; add `google_client_id` / `google_client_secret` in `system_config` to turn it on)
 - [x] Workspaces: default one created at sign-up, create dialog, settings page with sidebar, admin delete, name + URL slug (`taskwell.dev/acme`), switcher, settings (rename, change URL), admin/member role on membership
 - [x] Team invites: invite by email from Settings → Members, accept link (`/invite`, email must match), resend or cancel; member list
-- [x] Invite prompt (docs/invite-prompt-plan.md): sign-up never auto-joins; pending invites show a "Join <workspace>?" prompt, "Not now" leaves a Join row in the Taskwell bot
+- [x] Invite prompt (docs/invite-prompt-plan.md): sign-up never auto-joins; pending invites show a "Join <workspace>?" prompt, "Not now" leaves a Join row in the Taskwell bot; pending invites listed with Join in the workspace switcher
 - [x] Roles: built-in Admin and Member plus custom roles with permissions (Settings → Roles), change role, remove member, leave
 - [x] Profile: name, change or set password (Settings → Profile; signs out other devices)
 - [x] Avatar upload (Settings → Profile; initials when none)
@@ -81,6 +81,8 @@ Plans: `docs/notes-plan.md`, `docs/notes-collab-plan.md`.
 
 - [x] Editor: link and table tools, list buttons toggle and convert lists in place, tools that don't fit go in a "More formatting" menu
 - [x] Sticky page headers on every workspace page (border once the page scrolls under them)
+- [x] Sticky issue toolbar (view, group, sort, search, filters, chips) under the page header on issue lists
+- [x] "Assigned by" on issues (last assignee change, else the creator): list rows, board cards, issue page
 - [x] Search box on issue lists (identifier, title, description; in the URL) and on Projects; navbar "Search issues and projects" opens the palette
 - [x] Two-factor setup shows a QR code
 
@@ -145,5 +147,5 @@ Time tracking, gantt, resource planning, custom fields, permission matrices, SSO
 
 ## Next up
 
-Phases 1–6 and the admin app are built. Next: pick from Later (cycles, PR linking, Slack, roadmap) once real users ask.
+Phases 1–6, the admin app and Later (except Slack) are built. Next: Slack, or feedback request counts on issue lists ("Most requested" sort), once real users ask.
 

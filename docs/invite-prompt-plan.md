@@ -45,7 +45,7 @@ All of these need a signed-in user, and they act on invites for that user's emai
 
 | Method & path | Success | Failures |
 |---|---|---|
-| `GET /api/me/invites` | `200 [{"id", "workspace": {"name"}, "invited_by": "<name or ''>", "role": {"id", "name"}, "guest": bool, "expires_at"}]`: unexpired, not dismissed, for a workspace the user isn't in, oldest first | 401 |
+| `GET /api/me/invites` | `200 [{"id", "workspace": {"name"}, "invited_by": "<name or ''>", "role": {"id", "name"}, "guest": bool, "expires_at"}]`, plus `"dismissed": bool` ("Not now" was chosen; the prompt skips these, the workspace switcher lists them): unexpired, for a workspace the user isn't in, oldest first | 401 |
 | `POST /api/me/invites/{id}/accept` | `200 Workspace` (same JSON as the token accept). Joins with the invite's role, a guest also to its projects; deletes the invite and its `invite` notifications | 401; 404 `"This invite link is invalid or has expired."` (same message the token path uses) when it isn't the user's, or it's unknown or expired |
 | `POST /api/me/invites/{id}/dismiss` | `204`. FormData `workspace` is the slug the user is in now. Sets `dismissed_at` and inserts one `invite` notification for the user in that workspace (actor = inviter, `invite_id` = the invite), then publishes the notifications change. Dismissing again does nothing | 401; 404 as above; 404 `"Workspace not found."` when they aren't a member of `workspace` |
 

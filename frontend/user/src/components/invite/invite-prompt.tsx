@@ -7,23 +7,28 @@ import { FormError } from '@/components/auth/auth-card'
 import { subscribePaths } from '@/realtime'
 import { useAcceptMyInvite } from './invite-actions'
 
-// Offers the oldest pending invite for the user's email. "Not now" (or closing) dismisses it into the Taskwell bot of
-// `slug`, the workspace the user is in; the next one shows after.
-export function InvitePrompt({ slug }: { slug: string }) {
-  const { show } = useToast()
-  const accept = useAcceptMyInvite()
+// The user's pending invites, kept live.
+export function useMyInvites() {
   const [invites, setInvites] = useState<PendingInvite[]>([])
-  const [gone, setGone] = useState<string[]>([])
-  const invite = invites.find((i) => !gone.includes(i.id))
-  // Keeps the last invite on screen while the dialog fades out.
-  const [shown, setShown] = useState(invite)
-  if (invite && invite !== shown) setShown(invite)
-
   useEffect(() => {
     const load = () => api<PendingInvite[]>(myInvitesPath).then(setInvites, () => {})
     load()
     return subscribePaths([myInvitesPath], load)
   }, [])
+  return invites
+}
+
+// Offers the oldest pending invite for the user's email. "Not now" (or closing) dismisses it into the Taskwell bot of
+// `slug`, the workspace the user is in; the next one shows after.
+export function InvitePrompt({ slug }: { slug: string }) {
+  const { show } = useToast()
+  const accept = useAcceptMyInvite()
+  const invites = useMyInvites()
+  const [gone, setGone] = useState<string[]>([])
+  const invite = invites.find((i) => !i.dismissed && !gone.includes(i.id))
+  // Keeps the last invite on screen while the dialog fades out.
+  const [shown, setShown] = useState(invite)
+  if (invite && invite !== shown) setShown(invite)
 
   const [error, join, pending] = useActionState(async () => {
     if (!invite) return null

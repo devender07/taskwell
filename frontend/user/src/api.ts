@@ -423,7 +423,7 @@ export type MfaStatus = { enabled: boolean; recovery_left: number }
 export const mfaPath = '/me/mfa'
 
 // Invites for the signed-in user's email that they haven't dismissed, oldest first.
-export type PendingInvite = { id: string; workspace: { name: string }; invited_by: string; role: RoleRef; guest: boolean; expires_at: string }
+export type PendingInvite = { id: string; workspace: { name: string }; invited_by: string; role: RoleRef; guest: boolean; expires_at: string; dismissed: boolean }
 export const myInvitesPath = '/me/invites'
 export const acceptMyInvite = (id: string) => api<Workspace>(`${myInvitesPath}/${encodeURIComponent(id)}/accept`, new FormData())
 export const dismissMyInvite = (id: string, workspace: string) => {

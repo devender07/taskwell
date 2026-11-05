@@ -1,6 +1,6 @@
 # Taskwell
 
-Project management tool for SaaS companies. Early stage: no code yet, only this file and DESIGN.md.
+Project management tool for SaaS companies. Phases 1–6 and most of Later are built; `task.md` is the checklist of what exists, check it before proposing features.
 
 ## Design source of truth
 
@@ -27,7 +27,7 @@ Build order, do not skip ahead:
 5. Keyboard-first: command palette, quick-create, fast search
 6. Notifications (email and in-app)
 
-Later: cycles/sprints, GitHub/GitLab PR linking, Slack, roadmap view, customer feedback intake, public API and webhooks.
+Later: cycles/sprints, GitHub/GitLab PR linking, roadmap view, customer feedback intake, public API and webhooks are built. Still open: Slack.
 
 Not building until a customer asks: time tracking, gantt, resource planning, custom fields, SSO/SAML, automation builder, multiple issue types, portfolios.
 

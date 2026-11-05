@@ -7,6 +7,8 @@ import { Popover } from '@taskwell/shared/popover'
 import { CheckIcon, ChevronDownIcon, MenuIcon, SearchIcon, XIcon } from '@taskwell/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
+import { JoinInviteButton } from '@/components/invite/invite-actions'
+import { useMyInvites } from '@/components/invite/invite-prompt'
 import { NotificationsBell } from './notifications-bell'
 import { isApple, openWorkspacePalette, paletteKey } from './shortcuts'
 import './navbar.css'
@@ -73,6 +75,7 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
   const slug = useParams({ strict: false }).workspace
   const current = workspaces.find((w) => w.slug === slug)
   const [creating, setCreating] = useState(false)
+  const invites = useMyInvites()
   if (!current) return null
   const closeDialog = () => setCreating(false)
 
@@ -86,6 +89,7 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
             <span className="text-caption text-secondary">Workspace</span>
             <span className="flex items-center gap-2">
               <span className="ellipsis font-510 flex-grow" style={{ marginLeft: 8, fontSize: 12 }}>{current.name}</span>
+              {invites.length ? <span className="text-caption text-accent flex-noshrink">{invites.length === 1 ? '1 invite' : `${invites.length} invites`}</span> : null}
               <ChevronDownIcon size={14} strokeWidth={2} className="flex-noshrink text-secondary" />
             </span>
           </button>
@@ -109,6 +113,21 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
                 {w.id === current.id ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
               </Link>
             ))}
+            {invites.length ? (
+              <>
+                <hr className="popover-divider" />
+                <p className="popover-title">Invites</p>
+                {invites.map((i) => (
+                  <div key={i.id} className="popover-item justify-between gap-2">
+                    <span className="grid" style={{ minWidth: 0 }}>
+                      <span className="ellipsis">{i.workspace.name}</span>
+                      {i.invited_by ? <span className="text-caption text-secondary ellipsis">From {i.invited_by}</span> : null}
+                    </span>
+                    <JoinInviteButton id={i.id} onJoin={close} />
+                  </div>
+                ))}
+              </>
+            ) : null}
             <hr className="popover-divider" />
             {current.guest ? null : (
               <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
