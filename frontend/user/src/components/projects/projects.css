@@ -9,14 +9,14 @@
 }
 .project-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 @media (hover: hover) {
-  .project-row:hover { background: rgba(255, 255, 255, 0.03); }
+  .project-row:hover { background: rgba(var(--ink), 0.03); }
 }
 .project-key { color: var(--text-2); font: 400 14px/21px var(--mono); }
 .project-tag {
   padding: 0 8px;
   color: var(--text-2);
   font: 400 12px/20px var(--font);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 9999px;
 }
 .milestone-diamond {
@@ -44,7 +44,7 @@
   color: var(--text-2);
   font: 400 12px/20px var(--font);
   white-space: nowrap;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 9999px;
 }
 .health-dot { width: 8px; height: 8px; background: var(--c); border-radius: 9999px; }

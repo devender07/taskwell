@@ -13,7 +13,7 @@
 }
 .inbox-link:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 @media (hover: hover) {
-  .inbox-row:hover { background: rgba(255, 255, 255, 0.03); }
+  .inbox-row:hover { background: rgba(var(--ink), 0.03); }
 }
 .inbox-dot { width: 8px; height: 8px; border-radius: 9999px; }
 .inbox-dot[data-unread] { background: var(--accent); }

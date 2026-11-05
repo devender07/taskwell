@@ -81,6 +81,7 @@ Plans: `docs/notes-plan.md`, `docs/notes-collab-plan.md`.
 
 - [x] Editor: link and table tools, list buttons toggle and convert lists in place, tools that don't fit go in a "More formatting" menu
 - [x] Sticky page headers on every workspace page (border once the page scrolls under them)
+- [x] Light mode (docs/light-mode-plan.md): System / Light / Dark in Settings → Profile, per browser; landing page stays dark
 - [x] Sticky issue toolbar (view, group, sort, search, filters, chips) under the page header on issue lists
 - [x] "Assigned by" on issues (last assignee change, else the creator): list rows, board cards, issue page
 - [x] Search box on issue lists (identifier, title, description; in the URL) and on Projects; navbar "Search issues and projects" opens the palette

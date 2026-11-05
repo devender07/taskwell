@@ -15,7 +15,7 @@ export function Avatar({ name, size = 32, src }: { name: string; size?: number; 
     <span
       aria-hidden
       className="relative inline-grid place-center rounded-full select-none flex-noshrink overflow-hidden"
-      style={{ width: size, height: size, font: `510 ${Math.round(size * 0.4)}px/1 var(--font)`, color: 'var(--text)', background: '#3e3e44' }}
+      style={{ width: size, height: size, font: `510 ${Math.round(size * 0.4)}px/1 var(--font)`, color: 'var(--text)', background: 'var(--avatar-bg)' }}
     >
       {initials || '?'}
       {src && failed !== src ? (
@@ -23,7 +23,7 @@ export function Avatar({ name, size = 32, src }: { name: string; size?: number; 
           src={apiUrl(src)}
           alt=""
           className="absolute"
-          style={{ inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#3e3e44' }}
+          style={{ inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'var(--avatar-bg)' }}
           onError={() => setFailed(src)}
         />
       ) : null}

@@ -57,7 +57,7 @@ export function StatusIcon({ status, label }: { status: StatusLook; label?: stri
   const { category, icon } = status
   const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
   const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
-  if (icon) return <StatusTypeIcon icon={icon} color={status.color ?? color} title={label} {...a11y} />
+  if (icon) return <StatusTypeIcon icon={icon} color={!status.color || status.color.toLowerCase() === '#f7f8f8' ? color : status.color} title={label} {...a11y} />
   return <CategoryGlyph category={category} color={color} label={label} />
 }
 

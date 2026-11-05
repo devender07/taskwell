@@ -12,7 +12,7 @@
   min-height: 44px;
   padding: 4px 4px 4px 16px;
   background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 8px;
   box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 4px 0px;
   animation: toast-in 120ms ease-out;

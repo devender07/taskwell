@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { mfaPath, type MfaStatus } from '@/api'
 import { loaderApi } from '@/realtime'
+import { AppearanceSetting } from '@/components/settings/appearance-setting'
 import { AvatarForm } from '@/components/settings/avatar-form'
 import { EmailForm } from '@/components/settings/email-form'
 import { PasswordForm } from '@/components/settings/password-form'
@@ -36,6 +37,9 @@ function ProfileSettings() {
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <TwoFactor key={user.id} user={user} status={mfa} />
+      </section>
+      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+        <AppearanceSetting />
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <ShortcutsSetting />

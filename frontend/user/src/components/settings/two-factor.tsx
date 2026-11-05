@@ -152,7 +152,7 @@ function SecretStep({ secret, url, onDone, onCancel }: { secret: string; url: st
           <span>Scan this QR code with your authenticator app, or add the key below or open the link on this device.</span>
           <QrCode value={url} />
           <div className="flex flex-wrap items-center gap-3">
-            <code className="p-3 border rounded flex-grow" style={{ ...mono, minWidth: 0, background: 'rgba(255, 255, 255, 0.02)' }}>
+            <code className="p-3 border rounded flex-grow" style={{ ...mono, minWidth: 0, background: 'rgba(var(--ink), 0.02)' }}>
               {secret}
             </code>
             <Button
@@ -212,7 +212,7 @@ function CodesStep({ codes, onDone }: { codes: string[]; onDone: () => void }) {
       <p className="text-body-sm text-secondary m-0">
         Each recovery code signs you in once if you lose your authenticator app. Keep them somewhere safe; you won't see them again.
       </p>
-      <ul className="grid gap-2 m-0 p-4 border rounded" style={{ listStyle: 'none', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', background: 'rgba(255, 255, 255, 0.02)' }}>
+      <ul className="grid gap-2 m-0 p-4 border rounded" style={{ listStyle: 'none', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', background: 'rgba(var(--ink), 0.02)' }}>
         {codes.map((c) => (
           <li key={c} className="text-body-sm" style={mono}>
             {c}

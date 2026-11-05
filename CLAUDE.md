@@ -4,7 +4,7 @@ Project management tool for SaaS companies. Phases 1–6 and most of Later are b
 
 ## Design source of truth
 
-`DESIGN.md` is the DesignMD document for the visual system (Linear-inspired, dark-first). Follow it exactly for colors, type, spacing, radii, shadows, z-index, and component specs. Do not invent tokens. Where the front matter and the body disagree, the body and section 9 "Agent Prompt Guide" win.
+`DESIGN.md` is the DesignMD document for the visual system (Linear-inspired, dark-first); `DESIGN-LIGHT.md` gives the light theme's colors. Follow them exactly for colors, type, spacing, radii, shadows, z-index, and component specs. Do not invent tokens. Where the front matter and the body disagree, the body and section 9 "Agent Prompt Guide" win.
 
 Quick reference:
 - Background `#08090A`, nested surface `#0F1011`, text `#F7F8F8`, secondary text `#8A8F98`

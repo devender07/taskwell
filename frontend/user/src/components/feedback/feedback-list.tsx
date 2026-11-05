@@ -142,7 +142,7 @@ function FeedbackCard({ workspace, state, feedback: f }: { workspace: Workspace;
           {relativeTime(f.created_at)}
         </time>
         {f.source === 'form' ? (
-          <span className="px-2" style={{ border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 9999 }}>
+          <span className="px-2" style={{ border: '1px solid rgba(var(--ink), 0.08)', borderRadius: 9999 }}>
             Form
           </span>
         ) : null}

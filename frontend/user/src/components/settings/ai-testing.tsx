@@ -27,7 +27,7 @@ export function Usage({ usage }: { usage: AiUsage }) {
         aria-valuemax={usage.limit_usd}
         aria-valuenow={usage.spent_usd}
         className="rounded-full overflow-hidden"
-        style={{ height: 8, background: 'rgba(255, 255, 255, 0.05)' }}
+        style={{ height: 8, background: 'rgba(var(--ink), 0.05)' }}
       >
         <div className="h-full rounded-full" style={{ width: `${share * 100}%`, background: share >= 0.9 ? 'var(--accent)' : 'var(--text-2)' }} />
       </div>

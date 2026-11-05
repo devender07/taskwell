@@ -5,8 +5,8 @@
   grid-auto-columns: 1fr;
   height: 40px;
   padding: 4px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 9999px;
 }
 .tabs-indicator {
@@ -15,8 +15,8 @@
   bottom: 4px;
   left: 4px;
   width: calc((100% - 8px) / var(--n));
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: rgba(0, 0, 0, 0.6) 0 0 0 1px;
+  background: var(--selected-bg);
+  box-shadow: var(--ring) 0 0 0 1px;
   border-radius: 9999px;
   transform: translateX(calc(var(--i) * 100%));
   transition: transform 200ms ease;
@@ -34,7 +34,8 @@
   cursor: pointer;
   transition: color 200ms ease;
 }
-.tab:hover, .tab[aria-pressed='true'] { color: var(--text); }
+.tab:hover { color: var(--text); }
+.tab[aria-pressed='true'] { color: var(--selected-text); }
 .tab:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
