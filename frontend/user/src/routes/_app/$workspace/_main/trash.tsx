@@ -6,6 +6,7 @@ import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { api, can, emptyTrash, purgeIssue, restoreIssue, toFormErrors, trashPath, type TrashedIssue, type TrashPage, type Workspace } from '@/api'
 import { loaderApi, reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 export const Route = createFileRoute('/_app/$workspace/_main/trash')({
   loader: (ctx) => loaderApi<TrashPage>(ctx, trashPath(ctx.params.workspace)),
@@ -21,7 +22,7 @@ function Trash() {
   const [moreError, setMoreError] = useState<string | null>(null)
   const [emptying, setEmptying] = useState(false)
   const more = extra?.base === page ? extra : null
-  const issues = [...page.issues, ...(more?.issues ?? [])]
+  const issues = [...page.issues, ...extractDataFromArray(more, 'issues', [])]
   const hasMore = more ? more.has_more : page.has_more
 
   async function loadMore() {
@@ -31,7 +32,7 @@ function Trash() {
     setMoreError(null)
     try {
       const next = await api<TrashPage>(`${trashPath(workspace.slug)}?${new URLSearchParams({ before: last.deleted_at })}`)
-      setExtra({ base: page, issues: [...(more?.issues ?? []), ...next.issues], has_more: next.has_more })
+      setExtra({ base: page, issues: [...extractDataFromArray(more, 'issues', []), ...next.issues], has_more: next.has_more })
     } catch (e) {
       setMoreError(toFormErrors(e).error)
     }

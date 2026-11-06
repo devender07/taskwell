@@ -498,6 +498,9 @@ func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID, perm str
 	case perm != "" && !workspace.Has(ws.Permissions, perm):
 		web.Err(w, http.StatusForbidden, errForbidden)
 		return nil, nil, false, nil
+	case perm != "" && i.archived:
+		web.Err(w, http.StatusForbidden, "This project is archived.")
+		return nil, nil, false, nil
 	}
 	return ws, i, true, nil
 }

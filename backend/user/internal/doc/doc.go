@@ -92,7 +92,8 @@ func Check(raw []byte, name string, maxLen int) (json.RawMessage, string) {
 			src, _ := n.Attrs["src"].(string)
 			alt, altOK := n.Attrs["alt"].(string)
 			if !slices.Contains(imageParents, parent) || !fileURL.MatchString(src) ||
-				n.Attrs["alt"] != nil && (!altOK || Len(alt) > maxAltLen) {
+				n.Attrs["alt"] != nil && (!altOK || Len(alt) > maxAltLen) ||
+				n.Attrs["width"] != nil && !widths([]any{n.Attrs["width"]}) {
 				return false
 			}
 			solid = true

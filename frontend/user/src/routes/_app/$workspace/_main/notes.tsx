@@ -8,6 +8,7 @@ import { NewNoteDialog, NoteComposer } from '@/components/notes/composer'
 import { NoteCard, NoteDialog } from '@/components/notes/note-card'
 import { NotesBulkBar } from '@/components/notes/bulk-bar'
 import '@/components/notes/notes.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 // note: the open popup, kept across reloads: 'new', 'checklist' (a new note starting with one) or a note's id.
 type Search = { label?: string; archived?: true; q?: string; note?: string }
@@ -26,7 +27,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/notes')({
   component: NotesPage,
 })
 
-const text = (d: Doc): string => (d.text ?? '') + (d.type === 'mention' ? String(d.attrs?.label ?? '') : '') + ' ' + (d.content ?? []).map(text).join(' ')
+const text = (d: Doc): string => (d.text ?? '') + (d.type === 'mention' ? String(extractDataFromArray(d.attrs, 'label', '')) : '') + ' ' + (d.content ?? []).map(text).join(' ')
 
 function NotesPage() {
   const { workspace: slug } = Route.useParams()
@@ -45,7 +46,7 @@ function NotesPage() {
   )
   const pinned = archived ? [] : shown.filter((n) => n.pinned)
   const others = archived ? shown : shown.filter((n) => !n.pinned)
-  const open = notes.find((n) => n.id === note)
+  const open = byId(notes, note)
   // Closing replaces the entry, so Back doesn't reopen a note that was just closed.
   const popup = (next?: string) => navigate({ search: (prev) => ({ ...prev, note: next }), replace: !next })
   const filter = (next: Search) => navigate({ search: (prev) => ({ q: prev.q, ...next }), replace: true })

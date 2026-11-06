@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Checkbox } from '@taskwell/shared/checkbox'
 import { CategoryGlyph, StatusTypeIcon, XIcon } from '@taskwell/shared/icons'
 import { Popover } from '@taskwell/shared/popover'
@@ -34,8 +35,8 @@ export const assigneeOption = (a: PersonRef | null): Option | null => (a ? { val
 
 export const AssignedBy = ({ issue }: { issue: { assignee: PersonRef | null; assigned_by: PersonRef | null } }) =>
   issue.assignee && issue.assigned_by ? <span className="text-caption text-secondary ellipsis">Assigned by {issue.assigned_by.name}</span> : null
-export const priorityLabel = (p: number) => PRIORITIES.find((x) => x.value === p)?.label ?? 'No priority'
-export const categoryLabel = (c: StatusCategory) => CATEGORIES.find((x) => x.value === c)?.label ?? c
+export const priorityLabel = (p: number) => extractDataFromArray(PRIORITIES.find((x) => x.value === p), 'label', 'No priority')
+export const categoryLabel = (c: StatusCategory) => extractDataFromArray(CATEGORIES.find((x) => x.value === c), 'label', c)
 
 const today = () => new Date().toLocaleDateString('en-CA')
 
@@ -57,7 +58,7 @@ export function StatusIcon({ status, label }: { status: StatusLook; label?: stri
   const { category, icon } = status
   const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
   const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
-  if (icon) return <StatusTypeIcon icon={icon} color={status.color ?? color} title={label} {...a11y} />
+  if (icon) return <StatusTypeIcon icon={icon} color={!status.color || status.color.toLowerCase() === '#f7f8f8' ? color : status.color} title={label} {...a11y} />
   return <CategoryGlyph category={category} color={color} label={label} />
 }
 

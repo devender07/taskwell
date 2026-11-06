@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useActionState, useEffect, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { DatePicker } from '@taskwell/shared/date-picker'
@@ -96,8 +97,8 @@ type FormProps = { workspace: Workspace; project: Project; milestone?: Milestone
 
 // Add (no milestone; clears itself after) or edit one inline.
 function MilestoneForm({ workspace, project, milestone, onDone, onCancel }: FormProps) {
-  const [name, setName] = useState(milestone?.name ?? '')
-  const [date, setDate] = useState(milestone?.date ?? '')
+  const [name, setName] = useState(extractDataFromArray(milestone, 'name', ''))
+  const [date, setDate] = useState(extractDataFromArray(milestone, 'date', ''))
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const errors = { name: milestoneName(name), date: date ? null : 'Choose a date.' }

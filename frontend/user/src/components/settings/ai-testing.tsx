@@ -9,6 +9,7 @@ import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { formatDate } from '@/components/issues/fields'
 import { ConfirmButton, formatCost } from '@/components/tests/tests'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
@@ -27,7 +28,7 @@ export function Usage({ usage }: { usage: AiUsage }) {
         aria-valuemax={usage.limit_usd}
         aria-valuenow={usage.spent_usd}
         className="rounded-full overflow-hidden"
-        style={{ height: 8, background: 'rgba(255, 255, 255, 0.05)' }}
+        style={{ height: 8, background: 'rgba(var(--ink), 0.05)' }}
       >
         <div className="h-full rounded-full" style={{ width: `${share * 100}%`, background: share >= 0.9 ? 'var(--accent)' : 'var(--text-2)' }} />
       </div>
@@ -111,14 +112,14 @@ const anySite: Option = { value: '', label: 'Any site' }
 
 const siteOptions = (sites: TestSite[]): Option[] => [anySite, ...sites.map((s) => ({ value: s.id, label: s.base_url }))]
 
-const siteName = (sites: TestSite[], id: string | null) => (id ? (sites.find((s) => s.id === id)?.base_url ?? 'Removed site') : 'Any site')
+const siteName = (sites: TestSite[], id: string | null) => (id ? extractDataFromArray(byId(sites, id), 'base_url', 'Removed site') : 'Any site')
 
 function AccountForm({ workspace, sites, account, onDone }: { workspace: Workspace; sites: TestSite[]; account?: TestAccount; onDone?: () => void }) {
   const router = useRouter()
   const options = siteOptions(sites)
-  const [site, setSite] = useState<Option | null>(options.find((o) => o.value === (account?.site_id ?? '')) ?? anySite)
-  const [label, setLabel] = useState(account?.label ?? '')
-  const [username, setUsername] = useState(account?.username ?? '')
+  const [site, setSite] = useState<Option | null>(options.find((o) => o.value === (extractDataFromArray(account, 'site_id', ''))) ?? anySite)
+  const [label, setLabel] = useState(extractDataFromArray(account, 'label', ''))
+  const [username, setUsername] = useState(extractDataFromArray(account, 'username', ''))
   const [password, setPassword] = useState('')
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
@@ -128,7 +129,7 @@ function AccountForm({ workspace, sites, account, onDone }: { workspace: Workspa
     form.set('label', label.trim())
     form.set('username', username.trim())
     form.set('password', password)
-    form.set('site_id', site?.value ?? '')
+    form.set('site_id', extractDataFromArray(site, 'value', ''))
     try {
       await api<TestAccount>(account ? `${testAccountsPath(workspace)}/${encodeURIComponent(account.id)}` : testAccountsPath(workspace), form)
     } catch (e) {

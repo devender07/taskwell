@@ -1,5 +1,5 @@
 import { useEffect, useId, useReducer, useRef, useState } from 'react'
-import { EditorContent, Extension, Node, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor } from '@tiptap/react'
+import { EditorContent, Extension, Node, ResizableNodeView, getSchema, useEditor, useEditorState, type ChainedCommands, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Placeholder } from '@tiptap/extensions'
 import Mention from '@tiptap/extension-mention'
@@ -41,6 +41,8 @@ type RichEditorProps = {
   collab?: { doc: Y.Doc; awareness: Awareness; user: { name: string; color: string } }
   minHeight?: number
   upload?: (file: File) => Promise<{ url: string; name: string; image: boolean }>
+  // Set: attached, pasted and dropped files go here instead of into the document.
+  onFiles?: (files: File[]) => void
   // `#` suggests issues (shown as "ENG-12 Fix login"); the mention stores the identifier as both id and label.
   issues?: (q: string) => Promise<{ id: string; label: string; title: string }[]>
   // Set: Enter (outside lists and code blocks, with no suggestion open) calls it instead of starting a new line.
@@ -59,9 +61,39 @@ const Image = Node.create({
   group: 'block',
   atom: true,
   draggable: true,
-  addAttributes: () => ({ src: { default: null, parseHTML: (el) => filePath(el.getAttribute('src') ?? '') }, alt: { default: '' } }),
+  addAttributes: () => ({
+    src: { default: null, parseHTML: (el) => filePath(el.getAttribute('src') ?? '') },
+    alt: { default: '' },
+    width: { default: null, parseHTML: (el) => Number(el.getAttribute('width')) || null },
+  }),
   parseHTML: () => [{ tag: 'img[src]', getAttrs: (el) => FILE_URL.test(filePath(el.getAttribute('src') ?? '')) && null }],
   renderHTML: ({ HTMLAttributes }) => ['img', { ...HTMLAttributes, src: imageSrc(HTMLAttributes.src) }],
+  // Dragging a bottom corner sets the width (height follows); it's kept within the editor's width.
+  addNodeView:
+    () =>
+    ({ node, editor, getPos }) => {
+      const img = document.createElement('img')
+      const show = (n: PMNode) => {
+        img.src = imageSrc(n.attrs.src) ?? ''
+        img.alt = String(n.attrs.alt ?? '')
+        img.style.width = n.attrs.width ? `${n.attrs.width}px` : ''
+      }
+      show(node)
+      return new ResizableNodeView({
+        element: img,
+        node,
+        editor,
+        getPos,
+        onResize: (width) => (img.style.width = `${width}px`),
+        onCommit: (width) => {
+          const pos = getPos()
+          const max = img.closest('.rich-editor-content')?.clientWidth ?? width
+          if (pos !== undefined) editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'width', Math.round(Math.min(width, max))))
+        },
+        onUpdate: (n) => (show(n), true),
+        options: { directions: ['bottom-left', 'bottom-right'], min: { width: 48 }, preserveAspectRatio: true, className: { handle: 'rich-editor-resize' } },
+      })
+    },
 })
 
 // Enter runs `submit` (which returns whether it handled it) unless the caret is in a list, code block or table.
@@ -114,6 +146,7 @@ function Editable({
   collab,
   minHeight = 96,
   upload,
+  onFiles,
   issues,
   onSubmit,
   tasks,
@@ -123,8 +156,8 @@ function Editable({
   const errorId = `${id}-error`
   const [uploads, setUploads] = useState<Upload[]>([])
   const uploadSeq = useRef(0)
-  const latest = useRef({ onChange, onEdit, mentions, upload, attach, issues, onSubmit })
-  latest.current = { onChange, onEdit, mentions, upload, attach, issues, onSubmit }
+  const latest = useRef({ onChange, onEdit, mentions, upload, onFiles, attach, issues, onSubmit })
+  latest.current = { onChange, onEdit, mentions, upload, onFiles, attach, issues, onSubmit }
   const suggest = useRef<Suggest | null>(null)
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const show = (s: Suggest | null) => {
@@ -210,13 +243,13 @@ function Editable({
         },
         handlePaste: (_view, event) => {
           const files = Array.from(event.clipboardData?.files ?? [])
-          if (!files.length || !latest.current.upload) return false
+          if (!files.length || !(latest.current.upload || latest.current.onFiles)) return false
           latest.current.attach(files)
           return true
         },
         handleDrop: (view, event, _slice, moved) => {
           const files = Array.from(event.dataTransfer?.files ?? [])
-          if (moved || !files.length || !latest.current.upload) return false
+          if (moved || !files.length || !(latest.current.upload || latest.current.onFiles)) return false
           event.preventDefault()
           latest.current.attach(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos)
           return true
@@ -229,6 +262,7 @@ function Editable({
   )
 
   function attach(files: File[], at?: number) {
+    if (onFiles) return onFiles(files)
     if (!upload || !editor) return
     if (at != null) editor.commands.setTextSelection(at)
     setUploads((list) => list.filter((u) => !u.error))
@@ -269,7 +303,7 @@ function Editable({
         </span>
       ) : null}
       <div className={editable ? 'input rich-editor' : 'rich-editor rich-editor-readonly'} aria-invalid={error ? true : undefined}>
-        {editable && editor ? <Toolbar editor={editor} attach={upload ? attach : undefined} tasks={tasks} /> : null}
+        {editable && editor ? <Toolbar editor={editor} attach={upload || onFiles ? attach : undefined} tasks={tasks} /> : null}
         <EditorContent editor={editor} />
         {s && s.rect ? (
           <div className="autocomplete-panel rich-editor-mentions" style={{ position: 'fixed', ...suggestionPlace(s.rect), left: s.rect.left, right: 'auto' }}>
@@ -473,6 +507,7 @@ function Toolbar({ editor, attach, tasks }: { editor: Editor; attach?: (files: F
             type="file"
             multiple
             hidden
+            accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm"
             onChange={(e) => {
               attach(Array.from(e.currentTarget.files ?? []))
               e.currentTarget.value = ''

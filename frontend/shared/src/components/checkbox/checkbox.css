@@ -15,8 +15,8 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.15);
   border-radius: 4px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -30,7 +30,7 @@
   transform: scale(0);
   transition: transform 120ms ease;
 }
-.checkbox input:checked { background: var(--text); border-color: var(--text); }
+.checkbox input:checked { background: var(--button-strong); border-color: var(--button-strong); }
 .checkbox input:checked::before { transform: scale(1); }
 .checkbox input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .checkbox input:disabled { opacity: 0.4; cursor: not-allowed; }

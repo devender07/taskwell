@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useRouter, type AnyRouteMatch, type AnyRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { coalescer, decodeFrame, encodeFrame, eventPaths, loadedPaths, matchKey, touches, uuidBytes, type RealtimeEvent } from '@taskwell/shared/realtime'
@@ -101,7 +102,7 @@ function onEvent(e: RealtimeEvent) {
   }
   if (e.kind === 'workspace.removed' && e.workspace === workspace) {
     const app = router.state.matches.find((m) => m.routeId === '/_app')?.context as { workspaces?: Workspace[] } | undefined
-    const name = app?.workspaces?.find((w) => w.slug === workspace)?.name ?? workspace
+    const name = extractDataFromArray(extractDataFromArray(app, 'workspaces', []).find((w) => w.slug === workspace), 'name', workspace)
     notice = `You no longer have access to ${name}.`
     workspace = undefined
     void homePath().then((href) => router?.navigate({ href }))

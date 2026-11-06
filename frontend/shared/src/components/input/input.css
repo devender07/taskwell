@@ -3,16 +3,16 @@
   width: 100%;
   padding: 0 14px;
   font: 400 13.3333px/normal var(--font);
-  color: #d0d6e0;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--input-text);
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 6px;
-  box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+  box-shadow: var(--input-ring) 0 0 0 1px;
   outline: none;
 }
 .input::placeholder { color: var(--text-2); opacity: 0.6; }
-.input:hover { border-color: rgba(255, 255, 255, 0.1); }
-.input:focus { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
+.input:hover { border-color: rgba(var(--ink), 0.1); }
+.input:focus { border-color: rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.04); }
 .input:disabled { opacity: 0.4; cursor: not-allowed; }
 .input[aria-invalid] { border-color: var(--accent); }
 
@@ -20,8 +20,8 @@
 .input-prefixed { display: flex; align-items: center; }
 .input-prefixed > span { color: var(--text-2); white-space: nowrap; user-select: none; }
 .input-prefixed > input { flex: 1; min-width: 0; height: 100%; padding: 0; font: inherit; color: inherit; background: none; border: 0; outline: none; }
-.input-prefixed:hover { border-color: rgba(255, 255, 255, 0.1); }
-.input-prefixed:focus-within { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
+.input-prefixed:hover { border-color: rgba(var(--ink), 0.1); }
+.input-prefixed:focus-within { border-color: rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.04); }
 .input-prefixed:has(:disabled) { opacity: 0.4; cursor: not-allowed; }
 .input-prefixed:has([aria-invalid]) { border-color: var(--accent); }
 
@@ -31,8 +31,8 @@
   .input.textarea { line-height: 24px; }
 }
 
-/* Keyboard focus: a grey ring inside the border (--text-2, 6:1 on the background, over the 3:1 non-text minimum). */
-.input:focus-visible, .input-prefixed:has(:focus-visible), .rich-editor.input:has(.rich-editor-content:focus-visible) { outline: 2px solid var(--text-2); outline-offset: -2px; }
+/* Keyboard focus: a ring inside the border (--focus: grey on dark, Action Blue on light; over the 3:1 non-text minimum). */
+.input:focus-visible, .input-prefixed:has(:focus-visible), .rich-editor.input:has(.rich-editor-content:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
 
 @media (pointer: coarse) {
   .input:not(.textarea, .rich-editor) { height: 44px; }

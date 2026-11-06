@@ -404,7 +404,7 @@ func joinGuestProjects(ctx context.Context, tx pgx.Tx, userID string, inviteIDs 
 }
 
 // invite creates the invite, or replaces the token, expiry, inviter, role and projects (a guest's) of a pending one
-// for the same email.
+// for the same email; that one's token keeps working too, so the link already sent isn't broken.
 func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, roleID string, projectIDs []string, tokenHash []byte, days int) (Invite, error) {
 	var inv Invite
 	if projectIDs == nil {
@@ -418,6 +418,7 @@ func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, rol
 			   values ($1, $2, $3, $4, $5, now() + make_interval(days => $6), $7)
 			   on conflict (workspace_id, email) do update
 			     set invited_by = excluded.invited_by, role_id = excluded.role_id,
+			         prev_token_hash = case when workspace_invites.expires_at > now() then workspace_invites.token_hash end,
 			         token_hash = excluded.token_hash, expires_at = excluded.expires_at, project_ids = excluded.project_ids
 			   returning *) `+inviteCols,
 			ws.ID, email, invitedBy, roleID, tokenHash, days, projectIDs)); err != nil {
@@ -444,7 +445,7 @@ func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, to
 		var err error
 		if inv, err = scanInvite(tx.QueryRow(ctx,
 			`with i as (
-			   update workspace_invites set token_hash = $3, expires_at = now() + make_interval(days => $4)
+			   update workspace_invites set token_hash = $3, prev_token_hash = null, expires_at = now() + make_interval(days => $4)
 			    where workspace_id = $1 and id = $2
 			   returning *) `+inviteCols,
 			ws.ID, id, tokenHash, days)); err != nil {
@@ -492,7 +493,7 @@ func (m *model) inviteInfo(ctx context.Context, tokenHash []byte) (*InviteInfo, 
 	err := m.db.QueryRow(ctx,
 		`select w.name, i.email, coalesce(u.name, '')
 		   from workspace_invites i join workspaces w on w.id = i.workspace_id left join users u on u.id = i.invited_by
-		  where i.token_hash = $1 and i.expires_at > now()`, tokenHash).Scan(&info.Workspace, &info.Email, &info.InvitedBy)
+		  where $1 in (i.token_hash, i.prev_token_hash) and i.expires_at > now()`, tokenHash).Scan(&info.Workspace, &info.Email, &info.InvitedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -512,7 +513,7 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 		err := tx.QueryRow(ctx,
 			`select i.id::text, i.workspace_id::text, i.email, u.email
 			   from workspace_invites i, users u
-			  where i.token_hash = $1 and i.expires_at > now() and u.id = $2
+			  where $1 in (i.token_hash, i.prev_token_hash) and i.expires_at > now() and u.id = $2
 			    for update of i`, tokenHash, userID).Scan(&id, &workspaceID, &inviteEmail, &userEmail)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil

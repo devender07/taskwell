@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -91,7 +92,7 @@ export function Timeline({ workspace, issue, project, timeline, people: mentions
         {items.map(({ comment, event }) =>
           comment ? (
             <li key={comment.id}>
-              <CommentCard workspace={workspace} comment={comment} mentions={mentions} onChange={patchOlder} />
+              <CommentCard workspace={workspace} project={project.key} comment={comment} mentions={mentions} onChange={patchOlder} />
             </li>
           ) : event ? (
             <EventRow key={event.id} workspace={workspace.slug} event={event} />
@@ -159,12 +160,12 @@ function EventRow({ workspace, event }: { workspace: string; event: IssueEvent }
   )
 }
 
-type CommentCardProps = { workspace: Workspace; comment: Comment; mentions: Mentions; onChange: (id: string, next: Comment | null) => void }
+type CommentCardProps = { workspace: Workspace; project: string; comment: Comment; mentions: Mentions; onChange: (id: string, next: Comment | null) => void }
 
-function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProps) {
+function CommentCard({ workspace, project, comment, mentions, onChange }: CommentCardProps) {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const author = comment.author?.name ?? 'Someone'
+  const author = extractDataFromArray(comment.author, 'name', 'Someone')
 
   return (
     <article className="grid gap-2 p-4 bg-surface border rounded-lg" aria-label={`Comment by ${author}`}>
@@ -207,6 +208,7 @@ function CommentCard({ workspace, comment, mentions, onChange }: CommentCardProp
       {editing ? (
         <EditComment
           workspace={workspace}
+          project={project}
           comment={comment}
           mentions={mentions}
           onDone={(saved) => {
@@ -271,7 +273,7 @@ function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue:
         mentions={mentions}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
-        upload={(file) => uploadFile(workspace.slug, file)}
+        upload={(file) => uploadFile(workspace.slug, file, issue.project.key)}
       />
       <FormError>{error}</FormError>
       <Button type="submit" style={{ justifySelf: 'end' }} disabled={pending || !draft.doc}>
@@ -281,7 +283,7 @@ function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue:
   )
 }
 
-function EditComment({ workspace, comment, mentions, onDone }: { workspace: Workspace; comment: Comment; mentions: Mentions; onDone: (saved?: Comment) => void }) {
+function EditComment({ workspace, project, comment, mentions, onDone }: { workspace: Workspace; project: string; comment: Comment; mentions: Mentions; onDone: (saved?: Comment) => void }) {
   const [draft, setDraft] = useState<Draft>({ doc: comment.body, length: 0 })
   const [{ errors, error }, submit, pending] = useSaveComment(commentPath(workspace, comment.id), draft, onDone)
 
@@ -293,7 +295,7 @@ function EditComment({ workspace, comment, mentions, onDone }: { workspace: Work
         mentions={mentions}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
-        upload={(file) => uploadFile(workspace.slug, file)}
+        upload={(file) => uploadFile(workspace.slug, file, project)}
       />
       <FormError>{error}</FormError>
       <div className="flex items-center justify-end gap-3">

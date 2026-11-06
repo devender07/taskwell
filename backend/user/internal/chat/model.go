@@ -631,6 +631,18 @@ func other(ctx context.Context, tx pgx.Tx, sc scope, c ref) (string, error) {
 
 // createMessage adds the user's message to the chat, a reply when parentID isn't "", and returns its id. It notifies
 // the people mentioned and, in a direct chat, the other person.
+// partnerGone reports whether the other person in the direct chat has left the workspace.
+func (m *model) partnerGone(ctx context.Context, chatID, userID string) (bool, error) {
+	var gone bool
+	err := m.db.QueryRow(ctx, `select exists (select 1 from chat_members o join chats c on c.id = o.chat_id
+		where o.chat_id = $1 and o.user_id <> $2 and not exists (
+		  select 1 from workspace_members x where x.workspace_id = c.workspace_id and x.user_id = o.user_id))`, chatID, userID).Scan(&gone)
+	if err != nil {
+		return false, fmt.Errorf("direct chat partner: %w", err)
+	}
+	return gone, nil
+}
+
 func (m *model) createMessage(ctx context.Context, sc scope, c ref, parentID string, body json.RawMessage) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {

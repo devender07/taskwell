@@ -40,8 +40,10 @@ const viewCols = `v.id::text, v.name, v.path, v.shared, u.id::text, u.name from 
 var views = fmt.Sprintf(viewCols, "saved_views")
 
 // visible is where for the views the user ($2) sees in the workspace ($1): their own and the shared ones (not for
-// guests: a shared path can name projects they can't see).
-const visible = `v.workspace_id = $1 and (v.user_id = $2 or v.shared and not is_guest($1, $2))`
+// guests: a shared path can name projects they can't see), less shared project views of projects they can't see.
+const visible = `v.workspace_id = $1 and (v.user_id = $2 or v.shared and not is_guest($1, $2) and (v.path not like '/projects/%'
+	or exists (select 1 from projects p where p.workspace_id = $1 and can_see_project(p.id, $2)
+	  and p.key = canonical_key($1, upper(split_part(split_part(v.path, '?', 1), '/', 3))))))`
 
 func scanView(row pgx.Row) (View, error) {
 	var v View

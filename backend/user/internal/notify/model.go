@@ -330,15 +330,17 @@ type Settings struct {
 	Assignments bool    `json:"assignments"`
 	Status      bool    `json:"status"`
 	Comments    bool    `json:"comments"`
-	Chat        bool    `json:"chat"`     // chat mentions (with Mentions) and direct messages
-	Timezone    *string `json:"timezone"` // IANA name the digest goes out at digest_hour_utc in; nil (UTC) until chosen
+	Chat        bool    `json:"chat"`      // chat mentions (with Mentions) and direct messages
+	Weekly      bool    `json:"weekly"`    // the Monday summary email
+	DueDates    bool    `json:"due_dates"` // due-soon and overdue reminders
+	Timezone    *string `json:"timezone"`  // IANA name the digest goes out at digest_hour_utc in; nil (UTC) until chosen
 }
 
-const settingsCols = `email, mentions, assignments, status, comments, chat, timezone`
+const settingsCols = `email, mentions, assignments, status, comments, chat, weekly, due_dates, timezone`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var s Settings
-	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments, &s.Chat, &s.Timezone)
+	err := row.Scan(&s.Email, &s.Mentions, &s.Assignments, &s.Status, &s.Comments, &s.Chat, &s.Weekly, &s.DueDates, &s.Timezone)
 	return s, err
 }
 
@@ -349,7 +351,7 @@ var errBadTimezone = errors.New("unknown timezone")
 func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 	s, err := scanSettings(m.db.QueryRow(ctx, `select `+settingsCols+` from notification_settings where user_id = $1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Settings{"instant", true, true, true, true, true, nil}, nil
+		return Settings{"instant", true, true, true, true, true, true, true, nil}, nil
 	}
 	if err != nil {
 		return s, fmt.Errorf("notification settings: %w", err)
@@ -359,7 +361,7 @@ func (m *model) settings(ctx context.Context, userID string) (Settings, error) {
 
 // update changes the user's non-nil settings and returns them all, telling their other tabs. A timezone of ""
 // clears it (back to never chosen).
-func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments, chat *bool,
+func (m *model) update(ctx context.Context, userID string, email *string, mentions, assignments, status, comments, chat, weekly, dueDates *bool,
 	timezone *string) (Settings, error) {
 	var s Settings
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -375,13 +377,14 @@ func (m *model) update(ctx context.Context, userID string, email *string, mentio
 		}
 		var err error
 		if s, err = scanSettings(tx.QueryRow(ctx,
-			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, chat, timezone)
+			`insert into notification_settings as s (user_id, email, mentions, assignments, status, comments, chat, weekly, due_dates, timezone)
 			 values ($1, coalesce($2, 'instant'), coalesce($3, true), coalesce($4, true), coalesce($5, true), coalesce($6, true),
-			   coalesce($8, true), nullif($7, ''))
+			   coalesce($8, true), coalesce($9, true), coalesce($10, true), nullif($7, ''))
 			 on conflict (user_id) do update set email = coalesce($2, s.email), mentions = coalesce($3, s.mentions),
 			   assignments = coalesce($4, s.assignments), status = coalesce($5, s.status), comments = coalesce($6, s.comments),
-			   chat = coalesce($8, s.chat), timezone = case when $7::text is null then s.timezone else nullif($7, '') end
-			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone, chat)); err != nil {
+			   chat = coalesce($8, s.chat), weekly = coalesce($9, s.weekly), due_dates = coalesce($10, s.due_dates),
+			   timezone = case when $7::text is null then s.timezone else nullif($7, '') end
+			 returning `+settingsCols, userID, email, mentions, assignments, status, comments, timezone, chat, weekly, dueDates)); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.Event{Kind: "profile.changed", Actor: userID, Audience: realtime.ToUser(userID),
@@ -404,14 +407,15 @@ const (
 	// message read before its email was due isn't emailed, nor one about an issue i (left joined) they can't see.
 	wanted = `(n.kind <> 'invite' and ` + seen + ` and (coalesce(s.email <> 'off' and case n.kind when 'mention' then s.mentions when 'assigned' then s.assignments
 		when 'status' then s.status when 'comment' then s.comments when 'chat_mention' then s.mentions and s.chat
-		when 'project_added' then s.assignments else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
+		when 'project_added' then s.assignments when 'due_soon' then s.due_dates when 'overdue' then s.due_dates else s.chat end, true) and not (n.kind = 'message' and n.read_at is not null)))`
 	// settled is whether n is old enough to email: settle seconds ($1), or messageDelay ($2) for a direct message.
 	settled = `n.created_at < now() - make_interval(secs => case n.kind when 'message' then $2::float8 else $1::float8 end)`
 	msgCols = `n.id::text, n.kind,
-		coalesce(a.name, case n.data #>> '{via,provider}' when 'github' then 'GitHub' when 'gitlab' then 'GitLab' end, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
+		coalesce(a.name, case n.data #>> '{via,provider}' when 'github' then 'GitHub' when 'gitlab' then 'GitLab' end,
+		  case when n.kind in ('due_soon', 'overdue') then 'Taskwell' end, 'Someone'), coalesce(p.key || '-' || i.number, ''), coalesce(i.title, ''),
 		w.name, w.slug, coalesce(n.data #>> '{from,name}', ''), coalesce(n.data #>> '{to,name}', ''),
 		coalesce(n.data ->> 'excerpt', ''), n.data ? 'comment_id', coalesce(c.id::text, ''), coalesce(c.kind, ''),
-		coalesce(chat_name(c, n.user_id), ''), coalesce(pr.key, ''), coalesce(pr.name, '')`
+		coalesce(chat_name(c, n.user_id), ''), coalesce(pr.key, ''), coalesce(pr.name, ''), coalesce(n.data ->> 'due_date', '')`
 	msgFrom = ` from notifications n left join issues i on i.id = n.issue_id left join projects p on p.id = i.project_id
 		left join chats c on c.id = n.chat_id left join projects pr on pr.id = n.project_id
 		join workspaces w on w.id = n.workspace_id left join users a on a.id = n.actor_id
@@ -425,7 +429,7 @@ func scanMessage(row pgx.Row, extra ...any) (string, message, error) {
 	var id string
 	var m message
 	err := row.Scan(append([]any{&id, &m.kind, &m.actor, &m.identifier, &m.title, &m.workspace, &m.slug, &m.from, &m.to,
-		&m.excerpt, &m.onComment, &m.chatID, &m.chatKind, &m.chatName, &m.projectKey, &m.projectName}, extra...)...)
+		&m.excerpt, &m.onComment, &m.chatID, &m.chatKind, &m.chatName, &m.projectKey, &m.projectName, &m.dueDate}, extra...)...)
 	return id, m, err
 }
 

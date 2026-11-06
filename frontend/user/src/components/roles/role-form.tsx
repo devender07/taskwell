@@ -7,6 +7,7 @@ import { Input } from '@taskwell/shared/input'
 import { roleName } from '@taskwell/shared/validate'
 import { api, can, toFormErrors, type FieldErrors, type Permission, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 type State = { name: string; permissions: string[]; errors?: FieldErrors; error?: string | null }
 
@@ -29,7 +30,7 @@ export function RoleForm({ workspace, catalog, role }: { workspace: Workspace; c
     }
     await navigate({ to: '/$workspace/settings/roles', params: { workspace: workspace.slug } })
     return { name, permissions }
-  }, { name: role?.name ?? '', permissions: role?.permissions ?? [] })
+  }, { name: extractDataFromArray(role, 'name', ''), permissions: extractDataFromArray(role, 'permissions', []) })
 
   // Guests can never hold workspace-wide permissions; the API rejects them too.
   const groups = [...new Set(catalog.map((p) => p.group))].filter((g) => role?.builtin !== 'guest' || !GUEST_HIDDEN_GROUPS.includes(g))

@@ -61,8 +61,9 @@ type Person struct {
 }
 
 type ProjectRef struct {
-	Key  string `json:"key"`
-	Name string `json:"name"`
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Archived bool   `json:"archived"` // its issues are read-only
 }
 
 // CycleRef is the cycle an issue is in; State is "upcoming", "current" or "past" by today's date (UTC).
@@ -108,6 +109,7 @@ type Issue struct {
 	Rank                  string `json:"rank"` // its place in its project's manual order (byte order)
 	CanEdit               bool   `json:"can_edit"`
 	CanDelete             bool   `json:"can_delete"`
+	CanChangeStatus       bool   `json:"can_change_status"` // can_edit, or issues.status_any
 	projectID             string
 }
 
@@ -153,7 +155,7 @@ const (
 	issueCols = issueHead + `i.description,` + issueTail
 	// listCols leave the description out (null): lists don't show it and it's most of an issue's size.
 	listCols  = issueHead + `null::jsonb,` + issueTail
-	issueHead = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name,
+	issueHead = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name, p.archived_at is not null,
 	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, `
 	issueTail = `
 	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
@@ -170,7 +172,7 @@ const (
 func scanIssue(row pgx.Row) (Issue, error) {
 	var i Issue
 	var aID, aName, cID, cName *string
-	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Parent, &i.Title, &i.Description,
+	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Project.Archived, &i.Parent, &i.Title, &i.Description,
 		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
 		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration,
 		&i.Rank, &i.projectID, &i.AssignedBy)
@@ -480,12 +482,14 @@ func (m *model) relations(ctx context.Context, i *Issue, userID string) (IssueDe
 }
 
 // search returns up to 20 of the workspace's issues the viewer can see, limited to the project key unless it's "":
-// with q "" the newest; otherwise the issue key-number first, then those whose title contains q, newest first.
+// with q "" the newest; otherwise the issue key-number first, then those whose title contains q or whose identifier
+// starts with it (ENG, ENG-1), newest first.
 func (m *model) search(ctx context.Context, workspaceID, viewerID, project, q, key string, number int) ([]IssueRef, error) {
 	rows, err := m.db.Query(ctx,
 		`select `+refJSON+refFrom+`
 		 where r.workspace_id = $1 and ($2 = '' or rp.key = canonical_key($1, $2)) and can_see_project(rp.id, $7)
-		   and ($3 = '' or rp.key = canonical_key($1, $4) and r.number = $5 or r.title ilike '%' || $6 || '%')
+		   and ($3 = '' or rp.key = canonical_key($1, $4) and r.number = $5 or r.title ilike '%' || $6 || '%'
+		        or rp.key || '-' || r.number ilike $6 || '%')
 		 order by rp.key = canonical_key($1, $4) and r.number = $5 desc, r.created_at desc, r.id desc limit 20`,
 		workspaceID, project, q, key, number, escapeLike(q), viewerID)
 	if err != nil {

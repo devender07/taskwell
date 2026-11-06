@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,18 +25,38 @@ type File struct {
 
 	workspaceID *string
 	uploaderID  string
+	place       *Placement
+}
+
+// Placement puts an upload in a project: in its Files (Listed, in FolderID or the root) or as an attachment.
+// Event is published when the upload commits.
+type Placement struct {
+	ProjectID string
+	FolderID  *string
+	IssueID   *string // attached to this issue, listed under its description
+	Listed    bool
+	Event     realtime.Event
 }
 
 // create inserts the file's row and calls store with the new id inside the same transaction, so a row only
 // commits once its bytes are stored.
 func (m *model) create(ctx context.Context, f *File, store func(id string) error) error {
+	pl := f.place
+	if pl == nil {
+		pl = &Placement{}
+	}
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx,
-			`insert into files (workspace_id, uploader_id, name, content_type, size) values ($1, $2, $3, $4, $5)
-			 returning id::text`,
-			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size).Scan(&f.ID)
+			`insert into files (workspace_id, uploader_id, name, content_type, size, project_id, folder_id, listed, issue_id)
+			 values ($1, $2, $3, $4, $5, nullif($6, '')::uuid, $7, $8, $9) returning id::text`,
+			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size, pl.ProjectID, pl.FolderID, pl.Listed, pl.IssueID).Scan(&f.ID)
 		if err != nil {
 			return fmt.Errorf("insert file: %w", err)
+		}
+		if pl.ProjectID != "" {
+			if err := realtime.Publish(ctx, tx, pl.Event); err != nil {
+				return err
+			}
 		}
 		return store(f.ID)
 	})
@@ -50,13 +71,39 @@ func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
 	return n, nil
 }
 
-// find returns the file when userID may read it (a member of its workspace, or anyone for an avatar), else nil.
+// project returns the id and current key of the workspace's project with the key (old keys too) when the viewer can
+// see it and it isn't archived; "" when not.
+func (m *model) project(ctx context.Context, workspaceID, key, viewerID string) (id, current string, err error) {
+	err = m.db.QueryRow(ctx, `select id::text, key from projects where workspace_id = $1 and key = canonical_key($1, $2)
+		and can_see_project(id, $3) and archived_at is null`, workspaceID, strings.ToUpper(key), viewerID).Scan(&id, &current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("find project: %w", err)
+	}
+	return id, current, nil
+}
+
+// issue says whether the id is a live issue in the project.
+func (m *model) issue(ctx context.Context, projectID, id string) (bool, error) {
+	var ok bool
+	err := m.db.QueryRow(ctx, `select exists (select 1 from issues where id = $1 and project_id = $2)`, id, projectID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("find issue: %w", err)
+	}
+	return ok, nil
+}
+
+// find returns the file when userID may read it (a member of its workspace who, for a project's file, can see the
+// project; or anyone for an avatar), else nil.
 func (m *model) find(ctx context.Context, id, userID string) (*File, error) {
 	f := File{ID: id}
 	err := m.db.QueryRow(ctx,
 		`select f.name, f.content_type, f.size from files f
 		 where f.id = $1 and (f.workspace_id is null or exists (
-		   select 1 from workspace_members m where m.workspace_id = f.workspace_id and m.user_id = $2))`, id, userID).
+		   select 1 from workspace_members m where m.workspace_id = f.workspace_id and m.user_id = $2))
+		   and (f.project_id is null or can_see_project(f.project_id, $2))`, id, userID).
 		Scan(&f.Name, &f.ContentType, &f.Size)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

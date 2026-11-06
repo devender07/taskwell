@@ -1,4 +1,5 @@
 import type { Issue, Status } from '@/api'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 export type GroupBy = 'status' | 'assignee' | 'priority' | 'none'
 export type SortBy = 'manual' | 'priority' | 'updated' | 'created' | 'due'
@@ -126,7 +127,7 @@ export type Override = { issue: Issue; next: Partial<Issue>; key: string; by: Gr
 export type Neighbours = { after?: Issue; before?: Issue }
 
 export const groupKey = (i: Issue, by: GroupBy) =>
-  by === 'status' ? i.status.id : by === 'assignee' ? (i.assignee?.id ?? 'none') : by === 'priority' ? String(i.priority) : 'all'
+  by === 'status' ? i.status.id : by === 'assignee' ? (extractDataFromArray(i.assignee, 'id', 'none')) : by === 'priority' ? String(i.priority) : 'all'
 
 function insertAfter(list: Issue[], issue: Issue, after: string | null | undefined) {
   const at = after ? list.findIndex((i) => i.id === after) + 1 : 0
@@ -146,7 +147,7 @@ export function applyOverrides(groups: IssueGroup[], overrides: Override[], by: 
       out = out.map((g) => (g === from ? { ...g, issues: g.issues.map((i) => (i.id === id ? { ...i, ...o.next } : i)) } : g))
       continue
     }
-    const issue = { ...(from?.issues.find((i) => i.id === id) ?? o.issue), ...o.next }
+    const issue = { ...(byId(from?.issues, id) ?? o.issue), ...o.next }
     const moved = from && from.key !== o.key
     out = out.map((g) => {
       const issues = g === from ? g.issues.filter((i) => i.id !== id) : g.issues

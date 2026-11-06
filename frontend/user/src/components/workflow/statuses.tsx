@@ -15,6 +15,7 @@ import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { CATEGORIES, StatusIcon, categoryLabel, statusOptions } from '@/components/issues/fields'
 import './workflow.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
@@ -251,20 +252,20 @@ function StatusRow({ workspace, status, statuses, types, manage, onUp, onDown }:
 // Adds a status to a type (choice), or edits one: then its type can change too.
 function StatusForm({ workspace, status, choice: initial, types, onDone }: { workspace: Workspace; status?: Status; choice: string; types: StatusType[]; onDone: () => void }) {
   const router = useRouter()
-  const [name, setName] = useState(status?.name ?? '')
+  const [name, setName] = useState(extractDataFromArray(status, 'name', ''))
   const [choice, setChoice] = useState(initial)
   const options = typeOptions(types)
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const [kind, ref = ''] = choice.split(':')
-    const type = kind === 'type' ? types.find((t) => t.id === ref) : undefined
-    const category = type?.category ?? ref
+    const type = kind === 'type' ? byId(types, ref) : undefined
+    const category = extractDataFromArray(type, 'category', ref)
     const errors = { name: statusName(name), type_id: kind === 'type' && !type ? 'Choose a type.' : statusCategory(category) }
     if (Object.values(errors).some(Boolean)) return { errors }
     const form = new FormData()
     form.set('name', name.trim())
     form.set('category', category)
-    form.set('type_id', type?.id ?? '')
+    form.set('type_id', extractDataFromArray(type, 'id', ''))
     try {
       await api<Status>(status ? `${statusesPath(workspace)}/${encodeURIComponent(status.id)}` : statusesPath(workspace), form)
     } catch (e) {
@@ -339,11 +340,11 @@ function DeleteStatusForm({ workspace, status, statuses, onDone }: { workspace: 
 
 function TypeForm({ workspace, type, onDone }: { workspace: Workspace; type?: StatusType; onDone: () => void }) {
   const router = useRouter()
-  const [name, setName] = useState(type?.name ?? '')
-  const [icon, setIcon] = useState(type?.icon ?? 'circle')
-  const [color, setColor] = useState(type?.color ?? null)
+  const [name, setName] = useState(extractDataFromArray(type, 'name', ''))
+  const [icon, setIcon] = useState(extractDataFromArray(type, 'icon', 'circle'))
+  const [color, setColor] = useState(extractDataFromArray(type, 'color', null))
   // A type is its own identity, not "works like" a built-in; new ones behave as open, in-flight work.
-  const category: StatusCategory = type?.category ?? 'started'
+  const category: StatusCategory = extractDataFromArray(type, 'category', 'started')
   const shown = color ?? CATEGORY_HEX[category]
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {

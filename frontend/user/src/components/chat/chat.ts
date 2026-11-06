@@ -1,8 +1,9 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
+import { DAY } from '@taskwell/shared/time'
 // Pure helpers for the chat view, checked by chat.check.ts.
 
 type Msg = { id: string; author: { id: string } | null; created_at: string; deleted: boolean }
 
-const DAY = 86_400_000
 const COLLAPSE_MS = 5 * 60_000
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
@@ -42,7 +43,7 @@ export function firstUnread(messages: Msg[], unread: number, me: string) {
     if (messages[i]!.author?.id === me) continue
     if (--left === 0) return messages[i]!.id
   }
-  return messages[0]?.id ?? null
+  return extractDataFromArray(messages[0], 'id', null)
 }
 
 // "Maya is typing…", "Maya and Ravi are typing…", "Several people are typing…".

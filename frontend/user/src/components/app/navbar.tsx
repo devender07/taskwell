@@ -4,12 +4,13 @@ import { Avatar } from '@taskwell/shared/avatar'
 import { Dialog } from '@taskwell/shared/dialog'
 import { Logo } from '@taskwell/shared/logo'
 import { Popover } from '@taskwell/shared/popover'
-import { CheckIcon, ChevronDownIcon, MenuIcon, SearchIcon, XIcon } from '@taskwell/shared/icons'
+import { CheckIcon, ChevronDownIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon, XIcon } from '@taskwell/shared/icons'
 import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { JoinInviteButton } from '@/components/invite/invite-actions'
 import { useMyInvites } from '@/components/invite/invite-prompt'
 import { NotificationsBell } from './notifications-bell'
+import { setTheme, useTheme } from './theme'
 import { isApple, openWorkspacePalette, paletteKey } from './shortcuts'
 import './navbar.css'
 
@@ -53,6 +54,7 @@ export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace
             <kbd className="kbd">{paletteKey}</kbd>
           </button>
         ) : null}
+        <ThemeButton />
         <NotificationsBell />
         <Popover
           aria-label="Account"
@@ -149,10 +151,21 @@ export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Works
   )
 }
 
-function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
+// Flips between light and dark; Settings → Profile also has System.
+function ThemeButton() {
+  const { shown } = useTheme()
+  const next = shown === 'dark' ? 'light' : 'dark'
+  return (
+    <button type="button" className="navbar-bell" aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`} onClick={() => setTheme(next)}>
+      {shown === 'dark' ? <SunIcon size={20} /> : <MoonIcon size={20} />}
+    </button>
+  )
+}
+
+// Ends the session and goes to sign-in: [error, action, pending].
+export function useSignOut() {
   const navigate = useNavigate()
-  const slug = useParams({ strict: false }).workspace
-  const [error, signOut, pending] = useActionState(async () => {
+  return useActionState(async () => {
     try {
       await endSession()
     } catch (e) {
@@ -161,6 +174,11 @@ function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void 
     await navigate({ to: '/signin' })
     return null
   }, null)
+}
+
+function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
+  const slug = useParams({ strict: false }).workspace
+  const [error, signOut, pending] = useSignOut()
 
   return (
     <div style={{ width: 264 }}>

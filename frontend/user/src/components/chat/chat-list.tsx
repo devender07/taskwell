@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
@@ -7,8 +8,7 @@ import { Popover } from '@taskwell/shared/popover'
 import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { PlusIcon } from '@taskwell/shared/icons'
 import { avatarSrc, type Chat, type NotificationPage, type User } from '@/api'
-import { notificationText } from '@/components/inbox/feed-row'
-import { PROVIDER_NAME } from '@/components/issues/pull-requests'
+import { notificationActorName, notificationText } from '@/components/inbox/feed-row'
 import { NewGroupDialog, NewMessageDialog, NewMessagePeople } from './chat-dialogs'
 import './chat.css'
 
@@ -97,7 +97,7 @@ function Section({ title, add, empty, pinned, chats, slug, me, workspaceName }: 
 export function ChatAvatar({ chat, me, workspaceName, size = 24 }: { chat: Chat; me: User; workspaceName: string; size?: number }) {
   if (chat.kind === 'direct') {
     const other = chat.members.find((m) => m.id !== me.id) ?? chat.members[0]
-    return <Avatar name={other?.name ?? chat.name} size={size} src={other && avatarSrc(other.id)} />
+    return <Avatar name={extractDataFromArray(other, 'name', chat.name)} size={size} src={other && avatarSrc(other.id)} />
   }
   return <Avatar name={chat.kind === 'workspace' ? workspaceName : chat.name} size={size} />
 }
@@ -121,7 +121,7 @@ function BotRow({ slug, page }: { slug: string; page: NotificationPage }) {
           </span>
           <span className="flex items-center gap-2">
             <span className="text-caption text-secondary ellipsis flex-grow">
-              {last ? <>{last.actor?.name ?? (last.data.via && PROVIDER_NAME[last.data.via.provider]) ?? 'Someone'} {notificationText(last)}</> : 'Notifications show up here'}
+              {last ? <>{last.actor || notificationActorName(last) !== 'Taskwell' ? `${last.actor?.name ?? notificationActorName(last) ?? 'Someone'} ` : null}{notificationText(last)}</> : 'Notifications show up here'}
             </span>
             {unread ? (
               <span className="chat-pill" data-mentioned aria-hidden>

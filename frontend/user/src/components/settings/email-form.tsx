@@ -2,13 +2,12 @@ import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Input } from '@taskwell/shared/input'
-import { email as checkEmail } from '@taskwell/shared/validate'
+import { email as checkEmail, sixDigitCode } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
-const checkCode = (v: string) => (/^\d{6}$/.test(v.trim()) ? null : 'Enter the 6-digit code.')
 
 // Changing the email takes a code from the current address and one from the new address.
 export function EmailForm({ user }: { user: User }) {
@@ -32,7 +31,7 @@ export function EmailForm({ user }: { user: User }) {
   }, {})
 
   const [confirmed, confirm, confirming] = useActionState(async (_prev: State, form: FormData): Promise<State> => {
-    const errors = { old_code: checkCode(String(form.get('old_code') ?? '')), new_code: checkCode(String(form.get('new_code') ?? '')) }
+    const errors = { old_code: sixDigitCode(String(form.get('old_code') ?? '')), new_code: sixDigitCode(String(form.get('new_code') ?? '')) }
     if (errors.old_code || errors.new_code) return { errors }
     try {
       await api<User>('/auth/email/change', form)

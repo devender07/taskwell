@@ -36,6 +36,7 @@ import { FormError } from '@/components/auth/auth-card'
 import type { Prefill } from '@/components/issues/issue-form'
 import { refetchPaths, subscribePaths } from '@/realtime'
 import './tests.css'
+import { extractDataFromArray, idSet } from '@taskwell/shared/list'
 
 // GET `path` and refetch it whenever the server publishes it. `set` takes this tab's own write's response, since
 // the tab skips events for its own changes. A null path loads nothing.
@@ -107,8 +108,9 @@ export function bugPrefill(identifier: string, r: TestResult): Prefill {
     type: 'paragraph',
     ...(text ? { content: [{ type: 'text', text, ...(bold ? { marks: [{ type: 'bold' }] } : {}) }] } : {}),
   })
-  const steps = r.reproduction?.length ? r.reproduction : r.steps
-  const shot = [...(r.log ?? [])].reverse().find((s) => s.screenshot_url)?.screenshot_url
+  const reproduction = extractDataFromArray(r, 'reproduction', [])
+  const steps = reproduction.length ? reproduction : r.steps
+  const shot = extractDataFromArray([...extractDataFromArray(r, 'log', [])].reverse().find((s) => s.screenshot_url), 'screenshot_url', null)
   return {
     title: `Bug: ${r.title}`,
     blocks: identifier,
@@ -159,8 +161,8 @@ type Start = { kind: RunKind; regenerate?: boolean; caseId?: string }
 
 export function TestsSection({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const navigate = useNavigate()
-  const manage = can(workspace, 'tests.manage')
-  const runAi = can(workspace, 'ai_tests.run')
+  const manage = can(workspace, 'tests.manage') && !issue.project.archived
+  const runAi = can(workspace, 'ai_tests.run') && !issue.project.archived
   const cases = useLive<TestCase[]>(testCasesPath(workspace, issue.identifier))
   const runs = useLive<RunPage>(testRunsPath(workspace, issue.identifier))
   const sites = useLive<TestSite[]>(runAi ? testSitesPath(workspace) : null)
@@ -483,9 +485,9 @@ export function CaseText({ steps, expected }: { steps: string[]; expected: strin
 type State = { errors?: FieldErrors; error?: string | null }
 
 function CaseForm({ workspace, issue, testCase, onDone }: { workspace: Workspace; issue: Issue; testCase?: TestCase; onDone: (saved: TestCase | null) => void }) {
-  const [title, setTitle] = useState(testCase?.title ?? '')
+  const [title, setTitle] = useState(extractDataFromArray(testCase, 'title', ''))
   const [steps, setSteps] = useState(testCase?.steps.join('\n') ?? '')
-  const [expected, setExpected] = useState(testCase?.expected ?? '')
+  const [expected, setExpected] = useState(extractDataFromArray(testCase, 'expected', ''))
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const lines = steps.split('\n').map((s) => s.trim()).filter(Boolean)
@@ -535,9 +537,9 @@ type RunPage = { runs: TestRunSummary[]; has_more: boolean }
 // `page` is the newest page (refetched live); older pages load on demand below it.
 function History({ workspace, issue, page, error }: { workspace: Workspace; issue: Issue; page: RunPage | null; error: string | null }) {
   const [older, setOlder] = useState<RunPage | null>(null)
-  const newest = page?.runs ?? []
-  const ids = new Set(newest.map((r) => r.id))
-  const runs = [...newest, ...(older?.runs.filter((r) => !ids.has(r.id)) ?? [])]
+  const newest = extractDataFromArray(page, 'runs', [])
+  const ids = idSet(newest)
+  const runs = [...newest, ...extractDataFromArray(older, 'runs', []).filter((r) => !ids.has(r.id))]
   const more = older ? older.has_more : page?.has_more
 
   const [loadError, loadOlder, loading] = useActionState(async () => {
@@ -545,7 +547,7 @@ function History({ workspace, issue, page, error }: { workspace: Workspace; issu
     if (!last) return null
     try {
       const next = await api<RunPage>(`${testRunsPath(workspace, issue.identifier)}?before=${encodeURIComponent(last.created_at)}`)
-      setOlder((o) => ({ runs: [...(o?.runs ?? []), ...next.runs], has_more: next.has_more }))
+      setOlder((o) => ({ runs: [...extractDataFromArray(o, 'runs', []), ...next.runs], has_more: next.has_more }))
     } catch (e) {
       return toFormErrors(e).error
     }

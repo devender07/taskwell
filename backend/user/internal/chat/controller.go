@@ -257,6 +257,16 @@ func (h *Handler) createMessage(w http.ResponseWriter, r *http.Request, userID s
 	if c == nil || err != nil {
 		return err
 	}
+	if c.kind == "direct" {
+		gone, err := h.model.partnerGone(r.Context(), c.id, userID)
+		if err != nil {
+			return err
+		}
+		if gone {
+			web.Err(w, http.StatusForbidden, "They're no longer in this workspace.")
+			return nil
+		}
+	}
 	_ = r.ParseMultipartForm(maxBody)
 	body, msg := checkBody(r.PostForm.Get("body"))
 	parent := strings.TrimSpace(r.PostForm.Get("parent_id"))

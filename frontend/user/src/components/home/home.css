@@ -49,10 +49,10 @@
 }
 .home-project:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 @media (hover: hover) {
-  .home-project:hover { background: rgba(255, 255, 255, 0.03); }
+  .home-project:hover { background: rgba(var(--ink), 0.03); }
 }
 
-.home-bar { display: block; height: 4px; overflow: hidden; background: rgba(255, 255, 255, 0.08); border-radius: 9999px; }
+.home-bar { display: block; height: 4px; overflow: hidden; background: rgba(var(--ink), 0.08); border-radius: 9999px; }
 .home-bar > span { display: block; height: 100%; background: var(--success); }
 
 @media (pointer: coarse) {

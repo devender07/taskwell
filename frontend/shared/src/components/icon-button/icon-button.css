@@ -11,7 +11,7 @@
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease;
 }
-.icon-button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.icon-button:hover { color: var(--text); background: rgba(var(--ink), 0.05); }
 .icon-button:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .icon-button:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Destructive icon actions (remove, leave). */

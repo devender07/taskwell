@@ -2,14 +2,13 @@ import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Input } from '@taskwell/shared/input'
-import { password as checkPassword, required } from '@taskwell/shared/validate'
+import { password as checkPassword, required, sixDigitCode } from '@taskwell/shared/validate'
 import { api, toFormErrors, type FieldErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { askToReviewTokens } from './review-tokens'
 
 type State = { errors?: FieldErrors; error?: string | null; saved?: boolean }
 
-const checkCode = (v: string) => (/^\d{6}$/.test(v.trim()) ? null : 'Enter the 6-digit code.')
 
 export function PasswordForm({ user }: { user: User }) {
   const router = useRouter()
@@ -17,7 +16,7 @@ export function PasswordForm({ user }: { user: User }) {
   const [{ errors, error, saved }, submit, pending] = useActionState(async (_prev: State, form: FormData): Promise<State> => {
     const errors = {
       current_password: user.has_password ? required('Current password')(String(form.get('current_password') ?? '')) : null,
-      code: user.has_password ? null : checkCode(String(form.get('code') ?? '')),
+      code: user.has_password ? null : sixDigitCode(String(form.get('code') ?? '')),
       password: checkPassword(String(form.get('password') ?? '')),
     }
     if (errors.current_password || errors.code || errors.password) return { errors }

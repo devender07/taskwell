@@ -77,6 +77,11 @@ Linear's design system embodies a modern, minimalist aesthetic purpose-built for
 - **Shadow Medium** (`rgba(0, 0, 0, 0.4)`): Medium shadow for navigation and floating components
 - **Shadow Strong** (`rgba(0, 0, 0, 0.6)`): Deep shadow for layered UI and elevation emphasis
 
+### Light mode
+
+`DESIGN-LIGHT.md` defines the light theme's colors (Apple-inspired: white canvas, ink `#1D1D1F`, hairline `#E0E0E0`,
+Action Blue `#0066CC`). Everything else in this file applies to both themes.
+
 ## 3. Typography Rules
 
 ### Font Family

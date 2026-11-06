@@ -1,8 +1,8 @@
 import type { Issue } from '@/api'
+import { DAY } from '@taskwell/shared/time'
 
 export type Recent = { identifier: string; title: string }
 
-const DAY = 86_400_000
 export const localDate = (d: Date) => d.toLocaleDateString('en-CA')
 const rank = (p: number) => (p === 0 ? 5 : p)
 const open = (i: Issue) => i.status.category !== 'completed' && i.status.category !== 'canceled'

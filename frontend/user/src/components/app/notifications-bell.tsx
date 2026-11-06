@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { Popover } from '@taskwell/shared/popover'
 import { BellIcon } from '@taskwell/shared/icons'
 import { api, toFormErrors, type NotificationPage, workspacePath } from '@/api'
-import { PROVIDER_NAME } from '@/components/issues/pull-requests'
-import { FeedRow, notificationText, notificationTarget } from '@/components/inbox/feed-row'
+import { FeedRow, notificationText, notificationActorName, notificationTarget } from '@/components/inbox/feed-row'
 import { subscribePaths } from '@/realtime'
 import { useUnread } from './unread'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 const SHOWN = 10
 
@@ -57,7 +57,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
     refresh()
   }
 
-  const items = page?.notifications.slice(0, SHOWN) ?? []
+  const items = extractDataFromArray(page, 'notifications', []).slice(0, SHOWN)
   return (
     <div className="grid">
       <div className="notifications-header">
@@ -81,7 +81,7 @@ function Notifications({ slug, close }: { slug: string; close: () => void }) {
                 workspace={slug}
                 {...notificationTarget(n)}
                 actor={n.actor}
-                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
+                actorName={notificationActorName(n)}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}

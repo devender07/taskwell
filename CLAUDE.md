@@ -4,7 +4,7 @@ Project management tool for SaaS companies. Phases 1–6 and most of Later are b
 
 ## Design source of truth
 
-`DESIGN.md` is the DesignMD document for the visual system (Linear-inspired, dark-first). Follow it exactly for colors, type, spacing, radii, shadows, z-index, and component specs. Do not invent tokens. Where the front matter and the body disagree, the body and section 9 "Agent Prompt Guide" win.
+`DESIGN.md` is the DesignMD document for the visual system (Linear-inspired, dark-first); `DESIGN-LIGHT.md` gives the light theme's colors. Follow them exactly for colors, type, spacing, radii, shadows, z-index, and component specs. Do not invent tokens. Where the front matter and the body disagree, the body and section 9 "Agent Prompt Guide" win.
 
 Quick reference:
 - Background `#08090A`, nested surface `#0F1011`, text `#F7F8F8`, secondary text `#8A8F98`
@@ -78,6 +78,7 @@ frontend/           npm workspaces (shared, admin, user)
 - Build/vet from `backend/`: `go build github.com/devender07/taskwell/backend/admin/... github.com/devender07/taskwell/backend/user/...`
 - Frontend stack is fixed: Vite, React 19, TanStack Router with file-based routes. No UI kit, no CSS framework, no state library, no schema library. Ask before adding any dependency.
 - Imports: `@/` is the app's `src/` (both apps). Use it instead of `../`; same-folder `./` imports stay relative.
+- Helpers live in `@taskwell/shared`, one place each: `/list` (`extractDataFromArray` for reading fields with a default, `byId`, `idSet`, `isEmpty`, `isUndefined`), `/time` (`relativeTime`, `clockTime`, `shortDate`, `DAY`), `/validate` (form checks), `/api-url`. Look there before writing a small helper in a component, and add a new shared one there (with a `*.check.ts`) instead of copying it between files.
 - Icons: import from `@taskwell/shared/icons` (`frontend/shared/src/components/icons/icons.tsx`). A new icon goes in that file, never as an inline `<svg>` in a component.
 - Styling: utility classes from `@taskwell/shared/utilities.css` first, inline `style` for one-off values, a CSS file only for what neither can express (`:hover`, `:focus`, `[aria-*]`, pseudo-elements, media queries). Both apps import `tokens.css` and `utilities.css` once in `main.tsx`; shared components rely on that.
 - Frontend commands from `frontend/`: `npm run dev:user`, `npm run dev:admin`, `npm run build` (vite build + tsc per app).

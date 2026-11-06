@@ -17,6 +17,7 @@ import { RichEditor } from '@/components/issues/rich-editor'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import { repeatSummary } from './template'
 import '@/components/projects/projects.css'
+import { extractDataFromArray } from '@taskwell/shared/list'
 
 type Data = { workspace: Workspace; projects: Project[]; statuses: Status[]; labels: Label[] }
 type State = { errors?: FieldErrors; error?: string | null }
@@ -47,7 +48,7 @@ export function Templates({ templates, manage, ...data }: Data & { templates: Te
                 <div className="grid flex-grow" style={{ minWidth: 0 }}>
                   <span className="text-label text-primary ellipsis">{t.name}</span>
                   <span className="text-caption text-secondary ellipsis">
-                    {[t.project?.name ?? 'Any project', repeat].filter(Boolean).join(' · ')}
+                    {[extractDataFromArray(t.project, 'name', 'Any project'), repeat].filter(Boolean).join(' · ')}
                   </span>
                 </div>
               )
@@ -78,19 +79,19 @@ export function Templates({ templates, manage, ...data }: Data & { templates: Te
 function TemplateForm({ workspace, projects, statuses, labels, template: t, onDone }: Data & { template?: Template; onDone: () => void }) {
   const router = useRouter()
   const today = new Date().toLocaleDateString('en-CA')
-  const [name, setName] = useState(t?.name ?? '')
-  const [title, setTitle] = useState(t?.title ?? '')
-  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: t?.description ?? null, length: 0 })
-  const [project, setProject] = useState(t?.project?.key ?? '')
-  const [statusId, setStatusId] = useState(t?.status?.id ?? '')
-  const [priority, setPriority] = useState(String(t?.priority ?? 0))
-  const [assignee, setAssignee] = useState<Option | null>(assigneeOption(t?.assignee ?? null))
-  const [labelIds, setLabelIds] = useState(t?.labels.map((l) => l.id) ?? [])
+  const [name, setName] = useState(extractDataFromArray(t, 'name', ''))
+  const [title, setTitle] = useState(extractDataFromArray(t, 'title', ''))
+  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: extractDataFromArray(t, 'description', null), length: 0 })
+  const [project, setProject] = useState(extractDataFromArray(t, 'project.key', ''))
+  const [statusId, setStatusId] = useState(extractDataFromArray(t, 'status.id', ''))
+  const [priority, setPriority] = useState(String(extractDataFromArray(t, 'priority', 0)))
+  const [assignee, setAssignee] = useState<Option | null>(assigneeOption(extractDataFromArray(t, 'assignee', null)))
+  const [labelIds, setLabelIds] = useState(extractDataFromArray(t, 'labels', []).map((l) => l.id))
   const [repeats, setRepeats] = useState(Boolean(t?.repeat))
-  const [every, setEvery] = useState(String(t?.repeat?.every ?? 1))
-  const [unit, setUnit] = useState<RepeatUnit>(t?.repeat?.unit ?? 'week')
-  const [starts, setStarts] = useState(t?.repeat?.next_on ?? today)
-  const [paused, setPaused] = useState(t?.repeat?.paused ?? false)
+  const [every, setEvery] = useState(String(extractDataFromArray(t, 'repeat.every', 1)))
+  const [unit, setUnit] = useState<RepeatUnit>(extractDataFromArray(t, 'repeat.unit', 'week'))
+  const [starts, setStarts] = useState(extractDataFromArray(t, 'repeat.next_on', today))
+  const [paused, setPaused] = useState(extractDataFromArray(t, 'repeat.paused', false))
 
   const projectOpts = useMemo(() => [{ value: '', label: 'No project' }, ...projects.map((p) => ({ value: p.key, label: p.name, hint: p.key }))], [projects])
   const statusOpts = useMemo(() => [{ value: '', label: 'Default status' }, ...statusOptions(statuses)], [statuses])
@@ -114,7 +115,7 @@ function TemplateForm({ workspace, projects, statuses, labels, template: t, onDo
     form.set('description', description.doc ? JSON.stringify(description.doc) : '')
     form.set('project', project)
     form.set('status_id', statusId)
-    form.set('assignee_id', assignee?.value ?? '')
+    form.set('assignee_id', extractDataFromArray(assignee, 'value', ''))
     form.set('priority', priority || '0')
     if (labelIds.length === 0) form.set('label_ids', '')
     for (const id of labelIds) form.append('label_ids', id)
@@ -151,8 +152,8 @@ function TemplateForm({ workspace, projects, statuses, labels, template: t, onDo
         />
       </div>
       <div className="grid gap-4" style={{ alignContent: 'start', minWidth: 0 }}>
-        <SmartAutocomplete label="Project" options={projectOpts} value={projectOpts.find((o) => o.value === project) ?? null} onChange={(o) => setProject(o?.value ?? '')} error={errors?.project} />
-        <SmartAutocomplete label="Status" options={statusOpts} value={statusOpts.find((o) => o.value === statusId) ?? null} onChange={(o) => setStatusId(o?.value ?? '')} error={errors?.status_id} />
+        <SmartAutocomplete label="Project" options={projectOpts} value={projectOpts.find((o) => o.value === project) ?? null} onChange={(o) => setProject(extractDataFromArray(o, 'value', ''))} error={errors?.project} />
+        <SmartAutocomplete label="Status" options={statusOpts} value={statusOpts.find((o) => o.value === statusId) ?? null} onChange={(o) => setStatusId(extractDataFromArray(o, 'value', ''))} error={errors?.status_id} />
         <SmartAutocomplete
           key={project}
           label="Assignee"
@@ -162,7 +163,7 @@ function TemplateForm({ workspace, projects, statuses, labels, template: t, onDo
           onChange={(o) => setAssignee(o?.value ? o : null)}
           error={errors?.assignee_id}
         />
-        <SmartAutocomplete label="Priority" options={priorityOptions} value={priorityOptions.find((o) => o.value === priority) ?? null} onChange={(o) => setPriority(o?.value ?? '0')} error={errors?.priority} />
+        <SmartAutocomplete label="Priority" options={priorityOptions} value={priorityOptions.find((o) => o.value === priority) ?? null} onChange={(o) => setPriority(extractDataFromArray(o, 'value', '0'))} error={errors?.priority} />
         <LabelSelect labels={labels} value={labelIds} onChange={setLabelIds} error={errors?.label_ids} />
         <Checkbox label="Repeat" checked={repeats} onChange={(e) => setRepeats(e.target.checked)} />
         {repeats ? (

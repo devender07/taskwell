@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { api, templatesPath, toFormErrors, type Label, type Project, type Status, type Template, type Workspace, workspacePath } from '@/api'
@@ -79,7 +80,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
       options={options}
       value={options.find((o) => o.value === key) ?? null}
       onChange={(o) => {
-        setKey(o?.value ?? null)
+        setKey(extractDataFromArray(o, 'value', null))
         setPicked(true)
       }}
     />

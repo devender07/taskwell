@@ -3,6 +3,7 @@ import { BackLink } from '@taskwell/shared/back-link'
 import { can, type Permission, type Role, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { DeleteRole, RoleForm } from '@/components/roles/role-form'
+import { byId } from '@taskwell/shared/list'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/$roleId')({
   loader: async (ctx) => {
@@ -11,7 +12,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/$rol
       loaderApi<Permission[]>(ctx, '/permissions'),
       loaderApi<Role[]>(ctx, `${workspacePath(params.workspace)}/roles`),
     ])
-    const role = roles.find((r) => r.id === params.roleId)
+    const role = byId(roles, params.roleId)
     if (!role) throw notFound()
     return { catalog, role }
   },

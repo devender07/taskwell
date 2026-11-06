@@ -71,7 +71,9 @@ func TestDeleteUnreferencedFiles(t *testing.T) {
 		orphan    = file(old, false)
 		fresh     = file(time.Hour, false)
 		oldAvatar = file(old, true) // a replaced avatar nobody points at
+		listed    = file(old, false)
 	)
+	one(`update files set project_id = $2, listed = true where id = $1 returning id::text`, listed, project)
 	desc := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/api/files/` + inImage + `/f.png"}},
 		{"type":"paragraph","content":[{"type":"text","text":"see","marks":[{"type":"link","attrs":{"href":"/api/files/` + inLink + `/f.png"}}]}]}]}`
 	issue := one(`insert into issues (workspace_id, project_id, number, title, status_id, created_by, description, rank)
@@ -91,7 +93,7 @@ func TestDeleteUnreferencedFiles(t *testing.T) {
 		}
 	}
 	kept := map[string]string{inImage: "image src", inLink: "link href", inComment: "comment", inLive: "live update",
-		avatar: "avatar", fresh: "new upload"}
+		avatar: "avatar", fresh: "new upload", listed: "project's files"}
 	for id, why := range kept {
 		if slices.Contains(ids, id) {
 			t.Errorf("deleted the file referenced by its %s", why)

@@ -101,6 +101,9 @@ function ProjectPage() {
             <Link to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
               Cycles
             </Link>
+            <Link to="/$workspace/projects/$key/files" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
+              Files
+            </Link>
             {manage ? (
               <>
                 <Button variant="secondary" onClick={() => setEditing(true)}>

@@ -54,6 +54,7 @@ import { singleKeyShortcuts } from '@/components/app/shortcuts'
 import { ViewMenu } from './saved-views'
 import { dropMark, slotAt, useIssueDrag } from './drag'
 import './issues.css'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type Props = {
   workspace: Workspace
@@ -173,7 +174,7 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
     if (e.key === 'Escape' && selected.size) return clearSelection()
     if (e.key.toLowerCase() !== 'x' || !singleKeyShortcuts() || !(e.target instanceof Element)) return
     const id = e.target.closest<HTMLElement>('[data-issue]')?.dataset.issue
-    const issue = id && root.current?.contains(e.target) ? loaded.find((i) => i.id === id) : undefined
+    const issue = id && root.current?.contains(e.target) ? byId(loaded, id) : undefined
     if (!issue?.can_edit) return
     e.preventDefault()
     pick(issue, e.shiftKey)
@@ -244,7 +245,7 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
     if (key === groupKey(issue, group)) {
       if (!at) return
     } else if (group === 'status') {
-      const status = statuses.find((s) => s.id === key)
+      const status = byId(statuses, key)
       if (!status) return
       form.set('status_id', key)
       next = { status }
@@ -259,17 +260,17 @@ export function IssueView({ workspace, page, source, statuses, labels, userId, s
     let path = issuePath(workspace, issue.identifier)
     if (at) {
       path += '/move'
-      form.set('after', at.after?.identifier ?? '')
-      form.set('before', at.before?.identifier ?? '')
+      form.set('after', extractDataFromArray(at.after, 'identifier', ''))
+      form.set('before', extractDataFromArray(at.before, 'identifier', ''))
     }
-    const override: Override = { issue: { ...issue, ...next }, next, key, by: group, settled: false, ...(at ? { after: at.after?.id ?? null } : {}) }
+    const override: Override = { issue: { ...issue, ...next }, next, key, by: group, settled: false, ...(at ? { after: extractDataFromArray(at.after, 'id', null) } : {}) }
     setOverrides((list) => [...list.filter((o) => o.issue.id !== issue.id), override])
     startTransition(() => move({ issue, path, form, override }))
   }
 
   // Puts an issue at slot `index` among group `key`'s other rendered issues; into an empty group it only changes group.
   function onPlace(issue: Issue, key: string, index: number) {
-    const at = neighbours(groups.find((g) => g.key === key)?.issues ?? [], issue, index)
+    const at = neighbours(extractDataFromArray(groups.find((g) => g.key === key), 'issues', []), issue, index)
     if (at) onMove(issue, key, at.after || at.before ? at : undefined)
   }
 

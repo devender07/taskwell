@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Change is one change to an issue that may notify people, recorded with Record in the change's transaction.
@@ -86,6 +87,16 @@ type message struct {
 	onComment                      bool
 	chatID, chatKind, chatName     string // chat kinds only
 	projectKey, projectName        string // project_added only
+	dueDate                        string // "2026-11-12"; due_soon and overdue only
+}
+
+// day formats the message's due date with layout ("Mon, Jan 2"), or returns it as it is when it isn't a date.
+func (m message) day(layout string) string {
+	d, err := time.Parse(time.DateOnly, m.dueDate)
+	if err != nil {
+		return m.dueDate
+	}
+	return d.Format(layout)
 }
 
 // instantEmail returns the subject and body of the email for one notification; base is app_base_url.
@@ -116,6 +127,12 @@ func instantEmail(m message, base string) (subject, body string) {
 	case "comment":
 		subject = m.actor + " commented on " + m.identifier
 		body = m.actor + " commented on " + what + "\n\n" + quote(m.excerpt)
+	case "due_soon":
+		subject = m.identifier + " is due tomorrow"
+		body = what + " is due tomorrow (" + m.day("Mon, Jan 2") + ")."
+	case "overdue":
+		subject = m.identifier + " is overdue"
+		body = what + " was due " + m.day("Mon, Jan 2") + " and is still open."
 	default:
 		subject = m.actor + " mentioned you in " + m.identifier
 		where := ""
@@ -168,6 +185,10 @@ func digestEmail(ms []message, base string) (subject, body string) {
 			line = fmt.Sprintf("%s moved it from %s to %s", m.actor, m.from, m.to)
 		case "comment":
 			line = m.actor + " commented"
+		case "due_soon":
+			line = "due tomorrow"
+		case "overdue":
+			line = "overdue since " + m.day("Jan 2")
 		default:
 			line = m.actor + " mentioned you"
 		}

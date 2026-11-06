@@ -47,7 +47,7 @@ export type Issue = {
   identifier: string
   number: number
   rank: string
-  project: { key: string; name: string }
+  project: { key: string; name: string; archived: boolean }
   title: string
   description: Doc | null
   status: Status
@@ -61,6 +61,7 @@ export type Issue = {
   updated_at: string
   can_edit: boolean
   can_delete: boolean
+  can_change_status: boolean // can_edit, or issues.status_any (QA reopening work)
   watching: boolean
   watchers?: PersonRef[]
   parent: IssueRef | null
@@ -158,11 +159,11 @@ export type Replies = { root: Message; replies: Message[]; has_more: boolean }
 export type Notification = {
   id: string
   actor: PersonRef | null
-  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider } }
+  data: { from?: StatusSnap; to?: StatusSnap; comment_id?: string; excerpt?: string; message_id?: string; via?: { provider: Provider }; due_date?: string }
   read: boolean
   created_at: string
 } & (
-  | { kind: 'mention' | 'assigned' | 'status' | 'comment'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
+  | { kind: 'mention' | 'assigned' | 'status' | 'comment' | 'due_soon' | 'overdue'; issue: { identifier: string; title: string; status: Status }; chat: null; project: null }
   | { kind: 'chat_mention' | 'message'; issue: null; chat: { id: string; kind: ChatKind; name: string }; project: null }
   | { kind: 'project_added'; issue: null; chat: null; project: { key: string; name: string } }
   // available: the invite still exists, hasn't expired, and the user hasn't joined.
@@ -184,6 +185,8 @@ export type NotificationSettings = {
   status: boolean
   comments: boolean
   chat: boolean
+  weekly: boolean
+  due_dates: boolean
   timezone: string | null // null until chosen
 }
 
@@ -483,15 +486,55 @@ export function refreshAccess() {
 export type UploadedFile = { id: string; url: string; name: string; content_type: string; size: number; image: boolean }
 
 // Rejects with an Error whose message is ready to show ("Files must be 10 MB or smaller.").
-export async function uploadFile(workspace: string, file: File) {
+// `project` links an editor's upload to that project as an attachment.
+export function uploadFile(workspace: string, file: File, project?: string, issue?: string) {
   const form = new FormData()
   form.set('file', file)
+  if (project) form.set('project', project)
+  if (issue) form.set('issue', issue)
+  return upload<UploadedFile>(`${workspacePath(workspace)}/files`, form)
+}
+
+async function upload<T>(path: string, form: FormData) {
   try {
-    return await api<UploadedFile>(`${workspacePath(workspace)}/files`, form)
+    return await api<T>(path, form)
   } catch (e) {
     throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
   }
 }
+
+export type Folder = { id: string; name: string; parent_id: string | null; created_by: PersonRef | null; created_at: string; can_edit: boolean }
+export type ProjectFile = { id: string; name: string; content_type: string; size: number; uploader: PersonRef | null; created_at: string; url: string; can_edit: boolean }
+// folder: null at the root and for "attachments"; path: the folders from the root down to it.
+export type FilesPage = { folder: Folder | null; path: { id: string; name: string }[]; folders: Folder[]; files: ProjectFile[] }
+// What uploads accept (the API checks the bytes too).
+export const MEDIA_TYPES = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm'
+
+export type StorageUsage = { used_bytes: number; quota_bytes: number }
+
+// The folder's listing (no folder = root, "attachments" = the issue attachments); q searches the whole project.
+export const projectFilesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/files`
+export function filesListPath(workspace: string, project: string, folder?: string, q?: string, issue?: string) {
+  const query = new URLSearchParams({ ...(folder && { folder }), ...(q && { q }), ...(issue && { issue }) }).toString()
+  return `${projectFilesPath(workspace, project)}${query ? `?${query}` : ''}`
+}
+const foldersPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/folders`
+export function uploadProjectFile(workspace: string, project: string, file: File, folder?: string) {
+  const form = new FormData()
+  form.set('file', file)
+  if (folder) form.set('folder_id', folder)
+  return upload<ProjectFile>(projectFilesPath(workspace, project), form)
+}
+// folder_id / parent_id "" moves to the root.
+export const updateProjectFile = (workspace: string, project: string, id: string, form: FormData) =>
+  api<ProjectFile>(`${projectFilesPath(workspace, project)}/${encodeURIComponent(id)}`, form)
+export const deleteProjectFile = (workspace: string, project: string, id: string) =>
+  api(`${projectFilesPath(workspace, project)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
+export const saveFolder = (workspace: string, project: string, form: FormData, id?: string) =>
+  api<Folder>(id ? `${foldersPath(workspace, project)}/${encodeURIComponent(id)}` : foldersPath(workspace, project), form)
+export const deleteFolder = (workspace: string, project: string, id: string) =>
+  api(`${foldersPath(workspace, project)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
+export const storagePath = (workspace: string) => `${workspacePath(workspace)}/storage`
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
 const avatarVersions = new Map<string, number>()

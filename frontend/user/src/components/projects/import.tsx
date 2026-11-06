@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useId, useRef, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -64,7 +65,7 @@ export function ImportForm({ workspace, projects, project }: { workspace: Worksp
   const [state, submit, pending] = useActionState(async (_prev: State, mode: Mode): Promise<State> => {
     const errors =
       tab === 'csv'
-        ? { file: filled('Choose a CSV file.')(file?.name ?? ''), project: filled('Choose a project.')(target?.value ?? '') }
+        ? { file: filled('Choose a CSV file.')(extractDataFromArray(file, 'name', '')), project: filled('Choose a project.')(target?.value ?? '') }
         : { repo: filled('Enter a repository like owner/name.')(repo), project: filled('Choose a project.')(target?.value ?? '') }
     if (Object.values(errors).some(Boolean)) return { errors }
     const form = new FormData()

@@ -14,9 +14,9 @@
   border-radius: 6px;
 }
 @media (hover: hover) {
-  .settings-nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+  .settings-nav a:hover { color: var(--text); background: rgba(var(--ink), 0.05); }
 }
-.settings-nav a[aria-current='page'] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.settings-nav a[aria-current='page'] { color: var(--selected-text); background: var(--selected-bg); }
 .settings-nav a:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 
 @media (min-width: 1024px) {

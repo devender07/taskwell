@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -50,8 +51,8 @@ export function CycleForm({ workspace, project, cycles, cycle, onDone }: FormPro
   const latest = cycles.reduce<string | null>((max, c) => (max && max > c.ends_on ? max : c.ends_on), null)
   const today = todayUTC()
   const start = latest && addDays(latest, 1) > today ? addDays(latest, 1) : today
-  const [name, setName] = useState(cycle?.custom_name ?? '')
-  const [startsOn, setStartsOn] = useState(cycle?.starts_on ?? start)
+  const [name, setName] = useState(extractDataFromArray(cycle, 'custom_name', ''))
+  const [startsOn, setStartsOn] = useState(extractDataFromArray(cycle, 'starts_on', start))
   const [endsOn, setEndsOn] = useState(cycle?.ends_on ?? addDays(start, 13))
   const next = Math.max(0, ...cycles.map((c) => c.number)) + 1
 
@@ -82,7 +83,7 @@ export function CycleForm({ workspace, project, cycles, cycle, onDone }: FormPro
     <form action={submit} noValidate className="grid gap-4">
       <Input
         label="Name"
-        placeholder={`Cycle ${cycle?.number ?? next}`}
+        placeholder={`Cycle ${extractDataFromArray(cycle, 'number', next)}`}
         autoComplete="off"
         autoFocus
         value={name}

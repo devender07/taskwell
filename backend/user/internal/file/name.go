@@ -12,12 +12,13 @@ const maxNameLen = 200
 
 var (
 	imageTypes  = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
+	videoTypes  = []string{"video/mp4", "video/webm"}
 	defaultName = "file"
 )
 
-// cleanName keeps only the last path part of a client's file name, drops invalid UTF-8 and control and format
+// CleanName keeps only the last path part of a client's file name, drops invalid UTF-8 and control and format
 // characters (such as right-to-left overrides), and caps it at maxNameLen characters.
-func cleanName(s string) string {
+func CleanName(s string) string {
 	s = strings.ToValidUTF8(s, "")
 	if i := strings.LastIndexAny(s, `/\`); i >= 0 {
 		s = s[i+1:]
@@ -38,15 +39,19 @@ func cleanName(s string) string {
 	return s
 }
 
-// fileURL is where GET /api/files serves the file; the name part is for people and download tools, not lookup.
-func fileURL(id, name string) string { return "/api/files/" + id + "/" + url.PathEscape(name) }
+// URL is where GET /api/files serves the file; the name part is for people and download tools, not lookup.
+func URL(id, name string) string { return "/api/files/" + id + "/" + url.PathEscape(name) }
 
-// disposition is the Content-Disposition for serving a file: images inline, everything else as a download.
-func disposition(contentType, name string) string {
-	if isImage(contentType) {
+// Disposition is the Content-Disposition for serving a file: images and videos inline, everything else as a download.
+func Disposition(contentType, name string) string {
+	if isMedia(contentType) {
 		return "inline"
 	}
 	return "attachment; filename*=UTF-8''" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20")
 }
 
 func isImage(contentType string) bool { return slices.Contains(imageTypes, contentType) }
+
+func isMedia(contentType string) bool {
+	return isImage(contentType) || slices.Contains(videoTypes, contentType)
+}

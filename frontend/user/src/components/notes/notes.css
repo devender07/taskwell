@@ -6,12 +6,12 @@
   color: var(--text-2);
   font: 400 13px/19.5px var(--font);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 9999px;
   cursor: pointer;
 }
 .note-filter:hover { color: var(--text); }
-.note-filter[aria-pressed='true'] { color: var(--text); background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.15); }
+.note-filter[aria-pressed='true'] { color: var(--text); background: rgba(var(--ink), 0.05); border-color: rgba(var(--ink), 0.15); }
 .note-filter:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 @media (pointer: coarse) { .note-filter { min-height: 44px; } }
 
@@ -31,7 +31,7 @@ form.note-composer { padding: var(--space-4); }
 .note-composer-bar:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
 .note-swatches { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.note-swatch { width: 32px; height: 32px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 9999px; cursor: pointer; }
+.note-swatch { width: 32px; height: 32px; padding: 0; border: 1px solid rgba(var(--ink), 0.15); border-radius: 9999px; cursor: pointer; }
 .note-swatch[aria-pressed='true'] { outline: 2px solid var(--text); outline-offset: 2px; }
 .note-swatch:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 @media (pointer: coarse) { .note-swatch { width: 44px; height: 44px; } }
@@ -49,12 +49,12 @@ form.note-composer { padding: var(--space-4); }
   border-radius: 8px;
   cursor: pointer;
 }
-.note-card:hover { border-color: rgba(255, 255, 255, 0.1); }
+.note-card:hover { border-color: rgba(var(--ink), 0.1); }
 .note-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .note-title { font: 590 16px/24px var(--font); overflow-wrap: anywhere; }
 .note-body { max-height: 320px; overflow: hidden; }
 
-.note-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 0 var(--space-2); font: 400 12px/20px var(--font); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 9999px; }
+.note-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 0 var(--space-2); font: 400 12px/20px var(--font); border: 1px solid rgba(var(--ink), 0.08); border-radius: 9999px; }
 .note-card { position: relative; }
 .note-faces { position: absolute; top: -14px; right: var(--space-3); z-index: 1; display: flex; flex-direction: row-reverse; }
 .note-faces > * { box-shadow: 0 0 0 2px var(--bg); border-radius: 9999px; }
@@ -94,13 +94,13 @@ form.note-composer { padding: var(--space-4); }
   border-radius: 6px;
   box-shadow: none;
 }
-.dialog .input.note-heading-title:hover { background: rgba(255, 255, 255, 0.03); }
+.dialog .input.note-heading-title:hover { background: rgba(var(--ink), 0.03); }
 .dialog .input.note-heading-title:focus { background: transparent; border-color: transparent; outline: none; }
 
 
 /* "Take a note": the page's call to action, light on the dark page. */
-.button.note-cta { color: var(--bg); background: var(--text); box-shadow: none; }
-.button.note-cta:hover:not(:disabled) { background: #fff; }
+.button.note-cta { color: var(--button-strong-text); background: var(--button-strong); box-shadow: none; }
+.button.note-cta:hover:not(:disabled) { background: color-mix(in srgb, var(--button-strong) 94%, rgb(var(--ink))); }
 
 /* Select: a check on the card's top left edge, shown on hover or focus, and on every card once one is selected. */
 .note-select {
@@ -122,7 +122,7 @@ form.note-composer { padding: var(--space-4); }
   opacity: 0;
 }
 .note-select::before { content: ''; position: absolute; inset: -10px; } /* 44px touch target */
-.note-select[aria-pressed='true'] { background: var(--text); }
+.note-select[aria-pressed='true'] { background: var(--button-strong); }
 .note-select:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .note-card:hover .note-select, .note-card:focus-within .note-select, [data-selecting] .note-select { opacity: 1; }
 @media (hover: none) { .note-select { opacity: 1; } }

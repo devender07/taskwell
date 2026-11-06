@@ -4,7 +4,7 @@ import { LogoMark } from '@taskwell/shared/logo'
 import { apiUrl } from '@taskwell/shared/api-url'
 import './auth.css'
 
-const line = { height: 1, background: 'rgba(255, 255, 255, 0.08)' }
+const line = { height: 1, background: 'rgba(var(--ink), 0.08)' }
 
 export function AuthCard({ title, subtitle, footer, children }: { title: string; subtitle: string; footer?: ReactNode; children: ReactNode }) {
   return (

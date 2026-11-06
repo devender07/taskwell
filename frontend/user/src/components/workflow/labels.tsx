@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { useRouter } from '@tanstack/react-router'
 import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -19,8 +20,8 @@ const labelsPath = (workspace: Workspace) => `${workspacePath(workspace.slug)}/l
 // Create (no label) or edit a label.
 function LabelForm({ workspace, label, onDone }: { workspace: Workspace; label?: Label; onDone?: () => void }) {
   const router = useRouter()
-  const [name, setName] = useState(label?.name ?? '')
-  const [color, setColor] = useState(label?.color ?? DEFAULT_COLOR)
+  const [name, setName] = useState(extractDataFromArray(label, 'name', ''))
+  const [color, setColor] = useState(extractDataFromArray(label, 'color', DEFAULT_COLOR))
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {
     const errors = { name: labelName(name), color: labelColor(color) }

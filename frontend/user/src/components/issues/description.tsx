@@ -5,7 +5,7 @@ import { avatarSrc, type Issue, type User, type Workspace } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import type { Viewer } from '@/realtime'
 
-export type DescriptionProps = { workspace: Workspace; issue: Issue; user: User; people: PeopleSearch; onViewers: (viewers: Viewer[]) => void }
+export type DescriptionProps = { workspace: Workspace; issue: Issue; user: User; people: PeopleSearch; onViewers: (viewers: Viewer[]) => void; onFiles: (files: File[]) => void }
 
 // The editor and Yjs load in the background; until then (and until live editing connects) the saved description shows
 // read-only, so there is nothing to type into that could be lost.

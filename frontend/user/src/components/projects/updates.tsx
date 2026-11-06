@@ -16,13 +16,14 @@ import { FormError } from '@/components/auth/auth-card'
 import { RichEditor } from '@/components/issues/rich-editor'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import './projects.css'
+import { idSet, extractDataFromArray } from '@taskwell/shared/list'
 
 export const HEALTHS: { value: Health; label: string }[] = [
   { value: 'on_track', label: 'On track' },
   { value: 'at_risk', label: 'At risk' },
   { value: 'off_track', label: 'Off track' },
 ]
-export const healthLabel = (h: Health) => HEALTHS.find((x) => x.value === h)?.label ?? h
+export const healthLabel = (h: Health) => extractDataFromArray(HEALTHS.find((x) => x.value === h), 'label', h)
 
 export function HealthPill({ health }: { health: Health | null }) {
   if (!health) return null
@@ -44,7 +45,7 @@ export function ProjectUpdates({ workspace, project, page, canPost }: { workspac
   const [olderMore, setOlderMore] = useState<boolean | null>(null)
   const [shown, setShown] = useState(SHOWN)
   const [posting, setPosting] = useState(false)
-  const ids = new Set(page.updates.map((u) => u.id))
+  const ids = idSet(page.updates)
   const updates = [...page.updates, ...older.filter((u) => !ids.has(u.id))]
   const more = olderMore ?? page.has_more
 
@@ -103,7 +104,7 @@ export function ProjectUpdates({ workspace, project, page, canPost }: { workspac
 function UpdateCard({ workspace, project, update, onChange }: { workspace: Workspace; project: string; update: ProjectUpdate; onChange: (id: string, next: ProjectUpdate | null) => void }) {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const author = update.author?.name ?? 'Someone'
+  const author = extractDataFromArray(update.author, 'name', 'Someone')
 
   return (
     <article className="grid gap-2 p-4 bg-surface border rounded-lg" aria-label={`Update by ${author}`} style={{ minWidth: 0 }}>

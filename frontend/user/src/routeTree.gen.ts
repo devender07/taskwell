@@ -25,6 +25,7 @@ import { Route as AppWorkspaceMainRouteImport } from './routes/_app/$workspace/_
 import { Route as LiveWorkspaceRunRouteImport } from './routes/live.$workspace.$run'
 import { Route as AppWorkspaceMainIndexRouteImport } from './routes/_app/$workspace/_main/index'
 import { Route as AppWorkspaceMainFeedbackRouteImport } from './routes/_app/$workspace/_main/feedback'
+import { Route as AppWorkspaceMainFilesRouteImport } from './routes/_app/$workspace/_main/files'
 import { Route as AppWorkspaceMainInboxRouteImport } from './routes/_app/$workspace/_main/inbox'
 import { Route as AppWorkspaceMainMyIssuesRouteImport } from './routes/_app/$workspace/_main/my-issues'
 import { Route as AppWorkspaceMainNotesRouteImport } from './routes/_app/$workspace/_main/notes'
@@ -51,6 +52,7 @@ import { Route as AppWorkspaceMainSettingsTemplatesRouteImport } from './routes/
 import { Route as AppWorkspaceMainSettingsWorkflowRouteImport } from './routes/_app/$workspace/_main/settings/workflow'
 import { Route as AppWorkspaceMainSettingsWorkspaceRouteImport } from './routes/_app/$workspace/_main/settings/workspace'
 import { Route as AppWorkspaceMainInboxCChatIdRouteImport } from './routes/_app/$workspace/_main/inbox/c/$chatId'
+import { Route as AppWorkspaceMainProjectsKeyFilesRouteImport } from './routes/_app/$workspace/_main/projects/$key_/files'
 import { Route as AppWorkspaceMainSettingsRolesIndexRouteImport } from './routes/_app/$workspace/_main/settings/roles/index'
 import { Route as AppWorkspaceMainSettingsRolesRoleIdRouteImport } from './routes/_app/$workspace/_main/settings/roles/$roleId'
 import { Route as AppWorkspaceMainSettingsRolesNewRouteImport } from './routes/_app/$workspace/_main/settings/roles/new'
@@ -138,6 +140,11 @@ const AppWorkspaceMainFeedbackRoute =
     path: '/feedback',
     getParentRoute: () => AppWorkspaceMainRoute,
   } as any)
+const AppWorkspaceMainFilesRoute = AppWorkspaceMainFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
 const AppWorkspaceMainInboxRoute = AppWorkspaceMainInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -289,6 +296,12 @@ const AppWorkspaceMainInboxCChatIdRoute =
     path: '/c/$chatId',
     getParentRoute: () => AppWorkspaceMainInboxRoute,
   } as any)
+const AppWorkspaceMainProjectsKeyFilesRoute =
+  AppWorkspaceMainProjectsKeyFilesRouteImport.update({
+    id: '/projects/$key_/files',
+    path: '/projects/$key/files',
+    getParentRoute: () => AppWorkspaceMainRoute,
+  } as any)
 const AppWorkspaceMainSettingsRolesIndexRoute =
   AppWorkspaceMainSettingsRolesIndexRouteImport.update({
     id: '/roles/',
@@ -347,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/signin/2fa': typeof authSignin2faRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
+  '/$workspace/files': typeof AppWorkspaceMainFilesRoute
   '/$workspace/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/notes': typeof AppWorkspaceMainNotesRoute
@@ -374,6 +388,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings/': typeof AppWorkspaceMainSettingsIndexRoute
   '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
+  '/$workspace/projects/$key/files': typeof AppWorkspaceMainProjectsKeyFilesRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
@@ -397,6 +412,7 @@ export interface FileRoutesByTo {
   '/signin/2fa': typeof authSignin2faRoute
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/$workspace/feedback': typeof AppWorkspaceMainFeedbackRoute
+  '/$workspace/files': typeof AppWorkspaceMainFilesRoute
   '/$workspace/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/$workspace/notes': typeof AppWorkspaceMainNotesRoute
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
@@ -421,6 +437,7 @@ export interface FileRoutesByTo {
   '/$workspace/projects': typeof AppWorkspaceMainProjectsIndexRoute
   '/$workspace/settings': typeof AppWorkspaceMainSettingsIndexRoute
   '/$workspace/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
+  '/$workspace/projects/$key/files': typeof AppWorkspaceMainProjectsKeyFilesRoute
   '/$workspace/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/$workspace/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/$workspace/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
@@ -446,6 +463,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main': typeof AppWorkspaceMainRouteWithChildren
   '/live/$workspace/$run': typeof LiveWorkspaceRunRoute
   '/_app/$workspace/_main/feedback': typeof AppWorkspaceMainFeedbackRoute
+  '/_app/$workspace/_main/files': typeof AppWorkspaceMainFilesRoute
   '/_app/$workspace/_main/inbox': typeof AppWorkspaceMainInboxRouteWithChildren
   '/_app/$workspace/_main/my-issues': typeof AppWorkspaceMainMyIssuesRoute
   '/_app/$workspace/_main/notes': typeof AppWorkspaceMainNotesRoute
@@ -473,6 +491,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/projects/': typeof AppWorkspaceMainProjectsIndexRoute
   '/_app/$workspace/_main/settings/': typeof AppWorkspaceMainSettingsIndexRoute
   '/_app/$workspace/_main/inbox/c/$chatId': typeof AppWorkspaceMainInboxCChatIdRoute
+  '/_app/$workspace/_main/projects/$key_/files': typeof AppWorkspaceMainProjectsKeyFilesRoute
   '/_app/$workspace/_main/settings/roles/$roleId': typeof AppWorkspaceMainSettingsRolesRoleIdRoute
   '/_app/$workspace/_main/settings/roles/new': typeof AppWorkspaceMainSettingsRolesNewRoute
   '/_app/$workspace/_main/settings/webhooks/$id': typeof AppWorkspaceMainSettingsWebhooksIdRoute
@@ -498,6 +517,7 @@ export interface FileRouteTypes {
     | '/signin/2fa'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
+    | '/$workspace/files'
     | '/$workspace/inbox'
     | '/$workspace/my-issues'
     | '/$workspace/notes'
@@ -525,6 +545,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects/'
     | '/$workspace/settings/'
     | '/$workspace/inbox/c/$chatId'
+    | '/$workspace/projects/$key/files'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/webhooks/$id'
@@ -548,6 +569,7 @@ export interface FileRouteTypes {
     | '/signin/2fa'
     | '/live/$workspace/$run'
     | '/$workspace/feedback'
+    | '/$workspace/files'
     | '/$workspace/my-issues'
     | '/$workspace/notes'
     | '/$workspace/roadmap'
@@ -572,6 +594,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects'
     | '/$workspace/settings'
     | '/$workspace/inbox/c/$chatId'
+    | '/$workspace/projects/$key/files'
     | '/$workspace/settings/roles/$roleId'
     | '/$workspace/settings/roles/new'
     | '/$workspace/settings/webhooks/$id'
@@ -596,6 +619,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main'
     | '/live/$workspace/$run'
     | '/_app/$workspace/_main/feedback'
+    | '/_app/$workspace/_main/files'
     | '/_app/$workspace/_main/inbox'
     | '/_app/$workspace/_main/my-issues'
     | '/_app/$workspace/_main/notes'
@@ -623,6 +647,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/projects/'
     | '/_app/$workspace/_main/settings/'
     | '/_app/$workspace/_main/inbox/c/$chatId'
+    | '/_app/$workspace/_main/projects/$key_/files'
     | '/_app/$workspace/_main/settings/roles/$roleId'
     | '/_app/$workspace/_main/settings/roles/new'
     | '/_app/$workspace/_main/settings/webhooks/$id'
@@ -758,6 +783,13 @@ declare module '@tanstack/react-router' {
       path: '/feedback'
       fullPath: '/$workspace/feedback'
       preLoaderRoute: typeof AppWorkspaceMainFeedbackRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/files': {
+      id: '/_app/$workspace/_main/files'
+      path: '/files'
+      fullPath: '/$workspace/files'
+      preLoaderRoute: typeof AppWorkspaceMainFilesRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/inbox': {
@@ -942,6 +974,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainInboxCChatIdRouteImport
       parentRoute: typeof AppWorkspaceMainInboxRoute
     }
+    '/_app/$workspace/_main/projects/$key_/files': {
+      id: '/_app/$workspace/_main/projects/$key_/files'
+      path: '/projects/$key/files'
+      fullPath: '/$workspace/projects/$key/files'
+      preLoaderRoute: typeof AppWorkspaceMainProjectsKeyFilesRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/settings/roles/': {
       id: '/_app/$workspace/_main/settings/roles/'
       path: '/roles'
@@ -1072,6 +1111,7 @@ const AppWorkspaceMainSettingsRouteWithChildren =
 
 interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainFeedbackRoute: typeof AppWorkspaceMainFeedbackRoute
+  AppWorkspaceMainFilesRoute: typeof AppWorkspaceMainFilesRoute
   AppWorkspaceMainInboxRoute: typeof AppWorkspaceMainInboxRouteWithChildren
   AppWorkspaceMainMyIssuesRoute: typeof AppWorkspaceMainMyIssuesRoute
   AppWorkspaceMainNotesRoute: typeof AppWorkspaceMainNotesRoute
@@ -1084,12 +1124,14 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainMembersIdRoute: typeof AppWorkspaceMainMembersIdRoute
   AppWorkspaceMainProjectsKeyRoute: typeof AppWorkspaceMainProjectsKeyRoute
   AppWorkspaceMainProjectsIndexRoute: typeof AppWorkspaceMainProjectsIndexRoute
+  AppWorkspaceMainProjectsKeyFilesRoute: typeof AppWorkspaceMainProjectsKeyFilesRoute
   AppWorkspaceMainProjectsKeyCyclesNumberRoute: typeof AppWorkspaceMainProjectsKeyCyclesNumberRoute
   AppWorkspaceMainProjectsKeyCyclesIndexRoute: typeof AppWorkspaceMainProjectsKeyCyclesIndexRoute
 }
 
 const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainFeedbackRoute: AppWorkspaceMainFeedbackRoute,
+  AppWorkspaceMainFilesRoute: AppWorkspaceMainFilesRoute,
   AppWorkspaceMainInboxRoute: AppWorkspaceMainInboxRouteWithChildren,
   AppWorkspaceMainMyIssuesRoute: AppWorkspaceMainMyIssuesRoute,
   AppWorkspaceMainNotesRoute: AppWorkspaceMainNotesRoute,
@@ -1102,6 +1144,7 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainMembersIdRoute: AppWorkspaceMainMembersIdRoute,
   AppWorkspaceMainProjectsKeyRoute: AppWorkspaceMainProjectsKeyRoute,
   AppWorkspaceMainProjectsIndexRoute: AppWorkspaceMainProjectsIndexRoute,
+  AppWorkspaceMainProjectsKeyFilesRoute: AppWorkspaceMainProjectsKeyFilesRoute,
   AppWorkspaceMainProjectsKeyCyclesNumberRoute:
     AppWorkspaceMainProjectsKeyCyclesNumberRoute,
   AppWorkspaceMainProjectsKeyCyclesIndexRoute:

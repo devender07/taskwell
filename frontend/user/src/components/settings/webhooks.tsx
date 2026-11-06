@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link, useRouter } from '@tanstack/react-router'
 import { startTransition, useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -63,7 +64,7 @@ type State = { errors?: FieldErrors; error?: string | null; secret?: string }
 
 export function WebhookDialog({ workspace, webhook, open, onClose }: { workspace: string; webhook?: Webhook; open: boolean; onClose: () => void }) {
   const router = useRouter()
-  const [url, setUrl] = useState(webhook?.url ?? '')
+  const [url, setUrl] = useState(extractDataFromArray(webhook, 'url', ''))
   const [events, setEvents] = useState<string[]>(webhook?.events ?? EVENTS.map((e) => e.name))
 
   const [state, submit, pending] = useActionState(async (): Promise<State> => {

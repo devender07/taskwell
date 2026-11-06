@@ -19,7 +19,7 @@ export function useRefetchEvery(routeId: string, ms = 60_000) {
 const CATEGORIES = [
   { key: 'started', color: 'var(--text)' },
   { key: 'unstarted', color: 'var(--text-2)' },
-  { key: 'backlog', color: 'rgba(255, 255, 255, 0.24)' },
+  { key: 'backlog', color: 'rgba(var(--ink), 0.24)' },
 ] as const
 
 function WeekBars({ weeks, value, noun, color, height, label, grow }: { weeks: AnalyticsWeek[]; value: (w: AnalyticsWeek) => number; noun: string; color: string; height: number; label: string; grow?: boolean }) {

@@ -15,6 +15,7 @@ import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { fillEmpty } from '@/components/templates/template'
 import { LabelSelect, assigneeOption, loadAssignees, priorityOptions, statusOptions } from './fields'
 import { useUndoDelete } from './undo-delete'
+import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type State = { errors?: FieldErrors; error?: string | null }
 
@@ -40,9 +41,9 @@ type CreateProps = {
 
 export function CreateIssueForm({ workspace, project, projectPicker, parent, cycle, prefill, statuses, labels, people, templates = [], onTemplateProject }: CreateProps) {
   const navigate = useNavigate()
-  const [title, setTitle] = useState(prefill?.title ?? '')
-  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: prefill?.description ?? null, length: 0 })
-  const [statusId, setStatusId] = useState(statuses[0]?.id ?? '')
+  const [title, setTitle] = useState(extractDataFromArray(prefill, 'title', ''))
+  const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: extractDataFromArray(prefill, 'description', null), length: 0 })
+  const [statusId, setStatusId] = useState(extractDataFromArray(statuses[0], 'id', ''))
   const [priority, setPriority] = useState('0')
   const [assignee, setAssignee] = useState<Option | null>(null)
   const [due, setDue] = useState('')
@@ -56,7 +57,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
 
   function applyTemplate(o: Option | null) {
     setTemplate(o)
-    const t = templates.find((x) => x.id === o?.value)
+    const t = byId(templates, o?.value)
     if (!t) return
     const next = fillEmpty(t, { title, description: description.doc, statusId, priority, assignee: assignee && { id: assignee.value, name: assignee.label }, labelIds }, statusPicked)
     setTitle(next.title)
@@ -79,7 +80,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
     form.set('description', description.doc ? JSON.stringify(description.doc) : '')
     if (statusId) form.set('status_id', statusId)
     if (priority) form.set('priority', priority)
-    form.set('assignee_id', assignee?.value ?? '')
+    form.set('assignee_id', extractDataFromArray(assignee, 'value', ''))
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
     if (parent) form.set('parent', parent.identifier)
@@ -132,7 +133,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
           content={seed.doc}
           onChange={(doc, length) => setDescription({ doc, length })}
           error={errors?.description}
-          upload={(file) => uploadFile(workspace.slug, file)}
+          upload={(file) => uploadFile(workspace.slug, file, project.key)}
         />
       </div>
       <div className="grid gap-4" style={{ alignContent: 'start' }}>
@@ -142,7 +143,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
           options={statusOpts}
           value={statusOpts.find((o) => o.value === statusId) ?? null}
           onChange={(o) => {
-            setStatusId(o?.value ?? '')
+            setStatusId(extractDataFromArray(o, 'value', ''))
             setStatusPicked(true)
           }}
           error={errors?.status_id}
@@ -151,7 +152,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
           label="Priority"
           options={priorityOptions}
           value={priorityOptions.find((o) => o.value === priority) ?? null}
-          onChange={(o) => setPriority(o?.value ?? '')}
+          onChange={(o) => setPriority(extractDataFromArray(o, 'value', ''))}
           error={errors?.priority}
         />
         <SmartAutocomplete

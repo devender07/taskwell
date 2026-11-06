@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -80,6 +81,34 @@ func (s *Store) Put(ctx context.Context, id, contentType, disposition string, bo
 		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
+}
+
+// SetHeaders replaces the object id's stored headers, as after a rename, by storing its bytes again.
+// ponytail: streams the object through a temp file because the dev store (SeaweedFS) ignores CopyObject's
+// MetadataDirective REPLACE; use CopyObject once every store in use supports it.
+func (s *Store) SetHeaders(ctx context.Context, id, contentType, disposition string) error {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return err
+	}
+	obj, err := c.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &id})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer obj.Body.Close()
+	tmp, err := os.CreateTemp("", "taskwell-object-")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name()) //nolint:errcheck // best effort
+	defer tmp.Close()
+	if _, err := io.Copy(tmp, obj.Body); err != nil {
+		return fmt.Errorf("read object: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind object: %w", err)
+	}
+	return s.Put(ctx, id, contentType, disposition, tmp)
 }
 
 // Delete removes the object id; a missing one is not an error.

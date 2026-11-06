@@ -38,7 +38,7 @@
   --surface: #0f1011;
   --text: #f7f8f8;
   --text-2: #8a8f98;
-  --border: rgba(255, 255, 255, 0.05);
+  --border: rgba(var(--ink), 0.05);
   --accent: #f91880;
   --success: #00ba7c;
   --danger: #eb5757; /* destructive icon actions; 5.5:1 on --surface */
@@ -59,6 +59,75 @@
   --space-24: 96px;
   /* Berkeley Mono is a commercial font and isn't bundled: it shows only where installed, otherwise the fallbacks. */
   --mono: 'Berkeley Mono', Monaco, 'Courier New', monospace;
+  /* Tints are rgba(var(--ink), a): white on dark, black on light. */
+  --ink: 255, 255, 255;
+  --input-text: #d0d6e0;
+  --button-strong: #e5e5e6;
+  --button-strong-text: #08090a;
+  --raised: #1c1d1f;
+  --avatar-bg: #3e3e44;
+  --ring: rgba(0, 0, 0, 0.6); /* the 1px outline around raised controls */
+  --input-ring: rgba(0, 0, 0, 0.2);
+  --well: var(--surface); /* a container of cards, e.g. a board column */
+  --card: rgba(255, 255, 255, 0.02);
+  --selected-bg: rgba(255, 255, 255, 0.05); /* the current nav item, the pressed tab */
+  --selected-text: var(--text);
+  --drop: rgba(0, 0, 0, 0.1) 0 4px 4px 0; /* under raised controls */
+  --float: rgba(0, 0, 0, 0.4) 0 8px 24px 0; /* under popovers and tooltips */
+  --focus: var(--text-2); /* the keyboard focus ring inside fields */
+}
+
+/* Light mode (docs/light-mode-plan.md): colors from DESIGN-LIGHT.md; spacing, type and radii stay
+   DESIGN.md's. Chosen in Settings (data-theme), else the system's setting. Accent, success and danger are shared. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff; /* canvas */
+  --surface: #fafafc; /* surface-pearl */
+  --text: #1d1d1f; /* ink */
+  --text-2: #6e6e73; /* 5:1 on white */
+  --border: #e0e0e0; /* hairline */
+  --link: #0066cc; /* primary */
+  --ink: 29, 29, 31; /* ink, for tints */
+  --input-text: #1d1d1f;
+  --button-strong: #0066cc;
+  --button-strong-text: #ffffff; /* on-primary */
+  --raised: #ffffff;
+  --avatar-bg: #d2d2d7; /* surface-chip-translucent */
+  --ring: #e0e0e0;
+  --input-ring: transparent;
+  --well: #f5f5f7; /* canvas-parchment */
+  --card: #ffffff;
+  --selected-bg: rgba(0, 102, 204, 0.1);
+  --selected-text: #0066cc;
+  --drop: 0 0 0 0 transparent; /* no shadows on chrome */
+  --float: rgba(29, 29, 31, 0.08) 0 8px 24px 0;
+  --focus: #0066cc;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #ffffff; /* canvas */
+    --surface: #fafafc; /* surface-pearl */
+    --text: #1d1d1f; /* ink */
+    --text-2: #6e6e73; /* 5:1 on white */
+    --border: #e0e0e0; /* hairline */
+    --link: #0066cc; /* primary */
+    --ink: 29, 29, 31; /* ink, for tints */
+    --input-text: #1d1d1f;
+    --button-strong: #0066cc;
+    --button-strong-text: #ffffff; /* on-primary */
+    --raised: #ffffff;
+    --avatar-bg: #d2d2d7; /* surface-chip-translucent */
+    --ring: #e0e0e0;
+    --input-ring: transparent;
+    --well: #f5f5f7; /* canvas-parchment */
+    --card: #ffffff;
+    --selected-bg: rgba(0, 102, 204, 0.1);
+    --selected-text: #0066cc;
+    --drop: 0 0 0 0 transparent;
+    --float: rgba(29, 29, 31, 0.08) 0 8px 24px 0;
+    --focus: #0066cc;
+  }
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -71,10 +140,10 @@ html:has(dialog:modal) { overflow: hidden; }
    scrollbar-width or scrollbar-color would switch them off); Firefox can't size them per axis, so it gets thin. */
 ::-webkit-scrollbar { width: 6px; height: 10px; background: transparent; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+::-webkit-scrollbar-thumb { background: rgba(var(--ink), 0.16); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--ink), 0.28); }
 ::-webkit-scrollbar-button { display: none; }
 @supports not selector(::-webkit-scrollbar) {
-  * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+  * { scrollbar-width: thin; scrollbar-color: rgba(var(--ink), 0.16) transparent; }
 }
 

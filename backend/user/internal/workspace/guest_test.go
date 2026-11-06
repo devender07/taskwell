@@ -76,6 +76,10 @@ func TestGuests(t *testing.T) {
 	if _, err := m.invite(ctx, &ws, email, ann, guestRole, ids, secret.Hash(tok), 7); err != nil {
 		t.Fatal(err)
 	}
+	// Inviting again sends a new link; the first one still works.
+	if _, err := m.invite(ctx, &ws, email, ann, guestRole, ids, secret.Hash(secret.NewToken()), 7); err != nil {
+		t.Fatal(err)
+	}
 	if got, _, err := m.accept(ctx, gus, secret.Hash(tok)); err != nil || got == nil || !got.Guest {
 		t.Fatalf("accept: %+v %v", got, err)
 	}

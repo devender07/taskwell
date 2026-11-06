@@ -27,9 +27,9 @@
   cursor: pointer;
 }
 @media (hover: hover) {
-  .sidebar a:hover, .sidebar-foot button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+  .sidebar a:hover, .sidebar-foot button:hover { color: var(--text); background: rgba(var(--ink), 0.05); }
 }
-.sidebar a[aria-current='page'] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.sidebar a[aria-current='page'] { color: var(--text); background: rgba(var(--ink), 0.05); }
 .sidebar a:focus-visible, .sidebar-foot button:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 .sidebar-foot { display: grid; gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
 .sidebar-foot > span { padding: 0 12px; }
@@ -65,13 +65,13 @@
   padding: 0 8px;
   font: 510 13px/19.5px var(--font);
   color: var(--text-2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ink), 0.08);
   border-radius: 9999px;
 }
 .chip-danger { color: var(--accent); border-color: rgba(249, 24, 128, 0.4); }
 
 .bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
-.bars > div { flex: 1; min-height: 2px; background: rgba(255, 255, 255, 0.16); border-radius: 2px 2px 0 0; }
+.bars > div { flex: 1; min-height: 2px; background: rgba(var(--ink), 0.16); border-radius: 2px 2px 0 0; }
 .bars > div:hover { background: var(--text); }
 
 .setting { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 8px 16px; align-items: start; padding: 16px 24px; border-bottom: 1px solid var(--border); }

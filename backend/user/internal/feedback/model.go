@@ -164,6 +164,9 @@ func scanRef(row pgx.Row) (issueRef, error) {
 	return issueRef{*id, *identifier, *projectID}, err
 }
 
+// errHiddenLink is update's error when the feedback is linked to an issue the viewer can't see.
+var errHiddenLink = errors.New("linked to a hidden issue")
+
 // update links the feedback to link (unlinks when it's the zero issueRef) when setIssue, and archives or unarchives it
 // when archived isn't nil. It reports whether the feedback is in the workspace.
 func (m *model) update(ctx context.Context, sc scope, id string, setIssue bool, link issueRef, archived *bool) (bool, error) {
@@ -177,6 +180,16 @@ func (m *model) update(ctx context.Context, sc scope, id string, setIssue bool, 
 		}
 		if err != nil {
 			return err
+		}
+		if setIssue && old.projectID != "" && old.id != link.id {
+			// Relinking moves it off an issue the viewer must be able to see.
+			var sees bool
+			if err := tx.QueryRow(ctx, `select can_see_project($1, $2)`, old.projectID, sc.userID).Scan(&sees); err != nil {
+				return err
+			}
+			if !sees {
+				return errHiddenLink
+			}
 		}
 		if _, err := tx.Exec(ctx,
 			`update feedback set issue_id = case when $2 then nullif($3, '')::uuid else issue_id end,

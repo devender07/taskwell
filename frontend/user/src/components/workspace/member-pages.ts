@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, projectPeoplePath, toFormErrors, type Invite, type Member, workspacePath } from '@/api'
 import { subscribePaths } from '@/realtime'
+import { extractDataFromArray, idSet } from '@taskwell/shared/list'
 
 export type MemberPage = { members: Member[]; invites: Invite[]; total: number; has_more: boolean }
 
@@ -46,10 +47,10 @@ export function useMemberPages(slug: string, q: string, first?: MemberPage) {
 
   const base = first ?? (own?.path === path ? own.page : null)
   const more = base && extra?.base === base ? extra : null
-  const ids = new Set(base?.members.map((m) => m.id))
-  const members = base ? [...base.members, ...(more?.members.filter((m) => !ids.has(m.id)) ?? [])] : []
+  const ids = idSet(base?.members)
+  const members = base ? [...base.members, ...extractDataFromArray(more, 'members', []).filter((m) => !ids.has(m.id))] : []
   const hasMore = more ? more.has_more : !!base?.has_more
-  const offset = (base?.members.length ?? 0) + (more?.members.length ?? 0)
+  const offset = extractDataFromArray(base, 'members', []).length + extractDataFromArray(more, 'members', []).length
 
   useEffect(() => {
     const el = end.current
@@ -59,7 +60,7 @@ export function useMemberPages(slug: string, q: string, first?: MemberPage) {
       busy.current = true
       try {
         const next = await api<MemberPage>(`${path}&offset=${offset}`)
-        setExtra({ base, members: [...(more?.members ?? []), ...next.members], has_more: next.has_more })
+        setExtra({ base, members: [...extractDataFromArray(more, 'members', []), ...next.members], has_more: next.has_more })
       } catch (err) {
         setError(toFormErrors(err).error)
       }
@@ -69,5 +70,5 @@ export function useMemberPages(slug: string, q: string, first?: MemberPage) {
     return () => io.disconnect()
   }, [base, more, hasMore, offset, path])
 
-  return { members, total: base?.total ?? 0, loaded: base !== null, hasMore, end, error }
+  return { members, total: extractDataFromArray(base, 'total', 0), loaded: base !== null, hasMore, end, error }
 }

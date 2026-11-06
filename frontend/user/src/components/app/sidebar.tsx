@@ -1,8 +1,8 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can } from '@/api'
-import { useMenu, WorkspaceSwitcher } from './navbar'
+import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
 import './sidebar.css'
@@ -18,6 +18,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const [open, setOpen] = useMenu()
   const { user, workspaces } = useRouteContext({ from: '/_app' })
   const count = unread.chats
+  const [signOutError, signOut, signingOut] = useSignOut()
 
   // An issue has no section of its own: it stays under the one it was opened from (its project when opened directly).
   const section = useLocation({ select: (l) => l.pathname.slice(workspace.length + 2).split('/')[0] || 'home' })
@@ -50,22 +51,11 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         Home
       </Link>
       {guest ? null : (
-        <>
-          <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
-            <InboxIcon />
-            Inbox
-            {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
-          </Link>
-          <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
-            <NoteIcon />
-            Notes
-          </Link>
-          <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
-            <FeedbackIcon />
-            Feedback
-            {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
-          </Link>
-        </>
+        <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
+          <InboxIcon />
+          Inbox
+          {count ? <span style={{ marginLeft: 'auto' }}>{count}</span> : null}
+        </Link>
       )}
       <Link to="/$workspace/my-issues" params={{ workspace }} aria-current={current('my-issues')}>
         <UserIcon />
@@ -75,11 +65,26 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <FolderIcon />
         Projects
       </Link>
+      <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
+        <FileIcon />
+        Files
+      </Link>
       {guest ? null : (
-        <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
-          <RoadmapIcon />
-          Roadmap
-        </Link>
+        <>
+          <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
+            <NoteIcon />
+            Notes
+          </Link>
+          <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
+            <RoadmapIcon />
+            Roadmap
+          </Link>
+          <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
+            <FeedbackIcon />
+            Feedback
+            {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
+          </Link>
+        </>
       )}
       {team && !guest ? (
         <Link to="/$workspace/team" params={{ workspace }} aria-current={current('team')}>
@@ -87,13 +92,13 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           Team
         </Link>
       ) : null}
-      <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
-        <SettingsIcon />
-        Settings
-      </Link>
       <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
         <TrashIcon />
         Trash
+      </Link>
+      <Link to="/$workspace/settings" params={{ workspace }} aria-current={current('settings')}>
+        <SettingsIcon />
+        Settings
       </Link>
       {views.length ? (
         <>
@@ -116,6 +121,13 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           })}
         </>
       ) : null}
+      <form action={signOut} className="sidebar-end">
+        <button type="submit" className="sidebar-group" disabled={signingOut}>
+          <LogOutIcon />
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+        {signOutError ? <p role="alert" className="px-3 py-2 text-caption text-accent">{signOutError}</p> : null}
+      </form>
     </nav>
   )
 }

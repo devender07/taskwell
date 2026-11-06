@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Run queues notification emails now and every interval until ctx ends: instant emails for notifications older than
-// settle (so a quick status change collapses first), then the digests that are due. The mail worker sends them.
+// Run adds due-date reminders and queues notification emails now and every interval until ctx ends: instant emails for notifications older than
+// settle (so a quick status change collapses first), then the daily digests and weekly emails that are due. The mail worker sends them.
 func (h *Handler) Run(ctx context.Context, every, settle time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -25,8 +25,17 @@ func (h *Handler) Run(ctx context.Context, every, settle time.Duration) {
 	}
 }
 
-// queueEmails is one run. Without SMTP settings everything waits for a later run.
+// queueEmails is one run: it adds the due-date reminders, then queues emails. Without SMTP settings the emails wait for
+// a later run.
 func (h *Handler) queueEmails(ctx context.Context, settle time.Duration) error {
+	hour, err := h.cfg.GetInt(ctx, "digest_hour_utc")
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if _, err := h.model.remindDue(ctx, now, hour); err != nil {
+		return err
+	}
 	ok, err := h.mail.Configured(ctx)
 	if err != nil {
 		return err
@@ -36,10 +45,6 @@ func (h *Handler) queueEmails(ctx context.Context, settle time.Duration) error {
 		return nil
 	}
 	base, err := h.cfg.Get(ctx, "app_base_url")
-	if err != nil {
-		return err
-	}
-	hour, err := h.cfg.GetInt(ctx, "digest_hour_utc")
 	if err != nil {
 		return err
 	}
@@ -62,6 +67,18 @@ func (h *Handler) queueEmails(ctx context.Context, settle time.Duration) error {
 	for ctx.Err() == nil {
 		more, err := h.model.digestNext(ctx, hour, func(tx pgx.Tx, to string, ms []message) error {
 			subject, body := digestEmail(ms, base)
+			return h.mail.Enqueue(ctx, tx, to, subject, body)
+		})
+		if err != nil {
+			return err
+		}
+		if !more {
+			break
+		}
+	}
+	for ctx.Err() == nil {
+		more, err := h.model.weeklyNext(ctx, now, hour, func(tx pgx.Tx, to string, lines []weeklyLine) error {
+			subject, body := weeklyEmail(lines, base)
 			return h.mail.Enqueue(ctx, tx, to, subject, body)
 		})
 		if err != nil || !more {

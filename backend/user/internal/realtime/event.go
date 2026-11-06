@@ -88,6 +88,18 @@ func Milestones(slug, key string) string { return Project(slug, key) + "/milesto
 // ProjectUpdates is the project's written updates.
 func ProjectUpdates(slug, key string) string { return Project(slug, key) + "/updates" }
 
+// ProjectFiles is the project's files and folders, and its attachments list.
+func ProjectFiles(slug, key string) string { return Project(slug, key) + "/files" }
+
+// Storage is the workspace's storage use.
+func Storage(slug string) string { return Workspace(slug) + "/storage" }
+
+// FilesChanged tells whoever can see the project that its files, and so the workspace's storage use, changed.
+func FilesChanged(slug, workspaceID, projectID, key, actorID string) Event {
+	return Event{Kind: "files.changed", Workspace: slug, Actor: actorID, Audience: ToWorkspace(workspaceID), Project: projectID,
+		Paths: []string{ProjectFiles(slug, key), Storage(slug)}}
+}
+
 // Roadmap is the workspace's roadmap: active projects with their dates, progress, cycles and milestones.
 func Roadmap(slug string) string { return Workspace(slug) + "/roadmap" }
 

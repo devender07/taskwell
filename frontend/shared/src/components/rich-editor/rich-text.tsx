@@ -104,7 +104,7 @@ function block(n: Doc, key: number, ctx: Ctx): ReactNode {
     case 'horizontalRule':
       return <hr key={key} />
     case 'image':
-      return <img key={key} src={imageSrc(a.src) ?? undefined} alt={String(a.alt ?? '')} draggable />
+      return <img key={key} src={imageSrc(a.src) ?? undefined} alt={String(a.alt ?? '')} style={typeof a.width === 'number' ? { width: a.width } : undefined} draggable />
     default:
       return null
   }

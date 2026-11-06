@@ -4,6 +4,7 @@ import { Button } from '@taskwell/shared/button'
 import { ApiError, can, type Issue, type Label, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
+import { IssueFiles, useIssueFiles } from '@/components/issues/issue-files'
 import { DeleteIssue, EditIssueForm } from '@/components/issues/issue-form'
 import { IssueProperties } from '@/components/issues/issue-properties'
 import { PullRequests } from '@/components/issues/pull-requests'
@@ -44,6 +45,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
   const people = useMemo(() => peopleSearch(workspace.slug, project.key), [workspace.slug, project.key])
   const [editing, setEditing] = useState(false)
   const [viewers, setViewers] = useState<Viewer[]>([])
+  const files = useIssueFiles(workspace.slug, issue)
   const create = can(workspace, 'issues.create') && !project.archived
   useEffect(() => recordRecent(workspace.slug, { identifier: issue.identifier, title: issue.title }), [workspace.slug, issue.identifier, issue.title])
 
@@ -72,8 +74,8 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           {editing ? (
             <EditIssueForm workspace={workspace} issue={issue} onDone={() => setEditing(false)} />
           ) : (
-            <header className="flex items-start justify-between gap-4">
-              <h1 className="text-h2" style={{ overflowWrap: 'anywhere' }}>{issue.title}</h1>
+            <header className="flex flex-wrap items-start justify-between gap-4">
+              <h1 className="text-h2" style={{ flex: '1 1 240px', overflowWrap: 'anywhere' }}>{issue.title}</h1>
               <div className="flex items-start gap-2 flex-noshrink">
                 <Viewers viewers={viewers} />
                 <WatchButton key={issue.id} workspace={workspace} issue={issue} />
@@ -86,7 +88,8 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
               </div>
             </header>
           )}
-          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} people={people} onViewers={setViewers} />
+          <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} people={people} onViewers={setViewers} onFiles={files.upload} />
+          <IssueFiles state={files} />
           <TestsSection key={`tests-${issue.id}`} workspace={workspace} issue={issue} />
           {issue.parent ? null : (
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} people={people} />

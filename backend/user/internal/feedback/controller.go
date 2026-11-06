@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -115,6 +116,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 		link = *ref
 	}
 	found, err := h.model.update(r.Context(), scope{ws.ID, ws.Slug, userID}, id, setIssue, link, archived)
+	if errors.Is(err, errHiddenLink) {
+		web.Fields(w, http.StatusForbidden, map[string]string{"issue": "This feedback is linked to an issue you can't see."})
+		return nil
+	}
 	if err != nil {
 		return err
 	}

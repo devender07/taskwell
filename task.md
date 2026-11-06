@@ -81,6 +81,10 @@ Plans: `docs/notes-plan.md`, `docs/notes-collab-plan.md`.
 
 - [x] Editor: link and table tools, list buttons toggle and convert lists in place, tools that don't fit go in a "More formatting" menu
 - [x] Sticky page headers on every workspace page (border once the page scrolls under them)
+- [x] Project files (docs/project-files-plan.md): a Files tab per project with folders, upload (drag and drop), rename, move, delete; images and videos only; the project's issue attachments listed (delete only); issue files under the description (thumbnails, "+N more" dialog); a workspace Files page; storage used in Settings → Workspace; file links follow project visibility
+- [x] Due-date reminders (docs/due-reminders-plan.md): the assignee gets "due tomorrow" the day before and "overdue" the day after, at the digest hour in their timezone; in the Taskwell bot and bell, emailed unless "Due dates" is off
+- [x] Weekly digest email (docs/weekly-digest-plan.md): Mondays at the digest hour in the user's timezone, closed last week / due / blocked / blocking others across workspaces; "Weekly summary" in Settings → Notifications, on by default
+- [x] Light mode (docs/light-mode-plan.md): System / Light / Dark in Settings → Profile, per browser; landing page stays dark
 - [x] Sticky issue toolbar (view, group, sort, search, filters, chips) under the page header on issue lists
 - [x] "Assigned by" on issues (last assignee change, else the creator): list rows, board cards, issue page
 - [x] Search box on issue lists (identifier, title, description; in the URL) and on Projects; navbar "Search issues and projects" opens the palette

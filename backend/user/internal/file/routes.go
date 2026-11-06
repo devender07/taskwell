@@ -1,4 +1,5 @@
-// Package file implements the user service's uploads: attachments for descriptions and comments, and avatars.
+// Package file implements the user service's uploads: attachments for descriptions and comments, avatars,
+// and (through Upload) a project's files; and the workspace's storage use.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond), model.go owns every SQL
 // query and name.go cleans file names and builds URLs.
@@ -16,6 +17,7 @@ const formOverhead = 1 << 20
 // Register mounts the API routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/files", h.wrap(h.upload))
+	mux.HandleFunc("GET /api/workspaces/{slug}/storage", h.wrap(h.storage))
 	mux.HandleFunc("GET /api/files/{id}/{name}", h.wrap(h.serve))
 	mux.HandleFunc("POST /api/me/avatar", h.wrap(h.setAvatar))
 	mux.HandleFunc("DELETE /api/me/avatar", h.wrap(h.removeAvatar))

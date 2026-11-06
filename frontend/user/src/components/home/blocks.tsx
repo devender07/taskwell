@@ -1,3 +1,4 @@
+import { extractDataFromArray } from '@taskwell/shared/list'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@taskwell/shared/button'
@@ -6,8 +7,7 @@ import { api, can, toFormErrors, type ActivityItem, type ActivityPage, type Issu
 import { useShortcuts } from '@/components/app/shortcuts'
 import { useUnread } from '@/components/app/unread'
 import { FormError } from '@/components/auth/auth-card'
-import { PROVIDER_NAME } from '@/components/issues/pull-requests'
-import { FeedRow, IssueName, notificationTarget, notificationText } from '@/components/inbox/feed-row'
+import { FeedRow, IssueName, notificationTarget, notificationText, notificationActorName } from '@/components/inbox/feed-row'
 import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
 import { HealthPill, healthLabel } from '@/components/projects/updates'
@@ -182,7 +182,7 @@ export function Inbox({ workspace, page }: { workspace: string; page: Notificati
                 workspace={workspace}
                 {...notificationTarget(n)}
                 actor={n.actor}
-                actorName={n.data.via && PROVIDER_NAME[n.data.via.provider]}
+                actorName={notificationActorName(n)}
                 text={notificationText(n)}
                 excerpt={n.data.excerpt}
                 at={n.created_at}
@@ -337,7 +337,7 @@ export function RecentlyViewed({ workspace, issues }: { workspace: string; issue
                 <IssueLine workspace={workspace} identifier={r.identifier}>
                   {issue ? <StatusIcon status={issue.status} label={issue.status.name} /> : null}
                   <span className="issue-id flex-noshrink">{r.identifier}</span>
-                  <span className="text-label text-primary ellipsis flex-grow">{issue?.title ?? r.title}</span>
+                  <span className="text-label text-primary ellipsis flex-grow">{extractDataFromArray(issue, 'title', r.title)}</span>
                 </IssueLine>
               </li>
             )
@@ -411,7 +411,7 @@ export function ConnectClaude() {
           { label: 'command', text: command },
         ].map(({ label, text }) => (
           <div key={label} className="flex items-center gap-3">
-            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, wordBreak: 'break-all' }}>
+            <code className="flex-grow p-2 border rounded text-caption" style={{ background: 'var(--bg)', fontFamily: 'var(--mono)', minWidth: 0, overflowWrap: 'anywhere' }}>
               {text}
             </code>
             <CopyButton text={text} label={`Copy ${label}`} />
