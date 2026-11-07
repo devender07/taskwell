@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef, type ComponentProps } from 'react'
+import { useEffect, useId, useRef, useState, type ComponentProps } from 'react'
+import { EyeIcon, EyeOffIcon } from '../icons/icons'
 import { useFieldError } from './field-error'
 import './input.css'
 
 // prefix: fixed text shown inside the field before the value, e.g. "taskwell.dev/".
+// A password field gets a show/hide toggle at its end.
 // onDebouncedChange: called with the value once typing pauses for `debounce` ms (default 300), e.g. for a search.
 type InputProps = Omit<ComponentProps<'input'>, 'prefix'> & {
   label?: string
@@ -19,12 +21,14 @@ export function Input({ className, type = 'text', label, error: rawError, prefix
   const autoId = useId()
   const inputId = id ?? autoId
   const errorId = `${inputId}-error`
+  const [shown, setShown] = useState(false)
+  const password = type === 'password'
 
   const input = (
     <input
       id={inputId}
-      type={type}
-      className={prefix ? className : className ? `input ${className}` : 'input'}
+      type={password && shown ? 'text' : type}
+      className={prefix ? className : `input${password ? ' input-password' : ''}${className ? ` ${className}` : ''}`}
       aria-invalid={error ? true : undefined}
       aria-describedby={error ? errorId : undefined}
       onChange={(e) => {
@@ -47,6 +51,21 @@ export function Input({ className, type = 'text', label, error: rawError, prefix
         <div className="input input-prefixed">
           <span aria-hidden>{prefix}</span>
           {input}
+        </div>
+      ) : password ? (
+        <div className="relative">
+          {input}
+          <button
+            type="button"
+            className="input-reveal"
+            aria-label={shown ? 'Hide password' : 'Show password'}
+            aria-controls={inputId}
+            aria-pressed={shown}
+            disabled={props.disabled}
+            onClick={() => setShown(!shown)}
+          >
+            {shown ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
         </div>
       ) : (
         input

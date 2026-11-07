@@ -384,6 +384,15 @@ export const EyeIcon = ({ filled, ...props }: IconProps & { filled?: boolean }) 
   </Icon>
 )
 
+// EyeIcon struck through: "hidden", e.g. a password field's reveal toggle while the text shows.
+export const EyeOffIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.4M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="m3 3 18 18" />
+  </Icon>
+)
+
 type GlyphProps = { color: string; label?: string; size?: number }
 const glyphA11y = (label?: string) => (label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true as const })
 
