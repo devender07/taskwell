@@ -133,7 +133,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
           content={seed.doc}
           onChange={(doc, length) => setDescription({ doc, length })}
           error={errors?.description}
-          upload={(file) => uploadFile(workspace.slug, file, project.key)}
+          upload={(file, progress) => uploadFile(workspace.slug, file, project.key, undefined, progress)}
         />
       </div>
       <div className="grid gap-4" style={{ alignContent: 'start' }}>

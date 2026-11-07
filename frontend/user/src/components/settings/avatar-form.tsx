@@ -2,6 +2,7 @@ import { useRouter } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
+import { ProgressRing } from '@taskwell/shared/progress-ring'
 import { api, ApiError, bumpAvatar, directUpload, toFormErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
@@ -10,6 +11,7 @@ export function AvatarForm({ user }: { user: User }) {
   const picker = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<'upload' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<number>()
 
   async function save(file?: File) {
     setPending(file ? 'upload' : 'remove')
@@ -17,7 +19,8 @@ export function AvatarForm({ user }: { user: User }) {
     try {
       if (file) {
         const form = new FormData()
-        form.set('file_id', await directUpload('/me/uploads', file))
+        setSent(undefined)
+        form.set('file_id', await directUpload('/me/uploads', file, setSent))
         await api<User>('/me/avatar', form)
       } else {
         await api<User>('/me/avatar', undefined, 'DELETE')
@@ -38,7 +41,14 @@ export function AvatarForm({ user }: { user: User }) {
         <Avatar name={user.name} size={64} src={user.avatar_url} />
         <div className="flex items-center gap-3">
           <Button variant="secondary" disabled={!!pending} onClick={() => picker.current?.click()}>
-            {pending === 'upload' ? 'Uploading…' : 'Upload image'}
+            {pending === 'upload' ? (
+              <span className="flex items-center gap-2">
+                <ProgressRing value={sent} label="Uploading avatar" />
+                {sent === undefined ? 'Uploading…' : sent < 1 ? `Uploading… ${Math.round(sent * 100)}%` : 'Saving…'}
+              </span>
+            ) : (
+              'Upload image'
+            )}
           </Button>
           {user.avatar_url ? (
             <Button variant="ghost" disabled={!!pending} onClick={() => save()}>

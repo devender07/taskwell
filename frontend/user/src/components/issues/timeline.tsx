@@ -273,7 +273,7 @@ function Composer({ workspace, issue, mentions }: { workspace: Workspace; issue:
         mentions={mentions}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
-        upload={(file) => uploadFile(workspace.slug, file, issue.project.key)}
+        upload={(file, progress) => uploadFile(workspace.slug, file, issue.project.key, undefined, progress)}
       />
       <FormError>{error}</FormError>
       <Button type="submit" style={{ justifySelf: 'end' }} disabled={pending || !draft.doc}>
@@ -295,7 +295,7 @@ function EditComment({ workspace, project, comment, mentions, onDone }: { worksp
         mentions={mentions}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
-        upload={(file) => uploadFile(workspace.slug, file, project)}
+        upload={(file, progress) => uploadFile(workspace.slug, file, project, undefined, progress)}
       />
       <FormError>{error}</FormError>
       <div className="flex items-center justify-end gap-3">

@@ -35,7 +35,8 @@
     "./rich-text": "./src/components/rich-editor/rich-text.tsx",
     "./realtime": "./src/realtime/paths.ts",
     "./socket": "./src/realtime/socket.ts",
-    "./api-errors": "./src/api/errors.ts"
+    "./api-errors": "./src/api/errors.ts",
+    "./progress-ring": "./src/components/progress-ring/progress-ring.tsx"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

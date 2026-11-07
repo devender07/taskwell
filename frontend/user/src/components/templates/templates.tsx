@@ -148,7 +148,7 @@ function TemplateForm({ workspace, projects, statuses, labels, template: t, onDo
           content={t?.description}
           onChange={(doc, length) => setDescription({ doc, length })}
           error={errors?.description}
-          upload={(file) => uploadFile(workspace.slug, file)}
+          upload={(file, progress) => uploadFile(workspace.slug, file, undefined, undefined, progress)}
         />
       </div>
       <div className="grid gap-4" style={{ alignContent: 'start', minWidth: 0 }}>
