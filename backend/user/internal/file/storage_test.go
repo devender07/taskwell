@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/devender07/taskwell/backend/user/internal/dbtest"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
@@ -200,5 +203,37 @@ func TestDirectAvatar(t *testing.T) {
 	}
 	if created != maxAvatarUploads {
 		t.Fatalf("concurrent starts created %d, want %d", created, maxAvatarUploads)
+	}
+}
+
+// A locked section holds one connection, so a pool smaller than the callers can't deadlock.
+func TestLockedOneConnection(t *testing.T) {
+	cfg := dbtest.Pool(t).Config().Copy()
+	cfg.MaxConns = 2
+	small, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer small.Close()
+	m := &model{db: small}
+	user := dbtest.User(t, dbtest.Pool(t), "Small pool")
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Go(func() {
+			if _, err := m.startUpload(ctx, nil, user, "a.png", "image/png", 1, 100); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if got, _ := m.locked(ctx, "upload:x", true, func(pgx.Tx) error {
+		if again, err := m.locked(ctx, "upload:x", true, func(pgx.Tx) error { return nil }); err != nil || again {
+			t.Errorf("second try-lock ran: %v %v", again, err)
+		}
+		return nil
+	}); !got {
+		t.Error("first try-lock didn't run")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
@@ -85,10 +86,10 @@ func (m *model) create(ctx context.Context, f *File, store func(id string) error
 // startUpload records a direct upload the client is about to PUT and returns its id, the object key.
 func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, name, contentType string, size int64, max int) (string, error) {
 	var id string
-	err := m.locked(ctx, "uploads:"+userID, func() error {
+	_, err := m.locked(ctx, "uploads:"+userID, false, func(tx pgx.Tx) error {
 		if max > 0 {
 			var n int
-			if err := m.db.QueryRow(ctx, `select count(*) from uploads where user_id = $1
+			if err := tx.QueryRow(ctx, `select count(*) from uploads where user_id = $1
 				and workspace_id is not distinct from $2`, userID, workspaceID).Scan(&n); err != nil {
 				return err
 			}
@@ -96,7 +97,7 @@ func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, na
 				return nil
 			}
 		}
-		return m.db.QueryRow(ctx, `insert into uploads (workspace_id, user_id, name, content_type, size) values ($1, $2, $3, $4, $5)
+		return tx.QueryRow(ctx, `insert into uploads (workspace_id, user_id, name, content_type, size) values ($1, $2, $3, $4, $5)
 			returning id::text`, workspaceID, userID, name, contentType, size).Scan(&id)
 	})
 	if err != nil {
@@ -105,21 +106,37 @@ func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, na
 	return id, nil
 }
 
-// locked runs fn while holding a transaction-scoped advisory lock on key, so calls with the same key on any instance
-// run one at a time. fn's own queries use the pool, not the lock's transaction.
-func (m *model) locked(ctx context.Context, key string, fn func() error) error {
-	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
+// locked runs fn in a transaction holding an advisory lock on key, so calls with the same key on any instance run one
+// at a time. fn queries through tx only: a locked section holds one connection, never waits on the pool for a second.
+// With try, it doesn't wait for the lock either: it reports false without running fn when another call holds it.
+func (m *model) locked(ctx context.Context, key string, try bool, fn func(tx pgx.Tx) error) (bool, error) {
+	got := true
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		lock := `select true from (select pg_advisory_xact_lock(hashtextextended($1, 0))) l`
+		if try {
+			lock = `select pg_try_advisory_xact_lock(hashtextextended($1, 0))`
+		}
+		if err := tx.QueryRow(ctx, lock, key).Scan(&got); err != nil {
 			return fmt.Errorf("lock %s: %w", key, err)
 		}
-		return fn()
+		if !got {
+			return nil
+		}
+		return fn(tx)
 	})
+	return got, err
+}
+
+// querier is a pool or a transaction.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 // upload returns the user's live upload id to the workspace (nil: an avatar) as a File to create, nil when there's none.
-func (m *model) upload(ctx context.Context, id, userID string, workspaceID *string) (*File, error) {
+func (m *model) upload(ctx context.Context, q querier, id, userID string, workspaceID *string) (*File, error) {
 	f := File{ID: id, workspaceID: workspaceID, uploaderID: userID}
-	err := m.db.QueryRow(ctx, `select name, content_type, size from uploads where id = $1 and user_id = $2
+	err := q.QueryRow(ctx, `select name, content_type, size from uploads where id = $1 and user_id = $2
 		and workspace_id is not distinct from $3 and `+liveUpload, id, userID, workspaceID).Scan(&f.Name, &f.ContentType, &f.Size)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -147,8 +164,8 @@ func (m *model) reapUploads(ctx context.Context, workspaceID *string, userID str
 }
 
 // dropUpload deletes the upload's row, as when its bytes were refused.
-func (m *model) dropUpload(ctx context.Context, id string) error {
-	if _, err := m.db.Exec(ctx, `delete from uploads where id = $1`, id); err != nil {
+func (m *model) dropUpload(ctx context.Context, q querier, id string) error {
+	if _, err := q.Exec(ctx, `delete from uploads where id = $1`, id); err != nil {
 		return fmt.Errorf("drop upload: %w", err)
 	}
 	return nil

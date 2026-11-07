@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
@@ -31,6 +32,7 @@ const (
 	errChooseMedia   = "Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be uploaded."
 	errFileNotFound  = "File not found."
 	errNoUpload      = "Upload not found. Try again."
+	errFinishing     = "This upload is already being saved."
 	tooLargeAvatar   = "Images must be 2 MB or smaller."
 	avatarCache      = "private, max-age=300"
 )
@@ -238,16 +240,19 @@ func (h *Handler) finish(ctx context.Context, id string, workspaceID *string, us
 	}
 	var f *File
 	var msg string
-	err := h.model.locked(ctx, "upload:"+id, func() error {
+	got, err := h.model.locked(ctx, "upload:"+id, true, func(tx pgx.Tx) error {
 		var err error
-		f, msg, err = h.finishLocked(ctx, id, workspaceID, userID, imageOnly)
+		f, msg, err = h.finishLocked(ctx, tx, id, workspaceID, userID, imageOnly)
 		return err
 	})
+	if err == nil && !got {
+		return nil, errFinishing, nil
+	}
 	return f, msg, err
 }
 
-func (h *Handler) finishLocked(ctx context.Context, id string, workspaceID *string, userID string, imageOnly bool) (*File, string, error) {
-	f, err := h.model.upload(ctx, id, userID, workspaceID)
+func (h *Handler) finishLocked(ctx context.Context, tx pgx.Tx, id string, workspaceID *string, userID string, imageOnly bool) (*File, string, error) {
+	f, err := h.model.upload(ctx, tx, id, userID, workspaceID)
 	if err != nil || f == nil {
 		return nil, errNoUpload, err
 	}
@@ -282,7 +287,7 @@ func (h *Handler) finishLocked(ctx context.Context, id string, workspaceID *stri
 	if err := h.files.Delete(ctx, id); err != nil {
 		return nil, "", err
 	}
-	if err := h.model.dropUpload(ctx, id); err != nil {
+	if err := h.model.dropUpload(ctx, tx, id); err != nil {
 		return nil, "", err
 	}
 	if obj.Size != f.Size {
