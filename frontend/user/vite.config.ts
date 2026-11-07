@@ -27,7 +27,8 @@ const pagesHeaders: Plugin = {
     uploads = config.env.VITE_UPLOAD_ORIGIN ? ` ${new URL(config.env.VITE_UPLOAD_ORIGIN).origin}` : ''
   },
   generateBundle() {
-    const csp = `default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}${uploads}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
+    // Cloudflare Web Analytics: Cloudflare injects its beacon script, which reports to cloudflareinsights.com.
+    const csp = `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}${uploads} https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
     this.emitFile({
       type: 'asset',
       fileName: '_headers',
