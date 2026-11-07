@@ -38,18 +38,35 @@ type Placement struct {
 	Event     realtime.Event
 }
 
+// liveUpload is an uploads row still in its hour (uploadTTL; the sweep deletes older ones).
+const liveUpload = `created_at > now() - interval '1 hour'`
+
+// errUploadGone is create's answer when the upload being finished is no longer there (finished meanwhile or expired).
+var errUploadGone = errors.New("upload gone")
+
 // create inserts the file's row and calls store with the new id inside the same transaction, so a row only
-// commits once its bytes are stored.
+// commits once its bytes are stored. A file with an ID is a direct upload being finished: its uploads row goes in the
+// same transaction (errUploadGone when it already went) and store is nil, the bytes are already there.
 func (m *model) create(ctx context.Context, f *File, store func(id string) error) error {
 	pl := f.place
 	if pl == nil {
 		pl = &Placement{}
 	}
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if f.ID != "" {
+			tag, err := tx.Exec(ctx, `delete from uploads where id = $1 and user_id = $2 and workspace_id is not distinct from $3
+				and `+liveUpload, f.ID, f.uploaderID, f.workspaceID)
+			if err != nil {
+				return fmt.Errorf("finish upload: %w", err)
+			}
+			if tag.RowsAffected() == 0 {
+				return errUploadGone
+			}
+		}
 		err := tx.QueryRow(ctx,
-			`insert into files (workspace_id, uploader_id, name, content_type, size, project_id, folder_id, listed, issue_id)
-			 values ($1, $2, $3, $4, $5, nullif($6, '')::uuid, $7, $8, $9) returning id::text`,
-			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size, pl.ProjectID, pl.FolderID, pl.Listed, pl.IssueID).Scan(&f.ID)
+			`insert into files (id, workspace_id, uploader_id, name, content_type, size, project_id, folder_id, listed, issue_id)
+			 values (coalesce(nullif($10, '')::uuid, uuidv7()), $1, $2, $3, $4, $5, nullif($6, '')::uuid, $7, $8, $9) returning id::text`,
+			f.workspaceID, f.uploaderID, f.Name, f.ContentType, f.Size, pl.ProjectID, pl.FolderID, pl.Listed, pl.IssueID, f.ID).Scan(&f.ID)
 		if err != nil {
 			return fmt.Errorf("insert file: %w", err)
 		}
@@ -58,14 +75,51 @@ func (m *model) create(ctx context.Context, f *File, store func(id string) error
 				return err
 			}
 		}
+		if store == nil {
+			return nil
+		}
 		return store(f.ID)
 	})
 }
 
-// used returns the bytes the workspace's files take up.
+// startUpload records a direct upload the client is about to PUT and returns its id, the object key.
+func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, name, contentType string, size int64) (string, error) {
+	var id string
+	err := m.db.QueryRow(ctx, `insert into uploads (workspace_id, user_id, name, content_type, size) values ($1, $2, $3, $4, $5)
+		returning id::text`, workspaceID, userID, name, contentType, size).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("start upload: %w", err)
+	}
+	return id, nil
+}
+
+// upload returns the user's live upload id to the workspace (nil: an avatar) as a File to create, nil when there's none.
+func (m *model) upload(ctx context.Context, id, userID string, workspaceID *string) (*File, error) {
+	f := File{ID: id, workspaceID: workspaceID, uploaderID: userID}
+	err := m.db.QueryRow(ctx, `select name, content_type, size from uploads where id = $1 and user_id = $2
+		and workspace_id is not distinct from $3 and `+liveUpload, id, userID, workspaceID).Scan(&f.Name, &f.ContentType, &f.Size)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find upload: %w", err)
+	}
+	return &f, nil
+}
+
+// dropUpload deletes the upload's row, as when its bytes were refused.
+func (m *model) dropUpload(ctx context.Context, id string) error {
+	if _, err := m.db.Exec(ctx, `delete from uploads where id = $1`, id); err != nil {
+		return fmt.Errorf("drop upload: %w", err)
+	}
+	return nil
+}
+
+// used returns the bytes the workspace's files and live uploads take up.
 func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
 	var n int64
-	if err := m.db.QueryRow(ctx, `select coalesce(sum(size), 0) from files where workspace_id = $1`, workspaceID).Scan(&n); err != nil {
+	if err := m.db.QueryRow(ctx, `select (select coalesce(sum(size), 0) from files where workspace_id = $1)
+		+ (select coalesce(sum(size), 0) from uploads where workspace_id = $1 and `+liveUpload+`)`, workspaceID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sum file sizes: %w", err)
 	}
 	return n, nil

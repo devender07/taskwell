@@ -2,7 +2,7 @@ import { useRouter } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
-import { api, bumpAvatar, toFormErrors, type User } from '@/api'
+import { api, ApiError, bumpAvatar, directUpload, toFormErrors, type User } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 
 export function AvatarForm({ user }: { user: User }) {
@@ -14,15 +14,19 @@ export function AvatarForm({ user }: { user: User }) {
   async function save(file?: File) {
     setPending(file ? 'upload' : 'remove')
     setError(null)
-    const form = new FormData()
-    if (file) form.set('file', file)
     try {
-      await api<User>('/me/avatar', file ? form : undefined, file ? 'POST' : 'DELETE')
+      if (file) {
+        const form = new FormData()
+        form.set('file_id', await directUpload('/me/uploads', file))
+        await api<User>('/me/avatar', form)
+      } else {
+        await api<User>('/me/avatar', undefined, 'DELETE')
+      }
       bumpAvatar(user.id)
       await router.invalidate()
     } catch (e) {
       const { errors, error } = toFormErrors(e)
-      setError(errors.file ?? error)
+      setError(e instanceof Error && !(e instanceof ApiError) ? e.message : (errors.file ?? error))
     }
     setPending(null)
   }

@@ -14,16 +14,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
 
 // urlTTL is how long a presigned URL works. CacheFor is how long a redirect to one may be cached: less, so a cached
 // redirect never points at an expired URL.
+// putTTL is how long a presigned PUT works.
 const (
 	urlTTL   = time.Hour
 	CacheFor = 50 * time.Minute
+	putTTL   = 15 * time.Minute
 )
+
+// cacheControl is what every object is stored with.
+var cacheControl = fmt.Sprintf("private, max-age=%d", int(CacheFor.Seconds()))
 
 var keys = [...]string{"s3_endpoint", "s3_region", "s3_bucket", "s3_access_key_id", "s3_secret_access_key"}
 
@@ -76,7 +82,7 @@ func (s *Store) Put(ctx context.Context, id, contentType, disposition string, bo
 		return err
 	}
 	_, err = c.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &id, Body: body, ContentType: &contentType,
-		ContentDisposition: &disposition, CacheControl: aws.String(fmt.Sprintf("private, max-age=%d", int(CacheFor.Seconds())))})
+		ContentDisposition: &disposition, CacheControl: &cacheControl})
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)
 	}
@@ -160,6 +166,81 @@ func (s *Store) Old(ctx context.Context, cutoff time.Time, fn func(keys []string
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// PresignPut returns a presigned PUT for the object id and the headers the client must send with it (the client sets
+// Content-Length itself; it's signed too).
+func (s *Store) PresignPut(ctx context.Context, id, contentType, disposition string, size int64) (string, map[string]string, error) {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	req, err := s3.NewPresignClient(c).PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &id,
+		ContentType: &contentType, ContentLength: &size, ContentDisposition: &disposition, CacheControl: &cacheControl},
+		s3.WithPresignExpires(putTTL))
+	if err != nil {
+		return "", nil, fmt.Errorf("presign put: %w", err)
+	}
+	return req.URL, map[string]string{"Content-Type": contentType, "Content-Disposition": disposition,
+		"Cache-Control": cacheControl}, nil
+}
+
+// Object is what Head reports of a stored object.
+type Object struct {
+	Size        int64
+	ContentType string
+	Disposition string
+}
+
+// Head returns the object id's size and stored headers, nil when it doesn't exist.
+func (s *Store) Head(ctx context.Context, id string) (*Object, error) {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out, err := c.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &bucket, Key: &id})
+	var nf *types.NotFound
+	if errors.As(err, &nf) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("head object: %w", err)
+	}
+	return &Object{Size: aws.ToInt64(out.ContentLength), ContentType: aws.ToString(out.ContentType),
+		Disposition: aws.ToString(out.ContentDisposition)}, nil
+}
+
+// Start returns up to the first n bytes of the object id.
+func (s *Store) Start(ctx context.Context, id string, n int) ([]byte, error) {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := c.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &id, Range: aws.String(fmt.Sprintf("bytes=0-%d", n-1))})
+	if err != nil {
+		return nil, fmt.Errorf("get object start: %w", err)
+	}
+	defer obj.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(obj.Body, int64(n)))
+	if err != nil {
+		return nil, fmt.Errorf("read object start: %w", err)
+	}
+	return b, nil
+}
+
+// AllowOrigin sets the bucket's CORS rules so the web app at origin can PUT (direct uploads) and GET its objects.
+func (s *Store) AllowOrigin(ctx context.Context, origin string) error {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = c.PutBucketCors(ctx, &s3.PutBucketCorsInput{Bucket: &bucket, CORSConfiguration: &types.CORSConfiguration{
+		CORSRules: []types.CORSRule{{AllowedOrigins: []string{origin}, AllowedMethods: []string{"PUT", "GET"},
+			AllowedHeaders: []string{"*"}, MaxAgeSeconds: aws.Int32(3600)}}}})
+	if err != nil {
+		return fmt.Errorf("put bucket cors: %w", err)
 	}
 	return nil
 }

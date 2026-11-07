@@ -52,3 +52,25 @@ ssh -t devender@<host> 'sudo journalctl -u taskwell-user -n 50 --no-pager'      
 
 The same `build.sh` and `send.sh` pair. Sending the user app runs new migrations before it starts. Change env files or
 the Caddyfile, then run `deploy/config.sh`; it restarts only what changed.
+
+## File CDN and direct uploads
+
+Browsers upload straight to the R2 bucket with presigned PUTs, and files are served by a Cloudflare Worker at
+`files.taskwell.dev` from Cloudflare's edge cache (docs/cdn-direct-uploads-plan.md). Once:
+
+1. **`s3_endpoint` without the bucket:** `https://<account id>.r2.cloudflarestorage.com` (the app adds `/taskwell`).
+2. **Bucket CORS**, so browsers may PUT: the user API sets it on startup when its R2 token may; if the log says it
+   couldn't, set it in the R2 dashboard (bucket → Settings → CORS policy):
+   `[{"AllowedOrigins":["https://taskwell.dev"],"AllowedMethods":["PUT","GET"],"AllowedHeaders":["*"],"MaxAgeSeconds":3600}]`
+3. **The Worker**, from `cdn/` (logged in with `npx wrangler@4 login`):
+   ```sh
+   openssl rand -base64 48                        # the shared secret
+   npx wrangler@4 secret put FILES_SECRET         # paste it
+   npx wrangler@4 deploy                          # also creates the files.taskwell.dev custom domain
+   ```
+4. **System config** (admin app → Config): `files_cdn_url` = `https://files.taskwell.dev`, `files_cdn_secret` = the
+   same secret. Until both are set, files are served by presigned R2 links as before.
+
+Check: open an image in the app; in the browser's network panel it should redirect from `api.taskwell.dev/api/files/…`
+to `files.taskwell.dev/…` and load with `200`.
+Worker logs: `npx wrangler@4 tail` from `cdn/`. Worker check: `node cdn/worker.check.mjs`.

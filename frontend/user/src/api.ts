@@ -489,18 +489,33 @@ export type UploadedFile = { id: string; url: string; name: string; content_type
 // `project` links an editor's upload to that project as an attachment.
 export function uploadFile(workspace: string, file: File, project?: string, issue?: string) {
   const form = new FormData()
-  form.set('file', file)
   if (project) form.set('project', project)
   if (issue) form.set('issue', issue)
-  return upload<UploadedFile>(`${workspacePath(workspace)}/files`, form)
+  return upload<UploadedFile>(workspace, `${workspacePath(workspace)}/files`, file, form)
 }
 
-async function upload<T>(path: string, form: FormData) {
-  try {
-    return await api<T>(path, form)
-  } catch (e) {
-    throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
-  }
+const uploadError = (e: unknown) => new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
+
+// Sends the file straight to storage: the API hands out a presigned PUT, and returns the upload's id for the
+// endpoint that finishes it (as `file_id`). Rejects with an Error whose message is ready to show.
+export async function directUpload(startPath: string, file: File) {
+  const form = new FormData()
+  form.set('name', file.name)
+  form.set('size', String(file.size))
+  form.set('type', file.type)
+  const { id, url, headers } = await api<{ id: string; url: string; headers: Record<string, string> }>(startPath, form).catch((e) => {
+    throw uploadError(e)
+  })
+  const res = await fetch(url, { method: 'PUT', body: file, headers, credentials: 'omit' }).catch(() => null)
+  if (!res?.ok) throw new Error('Upload failed. Try again.')
+  return id
+}
+
+async function upload<T>(workspace: string, path: string, file: File, form: FormData) {
+  form.set('file_id', await directUpload(`${workspacePath(workspace)}/uploads`, file))
+  return api<T>(path, form).catch((e) => {
+    throw uploadError(e)
+  })
 }
 
 export type Folder = { id: string; name: string; parent_id: string | null; created_by: PersonRef | null; created_at: string; can_edit: boolean }
@@ -521,9 +536,8 @@ export function filesListPath(workspace: string, project: string, folder?: strin
 const foldersPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/folders`
 export function uploadProjectFile(workspace: string, project: string, file: File, folder?: string) {
   const form = new FormData()
-  form.set('file', file)
   if (folder) form.set('folder_id', folder)
-  return upload<ProjectFile>(projectFilesPath(workspace, project), form)
+  return upload<ProjectFile>(workspace, projectFilesPath(workspace, project), file, form)
 }
 // folder_id / parent_id "" moves to the root.
 export const updateProjectFile = (workspace: string, project: string, id: string, form: FormData) =>

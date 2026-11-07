@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -27,6 +29,8 @@ const (
 	errChooseImage  = "Choose a PNG, JPEG, GIF or WebP image."
 	errChooseMedia  = "Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be uploaded."
 	errFileNotFound = "File not found."
+	errNoUpload     = "Upload not found. Try again."
+	tooLargeAvatar  = "Images must be 2 MB or smaller."
 	avatarCache     = "private, max-age=300"
 )
 
@@ -103,29 +107,130 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) 
 // particular); it writes its own error response and returns ok=false to stop. On ok=false a response was written.
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request, workspaceID, userID string,
 	place func(fields url.Values) (*Placement, bool, error)) (*File, bool, error) {
-	mb, err := h.cfg.GetInt(r.Context(), "upload_max_mb")
+	limit, tooLarge, err := h.room(r.Context(), workspaceID)
 	if err != nil {
 		return nil, false, err
 	}
-	quota, err := h.cfg.GetInt(r.Context(), "upload_quota_mb")
+	return h.save(w, r, &workspaceID, userID, limit, tooLarge, false, place)
+}
+
+// room returns how many bytes a new upload to the workspace may have (0 or less: none) and the message when it has
+// more. Live direct uploads count as used.
+// ponytail: concurrent uploads each see the same room, so the quota can be overshot by a few files; lock the
+// workspace row while checking and recording if that matters.
+func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, error) {
+	mb, err := h.cfg.GetInt(ctx, "upload_max_mb")
 	if err != nil {
-		return nil, false, err
+		return 0, "", err
 	}
-	used, err := h.model.used(r.Context(), workspaceID)
+	quota, err := h.cfg.GetInt(ctx, "upload_quota_mb")
 	if err != nil {
-		return nil, false, err
+		return 0, "", err
 	}
-	// ponytail: concurrent uploads each see the same room, so the quota can be overshot by a few files.
+	used, err := h.model.used(ctx, workspaceID)
+	if err != nil {
+		return 0, "", err
+	}
 	limit, tooLarge := int64(mb)<<20, fmt.Sprintf("Files must be %d MB or smaller.", mb)
 	if left := int64(quota)<<20 - used; left < limit {
 		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%d MB). Delete some attachments or ask "+
 			"your administrator for more space.", quota)
 	}
-	if limit <= 0 {
-		web.Err(w, http.StatusRequestEntityTooLarge, tooLarge)
-		return nil, false, nil
+	return limit, tooLarge, nil
+}
+
+// startUpload begins a direct upload to the workspace: the client PUTs the bytes to the presigned URL it answers with,
+// then finishes it by posting file_id to an upload endpoint.
+func (h *Handler) startUpload(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
+	if err != nil {
+		return err
 	}
-	return h.save(w, r, &workspaceID, userID, limit, tooLarge, false, place)
+	if ws == nil {
+		web.Err(w, http.StatusNotFound, "Workspace not found.")
+		return nil
+	}
+	limit, tooLarge, err := h.room(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	return h.start(w, r, &ws.ID, userID, limit, tooLarge, false)
+}
+
+// startAvatarUpload begins a direct upload of an avatar, finished by POST /api/me/avatar.
+func (h *Handler) startAvatarUpload(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.start(w, r, nil, userID, maxAvatar, tooLargeAvatar, true)
+}
+
+// start checks the form's name, size and type against limit (and with imageOnly, images only), records the upload and
+// answers with where and how to PUT it.
+func (h *Handler) start(w http.ResponseWriter, r *http.Request, workspaceID *string, userID string, limit int64,
+	tooLarge string, imageOnly bool) error {
+	_ = r.ParseMultipartForm(maxStartBody)
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	size, err := strconv.ParseInt(strings.TrimSpace(r.PostFormValue("size")), 10, 64)
+	contentType := strings.TrimSpace(r.PostFormValue("type"))
+	switch {
+	case name == "" || err != nil || size <= 0:
+		web.Fields(w, http.StatusBadRequest, map[string]string{"file": errChooseFile})
+		return nil
+	case imageOnly && !isImage(contentType):
+		web.Fields(w, http.StatusBadRequest, map[string]string{"file": errChooseImage})
+		return nil
+	case !isMedia(contentType):
+		web.Fields(w, http.StatusBadRequest, map[string]string{"file": errChooseMedia})
+		return nil
+	case size > limit:
+		web.Fields(w, http.StatusRequestEntityTooLarge, map[string]string{"file": tooLarge})
+		return nil
+	}
+	name = CleanName(name)
+	id, err := h.model.startUpload(r.Context(), workspaceID, userID, name, contentType, size)
+	if err != nil {
+		return err
+	}
+	u, headers, err := h.files.PresignPut(r.Context(), id, contentType, Disposition(contentType, name), size)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusCreated, map[string]any{"id": id, "url": u, "headers": headers})
+	return nil
+}
+
+// finish checks the direct upload id the client says it PUT: its row is the user's to this workspace (nil: an
+// avatar) and still live, and the stored object has the declared size, headers and type. It returns the file to
+// create, or the message to refuse it with. Refused bytes are deleted.
+func (h *Handler) finish(ctx context.Context, id string, workspaceID *string, userID string, imageOnly bool) (*File, string, error) {
+	if !web.IsUUID(id) {
+		return nil, errNoUpload, nil
+	}
+	f, err := h.model.upload(ctx, id, userID, workspaceID)
+	if err != nil || f == nil {
+		return nil, errNoUpload, err
+	}
+	obj, err := h.files.Head(ctx, id)
+	if err != nil || obj == nil || obj.Size != f.Size {
+		return nil, errNoUpload, err
+	}
+	head, err := h.files.Start(ctx, id, 512)
+	if err != nil {
+		return nil, "", err
+	}
+	// The store may not hold the client to the signed headers (SeaweedFS doesn't), so check what it stored.
+	if got := http.DetectContentType(head); got == f.ContentType && obj.ContentType == f.ContentType &&
+		obj.Disposition == Disposition(f.ContentType, f.Name) && (isImage(got) || !imageOnly && isMedia(got)) {
+		return f, "", nil
+	}
+	if err := h.files.Delete(ctx, id); err != nil {
+		return nil, "", err
+	}
+	if err := h.model.dropUpload(ctx, id); err != nil {
+		return nil, "", err
+	}
+	if imageOnly {
+		return nil, errChooseImage, nil
+	}
+	return nil, errChooseMedia, nil
 }
 
 // storage answers the workspace's storage use against its quota.
@@ -163,6 +268,25 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, userID string) e
 		web.Err(w, http.StatusNotFound, errFileNotFound)
 		return nil
 	}
+	cdn, err := h.cfg.Get(r.Context(), "files_cdn_url")
+	if err != nil {
+		return err
+	}
+	secret, err := h.cfg.Get(r.Context(), "files_cdn_secret")
+	if err != nil {
+		return err
+	}
+	if cdn != "" && secret != "" {
+		// The link is the same all day and works for at least 24 hours, so browsers and the edge can cache it.
+		now := time.Now()
+		next := now.Truncate(24 * time.Hour).Add(24 * time.Hour) // the next UTC midnight
+		exp := next.Add(24 * time.Hour).Unix()
+		path := "/" + f.ID + "/" + url.PathEscape(f.Name)
+		w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(next.Sub(now).Seconds())))
+		http.Redirect(w, r, strings.TrimRight(cdn, "/")+path+"?exp="+strconv.FormatInt(exp, 10)+"&sig="+sign(secret, path, exp),
+			http.StatusFound)
+		return nil
+	}
 	u, err := h.files.URL(r.Context(), f.ID)
 	if err != nil {
 		return err
@@ -173,7 +297,7 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request, userID string) e
 }
 
 func (h *Handler) setAvatar(w http.ResponseWriter, r *http.Request, userID string) error {
-	f, ok, err := h.save(w, r, nil, userID, maxAvatar, "Images must be 2 MB or smaller.", true, nil)
+	f, ok, err := h.save(w, r, nil, userID, maxAvatar, tooLargeAvatar, true, nil)
 	if !ok || err != nil {
 		return err
 	}
@@ -226,10 +350,11 @@ func (h *Handler) avatar(w http.ResponseWriter, r *http.Request, _ string) error
 
 // save streams the multipart "file" field to a temp file, then stores and records it, writing a 400 or 413 and returning ok=false when
 // the upload is missing, too large, or (with imageOnly) not an image. The bytes never sit in memory as a whole. The
-// form's other fields, in any order, go to place (see Upload).
+// form's other fields, in any order, go to place (see Upload). Without a "file" part, a "file_id" field finishes a
+// direct upload instead (see finish); its size was checked against the limit when it started.
 func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *string, userID string, limit int64,
 	tooLarge string, imageOnly bool, place func(url.Values) (*Placement, bool, error)) (*File, bool, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, limit+formOverhead)
+	r.Body = http.MaxBytesReader(w, r.Body, max(limit, 0)+formOverhead)
 	fail := func(status int, msg string) (*File, bool, error) {
 		web.Fields(w, status, map[string]string{"file": msg})
 		return nil, false, nil
@@ -262,6 +387,10 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 		}
 		if part.FormName() != "file" || f != nil {
 			continue
+		}
+		if limit <= 0 {
+			web.Err(w, http.StatusRequestEntityTooLarge, tooLarge)
+			return nil, false, nil
 		}
 		f = &File{Name: CleanName(part.FileName()), workspaceID: workspaceID, uploaderID: userID}
 		if out, err = os.CreateTemp("", "taskwell-upload-"); err != nil {
@@ -297,7 +426,17 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 		}
 	}
 	if f == nil {
-		return fail(http.StatusBadRequest, errChooseFile)
+		id := strings.TrimSpace(fields.Get("file_id"))
+		if id == "" {
+			return fail(http.StatusBadRequest, errChooseFile)
+		}
+		var msg string
+		if f, msg, err = h.finish(r.Context(), id, workspaceID, userID, imageOnly); err != nil || msg != "" {
+			if err != nil {
+				return nil, false, err
+			}
+			return fail(http.StatusBadRequest, msg)
+		}
 	}
 	if place != nil {
 		pl, ok, err := place(fields)
@@ -307,12 +446,19 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, workspaceID *stri
 		f.place = pl
 	}
 	f.Image = isImage(f.ContentType)
-	if _, err := out.Seek(0, io.SeekStart); err != nil {
-		return nil, false, fmt.Errorf("rewind upload: %w", err)
+	var store func(id string) error // nil: a direct upload, already stored
+	if out != nil {
+		if _, err := out.Seek(0, io.SeekStart); err != nil {
+			return nil, false, fmt.Errorf("rewind upload: %w", err)
+		}
+		store = func(id string) error {
+			return h.files.Put(r.Context(), id, f.ContentType, Disposition(f.ContentType, f.Name), out)
+		}
 	}
-	err = h.model.create(r.Context(), f, func(id string) error {
-		return h.files.Put(r.Context(), id, f.ContentType, Disposition(f.ContentType, f.Name), out)
-	})
+	err = h.model.create(r.Context(), f, store)
+	if errors.Is(err, errUploadGone) {
+		return fail(http.StatusBadRequest, errNoUpload)
+	}
 	if err != nil {
 		return nil, false, err
 	}

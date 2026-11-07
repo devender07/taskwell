@@ -16,3 +16,7 @@ deploy/systemd/*.env
 !frontend/*/.env.production
 
 deploy/config/system.json
+
+# Cloudflare Worker (cdn/): local state and dev secrets
+.wrangler/
+.dev.vars

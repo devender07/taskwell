@@ -1,8 +1,12 @@
 package file
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -41,6 +45,13 @@ func CleanName(s string) string {
 
 // URL is where GET /api/files serves the file; the name part is for people and download tools, not lookup.
 func URL(id, name string) string { return "/api/files/" + id + "/" + url.PathEscape(name) }
+
+// sign is the file Worker's signature of a link to path (/{id}/{escaped name}) that works until exp (Unix seconds).
+func sign(secret, path string, exp int64) string {
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte(path + "\n" + strconv.FormatInt(exp, 10)))
+	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
+}
 
 // Disposition is the Content-Disposition for serving a file: images and videos inline, everything else as a download.
 func Disposition(contentType, name string) string {

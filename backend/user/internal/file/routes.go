@@ -14,9 +14,14 @@ import (
 // formOverhead is what a multipart body may add around the file itself.
 const formOverhead = 1 << 20
 
+// maxStartBody caps a request starting a direct upload: three short fields.
+const maxStartBody = 16 << 10
+
 // Register mounts the API routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/files", h.wrap(h.upload))
+	mux.HandleFunc("POST /api/workspaces/{slug}/uploads", web.Wrap(h.authenticate, maxStartBody, h.startUpload))
+	mux.HandleFunc("POST /api/me/uploads", web.Wrap(h.authenticate, maxStartBody, h.startAvatarUpload))
 	mux.HandleFunc("GET /api/workspaces/{slug}/storage", h.wrap(h.storage))
 	mux.HandleFunc("GET /api/files/{id}/{name}", h.wrap(h.serve))
 	mux.HandleFunc("POST /api/me/avatar", h.wrap(h.setAvatar))

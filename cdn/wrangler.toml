@@ -1,0 +1,11 @@
+# The file CDN: serves uploads from R2 through Cloudflare's edge cache at files.taskwell.dev (docs/cdn-direct-uploads-plan.md).
+# Deploy from cdn/: npx wrangler@4 deploy. Secret: npx wrangler@4 secret put FILES_SECRET (system_config files_cdn_secret).
+name = "taskwell-files"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = false
+routes = [{ pattern = "files.taskwell.dev", custom_domain = true }]
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "taskwell"
