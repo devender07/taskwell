@@ -97,6 +97,10 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 	t.browserTools(s)
 	t.appTools(s)
 	t.chatTools(s)
+	t.fileTools(s)
+	t.planningTools(s)
+	t.contentTools(s)
+	t.adminTools(s)
 	return s
 }
 

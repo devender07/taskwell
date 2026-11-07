@@ -54,7 +54,7 @@ done
 PW=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$DB/.env")
 # Inside the container the socket and 127.0.0.1 are trusted, so test on its network address, where the apps' connections
 # (through Docker's port forward) need the password. An older volume keeps its old password: set it to the apps' one.
-pwok() { docker exec -e PGPASSWORD="$PW" taskwell-postgres sh -c 'psql -h "$(hostname -i | cut -d" " -f1)" -U taskwell -d taskwell -qAtc "select 1"' >/dev/null 2>&1; }
+pwok() { PGPASSWORD="$PW" docker exec -e PGPASSWORD taskwell-postgres sh -c 'psql -h "$(hostname -i | cut -d" " -f1)" -U taskwell -d taskwell -qAtc "select 1"' >/dev/null 2>&1; }
 if ! pwok; then
   echo "alter user taskwell password :'pw'" | docker exec -i taskwell-postgres psql -U taskwell -d taskwell -q -v ON_ERROR_STOP=1 -v pw="$PW"
   echo "password reset to the one in user.env"

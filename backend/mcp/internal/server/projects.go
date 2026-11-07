@@ -12,9 +12,11 @@ import (
 // projectTools registers the tools for projects and cycles.
 func (t *tools) projectTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "create_project",
-		Description: "Create a project. Its key (2–5 letters, such as ENG) prefixes its issue identifiers."}, t.createProject)
+		Description: "Create a project. Its key (2–5 letters, such as ENG) prefixes its issue identifiers. " +
+			"A private project is seen only by its members (you, and members you name) and workspace admins."}, t.createProject)
 	mcp.AddTool(s, &mcp.Tool{Name: "update_project",
-		Description: "Rename a project or change its description. Only the fields you give change."}, t.updateProject)
+		Description: "Change a project's name, key, description, privacy or dates. Only the fields you give change; " +
+			"an empty date clears it. Making it private adds you as its member; making it public removes its members."}, t.updateProject)
 	mcp.AddTool(s, &mcp.Tool{Name: "archive_project",
 		Description: "Archive a project: it leaves the project list and its issues become read-only."}, t.archiveProject)
 	mcp.AddTool(s, &mcp.Tool{Name: "unarchive_project", Description: "Restore an archived project."}, t.unarchiveProject)
@@ -38,17 +40,25 @@ type projectIn struct {
 }
 
 type createProjectIn struct {
-	Workspace   string `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
-	Name        string `json:"name"`
-	Key         string `json:"key" jsonschema:"2–5 letters, such as ENG"`
-	Description string `json:"description,omitempty"`
+	Workspace   string   `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
+	Name        string   `json:"name"`
+	Key         string   `json:"key" jsonschema:"2–5 letters, such as ENG"`
+	Description string   `json:"description,omitempty"`
+	Private     bool     `json:"private,omitempty" jsonschema:"seen only by its members and workspace admins"`
+	Members     []string `json:"members,omitempty" jsonschema:"a private project's members besides you: emails or names"`
+	StartDate   string   `json:"start_date,omitempty" jsonschema:"YYYY-MM-DD"`
+	TargetDate  string   `json:"target_date,omitempty" jsonschema:"YYYY-MM-DD, on or after the start date"`
 }
 
 type updateProjectIn struct {
 	Workspace   string  `json:"workspace" jsonschema:"workspace slug, from list_workspaces"`
 	Project     string  `json:"project" jsonschema:"project key, such as ENG"`
 	Name        *string `json:"name,omitempty"`
+	Key         *string `json:"key,omitempty" jsonschema:"new key, 2–5 letters; issue identifiers change with it"`
 	Description *string `json:"description,omitempty" jsonschema:"empty clears it"`
+	Private     *bool   `json:"private,omitempty"`
+	StartDate   *string `json:"start_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it"`
+	TargetDate  *string `json:"target_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it"`
 }
 
 type cycleIn struct {
@@ -82,10 +92,15 @@ type rolloverIn struct {
 }
 
 type project struct {
-	Key         string `json:"key"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Archived    bool   `json:"archived,omitempty"`
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Archived    bool     `json:"archived,omitempty"`
+	Private     bool     `json:"private,omitempty"`
+	Members     []person `json:"members,omitempty"` // a private project's members
+	StartDate   *string  `json:"start_date,omitempty"`
+	TargetDate  *string  `json:"target_date,omitempty"`
+	Health      *string  `json:"health,omitempty"` // its latest update's
 }
 
 // cycleT is a cycle as the API answers; the tools drop its id.
@@ -107,6 +122,21 @@ type cycleT struct {
 func (t *tools) createProject(ctx context.Context, _ *mcp.CallToolRequest, in createProjectIn) (*mcp.CallToolResult, any, error) {
 	var p project
 	form := url.Values{"name": {in.Name}, "key": {in.Key}, "description": {in.Description}}
+	if in.Private {
+		form.Set("private", "true")
+	}
+	for k, v := range map[string]string{"start_date": in.StartDate, "target_date": in.TargetDate} {
+		if v != "" {
+			form.Set(k, v)
+		}
+	}
+	if len(in.Members) > 0 {
+		ids, err := t.memberIDs(ctx, in.Workspace, in.Members)
+		if err != nil {
+			return nil, nil, err
+		}
+		form["member_ids"] = ids
+	}
 	if err := t.api.post(ctx, ws(in.Workspace, "projects"), form, &p); err != nil {
 		return nil, nil, err
 	}
@@ -114,19 +144,28 @@ func (t *tools) createProject(ctx context.Context, _ *mcp.CallToolRequest, in cr
 }
 
 func (t *tools) updateProject(ctx context.Context, _ *mcp.CallToolRequest, in updateProjectIn) (*mcp.CallToolResult, any, error) {
-	// The API replaces name, key and description together, so the fields left out are read first.
+	// The API replaces name, key and description together, so the fields left out are read first; privacy and dates
+	// change only when sent.
 	var p project
 	if err := t.api.get(ctx, ws(in.Workspace, "projects", in.Project), nil, &p); err != nil {
 		return nil, nil, err
 	}
-	if in.Name != nil {
-		p.Name = *in.Name
-	}
-	if in.Description != nil {
-		p.Description = *in.Description
+	path := ws(in.Workspace, "projects", p.Key)
+	for _, f := range []struct{ to, from *string }{{&p.Name, in.Name}, {&p.Key, in.Key}, {&p.Description, in.Description}} {
+		if f.from != nil {
+			*f.to = *f.from
+		}
 	}
 	form := url.Values{"name": {p.Name}, "key": {p.Key}, "description": {p.Description}}
-	if err := t.api.post(ctx, ws(in.Workspace, "projects", p.Key), form, &p); err != nil {
+	if in.Private != nil {
+		form.Set("private", strconv.FormatBool(*in.Private))
+	}
+	for k, v := range map[string]*string{"start_date": in.StartDate, "target_date": in.TargetDate} {
+		if v != nil {
+			form.Set(k, *v)
+		}
+	}
+	if err := t.api.post(ctx, path, form, &p); err != nil {
 		return nil, nil, err
 	}
 	return result(p)

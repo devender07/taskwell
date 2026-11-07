@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"slices"
@@ -67,10 +69,42 @@ func (a *api) send(ctx context.Context, method, path string, form url.Values, li
 	if err != nil {
 		return nil, "", fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Authorization", a.auth)
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
+	return a.exec(req, limit)
+}
+
+// upload posts fields plus data as the multipart "file" named name, and decodes the JSON answer into out.
+func (a *api) upload(ctx context.Context, path string, fields url.Values, name string, data []byte, out any) error {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, vs := range fields {
+		for _, v := range vs {
+			_ = mw.WriteField(k, v) // writes to a bytes.Buffer don't fail
+		}
+	}
+	fw, _ := mw.CreateFormFile("file", name)
+	_, _ = fw.Write(data)
+	_ = mw.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.base+path, &buf)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	body, _, err := a.exec(req, 8<<20) // an import dry run lists every row
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode taskwell api: %w", err)
+	}
+	return nil
+}
+
+// exec sends req with the caller's token and returns the answer's body and Content-Type, or the API's error.
+func (a *api) exec(req *http.Request, limit int64) ([]byte, string, error) {
+	req.Header.Set("Authorization", a.auth)
 	res, err := a.client.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("call taskwell api: %w", err)
