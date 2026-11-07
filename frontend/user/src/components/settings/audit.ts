@@ -27,6 +27,9 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   'integration.disconnected': 'Disconnected an integration',
   'trash.emptied': 'Emptied the trash',
   'issue.purged': 'Deleted an issue permanently',
+  'billing.plan_changed': 'Changed the plan',
+  'billing.disputed': 'Payment disputed',
+  'billing.refunded': 'Payment refunded',
 }
 
 const text = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -63,6 +66,8 @@ export function auditDetail(action: string, d: Record<string, unknown>): string 
     case 'project.member_added':
     case 'project.member_removed':
       return text(d.email)
+    case 'billing.plan_changed':
+      return `${capital(text(d.from))} → ${capital(text(d.to))}`
     case 'trash.emptied':
       return plural(count(d.count), 'issue')
     case 'issue.purged':

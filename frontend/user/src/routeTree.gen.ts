@@ -43,6 +43,7 @@ import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
 import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
 import { Route as AppWorkspaceMainSettingsAuditRouteImport } from './routes/_app/$workspace/_main/settings/audit'
+import { Route as AppWorkspaceMainSettingsBillingRouteImport } from './routes/_app/$workspace/_main/settings/billing'
 import { Route as AppWorkspaceMainSettingsFeedbackRouteImport } from './routes/_app/$workspace/_main/settings/feedback'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
@@ -243,6 +244,12 @@ const AppWorkspaceMainSettingsAuditRoute =
     path: '/audit',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
+const AppWorkspaceMainSettingsBillingRoute =
+  AppWorkspaceMainSettingsBillingRouteImport.update({
+    id: '/billing',
+    path: '/billing',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
 const AppWorkspaceMainSettingsFeedbackRoute =
   AppWorkspaceMainSettingsFeedbackRouteImport.update({
     id: '/feedback',
@@ -383,6 +390,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/$workspace/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -433,6 +441,7 @@ export interface FileRoutesByTo {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/$workspace/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -488,6 +497,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/_app/$workspace/_main/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/_app/$workspace/_main/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/_app/$workspace/_main/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -543,6 +553,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/audit'
+    | '/$workspace/settings/billing'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -593,6 +604,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/audit'
+    | '/$workspace/settings/billing'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -647,6 +659,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
     | '/_app/$workspace/_main/settings/audit'
+    | '/_app/$workspace/_main/settings/billing'
     | '/_app/$workspace/_main/settings/feedback'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
@@ -924,6 +937,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsAuditRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
+    '/_app/$workspace/_main/settings/billing': {
+      id: '/_app/$workspace/_main/settings/billing'
+      path: '/billing'
+      fullPath: '/$workspace/settings/billing'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsBillingRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
     '/_app/$workspace/_main/settings/feedback': {
       id: '/_app/$workspace/_main/settings/feedback'
       path: '/feedback'
@@ -1074,6 +1094,7 @@ interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
   AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
   AppWorkspaceMainSettingsAuditRoute: typeof AppWorkspaceMainSettingsAuditRoute
+  AppWorkspaceMainSettingsBillingRoute: typeof AppWorkspaceMainSettingsBillingRoute
   AppWorkspaceMainSettingsFeedbackRoute: typeof AppWorkspaceMainSettingsFeedbackRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
@@ -1098,6 +1119,7 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
     AppWorkspaceMainSettingsApiTokensRoute:
       AppWorkspaceMainSettingsApiTokensRoute,
     AppWorkspaceMainSettingsAuditRoute: AppWorkspaceMainSettingsAuditRoute,
+    AppWorkspaceMainSettingsBillingRoute: AppWorkspaceMainSettingsBillingRoute,
     AppWorkspaceMainSettingsFeedbackRoute:
       AppWorkspaceMainSettingsFeedbackRoute,
     AppWorkspaceMainSettingsIntegrationsRoute:

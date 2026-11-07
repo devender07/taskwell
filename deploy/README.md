@@ -75,3 +75,19 @@ Browsers upload straight to the R2 bucket with presigned PUTs, and files are ser
 Check: open an image in the app; in the browser's network panel it should redirect from `api.taskwell.dev/api/files/…`
 to `files.taskwell.dev/…` and load with `200`.
 Worker logs: `npx wrangler@4 tail` from `cdn/`. Worker check: `node cdn/worker.check.mjs`.
+
+## Billing (Stripe)
+
+Plans are paid with Stripe (docs/billing-plan.md). Once per Stripe account, sandbox first, then live (needs `jq`):
+
+```sh
+deploy/stripe-setup.sh sk_test_... https://api.taskwell.dev   # prints stripe_webhook_secret
+```
+
+It makes the Pro and Ultimate prices (lookup keys `pro_monthly`, `ultimate_monthly`, USD with INR), the default
+customer portal configuration and the webhook endpoint, reusing what exists. It needs a full secret key; give the API
+a restricted key (`rk_…`) instead: write on Customers, Checkout Sessions, Customer portal and Subscriptions, read on
+Prices, Products and Charges (a dispute's customer is read from its charge). Put that key in `stripe_secret_key` and
+the printed `whsec_…` in `stripe_webhook_secret` (admin app Config page, or `system.json`). Both empty: billing is off,
+and the Starter limits still apply. Locally: `stripe listen --forward-to localhost:8090/api/billing/webhook` and use
+the `whsec_…` it prints.

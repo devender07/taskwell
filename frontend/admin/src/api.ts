@@ -9,7 +9,8 @@ export type AdminAccount = Admin & { created_at: string; mfa: boolean; last_seen
 export type Enrolment = { secret: string; url: string; recovery_codes: string[] }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
 export type Setting = { key: string; value: string; secret: boolean; has_value?: boolean; description: string; updated_at: string }
-export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string }
+export const PLANS = { starter: 'Starter', pro: 'Pro', ultimate: 'Ultimate' }
+export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string; plan: keyof typeof PLANS; comped: boolean }
 export type UserRow = {
   id: string
   name: string

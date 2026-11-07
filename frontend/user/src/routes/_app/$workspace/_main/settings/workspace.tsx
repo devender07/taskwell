@@ -16,6 +16,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/workspace'
 function WorkspaceSettings() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
   const { used_bytes: used, quota_bytes: quota } = Route.useLoaderData()
+  const usage = quota === null ? `${formatBytes(used)} used` : `${formatBytes(used)} of ${formatBytes(quota)} used`
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
       <header className="page-top grid gap-2">
@@ -28,12 +29,12 @@ function WorkspaceSettings() {
       </section>
       <section className="grid gap-3 p-6 bg-surface border rounded-lg" aria-labelledby="storage-title">
         <h2 id="storage-title" className="text-label">Storage</h2>
-        <p className="text-body-sm text-secondary m-0">
-          {formatBytes(used)} of {formatBytes(quota)} used
-        </p>
-        <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={`${formatBytes(used)} of ${formatBytes(quota)} used`} className="home-bar">
-          <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
-        </span>
+        <p className="text-body-sm text-secondary m-0">{usage}</p>
+        {quota === null ? null : (
+          <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={usage} className="home-bar">
+            <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
+          </span>
+        )}
       </section>
       {can(workspace, 'members.invite') ? (
         <section className="grid gap-4 p-6 bg-surface border rounded-lg">

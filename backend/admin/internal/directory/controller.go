@@ -1,7 +1,9 @@
 package directory
 
 import (
+	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -17,12 +19,13 @@ const (
 )
 
 type Handler struct {
-	model *model
-	auth  web.Authenticator
+	model  *model
+	auth   web.Authenticator
+	stripe string // Stripe's API base; tests point it at httptest
 }
 
 func New(db *pgxpool.Pool, auth web.Authenticator) *Handler {
-	return &Handler{model: &model{db: db}, auth: auth}
+	return &Handler{model: &model{db: db}, auth: auth, stripe: stripeBase}
 }
 
 // search reads ?q= (cut to maxQuery characters) and the 1-based ?page= (anything invalid is page 1) as a query and an offset.
@@ -81,5 +84,57 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 		return nil
 	}
 	web.WriteJSON(w, http.StatusOK, u)
+	return nil
+}
+
+// setPlan comps the workspace with the form's plan (comped=true), or clears its comp (comped=false): back to its
+// Stripe subscription's plan while one is active, else Starter.
+func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
+	ctx := r.Context()
+	var id pgtype.UUID
+	if id.Scan(r.PathValue("id")) != nil {
+		web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+		return nil
+	}
+	plan, comped := r.FormValue("plan"), r.FormValue("comped")
+	switch {
+	case comped != "true" && comped != "false":
+		web.WriteErr(w, http.StatusBadRequest, "Choose whether the plan is comped.")
+		return nil
+	case comped == "true" && !slices.Contains([]string{"starter", "pro", "ultimate"}, plan):
+		web.WriteErr(w, http.StatusBadRequest, "Choose a plan.")
+		return nil
+	}
+	if comped == "false" {
+		subID, status, found, err := h.model.subscription(ctx, r.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		if !found {
+			web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+			return nil
+		}
+		plan = "starter"
+		if subID != nil && status != nil && slices.Contains([]string{"active", "trialing", "past_due"}, *status) {
+			key, err := h.model.stripeKey(ctx)
+			if err != nil {
+				return err
+			}
+			if plan, err = subscriptionPlan(ctx, h.stripe, key, *subID); err != nil {
+				slog.WarnContext(ctx, "read stripe subscription", "subscription", *subID, "err", err)
+				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the workspace's subscription from Stripe. Try again.")
+				return nil
+			}
+		}
+	}
+	ws, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true")
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+		return nil
+	}
+	web.WriteJSON(w, http.StatusOK, ws)
 	return nil
 }

@@ -22,7 +22,7 @@ function FileManager() {
   const { workspace } = Route.useParams()
   const { projects, storage } = Route.useLoaderData()
   const { used_bytes: used, quota_bytes: quota } = storage
-  const usage = `${formatBytes(used)} of ${formatBytes(quota)} used`
+  const usage = quota === null ? `${formatBytes(used)} used` : `${formatBytes(used)} of ${formatBytes(quota)} used`
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
@@ -30,9 +30,11 @@ function FileManager() {
         <h1 className="text-h2">Files</h1>
         <div className="grid gap-2" style={{ maxWidth: 400 }}>
           <span className="text-caption text-secondary">{usage}</span>
-          <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={usage} className="home-bar">
-            <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
-          </span>
+          {quota === null ? null : (
+            <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={usage} className="home-bar">
+              <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
+            </span>
+          )}
         </div>
       </header>
       {projects.length ? (

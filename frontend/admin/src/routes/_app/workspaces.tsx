@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { formatDate, listQuery, validateListSearch, type WorkspaceRow } from '@/api'
+import { formatDate, listQuery, PLANS, validateListSearch, type WorkspaceRow } from '@/api'
 import { Pager, SearchForm } from '@/components/app/list-controls'
+import { PlanButton } from '@/components/workspaces/plan-button'
 import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/workspaces')({
@@ -23,10 +24,12 @@ function Workspaces() {
             <tr>
               <th>Name</th>
               <th>Slug</th>
+              <th>Plan</th>
               <th className="num">Members</th>
               <th className="num">Projects</th>
               <th className="num">Issues</th>
               <th>Created</th>
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -34,15 +37,20 @@ function Workspaces() {
               <tr key={w.id}>
                 <td className="text-primary font-510">{w.name}</td>
                 <td className="text-secondary">{w.slug}</td>
+                <td>
+                  {PLANS[w.plan] ?? w.plan}
+                  {w.comped ? <span className="text-secondary"> · comped</span> : null}
+                </td>
                 <td className="num">{w.members}</td>
                 <td className="num">{w.projects}</td>
                 <td className="num">{w.issues}</td>
                 <td className="text-secondary">{formatDate(w.created_at)}</td>
+                <td className="text-right"><PlanButton workspace={w} /></td>
               </tr>
             ))}
             {workspaces.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-secondary text-center">No workspaces found.</td>
+                <td colSpan={8} className="text-secondary text-center">No workspaces found.</td>
               </tr>
             ) : null}
           </tbody>

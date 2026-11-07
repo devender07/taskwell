@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
@@ -28,6 +29,7 @@ var (
 	errTaken     = errors.New("workspace slug taken")
 	errNoCreate  = errors.New("not allowed to create workspaces")
 	errLastAdmin = errors.New("last admin")
+	errFull      = errors.New("workspace full")
 	errNameTaken = errors.New("role name taken")
 )
 
@@ -368,6 +370,39 @@ func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, 
 	return ok, nil
 }
 
+// seatsFull reports whether the workspace's members plus its pending invites to other emails than email fill its
+// plan, and the plan's member limit.
+// ponytail: concurrent invites each see the same count and can overshoot by a few; joining still stops at the limit.
+func (m *model) seatsFull(ctx context.Context, workspaceID, email string) (bool, int, error) {
+	p, err := plan.Limits(ctx, m.db, workspaceID)
+	if err != nil || p.Members == 0 {
+		return false, 0, err
+	}
+	var n int
+	if err := m.db.QueryRow(ctx,
+		`select (select count(*) from workspace_members where workspace_id = $1)
+		      + (select count(*) from workspace_invites where workspace_id = $1 and email <> $2 and expires_at > now())`,
+		workspaceID, email).Scan(&n); err != nil {
+		return false, 0, fmt.Errorf("count seats: %w", err)
+	}
+	return n >= p.Members, p.Members, nil
+}
+
+// roomFor locks the workspace row in tx (so concurrent joins count in turn) and returns errFull when its members
+// fill its plan and the user isn't one of them.
+func roomFor(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
+	var id string
+	var n int
+	if err := tx.QueryRow(ctx, `select w.plan, (select count(*) from workspace_members m where m.workspace_id = w.id and m.user_id <> $2)
+		  from workspaces w where w.id = $1 for no key update of w`, workspaceID, userID).Scan(&id, &n); err != nil {
+		return fmt.Errorf("check room: %w", err)
+	}
+	if p, ok := plan.Get(id); ok && p.Members > 0 && n >= p.Members {
+		return errFull
+	}
+	return nil
+}
+
 // invitesChanged is the event for a change to the workspace's invites (the members page lists them).
 func invitesChanged(ws *Workspace, actorID string) realtime.Event {
 	p := realtime.Workspace(ws.Slug)
@@ -567,8 +602,11 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 }
 
 // join adds the user to the invite's workspace with the invite's role (keeping any existing role), and a guest to its
-// projects, and deletes the invite with its invite notifications, in tx. Returns the workspace as the user sees it.
+// projects (errFull when the plan's members are taken), and deletes the invite with its invite notifications, in tx. Returns the workspace as the user sees it.
 func join(ctx context.Context, tx pgx.Tx, userID, inviteID, workspaceID string) (*Workspace, error) {
+	if err := roomFor(ctx, tx, workspaceID, userID); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx,
 		`insert into workspace_members (workspace_id, user_id, role_id)
 		 select i.workspace_id, $2, coalesce(i.role_id, r.id)

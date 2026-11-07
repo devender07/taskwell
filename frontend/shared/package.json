@@ -13,6 +13,7 @@
     "./button.css": "./src/components/button/button.css",
     "./validate": "./src/validate/validate.ts",
     "./time": "./src/time/relative.ts",
+    "./money": "./src/money/money.ts",
     "./list": "./src/list/list.ts",
     "./api-url": "./src/api-url/api-url.ts",
     "./logo": "./src/components/logo/logo.tsx",

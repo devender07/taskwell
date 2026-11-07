@@ -138,7 +138,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] Roadmap view: project start/target dates, milestones, timeline with cycles (docs/roadmap-plan.md)
 - [x] Customer feedback intake (docs/feedback-plan.md): public form link per workspace, Feedback inbox (new / linked / archived), link to or create an issue, customer feedback on the issue page, `feedback.manage`
 - [x] Public API and webhooks (docs/webhooks-plan.md): API reference at `/docs/api`; signed outbound webhooks for issue.created / issue.updated / issue.deleted / comment.created with retries, delivery log and redeliver (Settings → Webhooks, `integrations.manage`)
-- Billing (Stripe, per seat)
+- [x] Billing (docs/billing-plan.md): flat per-workspace plans (Starter free 5 members / 2 GB, Pro $29 · ₹1,499 10 members / 100 GB, Ultimate $79 · ₹3,999 unlimited) with Stripe Checkout and the customer portal; INR for Indian timezones; member and storage limits; webhook sync; admins comp plans; pricing on the landing page
 - [x] Import (docs/import-plan.md): CSV from Linear, Jira or any CSV with a Title column, and GitHub repositories ("Import issues" on the projects list and project pages); preview first, then one transaction; statuses, priorities, labels, assignees by email or name, comments; no notifications
 - [x] Bulk actions (docs/bulk-actions-plan.md): checkboxes on list rows, Shift-click ranges, `X` / `Esc`; change status, assignee, priority, cycle, add or remove labels, or delete in one all-or-nothing request
 - [x] Project updates (docs/project-updates-plan.md): written updates with a health (on track, at risk, off track) on the project page; health on the project, projects list, roadmap and Home; in the activity feed

@@ -25,6 +25,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/aitest"
 	"github.com/devender07/taskwell/backend/user/internal/analytics"
 	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/billing"
 	"github.com/devender07/taskwell/backend/user/internal/chat"
 	"github.com/devender07/taskwell/backend/user/internal/cycle"
 	"github.com/devender07/taskwell/backend/user/internal/db"
@@ -231,6 +232,7 @@ func main() {
 	fileH.Register(mux)
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
+	billing.New(pool, cfg, authenticate, wsH.Member).Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })

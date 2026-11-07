@@ -542,7 +542,8 @@ export type FilesPage = { folder: Folder | null; path: { id: string; name: strin
 // What uploads accept (the API checks the bytes too).
 export const MEDIA_TYPES = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm'
 
-export type StorageUsage = { used_bytes: number; quota_bytes: number }
+// quota_bytes: null on a plan with unlimited storage.
+export type StorageUsage = { used_bytes: number; quota_bytes: number | null }
 
 // The folder's listing (no folder = root, "attachments" = the issue attachments); q searches the whole project.
 export const projectFilesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/files`
@@ -567,6 +568,34 @@ export const deleteFolder = (workspace: string, project: string, id: string) =>
   api(`${foldersPath(workspace, project)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 export const storagePath = (workspace: string) => `${workspacePath(workspace)}/storage`
 export const startExport = (workspace: string) => api<{ url: string }>(`${workspacePath(workspace)}/export`, new FormData())
+
+export type PlanId = 'starter' | 'pro' | 'ultimate'
+export type Currency = 'usd' | 'inr'
+// members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Stripe is unreachable.
+export type Plan = { id: PlanId; name: string; members: number | null; storage_bytes: number | null; prices: Record<Currency, number> | null }
+export type Billing = {
+  plan: PlanId
+  comped: boolean
+  status: string | null
+  currency: Currency
+  renews_at: string | null
+  cancel_at_period_end: boolean
+  members: { used: number; limit: number | null }
+  storage: { used_bytes: number; limit_bytes: number | null }
+  can_manage: boolean
+  enabled: boolean
+}
+export const plansPath = '/billing/plans'
+export const billingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
+// Picks INR for a workspace not yet billed when the profile has no timezone.
+export const browserTZ = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+export function startCheckout(workspace: string, plan: PlanId) {
+  const form = new FormData()
+  form.set('plan', plan)
+  form.set('tz', browserTZ())
+  return api<{ url: string }>(`${billingPath(workspace)}/checkout`, form)
+}
+export const openBillingPortal = (workspace: string) => api<{ url: string }>(`${billingPath(workspace)}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
 const avatarVersions = new Map<string, number>()
@@ -671,7 +700,7 @@ export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
 export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
 
-export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash'
+export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash' | 'billing'
 // actor: null when the user is gone and no name was copied; id null when only the copies are left.
 export type AuditEntry = {
   id: string

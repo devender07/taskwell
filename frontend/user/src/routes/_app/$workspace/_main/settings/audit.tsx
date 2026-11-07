@@ -13,6 +13,7 @@ const CATEGORIES: { value: AuditCategory | 'all'; label: string }[] = [
   { value: 'workspace', label: 'Workspace' },
   { value: 'integrations', label: 'Integrations' },
   { value: 'trash', label: 'Trash' },
+  { value: 'billing', label: 'Billing' },
 ]
 
 type Search = { category?: AuditCategory; before?: string }

@@ -46,6 +46,7 @@ var Categories = map[string][]string{
 	"workspace":    {"workspace"},
 	"integrations": {"webhook", "integration"},
 	"trash":        {"trash", "issue"},
+	"billing":      {"billing"},
 }
 
 // Actor is who made the change; ID is nil once they're deleted (Name and Email are the copies).
