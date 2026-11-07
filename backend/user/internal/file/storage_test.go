@@ -74,6 +74,7 @@ func TestDirectAvatar(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 	user := dbtest.User(t, pool, "Direct")
+	var uploadSized func(body []byte, size int) string
 	post := func(path string, fields map[string]string) (int, string) {
 		var body bytes.Buffer
 		mw := multipart.NewWriter(&body)
@@ -88,8 +89,10 @@ func TestDirectAvatar(t *testing.T) {
 		mux.ServeHTTP(rec, req)
 		return rec.Code, rec.Body.String()
 	}
-	upload := func(body []byte) string {
-		code, res := post("/api/me/uploads", map[string]string{"name": "me.png", "size": strconv.Itoa(len(body)), "type": "image/png"})
+	var put func(body []byte)
+	upload := func(body []byte) string { return uploadSized(body, len(body)) }
+	uploadSized = func(body []byte, size int) string {
+		code, res := post("/api/me/uploads", map[string]string{"name": "me.png", "size": strconv.Itoa(size), "type": "image/png"})
 		var s struct {
 			ID      string
 			URL     string
@@ -98,18 +101,21 @@ func TestDirectAvatar(t *testing.T) {
 		if code != http.StatusCreated || json.Unmarshal([]byte(res), &s) != nil {
 			t.Fatalf("start = %d %s", code, res)
 		}
-		req, _ := http.NewRequest(http.MethodPut, s.URL, bytes.NewReader(body))
-		for k, v := range s.Headers {
-			req.Header.Set(k, v)
+		put = func(body []byte) {
+			req, _ := http.NewRequest(http.MethodPut, s.URL, bytes.NewReader(body))
+			for k, v := range s.Headers {
+				req.Header.Set(k, v)
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("PUT = %d", res.StatusCode)
+			}
 		}
-		put, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		put.Body.Close()
-		if put.StatusCode != http.StatusOK {
-			t.Fatalf("PUT = %d", put.StatusCode)
-		}
+		put(body)
 		return s.ID
 	}
 
@@ -128,6 +134,20 @@ func TestDirectAvatar(t *testing.T) {
 	if code, res := post("/api/me/avatar", map[string]string{"file_id": id}); code != http.StatusBadRequest || !strings.Contains(res, errNoUpload) {
 		t.Fatalf("finish again = %d %s", code, res)
 	}
+	// The PUT link still works after finishing, but only reaches the staged key: the checked file can't change.
+	put([]byte("<html>swapped after the check</html>"))
+	if b, err := files.Start(t.Context(), id, 8); err != nil || !bytes.Equal(b, png[:8]) {
+		t.Fatalf("finished file changed: %q %v", b, err)
+	}
+
+	// Bytes of another size than declared are refused and deleted.
+	id = uploadSized(png, len(png)+10)
+	if code, res := post("/api/me/avatar", map[string]string{"file_id": id}); code != http.StatusBadRequest || !strings.Contains(res, errNoUpload) {
+		t.Fatalf("finish wrong size = %d %s", code, res)
+	}
+	if obj, err := files.Head(t.Context(), id); err != nil || obj != nil {
+		t.Fatalf("wrong-size object still there: %v %v", obj, err)
+	}
 
 	id = upload([]byte("<html>not a png</html>"))
 	if code, res := post("/api/me/avatar", map[string]string{"file_id": id}); code != http.StatusBadRequest || !strings.Contains(res, errChooseImage) {
@@ -135,5 +155,25 @@ func TestDirectAvatar(t *testing.T) {
 	}
 	if obj, err := files.Head(t.Context(), id); err != nil || obj != nil {
 		t.Fatalf("refused object still there: %v %v", obj, err)
+	}
+
+	// Unfinished avatar uploads are capped per user.
+	for i := range maxAvatarUploads + 1 {
+		code, res := post("/api/me/uploads", map[string]string{"name": "me.png", "size": "10", "type": "image/png"})
+		if want := http.StatusCreated; i == maxAvatarUploads {
+			want = http.StatusTooManyRequests
+			if code != want {
+				t.Fatalf("upload %d = %d %s", i, code, res)
+			}
+		} else if code != want {
+			t.Fatalf("upload %d = %d %s", i, code, res)
+		}
+	}
+	// Expired ones are reaped when the next starts, freeing the cap.
+	if _, err := pool.Exec(t.Context(), `update uploads set created_at = now() - interval '2 hours' where user_id = $1`, user); err != nil {
+		t.Fatal(err)
+	}
+	if code, res := post("/api/me/uploads", map[string]string{"name": "me.png", "size": "10", "type": "image/png"}); code != http.StatusCreated {
+		t.Fatalf("upload after expiry = %d %s", code, res)
 	}
 }

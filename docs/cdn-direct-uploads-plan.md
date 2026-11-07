@@ -40,11 +40,18 @@ insert into system_config (key, value, secret, description) values
 on conflict (key) do nothing;
 ```
 
-An upload is live for **1 hour** (`uploadTTL`); the presigned PUT URL for **15 minutes**. The sweep deletes `uploads`
-rows older than 1 hour; their objects (no `files` row) go with the existing orphan sweep after 24 hours.
+An upload is live for **1 hour** (`uploadTTL`); the presigned PUT URL for **15 minutes**.
 
-Quota: a workspace's used bytes become `sum(files.size) + sum(uploads.size)` of live uploads, so parallel uploads
-can't overshoot it (this also closes the existing `ponytail:` note's gap for direct uploads).
+**Staging key.** The presigned PUT is for `uploads/<id>`, never for the file's key `<id>`. Finishing copies the staged
+object to `<id>` (`CopyObject`, headers kept), deletes the staged one, and runs every check on the copy. The client
+keeps a working PUT link for up to 15 minutes, but it only reaches the staging key, so a checked file can't be
+swapped afterwards.
+
+Quota: a workspace's used bytes are `sum(files.size) + sum(uploads.size)` of **every** unfinished upload, expired or
+not, since its bytes may still be staged. Starting an upload first reaps the workspace's expired uploads (rows and
+staged objects), so an abandoned upload stops counting at the next upload. The daily sweep reaps the rest and removes
+staged objects older than 24 hours. Avatars have no quota: a user may have at most 5 unfinished avatar uploads
+(`429` "Too many uploads at once. Try again in an hour.").
 
 ## Bucket CORS
 
@@ -90,9 +97,12 @@ about them (fields, permissions, responses, realtime events) is unchanged:
 Finishing checks, in order:
 1. A live `uploads` row with that id, this user, and this workspace (null for the avatar endpoint); else `400`
    `{"errors": {"file": "Upload not found. Try again."}}`.
-2. `HeadObject`: the object exists and its size equals the declared size; else `400` same message.
-3. The first 512 bytes (ranged `GetObject`) sniff (`http.DetectContentType`) to the declared type, and it's a media
-   type (an image for avatars); else delete the object, `400` errChooseMedia (errChooseImage for avatars).
+2. Promote the staged object to `<id>` (unless an earlier finish already did); nothing staged → `400` same message
+   (the upload stays live, so the client can PUT and retry).
+3. On the promoted copy: its size equals the declared size (else delete it and the row, `400` same message); the
+   first 512 bytes sniff (`http.DetectContentType`) to the declared type, the stored Content-Type and
+   Content-Disposition match, and it's a media type (an image for avatars); else delete it and the row, `400`
+   errChooseMedia (errChooseImage for avatars).
 4. One transaction: insert the `files` row **with the upload's id** (the object key), apply the placement, delete the
    `uploads` row, publish the same realtime event as today.
 

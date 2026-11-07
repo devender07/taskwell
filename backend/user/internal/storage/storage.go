@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
@@ -143,13 +145,13 @@ func (s *Store) URL(ctx context.Context, id string) (string, error) {
 	return req.URL, nil
 }
 
-// Old calls fn with the keys of objects last modified before cutoff, a page (up to 1000) at a time.
-func (s *Store) Old(ctx context.Context, cutoff time.Time, fn func(keys []string) error) error {
+// Old calls fn with the keys starting with prefix of objects last modified before cutoff, a page (up to 1000) at a time.
+func (s *Store) Old(ctx context.Context, prefix string, cutoff time.Time, fn func(keys []string) error) error {
 	c, bucket, err := s.bucket(ctx)
 	if err != nil {
 		return err
 	}
-	p := s3.NewListObjectsV2Paginator(c, &s3.ListObjectsV2Input{Bucket: &bucket})
+	p := s3.NewListObjectsV2Paginator(c, &s3.ListObjectsV2Input{Bucket: &bucket, Prefix: &prefix})
 	for p.HasMorePages() {
 		page, err := p.NextPage(ctx)
 		if err != nil {
@@ -170,14 +172,19 @@ func (s *Store) Old(ctx context.Context, cutoff time.Time, fn func(keys []string
 	return nil
 }
 
-// PresignPut returns a presigned PUT for the object id and the headers the client must send with it (the client sets
-// Content-Length itself; it's signed too).
+// StagePrefix keys a direct upload's bytes until Promote moves them to the file's id: the client only ever gets a
+// PUT for the staged key, so once the API has checked a file nobody can change it.
+const StagePrefix = "uploads/"
+
+// PresignPut returns a presigned PUT for the upload id's staged key and the headers the client must send with it (the
+// client sets Content-Length itself; it's signed too).
 func (s *Store) PresignPut(ctx context.Context, id, contentType, disposition string, size int64) (string, map[string]string, error) {
 	c, bucket, err := s.bucket(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	req, err := s3.NewPresignClient(c).PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &id,
+	key := StagePrefix + id
+	req, err := s3.NewPresignClient(c).PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &key,
 		ContentType: &contentType, ContentLength: &size, ContentDisposition: &disposition, CacheControl: &cacheControl},
 		s3.WithPresignExpires(putTTL))
 	if err != nil {
@@ -185,6 +192,28 @@ func (s *Store) PresignPut(ctx context.Context, id, contentType, disposition str
 	}
 	return req.URL, map[string]string{"Content-Type": contentType, "Content-Disposition": disposition,
 		"Cache-Control": cacheControl}, nil
+}
+
+// Promote copies the upload id's staged object (with its headers) to the object id and deletes the staged one. It
+// reports false when nothing is staged.
+func (s *Store) Promote(ctx context.Context, id string) (bool, error) {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return false, err
+	}
+	_, err = c.CopyObject(ctx, &s3.CopyObjectInput{Bucket: &bucket, Key: &id, CopySource: aws.String(bucket + "/" + StagePrefix + id)})
+	var nk *types.NoSuchKey
+	var api smithy.APIError
+	if errors.As(err, &nk) || errors.As(err, &api) && api.ErrorCode() == "NoSuchKey" {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("copy object: %w", err)
+	}
+	if err := s.Delete(ctx, StagePrefix+id); err != nil {
+		slog.Warn("delete staged upload", "id", id, "err", err) // the sweep removes it later
+	}
+	return true, nil
 }
 
 // Object is what Head reports of a stored object.

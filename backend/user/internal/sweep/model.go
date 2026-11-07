@@ -33,8 +33,6 @@ var retention = []struct{ table, where string }{
 	{"realtime_conns", `seen_at < now() - interval '1 hour'`},
 	// Every bucket refills within an hour (the slowest, emails per address, in 15 minutes); a missing row is a full one.
 	{"rate_limits", `at < now() - interval '1 hour'`},
-	// Direct uploads live an hour (file.liveUpload); an unfinished one's object goes with the bucket sweep.
-	{"uploads", `created_at < now() - interval '1 hour'`},
 	// Registration is open, so clients with no code in flight go after 30 days; their tokens live on in api_tokens.
 	{"oauth_codes", `expires_at < now()`},
 	// Trashed issues go for good after 30 days, with their comments and the rest (cascades).
@@ -128,6 +126,19 @@ func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration)
 			return all, nil
 		}
 	}
+}
+
+// deleteExpiredUploads deletes direct uploads past their hour (file.liveUpload) and returns their ids.
+func (m model) deleteExpiredUploads(ctx context.Context) ([]string, error) {
+	rows, err := m.db.Query(ctx, `delete from uploads where created_at < now() - interval '1 hour' returning id::text`)
+	if err != nil {
+		return nil, fmt.Errorf("delete expired uploads: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("delete expired uploads: %w", err)
+	}
+	return ids, nil
 }
 
 // missingFiles returns the ids without a files row.

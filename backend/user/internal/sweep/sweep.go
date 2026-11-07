@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -93,6 +94,14 @@ func (s *Sweeper) Sweep(ctx context.Context) error {
 	for _, id := range ids {
 		s.remove(ctx, id)
 	}
+	expired, err := m.deleteExpiredUploads(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range expired {
+		s.remove(ctx, storage.StagePrefix+id)
+	}
+	counts = append(counts, "uploads", len(expired))
 	orphans, err := s.sweepBucket(ctx, m)
 	if err != nil {
 		return err
@@ -108,15 +117,18 @@ func (s *Sweeper) remove(ctx context.Context, id string) {
 }
 
 // sweepBucket removes objects older than fileGrace that have no row: their workspace was deleted, or a crash came
-// between deleting a row and its object.
+// between deleting a row and its object. Staged uploads that old are all leftovers (an upload lives an hour).
 // ponytail: lists the whole bucket each sweep; fine to ~1M objects, then use S3 inventory or lifecycle rules.
 func (s *Sweeper) sweepBucket(ctx context.Context, m model) (int, error) {
 	removed := 0
-	err := s.files.Old(ctx, time.Now().Add(-fileGrace), func(keys []string) error {
+	err := s.files.Old(ctx, "", time.Now().Add(-fileGrace), func(keys []string) error {
 		var ids []string
 		for _, k := range keys {
 			if web.IsUUID(k) {
 				ids = append(ids, k)
+			} else if strings.HasPrefix(k, storage.StagePrefix) {
+				s.remove(ctx, k)
+				removed++
 			}
 		}
 		if len(ids) == 0 {

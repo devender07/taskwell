@@ -23,15 +23,16 @@ import (
 )
 
 const (
-	maxAvatar       = 2 << 20
-	maxField        = 1 << 10 // a form field beside the file
-	errChooseFile   = "Choose a file."
-	errChooseImage  = "Choose a PNG, JPEG, GIF or WebP image."
-	errChooseMedia  = "Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be uploaded."
-	errFileNotFound = "File not found."
-	errNoUpload     = "Upload not found. Try again."
-	tooLargeAvatar  = "Images must be 2 MB or smaller."
-	avatarCache     = "private, max-age=300"
+	maxAvatar        = 2 << 20
+	maxAvatarUploads = 5       // unfinished at once per user
+	maxField         = 1 << 10 // a form field beside the file
+	errChooseFile    = "Choose a file."
+	errChooseImage   = "Choose a PNG, JPEG, GIF or WebP image."
+	errChooseMedia   = "Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be uploaded."
+	errFileNotFound  = "File not found."
+	errNoUpload      = "Upload not found. Try again."
+	tooLargeAvatar   = "Images must be 2 MB or smaller."
+	avatarCache      = "private, max-age=300"
 )
 
 // Handler serves uploads. Each file is stored as the object <id>: the key is always the server's uuid, never anything
@@ -150,6 +151,9 @@ func (h *Handler) startUpload(w http.ResponseWriter, r *http.Request, userID str
 		web.Err(w, http.StatusNotFound, "Workspace not found.")
 		return nil
 	}
+	if err := h.reap(r.Context(), &ws.ID, userID); err != nil {
+		return err
+	}
 	limit, tooLarge, err := h.room(r.Context(), ws.ID)
 	if err != nil {
 		return err
@@ -157,8 +161,35 @@ func (h *Handler) startUpload(w http.ResponseWriter, r *http.Request, userID str
 	return h.start(w, r, &ws.ID, userID, limit, tooLarge, false)
 }
 
+// reap drops the workspace's expired uploads (nil: the user's avatar uploads) and their staged bytes, so they stop
+// counting against the quota.
+func (h *Handler) reap(ctx context.Context, workspaceID *string, userID string) error {
+	ids, err := h.model.reapUploads(ctx, workspaceID, userID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := h.files.Delete(ctx, storage.StagePrefix+id); err != nil {
+			slog.Warn("delete expired upload", "id", id, "err", err) // the sweep removes it later
+		}
+	}
+	return nil
+}
+
 // startAvatarUpload begins a direct upload of an avatar, finished by POST /api/me/avatar.
+// Avatars have no quota, so a user may only have a few unfinished at once.
 func (h *Handler) startAvatarUpload(w http.ResponseWriter, r *http.Request, userID string) error {
+	if err := h.reap(r.Context(), nil, userID); err != nil {
+		return err
+	}
+	n, err := h.model.avatarUploads(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	if n >= maxAvatarUploads {
+		web.Err(w, http.StatusTooManyRequests, "Too many uploads at once. Try again in an hour.")
+		return nil
+	}
 	return h.start(w, r, nil, userID, maxAvatar, tooLargeAvatar, true)
 }
 
@@ -208,17 +239,32 @@ func (h *Handler) finish(ctx context.Context, id string, workspaceID *string, us
 	if err != nil || f == nil {
 		return nil, errNoUpload, err
 	}
+	// Checks run on the promoted copy, which only the API can write: the client's PUT only ever reached the staged key.
 	obj, err := h.files.Head(ctx, id)
-	if err != nil || obj == nil || obj.Size != f.Size {
-		return nil, errNoUpload, err
-	}
-	head, err := h.files.Start(ctx, id, 512)
 	if err != nil {
 		return nil, "", err
 	}
-	// The store may not hold the client to the signed headers (SeaweedFS doesn't), so check what it stored.
-	if got := http.DetectContentType(head); got == f.ContentType && obj.ContentType == f.ContentType &&
-		obj.Disposition == Disposition(f.ContentType, f.Name) && (isImage(got) || !imageOnly && isMedia(got)) {
+	if obj == nil {
+		promoted, err := h.files.Promote(ctx, id)
+		if err != nil || !promoted {
+			return nil, errNoUpload, err // not PUT yet: the upload stays live for a retry
+		}
+		if obj, err = h.files.Head(ctx, id); err != nil || obj == nil {
+			return nil, errNoUpload, err
+		}
+	}
+	ok := obj.Size == f.Size
+	if ok {
+		head, err := h.files.Start(ctx, id, 512)
+		if err != nil {
+			return nil, "", err
+		}
+		// The store may not hold the client to the signed headers (SeaweedFS doesn't), so check what it stored.
+		got := http.DetectContentType(head)
+		ok = got == f.ContentType && obj.ContentType == f.ContentType && obj.Disposition == Disposition(f.ContentType, f.Name) &&
+			(isImage(got) || !imageOnly && isMedia(got))
+	}
+	if ok {
 		return f, "", nil
 	}
 	if err := h.files.Delete(ctx, id); err != nil {
@@ -226,6 +272,9 @@ func (h *Handler) finish(ctx context.Context, id string, workspaceID *string, us
 	}
 	if err := h.model.dropUpload(ctx, id); err != nil {
 		return nil, "", err
+	}
+	if obj.Size != f.Size {
+		return nil, errNoUpload, nil
 	}
 	if imageOnly {
 		return nil, errChooseImage, nil

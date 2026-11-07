@@ -107,6 +107,31 @@ func (m *model) upload(ctx context.Context, id, userID string, workspaceID *stri
 	return &f, nil
 }
 
+// reapUploads deletes the expired uploads to the workspace (nil: the user's avatar uploads) and returns their ids, so
+// their staged bytes can go too.
+func (m *model) reapUploads(ctx context.Context, workspaceID *string, userID string) ([]string, error) {
+	rows, err := m.db.Query(ctx, `delete from uploads where not (`+liveUpload+`)
+		and case when $1::uuid is null then workspace_id is null and user_id = $2 else workspace_id = $1 end
+		returning id::text`, workspaceID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("reap uploads: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("reap uploads: %w", err)
+	}
+	return ids, nil
+}
+
+// avatarUploads counts the user's unfinished avatar uploads.
+func (m *model) avatarUploads(ctx context.Context, userID string) (int, error) {
+	var n int
+	if err := m.db.QueryRow(ctx, `select count(*) from uploads where workspace_id is null and user_id = $1`, userID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count avatar uploads: %w", err)
+	}
+	return n, nil
+}
+
 // dropUpload deletes the upload's row, as when its bytes were refused.
 func (m *model) dropUpload(ctx context.Context, id string) error {
 	if _, err := m.db.Exec(ctx, `delete from uploads where id = $1`, id); err != nil {
@@ -115,11 +140,12 @@ func (m *model) dropUpload(ctx context.Context, id string) error {
 	return nil
 }
 
-// used returns the bytes the workspace's files and live uploads take up.
+// used returns the bytes the workspace's files and unfinished uploads take up. An expired upload counts until it's
+// reaped (reapUploads, or the sweep), since its bytes may still be in the bucket.
 func (m *model) used(ctx context.Context, workspaceID string) (int64, error) {
 	var n int64
 	if err := m.db.QueryRow(ctx, `select (select coalesce(sum(size), 0) from files where workspace_id = $1)
-		+ (select coalesce(sum(size), 0) from uploads where workspace_id = $1 and `+liveUpload+`)`, workspaceID).Scan(&n); err != nil {
+		+ (select coalesce(sum(size), 0) from uploads where workspace_id = $1)`, workspaceID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sum file sizes: %w", err)
 	}
 	return n, nil
