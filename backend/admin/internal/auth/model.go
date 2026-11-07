@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/admin/internal/audit"
+	"github.com/devender07/taskwell/backend/admin/internal/realtime"
 	"github.com/devender07/taskwell/backend/shared/totp"
 )
 
@@ -82,10 +83,11 @@ func (m *model) fail(ctx context.Context, key string) error {
 	return nil
 }
 
-// Enrolment is a new TOTP factor, printed once by the CLI: the setup key, the otpauth:// URL and the recovery codes.
+// Enrolment is a new TOTP factor, shown once (by the CLI or to the admin who added the account): the setup key, the otpauth:// URL and the recovery codes.
 type Enrolment struct {
-	Secret, URL   string
-	RecoveryCodes []string
+	Secret        string   `json:"secret"`
+	URL           string   `json:"url"`
+	RecoveryCodes []string `json:"recovery_codes"`
 }
 
 // EnrolMFA enrols a second factor for the admin with this email when they have none yet, and records it in the
@@ -123,29 +125,139 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 				return err
 			}
 		}
-		secret := totp.NewSecret()
-		sealed, err := totp.Seal(key, got.ID, secret)
-		if err != nil {
+		if e, err = enrol(ctx, tx, key, got.ID, got.Email, replace); err != nil || e == nil {
 			return err
 		}
-		codes, hashes := totp.NewRecoveryCodes()
-		onConflict := `do nothing`
-		if replace {
-			onConflict = `do update set secret = excluded.secret, enabled_at = now(), last_step = 0,
-			  recovery_codes = excluded.recovery_codes`
-		}
-		tag, err := tx.Exec(ctx, `insert into admin_mfa (admin_id, secret, enabled_at, recovery_codes) values ($1, $2, now(), $3)
-			on conflict (admin_id) `+onConflict, got.ID, sealed, hashes)
-		if err != nil || tag.RowsAffected() == 0 {
-			return err
-		}
-		e = &Enrolment{Secret: secret, URL: totp.URL("Taskwell admin", got.Email, secret), RecoveryCodes: codes}
 		return audit.Record(ctx, tx, "", audit.MFAEnrolled, got.Email, "cli")
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("enrol mfa: %w", err)
 	}
 	return u, e, nil
+}
+
+// enrol gives the admin a new TOTP factor in tx, replacing theirs only when replace is set; nil when they kept theirs.
+func enrol(ctx context.Context, tx pgx.Tx, key []byte, id, email string, replace bool) (*Enrolment, error) {
+	secret := totp.NewSecret()
+	sealed, err := totp.Seal(key, id, secret)
+	if err != nil {
+		return nil, err
+	}
+	codes, hashes := totp.NewRecoveryCodes()
+	onConflict := `do nothing`
+	if replace {
+		onConflict = `do update set secret = excluded.secret, enabled_at = now(), last_step = 0,
+		  recovery_codes = excluded.recovery_codes`
+	}
+	tag, err := tx.Exec(ctx, `insert into admin_mfa (admin_id, secret, enabled_at, recovery_codes) values ($1, $2, now(), $3)
+		on conflict (admin_id) `+onConflict, id, sealed, hashes)
+	if err != nil || tag.RowsAffected() == 0 {
+		return nil, err
+	}
+	return &Enrolment{Secret: secret, URL: totp.URL("Taskwell admin", email, secret), RecoveryCodes: codes}, nil
+}
+
+// --- admin accounts ---
+
+// Account is an admins row as GET /api/admins lists it.
+type Account struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Email      string     `json:"email"`
+	CreatedAt  time.Time  `json:"created_at"`
+	MFA        bool       `json:"mfa"`
+	LastSeenAt *time.Time `json:"last_seen_at"`
+}
+
+const accountColumns = `a.id::text, a.name, a.email, a.created_at,
+	exists(select 1 from admin_mfa f where f.admin_id = a.id and f.enabled_at is not null),
+	(select max(s.last_seen_at) from admin_sessions s where s.admin_id = a.id and s.mfa_at is not null)`
+
+func scanAccount(row pgx.Row) (Account, error) {
+	var a Account
+	err := row.Scan(&a.ID, &a.Name, &a.Email, &a.CreatedAt, &a.MFA, &a.LastSeenAt)
+	return a, err
+}
+
+// accounts returns every admin, oldest first.
+func (m *model) accounts(ctx context.Context) ([]Account, error) {
+	rows, err := m.db.Query(ctx, `select `+accountColumns+` from admins a order by a.created_at, a.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list admins: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Account, error) { return scanAccount(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list admins: %w", err)
+	}
+	return out, nil
+}
+
+// passwordHash returns the admin's password hash, "" when there is no such admin.
+func (m *model) passwordHash(ctx context.Context, id string) (string, error) {
+	var h string
+	err := m.db.QueryRow(ctx, `select password_hash from admins where id = $1`, id).Scan(&h)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("read admin password: %w", err)
+	}
+	return h, nil
+}
+
+// createAccount adds an admin with their TOTP factor and audits it, in one transaction. The account is nil when the
+// email is taken.
+func (m *model) createAccount(ctx context.Context, key []byte, actorID, ip, name, email, hash string) (*Account, *Enrolment, error) {
+	var a *Account
+	var e *Enrolment
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var id string
+		err := tx.QueryRow(ctx, `insert into admins (name, email, password_hash) values ($1, $2, $3)
+			on conflict (email) do nothing returning id::text`, name, email, hash).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if e, err = enrol(ctx, tx, key, id, email, false); err != nil {
+			return err
+		}
+		got, err := scanAccount(tx.QueryRow(ctx, `select `+accountColumns+` from admins a where a.id = $1`, id))
+		if err != nil {
+			return err
+		}
+		a = &got
+		if err := audit.Record(ctx, tx, actorID, audit.AdminCreate, email, ip); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, "admin.admins", actorID, "/admins")
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("create admin: %w", err)
+	}
+	return a, e, nil
+}
+
+// removeAccount deletes the admin (their sessions and factor go with them) and audits it; false when there is none.
+func (m *model) removeAccount(ctx context.Context, actorID, ip, id string) (bool, error) {
+	var found bool
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var email string
+		err := tx.QueryRow(ctx, `delete from admins where id = $1 returning email`, id).Scan(&email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		if err := audit.Record(ctx, tx, actorID, audit.AdminRemove, email, ip); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, "admin.admins", actorID, "/admins")
+	})
+	if err != nil {
+		return false, fmt.Errorf("remove admin: %w", err)
+	}
+	return found, nil
 }
 
 // --- sessions ---

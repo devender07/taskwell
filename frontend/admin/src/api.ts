@@ -5,6 +5,8 @@ import { apiUrl } from '@taskwell/shared/api-url'
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
 export type Admin = { id: string; name: string; email: string }
+export type AdminAccount = Admin & { created_at: string; mfa: boolean; last_seen_at: string | null }
+export type Enrolment = { secret: string; url: string; recovery_codes: string[] }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
 export type Setting = { key: string; value: string; secret: boolean; has_value?: boolean; description: string; updated_at: string }
 export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string }

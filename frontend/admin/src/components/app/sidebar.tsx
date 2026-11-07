@@ -22,6 +22,7 @@ export function Sidebar({ email }: { email: string }) {
       <Link to="/" activeOptions={{ exact: true }}>Overview</Link>
       <Link to="/users">Users</Link>
       <Link to="/workspaces">Workspaces</Link>
+      <Link to="/admins">Admins</Link>
       <Link to="/config">Config</Link>
       <Link to="/audit">Audit log</Link>
       <div className="sidebar-foot">

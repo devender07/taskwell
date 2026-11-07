@@ -16,6 +16,8 @@ const ACTIONS: Record<string, string> = {
   'user.unsuspend': 'Unsuspended user',
   'admin.promote': 'Made platform admin',
   'admin.mfa_reset': 'Reset two-step sign-in',
+  'admin.create': 'Added admin',
+  'admin.remove': 'Removed admin',
   signin: 'Signed in',
   'signin.failed': 'Failed sign-in',
   'signin.mfa_failed': 'Wrong sign-in code',
@@ -33,7 +35,7 @@ function Audit() {
     <main className="grid gap-6 w-full px-6 py-10">
       <header className="grid gap-2">
         <h1 className="text-h2">Audit log</h1>
-        <p className="text-body-sm text-secondary">Admin sign-ins, setting changes, suspensions and promotions. Entries can't be edited or deleted.</p>
+        <p className="text-body-sm text-secondary">Admin sign-ins, setting changes, suspensions and admin accounts added or removed. Entries can't be edited or deleted.</p>
       </header>
       <div className="table-wrap bg-surface border rounded-lg">
         <table className="table">

@@ -17,6 +17,8 @@ const (
 	UserUnsuspend = "user.unsuspend"
 	Promote       = "admin.promote"   // no longer recorded (admins have their own accounts); kept for old rows
 	MFAReset      = "admin.mfa_reset" // from the CLI; target: the email
+	AdminCreate   = "admin.create"    // target: the new admin's email
+	AdminRemove   = "admin.remove"    // target: the removed admin's email
 	SignIn        = "signin"
 	SignInFailed  = "signin.failed"     // wrong password; target: the email tried
 	MFAFailed     = "signin.mfa_failed" // wrong code after the right password

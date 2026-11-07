@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppAdminsRouteImport } from './routes/_app/admins'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
@@ -29,6 +30,11 @@ const authSigninRoute = authSigninRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminsRoute = AppAdminsRouteImport.update({
+  id: '/admins',
+  path: '/admins',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAuditRoute = AppAuditRouteImport.update({
@@ -55,6 +61,7 @@ const AppWorkspacesRoute = AppWorkspacesRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/signin': typeof authSigninRoute
+  '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
   '/users': typeof AppUsersRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/signin': typeof authSigninRoute
+  '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
   '/users': typeof AppUsersRoute
@@ -72,6 +80,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/(auth)/signin': typeof authSigninRoute
+  '/_app/admins': typeof AppAdminsRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/users': typeof AppUsersRoute
@@ -80,13 +89,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/signin' | '/audit' | '/config' | '/users' | '/workspaces'
+  fullPaths:
+    | '/'
+    | '/signin'
+    | '/admins'
+    | '/audit'
+    | '/config'
+    | '/users'
+    | '/workspaces'
   fileRoutesByTo: FileRoutesByTo
-  to: '/signin' | '/audit' | '/config' | '/users' | '/workspaces' | '/'
+  to:
+    | '/signin'
+    | '/admins'
+    | '/audit'
+    | '/config'
+    | '/users'
+    | '/workspaces'
+    | '/'
   id:
     | '__root__'
     | '/_app'
     | '/(auth)/signin'
+    | '/_app/admins'
     | '/_app/audit'
     | '/_app/config'
     | '/_app/users'
@@ -122,6 +146,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admins': {
+      id: '/_app/admins'
+      path: '/admins'
+      fullPath: '/admins'
+      preLoaderRoute: typeof AppAdminsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/audit': {
       id: '/_app/audit'
       path: '/audit'
@@ -154,6 +185,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAdminsRoute: typeof AppAdminsRoute
   AppAuditRoute: typeof AppAuditRoute
   AppConfigRoute: typeof AppConfigRoute
   AppUsersRoute: typeof AppUsersRoute
@@ -162,6 +194,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAdminsRoute: AppAdminsRoute,
   AppAuditRoute: AppAuditRoute,
   AppConfigRoute: AppConfigRoute,
   AppUsersRoute: AppUsersRoute,
