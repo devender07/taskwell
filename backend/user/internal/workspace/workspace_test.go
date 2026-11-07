@@ -73,10 +73,10 @@ func TestEmail(t *testing.T) {
 }
 
 func TestPermissions(t *testing.T) {
-	if got := effective(roleAdmin, nil); !slices.Equal(got, allPermissions()) || len(got) != len(catalog) {
+	if got := Effective(roleAdmin, nil); !slices.Equal(got, allPermissions()) || len(got) != len(catalog) {
 		t.Errorf("admin effective = %v, want the whole catalog", got)
 	}
-	if got := effective("member", []string{"issues.create"}); !slices.Equal(got, []string{"issues.create"}) {
+	if got := Effective("member", []string{"issues.create"}); !slices.Equal(got, []string{"issues.create"}) {
 		t.Errorf("member effective = %v", got)
 	}
 	member := []string{"issues.create", "comments.create"}

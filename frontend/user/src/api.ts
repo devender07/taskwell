@@ -566,6 +566,7 @@ export const saveFolder = (workspace: string, project: string, form: FormData, i
 export const deleteFolder = (workspace: string, project: string, id: string) =>
   api(`${foldersPath(workspace, project)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 export const storagePath = (workspace: string) => `${workspacePath(workspace)}/storage`
+export const startExport = (workspace: string) => api<{ url: string }>(`${workspacePath(workspace)}/export`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
 const avatarVersions = new Map<string, number>()
