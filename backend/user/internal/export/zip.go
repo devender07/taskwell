@@ -53,7 +53,7 @@ func (h *Handler) writeZip(ctx context.Context, w io.Writer, e *Export) error {
 		return fmt.Errorf("write workspace.json: %w", err)
 	}
 
-	issues := [][]string{{"Identifier", "Project", "Title", "Description", "Status", "Priority", "Assignee", "Labels",
+	issues := [][]string{{"Identifier", "Project", "Title", "Description", "Status", "Priority", "Estimate", "Assignee", "Labels",
 		"Due date", "Cycle", "Created"}}
 	comments := [][]string{{"Issue", "Author", "Created", "Body"}}
 	for _, i := range e.Issues {
@@ -62,7 +62,7 @@ func (h *Handler) writeZip(ctx context.Context, w io.Writer, e *Export) error {
 			cycle = strconv.Itoa(*i.Cycle)
 		}
 		issues = append(issues, []string{i.Identifier, i.Project, i.Title, i.DescriptionText, i.Status, i.Priority,
-			deref(i.Assignee), strings.Join(i.Labels, ", "), deref(i.DueDate), cycle, i.CreatedAt.Format(time.RFC3339)})
+			estimate(i.Estimate), deref(i.Assignee), strings.Join(i.Labels, ", "), deref(i.DueDate), cycle, i.CreatedAt.Format(time.RFC3339)})
 		for _, c := range i.Comments {
 			comments = append(comments, []string{i.Identifier, deref(c.Author), c.CreatedAt.Format(time.RFC3339), c.BodyText})
 		}
@@ -141,4 +141,12 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// estimate is an issue's points as a CSV cell, "" when it has none.
+func estimate(n *int) string {
+	if n == nil {
+		return ""
+	}
+	return strconv.Itoa(*n)
 }

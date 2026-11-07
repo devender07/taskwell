@@ -165,7 +165,7 @@ func TestExport(t *testing.T) {
 		return rows[0]
 	}
 	if got := header("issues.csv"); !slices.Equal(got, []string{"Identifier", "Project", "Title", "Description", "Status",
-		"Priority", "Assignee", "Labels", "Due date", "Cycle", "Created"}) {
+		"Priority", "Estimate", "Assignee", "Labels", "Due date", "Cycle", "Created"}) {
 		t.Errorf("issues.csv header %v", got)
 	}
 	if got := header("comments.csv"); !slices.Equal(got, []string{"Issue", "Author", "Created", "Body"}) {

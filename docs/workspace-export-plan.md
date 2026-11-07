@@ -80,8 +80,9 @@ People are emails (`assignee`, `created_by`, `author`, `uploaded_by`), null when
 stored rich-text JSON; `*_text` the plain text of it (reuse the existing doc-to-text helper if there is one, else a
 small walker in the export package). Deleted (trashed) issues are left out.
 
-`issues.csv` columns: `Identifier, Project, Title, Description, Status, Priority, Assignee, Labels, Due date, Cycle,
-Created`. Title/Description/Status/Priority/Assignee/Labels/Due date match what the CSV import reads.
+`issues.csv` columns: `Identifier, Project, Title, Description, Status, Priority, Estimate, Assignee, Labels, Due date,
+Cycle, Created`; issues in `workspace.json` carry `estimate` too. Starting an export records `workspace.exported` in
+the audit log. Only files in a project are included (chat, DM and note uploads stay out), and feedback has no title. Title/Description/Status/Priority/Assignee/Labels/Due date match what the CSV import reads.
 `comments.csv`: `Issue, Author, Created, Body`.
 
 **Visibility:** only projects the exporter can see (`can_see_project`), so a private project they aren't in stays

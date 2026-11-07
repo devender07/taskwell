@@ -62,6 +62,9 @@ func TestProjectVisibility(t *testing.T) {
 	if err := Record(ctx, pool, wsID, ann, "project.created", "SEC", map[string]any{"name": "Secret"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := Record(ctx, pool, wsID, ann, "issue.purged", "SEC-4", map[string]any{"title": "Secret plan"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := Record(ctx, pool, wsID, ann, "role.deleted", "Triage", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -72,19 +75,19 @@ func TestProjectVisibility(t *testing.T) {
 		}
 		return len(es)
 	}
-	if a, b := seen(ann), seen(bob); a != 2 || b != 1 {
-		t.Fatalf("private project: admin sees %d, non-member sees %d; want 2 and 1", a, b)
+	if a, b := seen(ann), seen(bob); a != 3 || b != 1 {
+		t.Fatalf("private project: admin sees %d, non-member sees %d; want 3 and 1", a, b)
 	}
 	if _, err := pool.Exec(ctx, `insert into project_members (project_id, user_id) values ($1, $2)`, projectID, bob); err != nil {
 		t.Fatal(err)
 	}
-	if b := seen(bob); b != 2 {
-		t.Fatalf("project member sees %d, want 2", b)
+	if b := seen(bob); b != 3 {
+		t.Fatalf("project member sees %d, want 3", b)
 	}
 	if _, err := pool.Exec(ctx, `delete from projects where id = $1`, projectID); err != nil {
 		t.Fatal(err)
 	}
-	if a, b := seen(ann), seen(bob); a != 2 || b != 1 {
-		t.Fatalf("deleted project: admin sees %d, member sees %d; want 2 and 1", a, b)
+	if a, b := seen(ann), seen(bob); a != 3 || b != 1 {
+		t.Fatalf("deleted project: admin sees %d, member sees %d; want 3 and 1", a, b)
 	}
 }

@@ -99,6 +99,7 @@ type Issue struct {
 	Description     json.RawMessage `json:"description"`
 	Status          string          `json:"status"`
 	Priority        string          `json:"priority"`
+	Estimate        *int            `json:"estimate"`
 	Assignee        *string         `json:"assignee"`
 	CreatedBy       *string         `json:"created_by"`
 	Labels          []string        `json:"labels"`
@@ -226,7 +227,7 @@ func (m *model) load(ctx context.Context, wsID, userID string) (*Export, error) 
 		}, wsID, userID); err != nil {
 			return err
 		}
-		if e.Issues, err = collect(ctx, tx, `select i.id::text, p.key || '-' || i.number, p.key, i.title, i.description, s.name, i.priority, a.email, cb.email,
+		if e.Issues, err = collect(ctx, tx, `select i.id::text, p.key || '-' || i.number, p.key, i.title, i.description, s.name, i.priority, i.estimate, a.email, cb.email,
 			  coalesce((select array_agg(l.name order by l.name) from issue_labels il join labels l on l.id = il.label_id
 			            where il.issue_id = i.id), '{}'),
 			  i.due_date::text, c.number, pp.key || '-' || pi.number, i.created_at, i.updated_at,
@@ -241,7 +242,7 @@ func (m *model) load(ctx context.Context, wsID, userID string) (*Export, error) 
 			where i.workspace_id = $1 order by p.key, i.number`, func(row pgx.Row, x *Issue) error {
 			var priority int
 			err := row.Scan(&x.ID, &x.Identifier, &x.Project, &x.Title, &x.Description, &x.Status,
-				&priority, &x.Assignee, &x.CreatedBy, &x.Labels, &x.DueDate, &x.Cycle, &x.Parent, &x.CreatedAt, &x.UpdatedAt,
+				&priority, &x.Estimate, &x.Assignee, &x.CreatedBy, &x.Labels, &x.DueDate, &x.Cycle, &x.Parent, &x.CreatedAt, &x.UpdatedAt,
 				&x.Comments)
 			if priority >= 0 && priority < len(priorities) {
 				x.Priority = priorities[priority]

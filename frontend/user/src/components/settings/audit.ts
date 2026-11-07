@@ -1,6 +1,7 @@
 export const AUDIT_ACTIONS: Record<string, string> = {
   'workspace.renamed': 'Renamed the workspace',
   'workspace.url_changed': "Changed the workspace's URL",
+  'workspace.exported': 'Exported the workspace',
   'member.invited': 'Invited a member',
   'invite.resent': 'Resent an invite',
   'invite.canceled': 'Canceled an invite',

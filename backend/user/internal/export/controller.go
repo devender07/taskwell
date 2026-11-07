@@ -13,6 +13,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 const (
@@ -62,6 +63,9 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request, userID string) e
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		web.Err(w, http.StatusTooManyRequests, errTooMany)
 		return nil
+	}
+	if err := wsaudit.Record(r.Context(), h.model.db, ws.ID, userID, "workspace.exported", ws.Slug, nil); err != nil {
+		return err
 	}
 	web.JSON(w, http.StatusOK, map[string]string{"url": "/api/exports/" + sign(h.key, ws.ID, userID, h.now().Add(tokenTTL))})
 	return nil

@@ -42,12 +42,16 @@ It inserts in the caller's transaction (so an entry commits with its change and 
 actor's name and email. `ip` is `web.ClientIP(r)`. Handlers pass them down to the model call that owns the
 transaction.
 
-Actions (exact strings; `target` and `detail` as listed):
+Actions (exact strings; `target` and `detail` as listed). A `project.*` entry keeps its project's id and is listed
+only to who can see the project (admins, for a deleted one). Webhook targets are scheme and host only.
+
+
 
 | Action | Target | Detail |
 | --- | --- | --- |
 | `workspace.renamed` | new name | `{from, to}` |
 | `workspace.url_changed` | new slug | `{from, to}` |
+| `workspace.exported` | slug | (recorded when an export starts) |
 | `member.invited` | email | `{role, guest}` |
 | `invite.resent` | email | |
 | `invite.canceled` | email | |

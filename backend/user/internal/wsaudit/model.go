@@ -23,12 +23,14 @@ type Execer interface {
 
 // Record adds an entry by the actor ("" for nobody), copying their name and email, with the client IP of the request
 // on ctx (web.IP). Call it in the transaction that makes the change, so the two commit together. A project.* action's
-// target is the project's key: the entry keeps the project's id, so List shows it only to who can see that project.
+// target is the project's key and an issue.* action's the issue's identifier (KEY-number): the entry keeps that
+// project's id, so List shows it only to who can see the project.
 func Record(ctx context.Context, q Execer, workspaceID, actorID, action, target string, detail map[string]any) error {
 	if _, err := q.Exec(ctx,
 		`insert into workspace_audit (workspace_id, actor_id, actor_name, actor_email, action, target, detail, ip, project_id)
 		 select $1, u.id, coalesce(u.name, ''), coalesce(u.email, ''), $3, $4, coalesce($5::jsonb, '{}'), $6,
-		        case when $3 like 'project.%' then (select p.id from projects p where p.workspace_id = $1 and p.key = $4) end
+		        (select p.id from projects p where p.workspace_id = $1 and p.key = case
+		           when $3 like 'project.%' then $4 when $3 like 'issue.%' then regexp_replace($4, '-[0-9]+$', '') end)
 		   from (select) s left join users u on u.id = nullif($2, '')::uuid`,
 		workspaceID, actorID, action, target, detail, web.IP(ctx)); err != nil {
 		return fmt.Errorf("record %s: %w", action, err)
