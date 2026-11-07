@@ -57,7 +57,7 @@ export function useIssueDrag(options: Options) {
         suppressClick.current = true
         setDrag({ issue, at: targetAt(last.x, last.y), width: rect.width })
       }
-      const timer = setTimeout(begin, HOLD_MS)
+      const timer = pointerType === 'touch' ? setTimeout(begin, HOLD_MS) : undefined
       const last = { x: start.x, y: start.y }
       let frame = 0
       const autoScroll = () => {

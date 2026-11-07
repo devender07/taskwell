@@ -147,7 +147,8 @@
 @media (hover: hover) {
   .board-card:hover { border-color: rgba(var(--ink), 0.08); }
 }
-.board-card[data-draggable], .issue-row[data-draggable] { cursor: grab; }
+.board-card[data-draggable], .issue-row[data-draggable] { cursor: pointer; }
+body:has(.board-ghost), body:has(.board-ghost) * { cursor: grabbing !important; }
 .issue-row[data-draggable] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .board-card[data-dragging], .issue-row[data-dragging] { opacity: 0.4; }
 [data-drop] { position: relative; }
@@ -165,7 +166,6 @@
   opacity: 0.8;
   box-shadow: var(--ring) 0 0 0 1px, var(--drop);
   pointer-events: none;
-  cursor: grabbing;
 }
 
 .issue-form { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px 32px; }
