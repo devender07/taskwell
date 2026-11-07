@@ -13,6 +13,7 @@ import (
 
 	"github.com/devender07/taskwell/backend/user/internal/issue"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 var errNoHook = errors.New("webhook not found")
@@ -60,7 +61,10 @@ func (m *model) connect(ctx context.Context, workspaceID, provider, token, seale
 			`insert into git_hooks (workspace_id, provider, token, secret, created_by) values ($1, $2, $3, $4, $5)
 			 on conflict (workspace_id, provider) do update set token = excluded.token, secret = excluded.secret`,
 			workspaceID, provider, token, sealed, userID)
-		return err
+		if err != nil {
+			return err
+		}
+		return wsaudit.Record(ctx, tx, workspaceID, userID, "integration.connected", provider, nil)
 	})
 }
 
@@ -100,8 +104,10 @@ func (m *model) disconnect(ctx context.Context, workspaceID, provider string, e 
 	found := false
 	err := m.publishing(ctx, e, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `delete from git_hooks where workspace_id = $1 and provider = $2`, workspaceID, provider)
-		found = tag.RowsAffected() > 0
-		return err
+		if found = tag.RowsAffected() > 0; err != nil || !found {
+			return err
+		}
+		return wsaudit.Record(ctx, tx, workspaceID, e.Actor, "integration.disconnected", provider, nil)
 	})
 	return found, err
 }

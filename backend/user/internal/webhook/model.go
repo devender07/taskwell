@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 const maxWebhooks = 10
@@ -115,8 +116,10 @@ func (m *model) create(ctx context.Context, e realtime.Event, wsID, id, url stri
 			`insert into webhooks (id, workspace_id, url, secret, events, created_by)
 			 select $1, $2, $3, $4, $5, $6 where (select count(*) from webhooks where workspace_id = $2) < $7`,
 			id, wsID, url, sealed, events, userID, maxWebhooks)
-		ok = tag.RowsAffected() > 0
-		return err
+		if ok = tag.RowsAffected() > 0; err != nil || !ok {
+			return err
+		}
+		return wsaudit.Record(ctx, tx, wsID, userID, "webhook.created", url, nil)
 	})
 	return ok, err
 }
@@ -129,11 +132,30 @@ func (m *model) update(ctx context.Context, e realtime.Event, wsID, id string, u
 }
 
 func (m *model) setSecret(ctx context.Context, e realtime.Event, wsID, id, sealed string) (bool, error) {
-	return m.change(ctx, e, `update webhooks set secret = $3 where workspace_id = $1 and id = $2`, wsID, id, sealed)
+	return m.audited(ctx, e, wsID, "webhook.secret_rolled",
+		`update webhooks set secret = $3 where workspace_id = $1 and id = $2 returning url`, id, sealed)
 }
 
 func (m *model) delete(ctx context.Context, e realtime.Event, wsID, id string) (bool, error) {
-	return m.change(ctx, e, `delete from webhooks where workspace_id = $1 and id = $2`, wsID, id)
+	return m.audited(ctx, e, wsID, "webhook.deleted", `delete from webhooks where workspace_id = $1 and id = $2 returning url`, id)
+}
+
+// audited is change for sql (on workspace $1) returning the webhook's url, recording action by e's actor.
+func (m *model) audited(ctx context.Context, e realtime.Event, wsID, action, sql string, args ...any) (bool, error) {
+	found := false
+	err := publishing(ctx, m.db, e, func(tx pgx.Tx) error {
+		var url string
+		err := tx.QueryRow(ctx, sql, append([]any{wsID}, args...)...).Scan(&url)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		return wsaudit.Record(ctx, tx, wsID, e.Actor, action, url, nil)
+	})
+	return found, err
 }
 
 // ping queues a ping from the user to the webhook, active or not.

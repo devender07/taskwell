@@ -12,6 +12,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/db"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 // roleAdmin and roleGuest are the Admin and Guest roles' workspace_roles.builtin.
@@ -162,6 +163,16 @@ func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug s
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, ws.ID, name, slug); err != nil {
 			return err
+		}
+		if name != ws.Name {
+			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.renamed", name, map[string]any{"from": ws.Name, "to": name}); err != nil {
+				return err
+			}
+		}
+		if slug != ws.Slug {
+			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.url_changed", slug, map[string]any{"from": ws.Slug, "to": slug}); err != nil {
+				return err
+			}
 		}
 		e := event(ws, actorID, "workspace.changed", realtime.Workspace(ws.Slug), "/workspaces")
 		if slug != ws.Slug {
@@ -427,6 +438,14 @@ func (m *model) invite(ctx context.Context, ws *Workspace, email, invitedBy, rol
 		if err := inviteTouched(ctx, tx, inv.ID, invitedBy); err != nil {
 			return err
 		}
+		var guest bool
+		if err := tx.QueryRow(ctx, `select builtin is not distinct from 'guest' from workspace_roles where id = $1`, roleID).Scan(&guest); err != nil {
+			return err
+		}
+		if err := wsaudit.Record(ctx, tx, ws.ID, invitedBy, "member.invited", inv.Email,
+			map[string]any{"role": inv.Role.Name, "guest": guest}); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, invitedBy))
 	})
 	if err != nil {
@@ -454,6 +473,9 @@ func (m *model) renew(ctx context.Context, ws *Workspace, actorID, id string, to
 		if err := inviteTouched(ctx, tx, inv.ID, actorID); err != nil {
 			return err
 		}
+		if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "invite.resent", inv.Email, nil); err != nil {
+			return err
+		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, actorID))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -475,8 +497,16 @@ func (m *model) cancelInvite(ctx context.Context, ws *Workspace, actorID, id str
 		if err := inviteTouched(ctx, tx, id, actorID); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `delete from workspace_invites where workspace_id = $1 and id = $2`, ws.ID, id)
-		if deleted = tag.RowsAffected() == 1; err != nil || !deleted {
+		var email string
+		err := tx.QueryRow(ctx, `delete from workspace_invites where workspace_id = $1 and id = $2 returning email`, ws.ID, id).Scan(&email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		deleted = true
+		if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "invite.canceled", email, nil); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, invitesChanged(ws, actorID))
@@ -569,6 +599,13 @@ func join(ctx context.Context, tx pgx.Tx, userID, inviteID, workspaceID string) 
 	ws, err := scanWorkspace(tx.QueryRow(ctx,
 		`select `+wsCols+` from `+wsFrom+` where w.id = $1 and m.user_id = $2`, workspaceID, userID))
 	if err != nil {
+		return nil, err
+	}
+	var email string
+	if err := tx.QueryRow(ctx, `select email from users where id = $1`, userID).Scan(&email); err != nil {
+		return nil, err
+	}
+	if err := wsaudit.Record(ctx, tx, workspaceID, userID, "member.joined", email, map[string]any{"role": ws.Role.Name}); err != nil {
 		return nil, err
 	}
 	events := []realtime.Event{invitesChanged(&ws, userID), realtime.AdminWorkspaces(userID), realtime.InvitesChanged(userID, userID)}
@@ -849,6 +886,9 @@ func (m *model) createRole(ctx context.Context, ws *Workspace, actorID, name str
 			 select `+roleCols+` from r`, ws.ID, name, perms)); err != nil {
 			return err
 		}
+		if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "role.created", name, map[string]any{"permissions": perms}); err != nil {
+			return err
+		}
 		return rolesChanged(ctx, tx, ws, actorID, "")
 	})
 	if db.IsUniqueViolation(err) {
@@ -868,11 +908,24 @@ func (m *model) updateRole(ctx context.Context, ws *Workspace, actorID, id, name
 	}
 	var r Role
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var oldName string
+		var oldPerms []string
+		if err := tx.QueryRow(ctx, `select name, permissions from workspace_roles where workspace_id = $1 and id = $2 for update`,
+			ws.ID, id).Scan(&oldName, &oldPerms); err != nil {
+			return err
+		}
 		var err error
 		if r, err = scanRole(tx.QueryRow(ctx,
 			`with r as (update workspace_roles set name = $3, permissions = $4
 			             where workspace_id = $1 and id = $2 returning *)
 			 select `+roleCols+` from r`, ws.ID, id, name, perms)); err != nil {
+			return err
+		}
+		detail := map[string]any{"added": without(perms, oldPerms), "removed": without(oldPerms, perms)}
+		if oldName != name {
+			detail["renamed_from"] = oldName
+		}
+		if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "role.updated", name, detail); err != nil {
 			return err
 		}
 		return rolesChanged(ctx, tx, ws, actorID, r.ID)
@@ -915,10 +968,17 @@ func (m *model) deleteRole(ctx context.Context, ws *Workspace, actorID, id strin
 				return err
 			}
 		}
-		tag, err := tx.Exec(ctx,
-			`delete from workspace_roles where workspace_id = $1 and id = $2 and builtin is null`, workspaceID, id)
-		deleted = tag.RowsAffected() == 1
-		return err
+		var name string
+		err := tx.QueryRow(ctx,
+			`delete from workspace_roles where workspace_id = $1 and id = $2 and builtin is null returning name`, workspaceID, id).Scan(&name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		deleted = true
+		return wsaudit.Record(ctx, tx, workspaceID, actorID, "role.deleted", name, nil)
 	})
 	if err != nil {
 		return false, fmt.Errorf("delete role: %w", err)
@@ -934,6 +994,15 @@ func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userI
 	}
 	var mb *Member
 	err := m.keepingAdmin(ctx, ws.ID, func(tx pgx.Tx) error {
+		var from string
+		err := tx.QueryRow(ctx, `select r.name from workspace_members m join workspace_roles r on r.id = m.role_id
+			where m.workspace_id = $1 and m.user_id = $2`, ws.ID, userID).Scan(&from)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 		r, err := scanMember(tx.QueryRow(ctx,
 			`with m as (update workspace_members set role_id = $3 where workspace_id = $1 and user_id = $2 returning *)
 			 select `+memberCols+` from m join users u on u.id = m.user_id join workspace_roles r on r.id = m.role_id`,
@@ -945,6 +1014,11 @@ func (m *model) setMemberRole(ctx context.Context, ws *Workspace, actorID, userI
 			return err
 		}
 		mb = &r
+		if from != r.Role.Name {
+			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "member.role_changed", r.Email, map[string]any{"from": from, "to": r.Role.Name}); err != nil {
+				return err
+			}
+		}
 		if err := realtime.Publish(ctx, tx, event(ws, actorID, "members.changed", realtime.Workspace(ws.Slug)+"/members")); err != nil {
 			return err
 		}
@@ -969,6 +1043,17 @@ func (m *model) removeMember(ctx context.Context, ws *Workspace, actorID, userID
 	err := m.keepingAdmin(ctx, ws.ID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `delete from workspace_members where workspace_id = $1 and user_id = $2`, ws.ID, userID)
 		if removed = tag.RowsAffected() == 1; err != nil || !removed {
+			return err
+		}
+		action := "member.removed"
+		if actorID == userID {
+			action = "member.left"
+		}
+		var email string
+		if err := tx.QueryRow(ctx, `select email from users where id = $1`, userID).Scan(&email); err != nil {
+			return err
+		}
+		if err := wsaudit.Record(ctx, tx, ws.ID, actorID, action, email, nil); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(ctx, `update issues_all set assignee_id = null where workspace_id = $1 and assignee_id = $2`, ws.ID, userID); err != nil {

@@ -2,6 +2,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -42,6 +43,7 @@ func Wrap(authenticate func(*http.Request) (string, error), maxBody int64, fn Ha
 		if maxBody > 0 {
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		}
+		r = r.WithContext(context.WithValue(r.Context(), ipKey{}, ClientIP(r)))
 		userID, err := authenticate(r)
 		if err == nil && userID == "" {
 			Err(w, http.StatusUnauthorized, "Not signed in.")
@@ -54,6 +56,14 @@ func Wrap(authenticate func(*http.Request) (string, error), maxBody int64, fn Ha
 			Fail(w, r, err)
 		}
 	}
+}
+
+type ipKey struct{}
+
+// IP is the client address (ClientIP) of the signed-in request whose context this is; "" outside one.
+func IP(ctx context.Context) string {
+	ip, _ := ctx.Value(ipKey{}).(string)
+	return ip
 }
 
 // Public is Wrap for a request that needs no session.

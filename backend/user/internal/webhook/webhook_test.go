@@ -213,6 +213,14 @@ func TestAPI(t *testing.T) {
 	}
 	f.do(t, f.ann, "DELETE", "/"+wh.ID, nil, 204, nil)
 	f.do(t, f.ann, "GET", "/"+wh.ID+"/deliveries", nil, 404, nil)
+
+	var audit string
+	if err := f.pool.QueryRow(context.Background(), `select string_agg(action || ' ' || target, ', ' order by id) from workspace_audit
+		where workspace_id = $1 and target in ('https://hooks.example/a', 'https://hooks.example/b') and actor_id = $2`,
+		f.wsID, f.ann).Scan(&audit); err != nil ||
+		audit != "webhook.created https://hooks.example/a, webhook.secret_rolled https://hooks.example/b, webhook.deleted https://hooks.example/b" {
+		t.Errorf("audit log %q %v", audit, err)
+	}
 }
 
 type queued struct {

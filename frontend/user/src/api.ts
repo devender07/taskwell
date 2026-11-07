@@ -663,7 +663,26 @@ export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
 export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
 
+export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash'
+// actor: null when the user is gone and no name was copied; id null when only the copies are left.
+export type AuditEntry = {
+  id: string
+  at: string
+  actor: { id: string | null; name: string; email: string } | null
+  action: string
+  target: string
+  detail: Record<string, unknown>
+  ip: string
+}
+export type AuditPage = { entries: AuditEntry[]; more: boolean }
+
 export const workspacePath = (workspace: Workspace | string) => `/workspaces/${encodeURIComponent(typeof workspace === 'string' ? workspace : workspace.slug)}`
+export const auditPath = (slug: string, category?: AuditCategory, before?: string) => {
+  const q = new URLSearchParams()
+  if (category) q.set('category', category)
+  if (before) q.set('before', before)
+  return `${workspacePath(slug)}/audit${q.size ? `?${q}` : ''}`
+}
 export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`
 export const testRunsPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-runs`
 export const testRunPath = (workspace: Workspace, id: string) => `${workspacePath(workspace)}/test-runs/${encodeURIComponent(id)}`
