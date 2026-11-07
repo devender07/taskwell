@@ -20,3 +20,6 @@ deploy/config/system.json
 # Cloudflare Worker (cdn/): local state and dev secrets
 .wrangler/
 .dev.vars
+
+# Feature worktrees (git worktree add .worktrees/<name>)
+.worktrees/

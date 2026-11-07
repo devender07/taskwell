@@ -48,6 +48,10 @@ const (
 	PermFeedbackManage = "feedback.manage"
 	// PermAnalyticsView lets a member see other members' analytics and the team page.
 	PermAnalyticsView = "analytics.view"
+	// PermWorkspaceExport lets a member download the workspace's data (docs/workspace-export-plan.md).
+	PermWorkspaceExport = "workspace.export"
+	// PermAuditView lets a member read the workspace audit log (docs/workspace-audit-plan.md).
+	PermAuditView = "audit.view"
 )
 
 // catalog is every permission in display order.
@@ -56,6 +60,8 @@ var catalog = []Permission{
 	{permWorkspaceDelete, "Workspace", "Delete the workspace", true},
 	{permWorkspacesCreate, "Workspace", "Create new workspaces", true},
 	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
+	{PermWorkspaceExport, "Workspace", "Export workspace data", true},
+	{PermAuditView, "Workspace", "See the audit log", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},
