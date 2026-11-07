@@ -14,7 +14,6 @@ export const Route = createFileRoute('/_app/users')({
 
 function Users() {
   const { users, total } = Route.useLoaderData()
-  const { admin } = Route.useRouteContext()
   const search = Route.useSearch()
   return (
     <main className="grid gap-6 w-full px-6 py-10">
@@ -42,12 +41,9 @@ function Users() {
                 <td className="text-secondary">{formatDate(u.created_at)}</td>
                 <td className="text-secondary">{u.last_active_at ? relativeTime(u.last_active_at) : 'Never'}</td>
                 <td>
-                  <span className="flex gap-2">
-                    {u.suspended ? <span className="chip chip-danger">Suspended</span> : null}
-                    {u.platform_admin ? <span className="chip">Admin</span> : null}
-                  </span>
+                  {u.suspended ? <span className="chip chip-danger">Suspended</span> : null}
                 </td>
-                <td className="text-right">{u.id === admin.id ? null : <SuspendButton user={u} />}</td>
+                <td className="text-right"><SuspendButton user={u} /></td>
               </tr>
             ))}
             {users.length === 0 ? (

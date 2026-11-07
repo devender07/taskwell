@@ -23,14 +23,13 @@ type User struct {
 // model owns every query of the admin auth package.
 type model struct{ db *pgxpool.Pool }
 
-// adminWithPassword returns the unsuspended platform admin with this (normalized) email and their password hash;
-// the hash is nil when there is no such admin or they have no password.
+// adminWithPassword returns the admin with this (normalized) email and their password hash; the hash is nil when
+// there is no such admin.
 func (m *model) adminWithPassword(ctx context.Context, email string) (User, *string, error) {
 	var u User
 	var hash *string
 	err := m.db.QueryRow(ctx, `
-		select id::text, name, email, password_hash from users
-		where email = $1 and platform_admin and suspended_at is null`, email).Scan(&u.ID, &u.Name, &u.Email, &hash)
+		select id::text, name, email, password_hash from admins where email = $1`, email).Scan(&u.ID, &u.Name, &u.Email, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, nil, nil
 	}
@@ -40,12 +39,11 @@ func (m *model) adminWithPassword(ctx context.Context, email string) (User, *str
 	return u, hash, nil
 }
 
-// admin returns the unsuspended platform admin with this ID, or nil.
+// admin returns the admin with this ID, or nil.
 func (m *model) admin(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := m.db.QueryRow(ctx, `
-		select id::text, name, email from users
-		where id = $1 and platform_admin and suspended_at is null`, id).Scan(&u.ID, &u.Name, &u.Email)
+		select id::text, name, email from admins where id = $1`, id).Scan(&u.ID, &u.Name, &u.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -90,26 +88,23 @@ type Enrolment struct {
 	RecoveryCodes []string
 }
 
-// Promote makes the user with this email a platform admin and, when they have no second factor yet, enrols one; it
-// records both in the audit log. The enrolment is nil when they had a factor already, and the user is nil when
-// there is no such user or their email isn't verified (anyone can sign up with any address).
-func Promote(ctx context.Context, db *pgxpool.Pool, key []byte, email string) (*User, *Enrolment, error) {
-	return byEmailCLI(ctx, db, key, email, audit.Promote, false, `
-		update users set platform_admin = true where email = lower(trim($1)) and email_verified_at is not null
-		returning id::text, name, email`)
+// EnrolMFA enrols a second factor for the admin with this email when they have none yet, and records it in the
+// audit log. The enrolment is nil when they had a factor already, and the admin is nil when there is no such admin.
+func EnrolMFA(ctx context.Context, db *pgxpool.Pool, key []byte, email string) (*User, *Enrolment, error) {
+	return byEmailCLI(ctx, db, key, email, "", false, `select id::text, name, email from admins where email = lower(trim($1))`)
 }
 
-// ResetMFA replaces the platform admin's second factor with a new one and ends their admin sign-ins, and records it
-// in the audit log. The user is nil when there is no platform admin with this email.
+// ResetMFA replaces the admin's second factor with a new one and ends their admin sign-ins, and records it
+// in the audit log. The admin is nil when there is no admin with this email.
 func ResetMFA(ctx context.Context, db *pgxpool.Pool, key []byte, email string) (*User, *Enrolment, error) {
 	return byEmailCLI(ctx, db, key, email, audit.MFAReset, true, `
-		with u as (select id, name, email from users where email = lower(trim($1)) and platform_admin),
-		     s as (delete from admin_sessions where user_id in (select id from u))
+		with u as (select id, name, email from admins where email = lower(trim($1))),
+		     s as (delete from admin_sessions where admin_id in (select id from u))
 		select id::text, name, email from u`)
 }
 
-// byEmailCLI runs a CLI command's query (taking the email, returning the user), enrols a new factor (replacing one
-// only when replace is set) and audits it, in one transaction.
+// byEmailCLI runs a CLI command's query (taking the email, returning the admin), enrols a new factor (replacing one
+// only when replace is set) and audits it (action, when set, and the enrolment), in one transaction.
 func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action string, replace bool, query string) (*User, *Enrolment, error) {
 	var u *User
 	var e *Enrolment
@@ -123,8 +118,10 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 			return err
 		}
 		u = &got
-		if err := audit.Record(ctx, tx, "", action, got.Email, "cli"); err != nil {
-			return err
+		if action != "" {
+			if err := audit.Record(ctx, tx, "", action, got.Email, "cli"); err != nil {
+				return err
+			}
 		}
 		secret := totp.NewSecret()
 		sealed, err := totp.Seal(key, got.ID, secret)
@@ -137,8 +134,8 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 			onConflict = `do update set secret = excluded.secret, enabled_at = now(), last_step = 0,
 			  recovery_codes = excluded.recovery_codes`
 		}
-		tag, err := tx.Exec(ctx, `insert into admin_mfa (user_id, secret, enabled_at, recovery_codes) values ($1, $2, now(), $3)
-			on conflict (user_id) `+onConflict, got.ID, sealed, hashes)
+		tag, err := tx.Exec(ctx, `insert into admin_mfa (admin_id, secret, enabled_at, recovery_codes) values ($1, $2, now(), $3)
+			on conflict (admin_id) `+onConflict, got.ID, sealed, hashes)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}
@@ -146,7 +143,7 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 		return audit.Record(ctx, tx, "", audit.MFAEnrolled, got.Email, "cli")
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", action, err)
+		return nil, nil, fmt.Errorf("enrol mfa: %w", err)
 	}
 	return u, e, nil
 }
@@ -159,7 +156,7 @@ func (m *model) startSession(ctx context.Context, userID string, mfaDone bool, d
 	var id string
 	err := m.db.QueryRow(ctx, `
 		with gone as (delete from admin_sessions where expires_at < now())
-		insert into admin_sessions (user_id, mfa_at, expires_at)
+		insert into admin_sessions (admin_id, mfa_at, expires_at)
 		values ($1, case when $2 then now() end, now() + make_interval(secs => $3))
 		returning id::text`, userID, mfaDone, d.Seconds()).Scan(&id)
 	if err != nil {
@@ -168,13 +165,11 @@ func (m *model) startSession(ctx context.Context, userID string, mfaDone bool, d
 	return id, nil
 }
 
-// touch reports whether sid is a live, MFA-passed sign-in of the user (an unsuspended platform admin) used within
-// idle, and marks it used now.
+// touch reports whether sid is a live, MFA-passed sign-in of the admin used within idle, and marks it used now.
 func (m *model) touch(ctx context.Context, sid, userID string, idle time.Duration) (bool, error) {
 	tag, err := m.db.Exec(ctx, `
 		update admin_sessions s set last_seen_at = now()
-		from users u
-		where s.id = $1 and s.user_id = $2 and u.id = s.user_id and u.platform_admin and u.suspended_at is null
+		where s.id = $1 and s.admin_id = $2
 		  and s.mfa_at is not null and s.expires_at > now() and s.last_seen_at > now() - make_interval(secs => $3)`,
 		sid, userID, idle.Seconds())
 	if err != nil {
@@ -187,9 +182,8 @@ func (m *model) touch(ctx context.Context, sid, userID string, idle time.Duratio
 func (m *model) pending(ctx context.Context, sid, userID string) (bool, error) {
 	var ok bool
 	err := m.db.QueryRow(ctx, `
-		select exists(select 1 from admin_sessions s join users u on u.id = s.user_id
-		              where s.id = $1 and s.user_id = $2 and s.mfa_at is null and s.expires_at > now()
-		                and u.platform_admin and u.suspended_at is null)`, sid, userID).Scan(&ok)
+		select exists(select 1 from admin_sessions
+		              where id = $1 and admin_id = $2 and mfa_at is null and expires_at > now())`, sid, userID).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check pending admin session: %w", err)
 	}
@@ -209,7 +203,7 @@ func (m *model) endSession(ctx context.Context, sid string) error {
 // hasMFA reports whether the user has a second factor (enrolled from the CLI).
 func (m *model) hasMFA(ctx context.Context, userID string) (bool, error) {
 	var ok bool
-	if err := m.db.QueryRow(ctx, `select exists(select 1 from admin_mfa where user_id = $1 and enabled_at is not null)`,
+	if err := m.db.QueryRow(ctx, `select exists(select 1 from admin_mfa where admin_id = $1 and enabled_at is not null)`,
 		userID).Scan(&ok); err != nil {
 		return false, fmt.Errorf("check mfa: %w", err)
 	}
@@ -231,7 +225,7 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 		var lastStep int64
 		var hashes []string
 		err := tx.QueryRow(ctx, `select secret, last_step, recovery_codes from admin_mfa
-			where user_id = $1 and enabled_at is not null for update`, userID).Scan(&sealed, &lastStep, &hashes)
+			where admin_id = $1 and enabled_at is not null for update`, userID).Scan(&sealed, &lastStep, &hashes)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -244,7 +238,7 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 				return nil
 			}
 			res.ok, res.usedRecovery = true, true
-			_, err := tx.Exec(ctx, `update admin_mfa set recovery_codes = array_remove(recovery_codes, $2) where user_id = $1`, userID, h)
+			_, err := tx.Exec(ctx, `update admin_mfa set recovery_codes = array_remove(recovery_codes, $2) where admin_id = $1`, userID, h)
 			return err
 		}
 		secret, err := totp.Unseal(key, userID, sealed)
@@ -256,7 +250,7 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 			return err
 		}
 		res.ok = true
-		_, err = tx.Exec(ctx, `update admin_mfa set last_step = $2 where user_id = $1`, userID, step)
+		_, err = tx.Exec(ctx, `update admin_mfa set last_step = $2 where admin_id = $1`, userID, step)
 		return err
 	})
 	if err != nil {
@@ -270,10 +264,10 @@ func (m *model) checkMFA(ctx context.Context, key []byte, userID, code, recovery
 func (m *model) finishSignin(ctx context.Context, sid, userID string, d time.Duration) (string, error) {
 	var id string
 	err := m.db.QueryRow(ctx, `
-		with p as (delete from admin_sessions where id = $1 and user_id = $2 and mfa_at is null and expires_at > now()
-		           returning user_id)
-		insert into admin_sessions (user_id, mfa_at, expires_at)
-		select user_id, now(), now() + make_interval(secs => $3) from p
+		with p as (delete from admin_sessions where id = $1 and admin_id = $2 and mfa_at is null and expires_at > now()
+		           returning admin_id)
+		insert into admin_sessions (admin_id, mfa_at, expires_at)
+		select admin_id, now(), now() + make_interval(secs => $3) from p
 		returning id::text`, sid, userID, d.Seconds()).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil

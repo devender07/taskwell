@@ -1,5 +1,5 @@
-// Package auth signs platform admins in to the admin API with their normal Taskwell email and password plus a TOTP
-// second factor, into server-side sessions (admin_sessions).
+// Package auth signs admins in to the admin API with their own account (the admins table, apart from app users)
+// and password plus a TOTP second factor, into server-side sessions (admin_sessions).
 //
 // routes.go mounts the endpoints, controller.go handles HTTP, model.go owns every SQL query
 // session.go issues and checks the admin cookie, and TOTP comes from shared/totp.

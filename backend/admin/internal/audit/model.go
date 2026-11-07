@@ -15,7 +15,7 @@ const (
 	ConfigUpdate  = "config.update" // target: the key (never the value)
 	UserSuspend   = "user.suspend"  // target: the user's email
 	UserUnsuspend = "user.unsuspend"
-	Promote       = "admin.promote"   // from the CLI; target: the email
+	Promote       = "admin.promote"   // no longer recorded (admins have their own accounts); kept for old rows
 	MFAReset      = "admin.mfa_reset" // from the CLI; target: the email
 	SignIn        = "signin"
 	SignInFailed  = "signin.failed"     // wrong password; target: the email tried
@@ -38,7 +38,7 @@ func Record(ctx context.Context, q Execer, actorID, action, target, ip string) e
 	}
 	if _, err := q.Exec(ctx, `
 		insert into admin_audit (actor_id, actor_email, action, target, ip)
-		values ($1, coalesce((select email from users where id = $1), ''), $2, $3, $4)`,
+		values ($1, coalesce((select email from admins where id = $1), ''), $2, $3, $4)`,
 		actor, action, target, ip); err != nil {
 		return fmt.Errorf("record audit %s: %w", action, err)
 	}

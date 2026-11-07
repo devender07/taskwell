@@ -15,7 +15,6 @@ export type UserRow = {
   workspaces: number
   created_at: string
   suspended: boolean
-  platform_admin: boolean
   last_active_at: string | null
 }
 export type Day = { date: string; count: number }

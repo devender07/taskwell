@@ -24,14 +24,13 @@ type Workspace struct {
 }
 
 type User struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Email         string     `json:"email"`
-	Workspaces    int        `json:"workspaces"`
-	CreatedAt     time.Time  `json:"created_at"`
-	Suspended     bool       `json:"suspended"`
-	PlatformAdmin bool       `json:"platform_admin"`
-	LastActiveAt  *time.Time `json:"last_active_at"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Email        string     `json:"email"`
+	Workspaces   int        `json:"workspaces"`
+	CreatedAt    time.Time  `json:"created_at"`
+	Suspended    bool       `json:"suspended"`
+	LastActiveAt *time.Time `json:"last_active_at"`
 }
 
 // model owns every query of the directory package.
@@ -71,12 +70,12 @@ func (m *model) workspaces(ctx context.Context, q string, offset int) ([]Workspa
 
 const userColumns = `u.id::text, u.name, u.email,
 	(select count(*) from workspace_members where user_id = u.id),
-	u.created_at, u.suspended_at is not null, u.platform_admin,
+	u.created_at, u.suspended_at is not null,
 	(select max(coalesce(used_at, created_at)) from refresh_tokens where user_id = u.id)`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Workspaces, &u.CreatedAt, &u.Suspended, &u.PlatformAdmin, &u.LastActiveAt)
+	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Workspaces, &u.CreatedAt, &u.Suspended, &u.LastActiveAt)
 	return u, err
 }
 

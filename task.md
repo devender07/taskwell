@@ -128,7 +128,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
 - [x] Workspaces and users list, suspend a user
 - [x] Basic usage stats
-- [x] Admin sign-in for platform admins (promote with `taskwell-admin -promote email`)
+- [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/create-admin.sh email`)
 
 ## Later
 

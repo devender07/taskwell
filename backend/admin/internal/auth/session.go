@@ -20,9 +20,9 @@ const (
 	mfaTTL     = 10 * time.Minute // to enter the second factor after the password
 )
 
-// Authenticate returns the user ID from a valid admin cookie, or "" when there is none. The cookie names an
-// admin_sessions row that must have passed MFA, be under ttl old and idle, and belong to an unsuspended platform
-// admin, so signing out, demoting or suspending takes effect on the next request. Each call counts as activity.
+// Authenticate returns the admin ID from a valid admin cookie, or "" when there is none. The cookie names an
+// admin_sessions row that must have passed MFA and be under ttl old and idle, so signing out or deleting the admin
+// takes effect on the next request. Each call counts as activity.
 func (h *Handler) Authenticate(r *http.Request) (string, error) {
 	userID, sid, err := h.token(r)
 	if sid == "" {

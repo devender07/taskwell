@@ -14,7 +14,7 @@ import (
 func EncryptSecrets(ctx context.Context, db *pgxpool.Pool, key []byte) (int, error) {
 	n := 0
 	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `select user_id::text, secret from admin_mfa where secret not like 'v1:%' for update`)
+		rows, err := tx.Query(ctx, `select admin_id::text, secret from admin_mfa where secret not like 'v1:%' for update`)
 		if err != nil {
 			return err
 		}
@@ -31,7 +31,7 @@ func EncryptSecrets(ctx context.Context, db *pgxpool.Pool, key []byte) (int, err
 			if err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `update admin_mfa set secret = $2 where user_id = $1`, p.userID, sealed); err != nil {
+			if _, err := tx.Exec(ctx, `update admin_mfa set secret = $2 where admin_id = $1`, p.userID, sealed); err != nil {
 				return err
 			}
 		}

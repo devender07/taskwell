@@ -32,8 +32,8 @@ import (
 )
 
 func main() {
-	promote := flag.String("promote", "", "make the user with this email a platform admin, then exit")
-	resetMFA := flag.String("reset-mfa", "", "give this platform admin a new MFA factor (printed here) and end their admin sign-ins, then exit")
+	enrol := flag.String("enrol-mfa", "", "give the admin with this email an MFA factor (printed here) when they have none, then exit")
+	resetMFA := flag.String("reset-mfa", "", "give this admin a new MFA factor (printed here) and end their admin sign-ins, then exit")
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
 	flag.Parse()
 
@@ -97,18 +97,18 @@ func main() {
 		slog.Info("encrypted plaintext mfa secrets", "count", n)
 	}
 
-	if *promote != "" {
-		u, e, err := auth.Promote(context.Background(), pool, mfaKey, *promote)
+	if *enrol != "" {
+		u, e, err := auth.EnrolMFA(context.Background(), pool, mfaKey, *enrol)
 		if err != nil {
 			pool.Close()
-			obs.Fatal("promote", "err", err)
+			obs.Fatal("enrol-mfa", "err", err)
 		}
 		if u == nil {
-			fmt.Fprintf(os.Stderr, "no user with the verified email %s\n", *promote)
+			fmt.Fprintf(os.Stderr, "no admin with the email %s\n", *enrol)
 			pool.Close()
 			os.Exit(1)
 		}
-		fmt.Printf("%s <%s> is now a platform admin\n", u.Name, u.Email)
+		fmt.Printf("%s <%s> is an admin\n", u.Name, u.Email)
 		if e == nil {
 			fmt.Println("They already have MFA set up; run -reset-mfa to give them a new factor.")
 			return
@@ -121,7 +121,7 @@ func main() {
 		u, e, err := auth.ResetMFA(context.Background(), pool, mfaKey, *resetMFA)
 		if err != nil || u == nil {
 			pool.Close()
-			obs.Fatal("reset-mfa: no platform admin with that email, or the reset failed", "email", *resetMFA, "err", err)
+			obs.Fatal("reset-mfa: no admin with that email, or the reset failed", "email", *resetMFA, "err", err)
 		}
 		fmt.Printf("New MFA factor for %s <%s>; their admin sign-ins have ended.\n", u.Name, u.Email)
 		printEnrolment(e)
@@ -178,7 +178,7 @@ func main() {
 
 // schemaVersion is the newest migration this service's queries need. The user service applies migrations; bump
 // this when admin starts depending on a newer one.
-const schemaVersion = "001_init.sql"
+const schemaVersion = "027_admins.sql"
 
 // checkSchema fails unless the user service has applied schemaVersion.
 func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {
