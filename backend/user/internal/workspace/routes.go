@@ -28,6 +28,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workspaces/{slug}/roles/{id}", h.wrap(h.updateRole))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/roles/{id}", h.wrap(h.deleteRole))
 	mux.HandleFunc("GET /api/permissions", h.wrap(h.permissions))
+	mux.HandleFunc("GET /api/workspaces/{slug}/audit", h.wrap(h.audit))
 	mux.HandleFunc("POST /api/workspaces/{slug}/invites", h.wrap(h.createInvite))
 	mux.HandleFunc("POST /api/workspaces/{slug}/invites/{id}/resend", h.wrap(h.resendInvite))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/invites/{id}", h.wrap(h.cancelInvite))

@@ -11,6 +11,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/mail"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 const (
@@ -167,5 +168,33 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 
 func (h *Handler) permissions(w http.ResponseWriter, _ *http.Request, _ string) error {
 	web.JSON(w, http.StatusOK, catalog)
+	return nil
+}
+
+// audit lists a page of the workspace audit log, newest first (?before= the last id shown, ?category= one of
+// wsaudit.Categories; an unknown one is ignored).
+func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	if !Has(ws.Permissions, PermAuditView) {
+		web.Err(w, http.StatusForbidden, "You don't have permission to see the audit log.")
+		return nil
+	}
+	q := r.URL.Query()
+	before := q.Get("before")
+	if before != "" && !web.IsUUID(before) {
+		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
+		return nil
+	}
+	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, before, wsaudit.Categories[q.Get("category")])
+	if err != nil {
+		return err
+	}
+	if es == nil {
+		es = []wsaudit.Entry{}
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"entries": es, "more": more})
 	return nil
 }

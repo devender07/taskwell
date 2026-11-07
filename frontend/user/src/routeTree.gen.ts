@@ -42,6 +42,7 @@ import { Route as AppWorkspaceMainProjectsKeyRouteImport } from './routes/_app/$
 import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app/$workspace/_main/settings/index'
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
 import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
+import { Route as AppWorkspaceMainSettingsAuditRouteImport } from './routes/_app/$workspace/_main/settings/audit'
 import { Route as AppWorkspaceMainSettingsFeedbackRouteImport } from './routes/_app/$workspace/_main/settings/feedback'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
@@ -236,6 +237,12 @@ const AppWorkspaceMainSettingsApiTokensRoute =
     path: '/api-tokens',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
+const AppWorkspaceMainSettingsAuditRoute =
+  AppWorkspaceMainSettingsAuditRouteImport.update({
+    id: '/audit',
+    path: '/audit',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
 const AppWorkspaceMainSettingsFeedbackRoute =
   AppWorkspaceMainSettingsFeedbackRouteImport.update({
     id: '/feedback',
@@ -375,6 +382,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -424,6 +432,7 @@ export interface FileRoutesByTo {
   '/$workspace/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -478,6 +487,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/projects/$key': typeof AppWorkspaceMainProjectsKeyRoute
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
+  '/_app/$workspace/_main/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
   '/_app/$workspace/_main/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -532,6 +542,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
+    | '/$workspace/settings/audit'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -581,6 +592,7 @@ export interface FileRouteTypes {
     | '/$workspace/projects/$key'
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
+    | '/$workspace/settings/audit'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -634,6 +646,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/projects/$key'
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
+    | '/_app/$workspace/_main/settings/audit'
     | '/_app/$workspace/_main/settings/feedback'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
@@ -904,6 +917,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainSettingsApiTokensRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
+    '/_app/$workspace/_main/settings/audit': {
+      id: '/_app/$workspace/_main/settings/audit'
+      path: '/audit'
+      fullPath: '/$workspace/settings/audit'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsAuditRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
     '/_app/$workspace/_main/settings/feedback': {
       id: '/_app/$workspace/_main/settings/feedback'
       path: '/feedback'
@@ -1053,6 +1073,7 @@ const AppWorkspaceMainInboxRouteWithChildren =
 interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
   AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
+  AppWorkspaceMainSettingsAuditRoute: typeof AppWorkspaceMainSettingsAuditRoute
   AppWorkspaceMainSettingsFeedbackRoute: typeof AppWorkspaceMainSettingsFeedbackRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
@@ -1076,6 +1097,7 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
       AppWorkspaceMainSettingsAiTestingRoute,
     AppWorkspaceMainSettingsApiTokensRoute:
       AppWorkspaceMainSettingsApiTokensRoute,
+    AppWorkspaceMainSettingsAuditRoute: AppWorkspaceMainSettingsAuditRoute,
     AppWorkspaceMainSettingsFeedbackRoute:
       AppWorkspaceMainSettingsFeedbackRoute,
     AppWorkspaceMainSettingsIntegrationsRoute:

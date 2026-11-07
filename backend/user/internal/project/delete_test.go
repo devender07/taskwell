@@ -51,4 +51,10 @@ func TestDelete(t *testing.T) {
 		where p.workspace_id = $1`, wsID).Scan(&left); err != nil || left != 0 {
 		t.Errorf("milestones left %d %v", left, err)
 	}
+	var audit string
+	if err := pool.QueryRow(ctx, `select string_agg(action || ' ' || target || ' ' || detail::text, ', ' order by id)
+		from workspace_audit where workspace_id = $1 and actor_id = $2`, wsID, ann).Scan(&audit); err != nil ||
+		audit != `project.created WEB {"name": "Web"}, project.archived WEB {}, project.deleted WEB {"name": "Web"}` {
+		t.Errorf("audit log %q %v", audit, err)
+	}
 }

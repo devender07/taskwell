@@ -1,5 +1,5 @@
 import { Link, useLoaderData } from '@tanstack/react-router'
-import { BellIcon, FileIcon, FeedbackIcon, FlaskIcon, GridIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
+import { BellIcon, FileIcon, FeedbackIcon, FlaskIcon, GridIcon, HistoryIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
 import { can } from '@/api'
 import './settings.css'
 
@@ -67,6 +67,12 @@ export function SettingsNav({ workspace }: { workspace: string }) {
             <Link to="/$workspace/settings/feedback" params={{ workspace }}>
               <FeedbackIcon />
               Feedback form
+            </Link>
+          ) : null}
+          {can(ws, 'audit.view') ? (
+            <Link to="/$workspace/settings/audit" params={{ workspace }}>
+              <HistoryIcon />
+              Audit log
             </Link>
           ) : null}
         </>

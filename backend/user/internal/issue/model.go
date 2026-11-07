@@ -21,6 +21,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 var (
@@ -2248,10 +2249,26 @@ func (m *model) restore(ctx context.Context, id, actorID string) (bool, error) {
 // the viewer can see. Comments, activity and the rest go with them (cascades).
 func (m *model) purge(ctx context.Context, workspaceID, slug, viewerID, id string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `delete from issues_all i using projects p
+		rows, err := tx.Query(ctx, `delete from issues_all i using projects p
 			where p.id = i.project_id and i.workspace_id = $1 and i.deleted_at is not null and can_see_project(p.id, $2)
-			  and ($3::uuid is null or i.id = $3)`, workspaceID, viewerID, nullable(id))
-		if err != nil || tag.RowsAffected() == 0 {
+			  and ($3::uuid is null or i.id = $3)
+			returning p.key || '-' || i.number, i.title`, workspaceID, viewerID, nullable(id))
+		if err != nil {
+			return err
+		}
+		gone, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) ([2]string, error) {
+			var g [2]string
+			return g, r.Scan(&g[0], &g[1])
+		})
+		if err != nil || len(gone) == 0 {
+			return err
+		}
+		if id != "" {
+			err = wsaudit.Record(ctx, tx, workspaceID, viewerID, "issue.purged", gone[0][0], map[string]any{"title": gone[0][1]})
+		} else {
+			err = wsaudit.Record(ctx, tx, workspaceID, viewerID, "trash.emptied", "", map[string]any{"count": len(gone)})
+		}
+		if err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.Event{Kind: "issue.deleted", Workspace: slug, Actor: viewerID,

@@ -135,3 +135,8 @@ func normPerms(keys []string) (out []string, ok bool) {
 	}
 	return out, true
 }
+
+// without returns the permissions in a that aren't in b, never nil.
+func without(a, b []string) []string {
+	return slices.DeleteFunc(append([]string{}, a...), func(k string) bool { return Has(b, k) })
+}

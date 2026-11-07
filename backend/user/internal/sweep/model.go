@@ -37,6 +37,7 @@ var retention = []struct{ table, where string }{
 	{"oauth_codes", `expires_at < now()`},
 	// Trashed issues go for good after 30 days, with their comments and the rest (cascades).
 	{"issues_all", `deleted_at < now() - interval '30 days'`},
+	{"workspace_audit", `at < now() - interval '1 year'`},
 	{"oauth_clients", `created_at < now() - interval '30 days' and not exists (select 1 from oauth_codes c where c.client_id = oauth_clients.id)`},
 }
 

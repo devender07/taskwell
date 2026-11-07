@@ -17,6 +17,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 var (
@@ -159,18 +160,36 @@ func checkMembers(ctx context.Context, tx pgx.Tx, workspaceID string, ids []stri
 }
 
 // addMembers makes the users members of the project, added by the actor, and notifies the ones who weren't already
-// (except the actor).
-func addMembers(ctx context.Context, tx pgx.Tx, projectID, actorID string, ids []string) error {
+// (except the actor). Returns those it added.
+func addMembers(ctx context.Context, tx pgx.Tx, projectID, actorID string, ids []string) ([]string, error) {
 	rows, err := tx.Query(ctx, `insert into project_members (project_id, user_id, added_by)
 		select $1, u, $2 from unnest($3::uuid[]) u on conflict do nothing returning user_id::text`, projectID, actorID, ids)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	added, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
+		return nil, err
+	}
+	return added, notify.RecordProjectAdded(ctx, tx, projectID, actorID, added)
+}
+
+// auditMembers records action (project.member_added or _removed) on the project with the key for each user.
+func auditMembers(ctx context.Context, tx pgx.Tx, workspaceID, actorID, action, key string, userIDs []string) error {
+	rows, err := tx.Query(ctx, `select email from users where id = any($1::uuid[]) order by email`, userIDs)
+	if err != nil {
 		return err
 	}
-	return notify.RecordProjectAdded(ctx, tx, projectID, actorID, added)
+	emails, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, email := range emails {
+		if err := wsaudit.Record(ctx, tx, workspaceID, actorID, action, key, map[string]any{"email": email}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // create adds a project and publishes e; a private one gets the creator and memberIDs (workspace members) as
@@ -191,9 +210,12 @@ func (m *model) create(ctx context.Context, workspaceID, userID string, in input
 			return err
 		}
 		if private {
-			if err := addMembers(ctx, tx, id, userID, append(memberIDs, userID)); err != nil {
+			if _, err := addMembers(ctx, tx, id, userID, append(memberIDs, userID)); err != nil {
 				return err
 			}
+		}
+		if err := wsaudit.Record(ctx, tx, workspaceID, userID, "project.created", in.key, map[string]any{"name": in.name}); err != nil {
+			return err
 		}
 		var err error
 		if p, err = scanProject(tx.QueryRow(ctx, `select `+cols+` from projects where id = $1`, id)); err != nil {
@@ -255,12 +277,21 @@ func (m *model) update(ctx context.Context, workspaceID, key, actorID string, in
 		flipped := private != nil && *private != wasPrivate
 		switch {
 		case flipped && *private:
-			err = addMembers(ctx, tx, id, actorID, []string{actorID})
+			_, err = addMembers(ctx, tx, id, actorID, []string{actorID})
 		case flipped:
 			_, err = tx.Exec(ctx, `delete from project_members where project_id = $1`, id)
 		}
 		if err != nil {
 			return err
+		}
+		if flipped {
+			action := "project.made_public"
+			if *private {
+				action = "project.made_private"
+			}
+			if err := wsaudit.Record(ctx, tx, workspaceID, actorID, action, in.key, nil); err != nil {
+				return err
+			}
 		}
 		if p, err = one(tx.QueryRow(ctx, `select `+cols+` from projects where id = $1`, id)); err != nil {
 			return err
@@ -288,6 +319,13 @@ func (m *model) setArchived(ctx context.Context, workspaceID, key, actorID strin
 			workspaceID, actorID, key, archived)); err != nil || p == nil {
 			return err
 		}
+		action := "project.unarchived"
+		if archived {
+			action = "project.archived"
+		}
+		if err := wsaudit.Record(ctx, tx, workspaceID, actorID, action, p.Key, nil); err != nil {
+			return err
+		}
 		return changed(ctx, tx, e, p.ID, false, p.Key)
 	})
 	return p, err
@@ -299,11 +337,11 @@ func (m *model) setArchived(ctx context.Context, workspaceID, key, actorID strin
 func (m *model) remove(ctx context.Context, workspaceID, key, actorID string, e realtime.Event) (bool, error) {
 	found := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var id, current string
+		var id, current, name string
 		var archived bool
-		err := tx.QueryRow(ctx, `select id::text, key, archived_at is not null from projects
+		err := tx.QueryRow(ctx, `select id::text, key, name, archived_at is not null from projects
 			where workspace_id = $1 and `+visible+` and key = canonical_key($1, $3) for update`,
-			workspaceID, actorID, key).Scan(&id, &current, &archived)
+			workspaceID, actorID, key).Scan(&id, &current, &name, &archived)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -315,6 +353,9 @@ func (m *model) remove(ctx context.Context, workspaceID, key, actorID string, e 
 			return errActive
 		}
 		if _, err := tx.Exec(ctx, `delete from projects where id = $1`, id); err != nil {
+			return err
+		}
+		if err := wsaudit.Record(ctx, tx, workspaceID, actorID, "project.deleted", current, map[string]any{"name": name}); err != nil {
 			return err
 		}
 		if err := changed(ctx, tx, e, id, true, current); err != nil {
@@ -392,18 +433,28 @@ func (m *model) setMembers(ctx context.Context, workspaceID, key, actorID string
 				return errPublic
 			}
 		}
+		var touched []string
+		action := "project.member_added"
 		if add {
 			if err := checkMembers(ctx, tx, workspaceID, ids); err != nil {
 				return err
 			}
-			err = addMembers(ctx, tx, id, actorID, ids)
+			touched, err = addMembers(ctx, tx, id, actorID, ids)
 		} else {
-			_, err = tx.Exec(ctx, `delete from project_members where project_id = $1 and user_id = any($2::uuid[])`, id, ids)
+			action = "project.member_removed"
+			var rows pgx.Rows
+			if rows, err = tx.Query(ctx, `delete from project_members where project_id = $1 and user_id = any($2::uuid[])
+				returning user_id::text`, id, ids); err == nil {
+				touched, err = pgx.CollectRows(rows, pgx.RowTo[string])
+			}
 		}
 		if err != nil {
 			return err
 		}
 		if p, err = one(tx.QueryRow(ctx, `select `+cols+` from projects where id = $1`, id)); err != nil {
+			return err
+		}
+		if err := auditMembers(ctx, tx, workspaceID, actorID, action, p.Key, touched); err != nil {
 			return err
 		}
 		if !add {

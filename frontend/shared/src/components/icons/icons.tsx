@@ -443,6 +443,13 @@ export const CalendarIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const HistoryIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5M12 7v5l3 2" />
+  </Icon>
+)
+
 export const ChevronLeftIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="m15 6-6 6 6 6" />

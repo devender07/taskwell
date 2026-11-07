@@ -90,6 +90,11 @@ func TestTrash(t *testing.T) {
 	}
 	do(mia, "DELETE", "/trash/WEB-2", nil, 403)
 	do(ann, "DELETE", "/trash/WEB-2", nil, 204)
+	var purged string
+	if err := pool.QueryRow(ctx, `select target || ' ' || (detail->>'title') from workspace_audit
+		where workspace_id = $1 and action = 'issue.purged'`, wsID).Scan(&purged); err != nil || !strings.HasPrefix(purged, "WEB-2 ") {
+		t.Errorf("issue.purged entry %q %v", purged, err)
+	}
 	do(ann, "POST", "/trash/WEB-2/restore", nil, 404)
 
 	// A status only trashed issues use can go; they move to another.
@@ -109,5 +114,10 @@ func TestTrash(t *testing.T) {
 	do(ann, "DELETE", "/trash", nil, 204)
 	if err := json.Unmarshal([]byte(do(ann, "GET", "/trash", nil, 200)), &page); err != nil || len(page.Issues) != 0 {
 		t.Fatalf("after emptying: %+v %v", page, err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `select (detail->>'count')::int from workspace_audit
+		where workspace_id = $1 and action = 'trash.emptied' and actor_id = $2`, wsID, ann).Scan(&count); err != nil || count < 1 {
+		t.Errorf("trash.emptied count %d %v", count, err)
 	}
 }
