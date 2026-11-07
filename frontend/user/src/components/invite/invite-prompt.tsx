@@ -11,11 +11,12 @@ import { useAcceptMyInvite } from './invite-actions'
 let invites: PendingInvite[] = []
 const readers = new Set<() => void>()
 let unsubscribe: (() => void) | null = null
-const loadInvites = () =>
-  api<PendingInvite[]>(myInvitesPath).then((list) => {
-    invites = list
-    readers.forEach((r) => r())
-  }, () => {})
+const setInvites = (list: PendingInvite[]) => {
+  if (!unsubscribe) return // a late answer after everyone stopped reading
+  invites = list
+  readers.forEach((r) => r())
+}
+const loadInvites = () => api<PendingInvite[]>(myInvitesPath).then(setInvites, () => setInvites([]))
 
 function readInvites(onChange: () => void) {
   readers.add(onChange)
@@ -30,6 +31,7 @@ function readInvites(onChange: () => void) {
       if (readers.size) return
       unsubscribe?.()
       unsubscribe = null
+      invites = [] // nobody reads them now (e.g. signed out), so the next account never sees these
     })
   }
 }
