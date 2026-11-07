@@ -3,6 +3,7 @@ import { can, storagePath, type StorageUsage } from '@/api'
 import { loaderApi } from '@/realtime'
 import { formatBytes } from '@/components/files/bytes'
 import { DeleteWorkspace } from '@/components/workspace/delete-workspace'
+import { ExportWorkspace } from '@/components/workspace/export-workspace'
 import { InviteForm } from '@/components/workspace/members'
 import { WorkspaceSettingsForm } from '@/components/workspace/settings-form'
 import '@/components/home/home.css'
@@ -39,6 +40,7 @@ function WorkspaceSettings() {
           <InviteForm key={workspace.id} workspace={workspace} />
         </section>
       ) : null}
+      {can(workspace, 'workspace.export') ? <ExportWorkspace workspace={workspace} /> : null}
       {can(workspace, 'workspace.delete') ? <DeleteWorkspace workspace={workspace} /> : null}
     </main>
   )

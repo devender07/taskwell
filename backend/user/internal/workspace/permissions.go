@@ -88,9 +88,9 @@ func allPermissions() []string {
 	return keys
 }
 
-// effective is a role's permissions: the whole catalog for Admin, the stored set otherwise (never a guestDenied one
+// Effective is a role's permissions: the whole catalog for Admin, the stored set otherwise (never a guestDenied one
 // for Guest).
-func effective(builtin string, perms []string) []string {
+func Effective(builtin string, perms []string) []string {
 	switch builtin {
 	case roleAdmin:
 		return allPermissions()

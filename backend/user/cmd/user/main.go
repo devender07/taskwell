@@ -28,6 +28,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/chat"
 	"github.com/devender07/taskwell/backend/user/internal/cycle"
 	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/export"
 	"github.com/devender07/taskwell/backend/user/internal/feedback"
 	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/gitlink"
@@ -228,6 +229,7 @@ func main() {
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	fileH.Register(mux)
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
+	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
@@ -325,7 +327,7 @@ func serve(srv, metrics *http.Server, stop func()) {
 }
 
 // withTimeouts bounds each request: 30s to read the body, respond and run (the context ends then), 10 minutes for
-// file uploads and downloads and imports (a GitHub import fetches page by page). The realtime socket sets its own.
+// file uploads and downloads, imports (a GitHub import fetches page by page) and workspace exports. The realtime socket sets its own.
 func withTimeouts(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/realtime" {
@@ -333,7 +335,7 @@ func withTimeouts(h http.Handler) http.Handler {
 			return
 		}
 		d := 30 * time.Second
-		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") ||
+		if strings.HasPrefix(r.URL.Path, "/api/files/") || strings.HasPrefix(r.URL.Path, "/api/exports/") || strings.HasSuffix(r.URL.Path, "/files") || strings.HasSuffix(r.URL.Path, "/avatar") ||
 			strings.Contains(r.URL.Path, "/import/") {
 			d = 10 * time.Minute
 		}

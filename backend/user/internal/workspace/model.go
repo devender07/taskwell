@@ -56,7 +56,7 @@ func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var ws Workspace
 	var builtin string
 	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions)
-	ws.Permissions, ws.Guest = effective(builtin, ws.Permissions), builtin == roleGuest
+	ws.Permissions, ws.Guest = Effective(builtin, ws.Permissions), builtin == roleGuest
 	return ws, err
 }
 
@@ -744,7 +744,7 @@ func scanRole(row pgx.Row) (Role, error) {
 	var r Role
 	err := row.Scan(&r.ID, &r.Name, &r.Builtin, &r.Permissions, &r.MemberCount)
 	if r.Builtin != nil {
-		r.Permissions = effective(*r.Builtin, r.Permissions)
+		r.Permissions = Effective(*r.Builtin, r.Permissions)
 	}
 	return r, err
 }

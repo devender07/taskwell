@@ -241,6 +241,24 @@ func (s *Store) Head(ctx context.Context, id string) (*Object, error) {
 		Disposition: aws.ToString(out.ContentDisposition)}, nil
 }
 
+// Get streams the object id; nil when it doesn't exist. The caller closes it.
+func (s *Store) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	c, bucket, err := s.bucket(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := c.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &id})
+	var nk *types.NoSuchKey
+	var api smithy.APIError
+	if errors.As(err, &nk) || errors.As(err, &api) && api.ErrorCode() == "NoSuchKey" {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	return obj.Body, nil
+}
+
 // Start returns up to the first n bytes of the object id.
 func (s *Store) Start(ctx context.Context, id string, n int) ([]byte, error) {
 	c, bucket, err := s.bucket(ctx)
