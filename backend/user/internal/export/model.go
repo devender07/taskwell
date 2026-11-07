@@ -276,7 +276,7 @@ func (m *model) load(ctx context.Context, wsID, userID string) (*Export, error) 
 			from files f join projects p on p.id = f.project_id and `+visible+`
 			  left join issues i on i.id = f.issue_id left join projects ip on ip.id = i.project_id
 			  left join file_folders d on d.id = f.folder_id left join users u on u.id = f.uploader_id
-			where f.workspace_id = $1 and (f.issue_id is null or i.id is not null) order by f.created_at`,
+			where f.workspace_id = $1 and (f.issue_id is null or i.id is not null) order by f.created_at, f.id`,
 			func(row pgx.Row, x *File) error {
 				err := row.Scan(&x.ID, &x.Name, &x.ContentType, &x.Size, &x.Project, &x.Issue, &x.Folder, &x.UploadedBy, &x.CreatedAt)
 				x.CreatedAt = x.CreatedAt.UTC()

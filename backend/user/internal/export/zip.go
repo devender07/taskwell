@@ -43,7 +43,7 @@ func (h *Handler) writeZip(ctx context.Context, w io.Writer, e *Export) error {
 		}
 	}
 
-	out, err := z.Create("workspace.json")
+	out, err := z.CreateHeader(entry("workspace.json", e.ExportedAt))
 	if err != nil {
 		return err
 	}
@@ -67,14 +67,14 @@ func (h *Handler) writeZip(ctx context.Context, w io.Writer, e *Export) error {
 			comments = append(comments, []string{i.Identifier, deref(c.Author), c.CreatedAt.Format(time.RFC3339), c.BodyText})
 		}
 	}
-	if err := writeCSV(z, "issues.csv", issues); err != nil {
+	if err := writeCSV(z, "issues.csv", e.ExportedAt, issues); err != nil {
 		return err
 	}
-	if err := writeCSV(z, "comments.csv", comments); err != nil {
+	if err := writeCSV(z, "comments.csv", e.ExportedAt, comments); err != nil {
 		return err
 	}
 
-	readme, err := z.Create("README.txt")
+	readme, err := z.CreateHeader(entry("README.txt", e.ExportedAt))
 	if err != nil {
 		return err
 	}
@@ -102,8 +102,13 @@ func (h *Handler) copyFile(ctx context.Context, z *zip.Writer, id, path string) 
 	return true, nil
 }
 
-func writeCSV(z *zip.Writer, name string, rows [][]string) error {
-	out, err := z.Create(name)
+// entry is a deflated zip entry dated at (z.Create leaves the date empty, which unzip shows as 1979).
+func entry(name string, at time.Time) *zip.FileHeader {
+	return &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: at}
+}
+
+func writeCSV(z *zip.Writer, name string, at time.Time, rows [][]string) error {
+	out, err := z.CreateHeader(entry(name, at))
 	if err != nil {
 		return err
 	}

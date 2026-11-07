@@ -38,3 +38,5 @@
 .audit-table th { padding: 12px 16px; color: var(--text-2); font-weight: 510; text-align: left; border-bottom: 1px solid var(--border); }
 .audit-table td { height: 52px; padding: 4px 16px; border-bottom: 1px solid var(--border); }
 .audit-table tr:last-child td { border-bottom: 0; }
+/* Target and details wrap, so every column fits beside the settings nav on a laptop; time, who and IP stay on one line. */
+.audit-table td:nth-child(4), .audit-table td:nth-child(5) { white-space: normal; overflow-wrap: anywhere; min-width: 140px; }

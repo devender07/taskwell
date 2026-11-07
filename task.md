@@ -147,6 +147,9 @@ Plan: `docs/mcp-plan.md`.
 - [x] Trash and undo (docs/trash-plan.md): deleted issues stay 30 days (`issues` is a view over `issues_all`), Undo toast, Trash page with restore, delete forever and empty
 - [x] Guests (docs/guests-plan.md): a Guest role that sees only the projects it's added to; no chat, feedback, roadmap, team or workspace settings; invite with projects
 - [x] Saved views (docs/saved-views-plan.md): save a page's filters and display options by name, private or shared with the workspace, listed in the sidebar; rename, share, delete
+- [x] Workspace export (docs/workspace-export-plan.md): Settings → Workspace → Export data downloads a zip of workspace.json, issues.csv (re-importable), comments.csv and the visible projects' files over a 10-minute signed link; `workspace.export`, 3 per hour
+- [x] Workspace audit log (docs/workspace-audit-plan.md): Settings → Audit log, `audit.view`; members, invites, roles, workspace name/URL, projects and their members, webhooks, integrations, trash and exports, with actor and IP; private projects' entries only for who can see them; kept a year
+- [x] Estimates and velocity (docs/estimates-plan.md): 1/2/3/5/8 points on issues (sidebar, create form, list and board chips, activity, MCP); cycle points done, hourly snapshots and a burndown chart; velocity over the last 3 cycles
 
 ## Not building until a customer asks
 

@@ -1,6 +1,6 @@
 import { extractDataFromArray } from '@taskwell/shared/list'
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { Input } from '@taskwell/shared/input'
@@ -57,12 +57,21 @@ export function PointsDone({ cycle }: { cycle: Cycle }) {
   )
 }
 
-const W = 600
 const H = 200
 const PAD = { left: 32, right: 12, top: 12, bottom: 24 }
 
+// Drawn at the box's real width (not a scaled viewBox), so the axis text stays 12px on every screen.
 export function BurndownChart({ cycle, data }: { cycle: Cycle; data: Burndown }) {
   const { last, remaining, top, empty } = burndownSeries(cycle, data)
+  const box = useRef<HTMLDivElement>(null)
+  const [W, setW] = useState(0)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e!.contentRect.width)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [empty])
   if (empty) return <p className="text-body-sm text-secondary m-0">Add estimates to issues in this cycle to see the burndown.</p>
   const x = (i: number) => PAD.left + (i / last) * (W - PAD.left - PAD.right)
   const y = (v: number) => PAD.top + (1 - v / top) * (H - PAD.top - PAD.bottom)
@@ -70,7 +79,7 @@ export function BurndownChart({ cycle, data }: { cycle: Cycle; data: Burndown })
   const summary = `Planned ${points(data.planned ?? 0)}.${now ? ` ${points(now.y)} remaining on ${formatDate(now.date)}.` : ''}`
 
   return (
-    <figure className="grid gap-2 m-0">
+    <figure className="grid gap-2 m-0" style={{ minWidth: 0 }}>
       <figcaption className="flex flex-wrap items-center gap-4 text-caption text-secondary">
         <span className="text-label text-primary">Burndown</span>
         <span className="inline-flex items-center gap-2">
@@ -83,25 +92,27 @@ export function BurndownChart({ cycle, data }: { cycle: Cycle; data: Burndown })
         </span>
       </figcaption>
       <p className="sr-only">{summary}</p>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" aria-hidden style={{ font: '400 12px var(--font)' }}>
-        <line x1={PAD.left} x2={W - PAD.right} y1={y(top)} y2={y(top)} stroke="rgba(var(--ink), 0.08)" />
-        <line x1={PAD.left} x2={W - PAD.right} y1={y(0)} y2={y(0)} stroke="rgba(var(--ink), 0.16)" />
-        <text x={PAD.left - 8} y={y(top)} dy="4" textAnchor="end" fill="var(--text-2)">{top}</text>
-        <text x={PAD.left - 8} y={y(0)} dy="4" textAnchor="end" fill="var(--text-2)">0</text>
-        <text x={x(0)} y={H - 4} fill="var(--text-2)">{formatDate(cycle.starts_on)}</text>
-        <text x={x(last)} y={H - 4} textAnchor="end" fill="var(--text-2)">{formatDate(cycle.ends_on)}</text>
-        {data.planned !== null ? (
-          <line x1={x(0)} y1={y(data.planned)} x2={x(last)} y2={y(0)} stroke="var(--text-2)" strokeWidth="2" strokeDasharray="6 4" />
-        ) : null}
-        <polyline points={remaining.map((r) => `${x(r.x)},${y(r.y)}`).join(' ')} fill="none" stroke="var(--text)" strokeWidth="2" strokeLinejoin="round" />
-        {remaining.map((r) => (
-          <g key={r.date} style={{ pointerEvents: 'all' }}>
-            <title>{`${formatDate(r.date)}: ${points(r.y)} remaining`}</title>
-            <circle cx={x(r.x)} cy={y(r.y)} r="12" fill="transparent" />
-            <circle cx={x(r.x)} cy={y(r.y)} r="4" fill="var(--text)" stroke="var(--surface)" strokeWidth="2" />
-          </g>
-        ))}
-      </svg>
+      <div ref={box} className="w-full" style={{ minWidth: 0, minHeight: H }}>
+        {W ? <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block" aria-hidden style={{ font: '400 12px var(--font)' }}>
+          <line x1={PAD.left} x2={W - PAD.right} y1={y(top)} y2={y(top)} stroke="rgba(var(--ink), 0.08)" />
+          <line x1={PAD.left} x2={W - PAD.right} y1={y(0)} y2={y(0)} stroke="rgba(var(--ink), 0.16)" />
+          <text x={PAD.left - 8} y={y(top)} dy="4" textAnchor="end" fill="var(--text-2)">{top}</text>
+          <text x={PAD.left - 8} y={y(0)} dy="4" textAnchor="end" fill="var(--text-2)">0</text>
+          <text x={x(0)} y={H - 4} fill="var(--text-2)">{formatDate(cycle.starts_on)}</text>
+          <text x={x(last)} y={H - 4} textAnchor="end" fill="var(--text-2)">{formatDate(cycle.ends_on)}</text>
+          {data.planned !== null ? (
+            <line x1={x(0)} y1={y(data.planned)} x2={x(last)} y2={y(0)} stroke="var(--text-2)" strokeWidth="2" strokeDasharray="6 4" />
+          ) : null}
+          <polyline points={remaining.map((r) => `${x(r.x)},${y(r.y)}`).join(' ')} fill="none" stroke="var(--text)" strokeWidth="2" strokeLinejoin="round" />
+          {remaining.map((r) => (
+            <g key={r.date} style={{ pointerEvents: 'all' }}>
+              <title>{`${formatDate(r.date)}: ${points(r.y)} remaining`}</title>
+              <circle cx={x(r.x)} cy={y(r.y)} r="12" fill="transparent" />
+              <circle cx={x(r.x)} cy={y(r.y)} r="4" fill="var(--text)" stroke="var(--surface)" strokeWidth="2" />
+            </g>
+          ))}
+        </svg> : null}
+      </div>
     </figure>
   )
 }
@@ -113,7 +124,7 @@ export function Velocity({ cycles }: { cycles: Cycle[] }) {
   return (
     <section className="grid gap-3 p-6 bg-surface border rounded-lg" aria-label="Velocity">
       <p className="text-label m-0">Velocity: {points(v.average)} per cycle</p>
-      <div className="grid gap-1" style={{ maxWidth: 320 }}>
+      <div className="grid gap-1" style={{ maxWidth: Math.min(320, v.shown.length * 32) }}>
         <div role="group" aria-label="Completed points per past cycle" className="analytics-bars" style={{ height: 64 }}>
           {v.shown.map((c) => {
             const tip = `${c.name}: ${points(c.progress.points.completed)}`
