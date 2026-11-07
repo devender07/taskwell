@@ -1,4 +1,4 @@
-import { useActionState, useEffect, useState } from 'react'
+import { useActionState, useState, useSyncExternalStore } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { useToast } from '@taskwell/shared/toast'
@@ -7,16 +7,34 @@ import { FormError } from '@/components/auth/auth-card'
 import { subscribePaths } from '@/realtime'
 import { useAcceptMyInvite } from './invite-actions'
 
-// The user's pending invites, kept live.
-export function useMyInvites() {
-  const [invites, setInvites] = useState<PendingInvite[]>([])
-  useEffect(() => {
-    const load = () => api<PendingInvite[]>(myInvitesPath).then(setInvites, () => {})
-    load()
-    return subscribePaths([myInvitesPath], load)
-  }, [])
-  return invites
+// The user's pending invites, kept live: one request and one subscription however many components read them.
+let invites: PendingInvite[] = []
+const readers = new Set<() => void>()
+let unsubscribe: (() => void) | null = null
+const loadInvites = () =>
+  api<PendingInvite[]>(myInvitesPath).then((list) => {
+    invites = list
+    readers.forEach((r) => r())
+  }, () => {})
+
+function readInvites(onChange: () => void) {
+  readers.add(onChange)
+  if (!unsubscribe) {
+    void loadInvites()
+    unsubscribe = subscribePaths([myInvitesPath], loadInvites)
+  }
+  return () => {
+    readers.delete(onChange)
+    // A tick later, so a remount right away (a route change, StrictMode) keeps the subscription instead of refetching.
+    setTimeout(() => {
+      if (readers.size) return
+      unsubscribe?.()
+      unsubscribe = null
+    })
+  }
 }
+
+export const useMyInvites = () => useSyncExternalStore(readInvites, () => invites)
 
 // Offers the oldest pending invite for the user's email. "Not now" (or closing) dismisses it into the Taskwell bot of
 // `slug`, the workspace the user is in; the next one shows after.
