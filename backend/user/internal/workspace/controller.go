@@ -188,7 +188,7 @@ func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) e
 		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
 		return nil
 	}
-	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, before, wsaudit.Categories[q.Get("category")])
+	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, userID, before, wsaudit.Categories[q.Get("category")])
 	if err != nil {
 		return err
 	}

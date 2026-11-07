@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -119,7 +120,7 @@ func (m *model) create(ctx context.Context, e realtime.Event, wsID, id, url stri
 		if ok = tag.RowsAffected() > 0; err != nil || !ok {
 			return err
 		}
-		return wsaudit.Record(ctx, tx, wsID, userID, "webhook.created", url, nil)
+		return wsaudit.Record(ctx, tx, wsID, userID, "webhook.created", auditHost(url), nil)
 	})
 	return ok, err
 }
@@ -153,7 +154,7 @@ func (m *model) audited(ctx context.Context, e realtime.Event, wsID, action, sql
 			return err
 		}
 		found = true
-		return wsaudit.Record(ctx, tx, wsID, e.Actor, action, url, nil)
+		return wsaudit.Record(ctx, tx, wsID, e.Actor, action, auditHost(url), nil)
 	})
 	return found, err
 }
@@ -271,3 +272,12 @@ func publishing(ctx context.Context, db *pgxpool.Pool, e realtime.Event, fn func
 func webhooksPath(slug string) string { return realtime.Workspace(slug) + "/webhooks" }
 
 func deliveriesPath(slug, id string) string { return webhooksPath(slug) + "/" + id + "/deliveries" }
+
+// auditHost is a webhook URL as the audit log keeps it: scheme and host only, since a path or query may carry a token.
+func auditHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}

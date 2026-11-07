@@ -1,5 +1,6 @@
 -- Who changed the workspace itself: members, roles, invites, projects, integrations, webhooks, permanent deletes.
--- The actor's name and email are copied so an entry reads right after the user is gone.
+-- The actor's name and email are copied so an entry reads right after the user is gone. project_id (no foreign key:
+-- it outlives the project) limits a project's entries to who can see the project, and to admins once it's deleted.
 create table workspace_audit (
     id uuid default uuidv7() primary key,
     workspace_id uuid not null references workspaces (id) on delete cascade,
@@ -10,6 +11,7 @@ create table workspace_audit (
     target text not null default '',
     detail jsonb not null default '{}',
     ip text not null default '',
+    project_id uuid,
     at timestamptz default now() not null
 );
 create index workspace_audit_workspace_idx on workspace_audit (workspace_id, id desc);

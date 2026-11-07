@@ -22,11 +22,13 @@ type Execer interface {
 }
 
 // Record adds an entry by the actor ("" for nobody), copying their name and email, with the client IP of the request
-// on ctx (web.IP). Call it in the transaction that makes the change, so the two commit together.
+// on ctx (web.IP). Call it in the transaction that makes the change, so the two commit together. A project.* action's
+// target is the project's key: the entry keeps the project's id, so List shows it only to who can see that project.
 func Record(ctx context.Context, q Execer, workspaceID, actorID, action, target string, detail map[string]any) error {
 	if _, err := q.Exec(ctx,
-		`insert into workspace_audit (workspace_id, actor_id, actor_name, actor_email, action, target, detail, ip)
-		 select $1, u.id, coalesce(u.name, ''), coalesce(u.email, ''), $3, $4, coalesce($5::jsonb, '{}'), $6
+		`insert into workspace_audit (workspace_id, actor_id, actor_name, actor_email, action, target, detail, ip, project_id)
+		 select $1, u.id, coalesce(u.name, ''), coalesce(u.email, ''), $3, $4, coalesce($5::jsonb, '{}'), $6,
+		        case when $3 like 'project.%' then (select p.id from projects p where p.workspace_id = $1 and p.key = $4) end
 		   from (select) s left join users u on u.id = nullif($2, '')::uuid`,
 		workspaceID, actorID, action, target, detail, web.IP(ctx)); err != nil {
 		return fmt.Errorf("record %s: %w", action, err)
@@ -64,9 +66,10 @@ type Entry struct {
 // PageSize is how many entries List returns at most.
 const PageSize = 50
 
-// List returns the workspace's newest PageSize entries with ids below before ("" from the newest) whose action
-// starts with one of prefixes (nil: any), and whether there are more.
-func List(ctx context.Context, db *pgxpool.Pool, workspaceID, before string, prefixes []string) ([]Entry, bool, error) {
+// List returns the workspace's newest PageSize entries viewerID may see with ids below before ("" from the newest)
+// whose action starts with one of prefixes (nil: any), and whether there are more. A project's entries show only to
+// who can see the project; a deleted project's only to admins.
+func List(ctx context.Context, db *pgxpool.Pool, workspaceID, viewerID, before string, prefixes []string) ([]Entry, bool, error) {
 	if prefixes == nil {
 		prefixes = []string{}
 	}
@@ -74,7 +77,10 @@ func List(ctx context.Context, db *pgxpool.Pool, workspaceID, before string, pre
 		`select id::text, at, actor_id::text, actor_name, actor_email, action, target, detail, ip from workspace_audit
 		  where workspace_id = $1 and ($2::uuid is null or id < $2::uuid)
 		    and (cardinality($3::text[]) = 0 or split_part(action, '.', 1) = any($3))
-		  order by id desc limit $4`, workspaceID, nullable(before), prefixes, PageSize+1)
+		    and (project_id is null or coalesce(can_see_project(project_id, $5), exists (
+		          select 1 from workspace_members m join workspace_roles r on r.id = m.role_id
+		           where m.workspace_id = $1 and m.user_id = $5 and r.builtin = 'admin')))
+		  order by id desc limit $4`, workspaceID, nullable(before), prefixes, PageSize+1, viewerID)
 	if err != nil {
 		return nil, false, fmt.Errorf("list audit: %w", err)
 	}

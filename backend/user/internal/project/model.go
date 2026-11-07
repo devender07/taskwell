@@ -352,10 +352,11 @@ func (m *model) remove(ctx context.Context, workspaceID, key, actorID string, e 
 		if !archived {
 			return errActive
 		}
-		if _, err := tx.Exec(ctx, `delete from projects where id = $1`, id); err != nil {
+		// Recorded while the project still exists, so the entry keeps its project (and its visibility).
+		if err := wsaudit.Record(ctx, tx, workspaceID, actorID, "project.deleted", current, map[string]any{"name": name}); err != nil {
 			return err
 		}
-		if err := wsaudit.Record(ctx, tx, workspaceID, actorID, "project.deleted", current, map[string]any{"name": name}); err != nil {
+		if _, err := tx.Exec(ctx, `delete from projects where id = $1`, id); err != nil {
 			return err
 		}
 		if err := changed(ctx, tx, e, id, true, current); err != nil {
