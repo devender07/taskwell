@@ -12,6 +12,7 @@ const ISSUE_FIELDS: [string, string][] = [
   ['status_id', 'A status id from GET /statuses. Defaults to the first status.'],
   ['assignee_id', 'A member who can see the project. Empty unassigns.'],
   ['priority', '0 no priority, 1 urgent, 2 high, 3 medium, 4 low.'],
+  ['estimate', 'Story points: 1, 2, 3, 5 or 8. Empty clears it.'],
   ['due_date', 'YYYY-MM-DD. Empty clears it.'],
   ['label_ids', 'Repeated, one per label. Sending it replaces all labels.'],
   ['parent', 'The parent issue’s identifier, e.g. ENG-3. Empty makes it top-level.'],
@@ -91,7 +92,7 @@ export const REFERENCE: Group[] = [
   {
     id: 'issues',
     title: 'Issues',
-    intro: 'Issues are addressed by identifier, e.g. ENG-12 (case doesn’t matter). An issue carries its project, status, assignee, priority, labels, cycle, parent, sub-issues, links and linked pull requests, plus can_edit and can_delete for you.',
+    intro: 'Issues are addressed by identifier, e.g. ENG-12 (case doesn’t matter). An issue carries its project, status, assignee, priority, estimate (story points or null), labels, cycle, parent, sub-issues, links and linked pull requests, plus can_edit and can_delete for you.',
     endpoints: [
       { method: 'GET', path: `${project}/issues`, about: 'The project’s issues.', fields: PAGE_FIELDS, returns: '200 [issue], or the paged shape with limit' },
       { method: 'GET', path: `${ws}/my-issues`, about: 'Issues assigned to you across active projects. Same paging and filters.', returns: '200 [issue], or the paged shape with limit' },
@@ -178,7 +179,7 @@ export const REFERENCE: Group[] = [
     title: 'Cycles',
     intro: 'Cycles belong to a project and are addressed by number. Changes need the manage cycles permission.',
     endpoints: [
-      { method: 'GET', path: `${project}/cycles`, about: 'The project’s cycles with progress counts.', returns: '200 [cycle]' },
+      { method: 'GET', path: `${project}/cycles`, about: 'The project’s cycles with progress counts; progress.points sums the estimates (total, started, completed), canceled issues left out.', returns: '200 [cycle]' },
       {
         method: 'POST',
         path: `${project}/cycles`,
@@ -192,6 +193,12 @@ export const REFERENCE: Group[] = [
       { method: 'GET', path: cycle, about: 'A cycle and its issues.', returns: '200 {"cycle", "issues"}' },
       { method: 'POST', path: cycle, about: 'Update a cycle. Only the fields you send change.', fields: [['name, starts_on, ends_on', 'As on create.']], returns: '200 cycle' },
       { method: 'DELETE', path: cycle, about: 'Delete a cycle. Its issues stay in the project.', returns: '204' },
+      {
+        method: 'GET',
+        path: `${cycle}/burndown`,
+        about: 'Points remaining per day: scope and done for each recorded day of the cycle, today live while it’s current. planned is the scope on the first recorded day.',
+        returns: '200 {"planned", "days": [{"date", "scope", "done"}]}',
+      },
       { method: 'POST', path: `${cycle}/rollover`, about: 'Move the cycle’s unfinished issues to another cycle.', fields: [['to', 'The target cycle’s number.']], returns: '200 {"moved", "cycle"}' },
     ],
   },

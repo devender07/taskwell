@@ -26,10 +26,25 @@ func (e fieldErrors) Error() string { return fmt.Sprint(map[string]string(e)) }
 
 // Progress counts a cycle's issues by status category; backlog and unstarted are the rest of total.
 type Progress struct {
+	Total     int    `json:"total"`
+	Started   int    `json:"started"`
+	Completed int    `json:"completed"`
+	Canceled  int    `json:"canceled"`
+	Points    Points `json:"points"`
+}
+
+// Points sums the estimates of a cycle's issues by status category, canceled issues left out of all three.
+type Points struct {
 	Total     int `json:"total"`
 	Started   int `json:"started"`
 	Completed int `json:"completed"`
-	Canceled  int `json:"canceled"`
+}
+
+// Day is a cycle's points at the end of a day: scope is its estimated points (canceled left out), done of those completed.
+type Day struct {
+	Date  string `json:"date"`
+	Scope int    `json:"scope"`
+	Done  int    `json:"done"`
 }
 
 // Cycle is a project's cycle; Name is CustomName or "Cycle {number}". State is upcoming, current or past by today's
@@ -57,16 +72,21 @@ type input struct {
 const (
 	today    = `(now() at time zone 'utc')::date`
 	StateSQL = `case when c.starts_on > ` + today + ` then 'upcoming' when c.ends_on < ` + today + ` then 'past' else 'current' end`
-	cols     = `c.id::text, c.number, coalesce(c.name, 'Cycle ' || c.number), c.name, to_char(c.starts_on, 'YYYY-MM-DD'),
+	// pointsSQL is a cycle's scope and done points, over cycles c left join issues i and statuses s.
+	pointsSQL = `coalesce(sum(i.estimate) filter (where s.category <> 'canceled'), 0),
+		coalesce(sum(i.estimate) filter (where s.category = 'completed'), 0)`
+	cols = `c.id::text, c.number, coalesce(c.name, 'Cycle ' || c.number), c.name, to_char(c.starts_on, 'YYYY-MM-DD'),
 		to_char(c.ends_on, 'YYYY-MM-DD'), ` + StateSQL + `, count(i.id), count(*) filter (where s.category = 'started'),
-		count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled')
+		count(*) filter (where s.category = 'completed'), count(*) filter (where s.category = 'canceled'),
+		` + pointsSQL + `, coalesce(sum(i.estimate) filter (where s.category = 'started'), 0)
 		from cycles c left join issues i on i.cycle_id = c.id left join statuses s on s.id = i.status_id`
 )
 
 func scanCycle(row pgx.Row) (Cycle, error) {
 	var c Cycle
 	err := row.Scan(&c.ID, &c.Number, &c.Name, &c.CustomName, &c.StartsOn, &c.EndsOn, &c.State,
-		&c.Progress.Total, &c.Progress.Started, &c.Progress.Completed, &c.Progress.Canceled)
+		&c.Progress.Total, &c.Progress.Started, &c.Progress.Completed, &c.Progress.Canceled,
+		&c.Progress.Points.Total, &c.Progress.Points.Completed, &c.Progress.Points.Started)
 	return c, err
 }
 
@@ -375,4 +395,31 @@ func wrapErr(op string, err error) error {
 		return err
 	}
 	return fmt.Errorf("%s: %w", op, err)
+}
+
+// snapshotPoints records today's points (UTC date `day`) for every cycle current on that day, replacing the day's row.
+func (m *model) snapshotPoints(ctx context.Context, day time.Time) error {
+	if _, err := m.db.Exec(ctx, `insert into cycle_points (cycle_id, day, scope, done)
+		select c.id, $1::date, `+pointsSQL+`
+		from cycles c left join issues i on i.cycle_id = c.id left join statuses s on s.id = i.status_id
+		where $1::date between c.starts_on and c.ends_on group by c.id
+		on conflict (cycle_id, day) do update set scope = excluded.scope, done = excluded.done`, day.Format(time.DateOnly)); err != nil {
+		return fmt.Errorf("snapshot cycle points: %w", err)
+	}
+	return nil
+}
+
+// days returns the cycle's recorded days within its dates and before today (UTC), oldest first.
+func (m *model) days(ctx context.Context, cycleID string) ([]Day, error) {
+	rows, err := m.db.Query(ctx, `select to_char(p.day, 'YYYY-MM-DD'), p.scope, p.done from cycle_points p
+		join cycles c on c.id = p.cycle_id
+		where p.cycle_id = $1 and p.day between c.starts_on and c.ends_on and p.day < `+today+` order by p.day`, cycleID)
+	if err != nil {
+		return nil, fmt.Errorf("cycle points: %w", err)
+	}
+	ds, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Day])
+	if err != nil {
+		return nil, fmt.Errorf("cycle points: %w", err)
+	}
+	return ds, nil
 }

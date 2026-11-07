@@ -8,7 +8,7 @@ import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFor
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { AssignedBy, LabelChips, LabelsPicker, StatusIcon, assigneeOption, loadAssignees, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
+import { AssignedBy, LabelChips, LabelsPicker, StatusIcon, assigneeOption, estimateOption, estimateOptions, loadAssignees, points, formatDate, formatRange, overdue, priorityLabel, priorityOptions, statusOptions } from './fields'
 import { refOption, searchIssues, subscribeIssues } from './relations'
 import '@/components/analytics/analytics.css'
 import { byId, extractDataFromArray } from '@taskwell/shared/list'
@@ -80,6 +80,15 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             options={priorityOptions}
             value={priorityOptions.find((o) => o.value === String(issue.priority)) ?? null}
             onChange={(o) => o && o.value !== String(issue.priority) && update('priority', [o.value], { priority: Number(o.value) })}
+          />
+          <SmartAutocomplete
+            label="Estimate"
+            options={estimateOptions}
+            value={estimateOption(issue.estimate)}
+            onChange={(o) => {
+              const v = extractDataFromArray(o, 'value', '')
+              if (v !== (issue.estimate ? String(issue.estimate) : '')) update('estimate', [v], { estimate: v ? Number(v) : null })
+            }}
           />
           <SmartAutocomplete
             label="Assignee"
@@ -159,6 +168,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             </Property>
           )}
           <Property label="Priority">{priorityLabel(issue.priority)}</Property>
+          <Property label="Estimate">{issue.estimate ? points(issue.estimate) : <span className="text-secondary">No estimate</span>}</Property>
           <Property label="Assignee">
             {issue.assignee ? (
               <span className="flex items-center gap-2">

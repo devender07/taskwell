@@ -96,6 +96,7 @@ type Issue struct {
 	Assignee    *Person         `json:"assignee"`
 	Priority    int             `json:"priority"`
 	DueDate     *string         `json:"due_date"`
+	Estimate    *int            `json:"estimate"`
 	Labels      []Label         `json:"labels"`
 	Cycle       *CycleRef       `json:"cycle"`
 	CreatedBy   *Person         `json:"created_by"`
@@ -129,12 +130,12 @@ type IssueDetail struct {
 // an empty assigneeID, dueDate, parent or cycleID clears it. labelIDs replace the issue's labels only when setLabels is true,
 // and description (nil clears it) replaces it only when setDescription is true.
 type fields struct {
-	title, statusID, assigneeID, dueDate, parent, cycleID *string
-	priority                                              *int
-	labelIDs                                              []string
-	setLabels                                             bool
-	description                                           json.RawMessage
-	setDescription                                        bool
+	title, statusID, assigneeID, dueDate, parent, cycleID, estimate *string
+	priority                                                        *int
+	labelIDs                                                        []string
+	setLabels                                                       bool
+	description                                                     json.RawMessage
+	setDescription                                                  bool
 }
 
 // refJSON is an issue ref as JSON, selected with refFrom.
@@ -158,7 +159,7 @@ const (
 	issueHead = `i.id::text, p.key || '-' || i.number, i.number, p.key, p.name, p.archived_at is not null,
 	(select ` + refJSON + refFrom + ` where r.id = i.parent_id), i.title, `
 	issueTail = `
-	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
+	status_json(s), a.id::text, a.name, i.priority, to_char(i.due_date, 'YYYY-MM-DD'), i.estimate,
 	coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 	  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'), ` + cycleJSON + `,
 	c.id::text, c.name, i.created_at, i.updated_at, i.description_generation, i.rank, i.project_id::text,
@@ -173,7 +174,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	var i Issue
 	var aID, aName, cID, cName *string
 	err := row.Scan(&i.ID, &i.Identifier, &i.Number, &i.Project.Key, &i.Project.Name, &i.Project.Archived, &i.Parent, &i.Title, &i.Description,
-		&i.Status, &aID, &aName, &i.Priority, &i.DueDate,
+		&i.Status, &aID, &aName, &i.Priority, &i.DueDate, &i.Estimate,
 		&i.Labels, &i.Cycle, &cID, &cName, &i.CreatedAt, &i.UpdatedAt, &i.DescriptionGeneration,
 		&i.Rank, &i.projectID, &i.AssignedBy)
 	if aID != nil {
@@ -650,13 +651,14 @@ func (m *model) create(ctx context.Context, workspaceID, key, userID string, f f
 		}
 		if err := tx.QueryRow(ctx,
 			`insert into issues (workspace_id, project_id, number, title, description, description_text, status_id, assignee_id, priority,
-			   due_date, created_by, cycle_id, rank)
+			   due_date, created_by, cycle_id, rank, estimate)
 			 values ($1, $2, $3, $4, $5, $11,
 			         coalesce($6::uuid, (select id from statuses where workspace_id = $1 order by position, id limit 1)),
-			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid, $13)
+			         nullif($7, '')::uuid, coalesce($8::smallint, 0), nullif($9, '')::date, $10, nullif($12, '')::uuid, $13,
+			         nullif($14, '')::smallint)
 			 returning id::text`,
 			workspaceID, projectID, number, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, userID,
-			doc.PlainText(f.description), f.cycleID, rank).Scan(&id); err != nil {
+			doc.PlainText(f.description), f.cycleID, rank, f.estimate).Scan(&id); err != nil {
 			return err
 		}
 		if f.parent != nil {
@@ -758,10 +760,11 @@ func apply(ctx context.Context, tx pgx.Tx, workspaceID, id, actorID string, f fi
 		   priority = coalesce($6::smallint, priority),
 		   due_date = case when $7::text is null then due_date else nullif($7, '')::date end,
 		   cycle_id = case when $10::text is null then cycle_id else nullif($10, '')::uuid end,
+		   estimate = case when $11::text is null then estimate else nullif($11, '')::smallint end,
 		   updated_at = now()
 		 where id = $1`,
 		id, f.title, f.description, f.statusID, f.assigneeID, f.priority, f.dueDate, f.setDescription,
-		doc.PlainText(f.description), f.cycleID); err != nil {
+		doc.PlainText(f.description), f.cycleID, f.estimate); err != nil {
 		return err
 	}
 	if f.setLabels {
@@ -899,7 +902,7 @@ func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 	err := tx.QueryRow(ctx,
 		`select i.title, i.description, status_json(s),
 		        (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = i.assignee_id),
-		        i.priority, to_char(i.due_date, 'YYYY-MM-DD'),
+		        i.priority, to_char(i.due_date, 'YYYY-MM-DD'), i.estimate,
 		        coalesce((select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color) order by lower(l.name), l.id)
 		                  from issue_labels il join labels l on l.id = il.label_id where il.issue_id = i.id), '[]'),
 		        (select json_build_object('id', r.id, 'identifier', rp.key || '-' || r.number, 'title', r.title)
@@ -908,7 +911,7 @@ func snap(ctx context.Context, tx pgx.Tx, id string) (snapshot, error) {
 		        (select json_build_object('number', cy.number, 'name', coalesce(cy.name, 'Cycle ' || cy.number))
 		         from cycles cy where cy.id = i.cycle_id)
 		 from issues i join statuses s on s.id = i.status_id where i.id = $1 for update of i`, id).
-		Scan(&s.title, &s.description, &s.status, &s.assignee, &s.priority, &s.dueDate,
+		Scan(&s.title, &s.description, &s.status, &s.assignee, &s.priority, &s.dueDate, &s.estimate,
 			&s.labels, &s.parent, &s.projectID, &s.cycleID, &s.cycle)
 	return s, err
 }

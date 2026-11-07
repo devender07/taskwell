@@ -49,4 +49,24 @@ func TestDiff(t *testing.T) {
 			t.Errorf("%s:\n got %s\nwant %s", c.name, b, c.want)
 		}
 	}
+
+	three, five := 3, 5
+	for _, c := range []struct {
+		from, to *int
+		want     string
+	}{
+		{nil, &five, `[{"estimate":{"from":null,"to":5}}]`},
+		{&five, &three, `[{"estimate":{"from":5,"to":3}}]`},
+		{&three, new(3), `[]`},
+		{&three, nil, `[{"estimate":{"from":3,"to":null}}]`},
+	} {
+		es := diff(with(func(s *snapshot) { s.estimate = c.from }), with(func(s *snapshot) { s.estimate = c.to }))
+		got := []map[string]any{}
+		for _, e := range es {
+			got = append(got, map[string]any{e.kind: e.data})
+		}
+		if b, _ := json.Marshal(got); string(b) != c.want {
+			t.Errorf("estimate %v to %v: got %s, want %s", c.from, c.to, b, c.want)
+		}
+	}
 }

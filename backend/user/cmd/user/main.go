@@ -131,7 +131,8 @@ func main() {
 	project.New(pool, authenticate, wsH.Member).Register(mux)
 	issueH := issue.New(pool, authenticate, wsH.Member)
 	issueH.Register(mux)
-	cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues).Register(mux)
+	cycleH := cycle.New(pool, authenticate, wsH.Member, issueH.CycleIssues)
+	cycleH.Register(mux)
 	view.New(pool, authenticate, wsH.Member).Register(mux)
 	noteH := note.New(pool, authenticate, wsH.Member)
 	noteH.Register(mux)
@@ -231,6 +232,7 @@ func main() {
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
+	wg.Go(func() { cycleH.Run(work, duration("CYCLE_POINTS_INTERVAL", time.Hour)) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

@@ -5,7 +5,7 @@ import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { ApiError, can, cyclesPath, type Cycle, type Project, workspacePath } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
-import { CycleForm, CycleProgress } from '@/components/cycles/cycles'
+import { CycleForm, CycleProgress, Velocity } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
 import '@/components/projects/projects.css'
 
@@ -58,32 +58,35 @@ function CyclesPage() {
           {manage ? <Button onClick={() => setCreating(true)}>New cycle</Button> : null}
         </section>
       ) : (
-        SECTIONS.map(({ state, title }) => {
-          const list = cycles.filter((c) => c.state === state)
-          if (!list.length) return null
-          return (
-            <section key={state} className="grid gap-3" aria-labelledby={`cycles-${state}`}>
-              <h2 id={`cycles-${state}`} className="text-label">{title}</h2>
-              <ul className="grid m-0 p-0 bg-surface border rounded-lg overflow-hidden" style={{ listStyle: 'none' }}>
-                {list.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      to="/$workspace/projects/$key/cycles/$number"
-                      params={{ workspace: workspace.slug, key: project.key, number: String(c.number) }}
-                      className="project-row"
-                    >
-                      <div className="grid flex-grow" style={{ minWidth: 0 }}>
-                        <span className="text-label text-primary ellipsis">{c.name}</span>
-                        <span className="text-caption text-secondary">{formatRange(c)}</span>
-                      </div>
-                      <CycleProgress cycle={c} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )
-        })
+        <>
+          <Velocity cycles={cycles} />
+          {SECTIONS.map(({ state, title }) => {
+            const list = cycles.filter((c) => c.state === state)
+            if (!list.length) return null
+            return (
+              <section key={state} className="grid gap-3" aria-labelledby={`cycles-${state}`}>
+                <h2 id={`cycles-${state}`} className="text-label">{title}</h2>
+                <ul className="grid m-0 p-0 bg-surface border rounded-lg overflow-hidden" style={{ listStyle: 'none' }}>
+                  {list.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        to="/$workspace/projects/$key/cycles/$number"
+                        params={{ workspace: workspace.slug, key: project.key, number: String(c.number) }}
+                        className="project-row"
+                      >
+                        <div className="grid flex-grow" style={{ minWidth: 0 }}>
+                          <span className="text-label text-primary ellipsis">{c.name}</span>
+                          <span className="text-caption text-secondary">{formatRange(c)}</span>
+                        </div>
+                        <CycleProgress cycle={c} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )
+          })}
+        </>
       )}
       {manage ? (
         <Dialog open={creating} onClose={() => setCreating(false)} title="New cycle">

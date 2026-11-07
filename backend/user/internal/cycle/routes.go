@@ -20,6 +20,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/cycles/{number}", h.wrap(h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/cycles/{number}", h.wrap(h.update))
 	mux.HandleFunc("DELETE /api/workspaces/{slug}/projects/{key}/cycles/{number}", h.wrap(h.delete))
+	mux.HandleFunc("GET /api/workspaces/{slug}/projects/{key}/cycles/{number}/burndown", h.wrap(h.burndown))
 	mux.HandleFunc("POST /api/workspaces/{slug}/projects/{key}/cycles/{number}/rollover", h.wrap(h.rollover))
 }
 
