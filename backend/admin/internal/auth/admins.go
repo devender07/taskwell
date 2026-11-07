@@ -42,9 +42,34 @@ func checkNewAdmin(name, email, pw, current string) map[string]string {
 	return errs
 }
 
-// createAdmin adds an admin account and answers it with its new TOTP factor, shown once. The signed-in admin confirms
-// with their own password, so a stolen session alone can't add a lasting account; wrong ones count toward their
-// sign-in lockout.
+// confirm checks the signed-in admin's own password before a change to admin accounts, so a stolen session alone
+// can't add a lasting account or lock the others out. Wrong ones count toward their sign-in lockout. It reports
+// whether to go on, having answered otherwise.
+func (h *Handler) confirm(w http.ResponseWriter, r *http.Request, adminID, current string) (bool, error) {
+	ctx := r.Context()
+	me, err := h.model.admin(ctx, adminID)
+	if err != nil || me == nil {
+		return false, err
+	}
+	if locked, err := h.locked(w, r, "admin:"+me.Email); err != nil || locked {
+		return false, err
+	}
+	stored, err := h.model.passwordHash(ctx, adminID)
+	if err != nil {
+		return false, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(stored), []byte(current)) != nil {
+		if err := h.model.fail(ctx, "admin:"+me.Email); err != nil {
+			return false, err
+		}
+		web.WriteFields(w, http.StatusBadRequest, map[string]string{"current_password": "Your password is incorrect."})
+		return false, nil
+	}
+	return true, nil
+}
+
+// createAdmin adds an admin account (confirmed with the admin's own password) and answers it with its new TOTP
+// factor, shown once.
 func (h *Handler) createAdmin(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	name, email := strings.TrimSpace(r.FormValue("name")), strings.ToLower(strings.TrimSpace(r.FormValue("email")))
@@ -53,23 +78,8 @@ func (h *Handler) createAdmin(w http.ResponseWriter, r *http.Request, adminID st
 		web.WriteFields(w, http.StatusBadRequest, errs)
 		return nil
 	}
-	me, err := h.model.admin(ctx, adminID)
-	if err != nil || me == nil {
+	if ok, err := h.confirm(w, r, adminID, current); err != nil || !ok {
 		return err
-	}
-	if locked, err := h.locked(w, r, "admin:"+me.Email); err != nil || locked {
-		return err
-	}
-	stored, err := h.model.passwordHash(ctx, adminID)
-	if err != nil {
-		return err
-	}
-	if bcrypt.CompareHashAndPassword([]byte(stored), []byte(current)) != nil {
-		if err := h.model.fail(ctx, "admin:"+me.Email); err != nil {
-			return err
-		}
-		web.WriteFields(w, http.StatusBadRequest, map[string]string{"current_password": "Your password is incorrect."})
-		return nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
@@ -87,11 +97,20 @@ func (h *Handler) createAdmin(w http.ResponseWriter, r *http.Request, adminID st
 	return nil
 }
 
+// removeAdmin deletes another admin (confirmed with the admin's own password); their sessions end with it.
 func (h *Handler) removeAdmin(w http.ResponseWriter, r *http.Request, adminID string) error {
 	id := r.PathValue("id")
 	if id == adminID {
 		web.WriteErr(w, http.StatusBadRequest, "You can't remove yourself.")
 		return nil
+	}
+	current := r.FormValue("current_password")
+	if current == "" {
+		web.WriteFields(w, http.StatusBadRequest, map[string]string{"current_password": "Your password is required."})
+		return nil
+	}
+	if ok, err := h.confirm(w, r, adminID, current); err != nil || !ok {
+		return err
 	}
 	var u pgtype.UUID
 	found := false

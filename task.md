@@ -129,7 +129,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] Workspaces and users list, suspend a user
 - [x] Basic usage stats
 - [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/create-admin.sh email`)
-- [x] Admins page: list admins (two-step status, last active), add one (confirmed with your password; shows their setup key and recovery codes once), remove; both in the audit log
+- [x] Admins page: list admins (two-step status, last active), add one (shows their setup key and recovery codes once) or remove one, both confirmed with your password; logged in the audit log
 
 ## Later
 

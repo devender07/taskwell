@@ -34,6 +34,7 @@ import (
 func main() {
 	enrol := flag.String("enrol-mfa", "", "give the admin with this email an MFA factor (printed here) when they have none, then exit")
 	resetMFA := flag.String("reset-mfa", "", "give this admin a new MFA factor (printed here) and end their admin sign-ins, then exit")
+	mfaCode := flag.String("mfa-code", "", "dev only: print the current sign-in code of the admin with this email, then exit")
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
 	flag.Parse()
 
@@ -114,6 +115,22 @@ func main() {
 			return
 		}
 		printEnrolment(e)
+		return
+	}
+
+	if *mfaCode != "" {
+		// Never in production: there the code must come from the admin's own device.
+		if prod {
+			pool.Close()
+			obs.Fatal("-mfa-code is for local dev only")
+		}
+		now := time.Now()
+		code, err := auth.CurrentCode(context.Background(), pool, mfaKey, *mfaCode, now)
+		if err != nil || code == "" {
+			pool.Close()
+			obs.Fatal("mfa-code: no admin with that email, or they have no factor", "email", *mfaCode, "err", err)
+		}
+		fmt.Printf("%s  (changes in %ds)\n", code, 30-now.Unix()%30)
 		return
 	}
 

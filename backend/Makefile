@@ -14,7 +14,7 @@ run      = $(ENV) $(2) 2>&1 | sed -u 's/^/[$(1)] /'
 # Test sites on localhost or the LAN are allowed in dev (the user API and the tester both read it).
 export AI_TEST_ALLOW_PRIVATE ?= true
 
-.PHONY: dev up down migrate user tester admin mcp build vet test
+.PHONY: dev up down migrate user tester admin mcp build vet test admin-account admin-reset-mfa mfa-code
 
 dev: up migrate
 	@$(MAKE) --no-print-directory -j4 user tester admin mcp
@@ -41,6 +41,24 @@ admin:
 
 mcp:
 	@$(call run,mcp,go run ./mcp/cmd/mcp)
+
+# Admin accounts for the admin app (:5174), against the running stack:
+#   make admin-account EMAIL=you@example.com NAME='Your name'   create one (or reset its password); prints the setup key
+#   make admin-reset-mfa EMAIL=you@example.com                  new setup key and recovery codes; ends their sign-ins
+#   make mfa-code EMAIL=you@example.com                         the admin's current 6-digit code, like their authenticator
+#   make mfa-code KEY=SETUP_KEY                                 the same from a setup key (e.g. one printed on the server)
+admin-account:
+	@[ -n "$(EMAIL)" ] || { echo "usage: make admin-account EMAIL=you@example.com NAME='Your name'"; exit 1; }
+	@../deploy/create-admin.sh "$(EMAIL)" "$(or $(NAME),Admin)"
+
+admin-reset-mfa:
+	@[ -n "$(EMAIL)" ] || { echo "usage: make admin-reset-mfa EMAIL=you@example.com"; exit 1; }
+	@$(ENV) go run ./admin/cmd/admin -reset-mfa "$(EMAIL)"
+
+mfa-code:
+	@if [ -n "$(EMAIL)" ]; then $(ENV) go run ./admin/cmd/admin -mfa-code "$(EMAIL)" 2>&1 | grep -v ' level=WARN '; \
+	elif [ -n "$(KEY)" ]; then ../deploy/mfa-code.sh "$(KEY)"; \
+	else echo "usage: make mfa-code EMAIL=you@example.com (or KEY=SETUP_KEY)"; exit 1; fi
 
 build:
 	go build $(PKGS)

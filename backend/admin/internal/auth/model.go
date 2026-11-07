@@ -136,6 +136,25 @@ func byEmailCLI(ctx context.Context, db *pgxpool.Pool, key []byte, email, action
 	return u, e, nil
 }
 
+// CurrentCode returns the 6-digit code the admin's authenticator app shows now, for local dev sign-in without a
+// phone; "" when there is no such admin or they have no factor.
+func CurrentCode(ctx context.Context, db *pgxpool.Pool, key []byte, email string, now time.Time) (string, error) {
+	var id, sealed string
+	err := db.QueryRow(ctx, `select a.id::text, f.secret from admins a join admin_mfa f on f.admin_id = a.id
+		where a.email = lower(trim($1)) and f.enabled_at is not null`, email).Scan(&id, &sealed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read mfa: %w", err)
+	}
+	secret, err := totp.Unseal(key, id, sealed)
+	if err != nil {
+		return "", err
+	}
+	return totp.Code(secret, now.Unix()/30)
+}
+
 // enrol gives the admin a new TOTP factor in tx, replacing theirs only when replace is set; nil when they kept theirs.
 func enrol(ctx context.Context, tx pgx.Tx, key []byte, id, email string, replace bool) (*Enrolment, error) {
 	secret := totp.NewSecret()
