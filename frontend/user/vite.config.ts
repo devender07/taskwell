@@ -31,7 +31,7 @@ const pagesHeaders: Plugin = {
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

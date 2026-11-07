@@ -10,8 +10,9 @@ bin/
 .DS_Store
 .claude
 .codegraph
-# Real service env files with secrets (deploy/systemd/README.md)
 deploy/systemd/*.env
-# Public, non-secret build settings for the frontend apps
+
 !frontend/*/.env.development
 !frontend/*/.env.production
+
+deploy/config/system.json

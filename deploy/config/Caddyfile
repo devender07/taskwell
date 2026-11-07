@@ -1,0 +1,22 @@
+{
+	email dkathait269@gmail.com
+}
+
+# The frontends are on Cloudflare Pages (taskwell.dev, admin.taskwell.dev); this server only runs the APIs.
+# flush_interval -1 passes streams (AI test live view, MCP) straight through.
+
+api.taskwell.dev {
+	reverse_proxy 127.0.0.1:8090 {
+		flush_interval -1
+	}
+}
+
+mcp.taskwell.dev {
+	reverse_proxy 127.0.0.1:8095 {
+		flush_interval -1
+	}
+}
+
+admin-api.taskwell.dev {
+	reverse_proxy 127.0.0.1:8080
+}

@@ -1,5 +1,5 @@
 # Standalone Postgres for Taskwell on its own server (or next to the app), tuned for 4 vCPU / 4 GB RAM.
-# Setup, connecting and backups: deploy/postgres/README.md.
+# Installed to /opt/taskwell-db by deploy/server-setup.sh (deploy/README.md).
 name: taskwell-db
 
 services:

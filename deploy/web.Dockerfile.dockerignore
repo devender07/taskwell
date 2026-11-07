@@ -1,5 +1,0 @@
-*
-!frontend/
-!deploy/Caddyfile
-**/node_modules/
-**/dist/

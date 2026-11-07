@@ -1,5 +1,5 @@
 #!/bin/sh
-# Nightly dump of the taskwell database, kept for KEEP_DAYS days. Run from cron (see README.md).
+# Nightly dump of the taskwell database, kept for KEEP_DAYS days. Run from /etc/cron.d/taskwell-backup (deploy/server-setup.sh).
 # Set RCLONE_REMOTE (e.g. r2:taskwell-backups) to also copy each dump off the server with rclone.
 set -eu
 

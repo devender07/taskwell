@@ -1,0 +1,18 @@
+{
+  "app_base_url": "https://taskwell.dev",
+
+  "smtp_host": "",
+  "smtp_port": 587,
+  "smtp_username": "",
+  "smtp_password": "",
+  "smtp_from": "Taskwell <no-reply@taskwell.dev>",
+
+  "google_client_id": "",
+  "google_client_secret": "",
+
+  "s3_endpoint": "",
+  "s3_region": "auto",
+  "s3_bucket": "taskwell",
+  "s3_access_key_id": "",
+  "s3_secret_access_key": ""
+}
