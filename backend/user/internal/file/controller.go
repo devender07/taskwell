@@ -182,14 +182,6 @@ func (h *Handler) startAvatarUpload(w http.ResponseWriter, r *http.Request, user
 	if err := h.reap(r.Context(), nil, userID); err != nil {
 		return err
 	}
-	n, err := h.model.avatarUploads(r.Context(), userID)
-	if err != nil {
-		return err
-	}
-	if n >= maxAvatarUploads {
-		web.Err(w, http.StatusTooManyRequests, "Too many uploads at once. Try again in an hour.")
-		return nil
-	}
 	return h.start(w, r, nil, userID, maxAvatar, tooLargeAvatar, true)
 }
 
@@ -216,9 +208,17 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request, workspaceID *str
 		return nil
 	}
 	name = CleanName(name)
-	id, err := h.model.startUpload(r.Context(), workspaceID, userID, name, contentType, size)
+	limitN := 0
+	if workspaceID == nil {
+		limitN = maxAvatarUploads
+	}
+	id, err := h.model.startUpload(r.Context(), workspaceID, userID, name, contentType, size, limitN)
 	if err != nil {
 		return err
+	}
+	if id == "" {
+		web.Err(w, http.StatusTooManyRequests, "Too many uploads at once. Try again in an hour.")
+		return nil
 	}
 	u, headers, err := h.files.PresignPut(r.Context(), id, contentType, Disposition(contentType, name), size)
 	if err != nil {
@@ -231,10 +231,22 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request, workspaceID *str
 // finish checks the direct upload id the client says it PUT: its row is the user's to this workspace (nil: an
 // avatar) and still live, and the stored object has the declared size, headers and type. It returns the file to
 // create, or the message to refuse it with. Refused bytes are deleted.
+// Finishes of one upload run one at a time, so a second can't promote newly staged bytes over a copy the first checked.
 func (h *Handler) finish(ctx context.Context, id string, workspaceID *string, userID string, imageOnly bool) (*File, string, error) {
 	if !web.IsUUID(id) {
 		return nil, errNoUpload, nil
 	}
+	var f *File
+	var msg string
+	err := h.model.locked(ctx, "upload:"+id, func() error {
+		var err error
+		f, msg, err = h.finishLocked(ctx, id, workspaceID, userID, imageOnly)
+		return err
+	})
+	return f, msg, err
+}
+
+func (h *Handler) finishLocked(ctx context.Context, id string, workspaceID *string, userID string, imageOnly bool) (*File, string, error) {
 	f, err := h.model.upload(ctx, id, userID, workspaceID)
 	if err != nil || f == nil {
 		return nil, errNoUpload, err

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/devender07/taskwell/backend/user/internal/dbtest"
@@ -175,5 +176,29 @@ func TestDirectAvatar(t *testing.T) {
 	}
 	if code, res := post("/api/me/uploads", map[string]string{"name": "me.png", "size": "10", "type": "image/png"}); code != http.StatusCreated {
 		t.Fatalf("upload after expiry = %d %s", code, res)
+	}
+
+	// Starts at the same moment still respect the cap.
+	if _, err := pool.Exec(t.Context(), `delete from uploads where user_id = $1`, user); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	codes := make(chan int, 3*maxAvatarUploads)
+	for range cap(codes) {
+		wg.Go(func() {
+			code, _ := post("/api/me/uploads", map[string]string{"name": "me.png", "size": "10", "type": "image/png"})
+			codes <- code
+		})
+	}
+	wg.Wait()
+	close(codes)
+	created := 0
+	for c := range codes {
+		if c == http.StatusCreated {
+			created++
+		}
+	}
+	if created != maxAvatarUploads {
+		t.Fatalf("concurrent starts created %d, want %d", created, maxAvatarUploads)
 	}
 }

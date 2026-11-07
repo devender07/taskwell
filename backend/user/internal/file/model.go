@@ -83,14 +83,37 @@ func (m *model) create(ctx context.Context, f *File, store func(id string) error
 }
 
 // startUpload records a direct upload the client is about to PUT and returns its id, the object key.
-func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, name, contentType string, size int64) (string, error) {
+func (m *model) startUpload(ctx context.Context, workspaceID *string, userID, name, contentType string, size int64, max int) (string, error) {
 	var id string
-	err := m.db.QueryRow(ctx, `insert into uploads (workspace_id, user_id, name, content_type, size) values ($1, $2, $3, $4, $5)
-		returning id::text`, workspaceID, userID, name, contentType, size).Scan(&id)
+	err := m.locked(ctx, "uploads:"+userID, func() error {
+		if max > 0 {
+			var n int
+			if err := m.db.QueryRow(ctx, `select count(*) from uploads where user_id = $1
+				and workspace_id is not distinct from $2`, userID, workspaceID).Scan(&n); err != nil {
+				return err
+			}
+			if n >= max {
+				return nil
+			}
+		}
+		return m.db.QueryRow(ctx, `insert into uploads (workspace_id, user_id, name, content_type, size) values ($1, $2, $3, $4, $5)
+			returning id::text`, workspaceID, userID, name, contentType, size).Scan(&id)
+	})
 	if err != nil {
 		return "", fmt.Errorf("start upload: %w", err)
 	}
 	return id, nil
+}
+
+// locked runs fn while holding a transaction-scoped advisory lock on key, so calls with the same key on any instance
+// run one at a time. fn's own queries use the pool, not the lock's transaction.
+func (m *model) locked(ctx context.Context, key string, fn func() error) error {
+	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
+			return fmt.Errorf("lock %s: %w", key, err)
+		}
+		return fn()
+	})
 }
 
 // upload returns the user's live upload id to the workspace (nil: an avatar) as a File to create, nil when there's none.
@@ -121,15 +144,6 @@ func (m *model) reapUploads(ctx context.Context, workspaceID *string, userID str
 		return nil, fmt.Errorf("reap uploads: %w", err)
 	}
 	return ids, nil
-}
-
-// avatarUploads counts the user's unfinished avatar uploads.
-func (m *model) avatarUploads(ctx context.Context, userID string) (int, error) {
-	var n int
-	if err := m.db.QueryRow(ctx, `select count(*) from uploads where workspace_id is null and user_id = $1`, userID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count avatar uploads: %w", err)
-	}
-	return n, nil
 }
 
 // dropUpload deletes the upload's row, as when its bytes were refused.
