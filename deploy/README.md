@@ -1,7 +1,7 @@
 # Deploy
 
 One Ubuntu 24.04 server runs the three Go services (systemd), Postgres (Docker) and Caddy (HTTPS). The frontends are
-on Cloudflare Pages. Every script runs from your machine and takes `user@host` (default `devender@ftp.fotospace.co.in`).
+Cloudflare Workers serving static assets. Every script runs from your machine and takes `user@host` (default `devender@ftp.fotospace.co.in`).
 
 | Host | Points at | Serves |
 | --- | --- | --- |
@@ -35,8 +35,9 @@ The user API won't start until `app_base_url` is `https://`. That is why `system
 deploy (which creates the tables) and is followed by a restart. `create-admin.sh` prints the authenticator setup key and
 recovery codes once, so save them.
 
-Frontends: `deploy/build.sh prod user frontend` builds into `dist/prod/user/web` (with Pages' `_headers`); upload that
-folder to the Pages project. The same goes for `admin`.
+Frontends: `deploy/frontend.sh user` (or `admin`) builds into `dist/prod/<app>/web` and deploys it to the app's
+Cloudflare Worker (assets only, `frontend/<app>/wrangler.toml`: `taskwell` at taskwell.dev, `admin-taskwell` at
+admin.taskwell.dev). Log in once with `npx wrangler@4 login`.
 
 ## Check
 
