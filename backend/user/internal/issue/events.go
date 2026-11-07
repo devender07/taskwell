@@ -29,6 +29,7 @@ type snapshot struct {
 	assignee    *Person
 	priority    int
 	dueDate     *string
+	estimate    *int
 	labels      []Label
 	parent      *eventRef
 	projectID   string
@@ -69,6 +70,9 @@ func diff(a, b snapshot) []event {
 	}
 	if a.priority != b.priority {
 		es = append(es, event{"priority", change[int]{a.priority, b.priority}})
+	}
+	if !intEq(a.estimate, b.estimate) {
+		es = append(es, event{"estimate", change[*int]{a.estimate, b.estimate}})
 	}
 	if deref(a.dueDate) != deref(b.dueDate) {
 		es = append(es, event{"due_date", change[*string]{a.dueDate, b.dueDate}})
@@ -117,3 +121,5 @@ func deref(s *string) string {
 	}
 	return *s
 }
+
+func intEq(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

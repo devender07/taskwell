@@ -85,7 +85,7 @@ func (t *tools) server(cache *mcp.SchemaCache) *mcp.Server {
 		Description: "Create an issue in a project. Status, assignee and labels are names from workspace_options. " +
 			"To file a bug from a failed test result, use the case's title and put the result's summary and reproduction steps in the description."}, t.createIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "update_issue",
-		Description: "Change an issue. Only the fields you give change; an empty assignee, due_date, parent or cycle clears it, labels replaces all labels."}, t.updateIssue)
+		Description: "Change an issue. Only the fields you give change; an empty assignee, due_date, parent or cycle clears it, estimate 0 clears it, labels replaces all labels."}, t.updateIssue)
 	mcp.AddTool(s, &mcp.Tool{Name: "reorder_issues",
 		Description: "Change a project's manual issue order (list_issues' default). Give identifiers to put them in that order: the first stays " +
 			"where it is and each next one moves right after the one before it. Or give identifier with after (the issue it goes right after) " +
@@ -149,6 +149,7 @@ type createIn struct {
 	Assignee    *string  `json:"assignee,omitempty" jsonschema:"member's email or name"`
 	Priority    *string  `json:"priority,omitempty" jsonschema:"none, urgent, high, medium or low"`
 	DueDate     *string  `json:"due_date,omitempty" jsonschema:"YYYY-MM-DD"`
+	Estimate    *int     `json:"estimate,omitempty" jsonschema:"story points: 1, 2, 3, 5 or 8"`
 	Labels      []string `json:"labels,omitempty" jsonschema:"label names"`
 	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier, making this a sub-issue"`
 	Cycle       *string  `json:"cycle,omitempty" jsonschema:"cycle number in the project, from list_cycles"`
@@ -165,6 +166,7 @@ type updateIn struct {
 	Assignee    *string  `json:"assignee,omitempty" jsonschema:"member's email or name; empty unassigns"`
 	Priority    *string  `json:"priority,omitempty" jsonschema:"none, urgent, high, medium or low"`
 	DueDate     *string  `json:"due_date,omitempty" jsonschema:"YYYY-MM-DD; empty clears it"`
+	Estimate    *int     `json:"estimate,omitempty" jsonschema:"story points: 1, 2, 3, 5 or 8; 0 clears it"`
 	Labels      []string `json:"labels,omitempty" jsonschema:"label names, replacing the issue's labels; [] removes them all"`
 	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier; empty makes it top-level"`
 	Cycle       *string  `json:"cycle,omitempty" jsonschema:"cycle number in the issue's project, from list_cycles; empty removes it from its cycle"`
@@ -209,6 +211,7 @@ type issue struct {
 	Assignee    *person         `json:"assignee"`
 	Priority    *int            `json:"priority"`
 	DueDate     *string         `json:"due_date"`
+	Estimate    *int            `json:"estimate"`
 	Labels      []label         `json:"labels"`
 	Project     *struct {
 		Key  string `json:"key"`
@@ -248,6 +251,7 @@ type issueOut struct {
 	Assignee    string       `json:"assignee,omitempty"`
 	Priority    string       `json:"priority,omitempty"`
 	DueDate     string       `json:"due_date,omitempty"`
+	Estimate    int          `json:"estimate,omitempty"`
 	Labels      []string     `json:"labels,omitempty"`
 	Project     string       `json:"project,omitempty"`
 	Parent      string       `json:"parent,omitempty"`
@@ -283,6 +287,9 @@ func (t *tools) out(slug string, i issue) issueOut {
 	}
 	if i.DueDate != nil {
 		o.DueDate = *i.DueDate
+	}
+	if i.Estimate != nil {
+		o.Estimate = *i.Estimate
 	}
 	for _, l := range i.Labels {
 		o.Labels = append(o.Labels, l.Name)
@@ -481,7 +488,7 @@ func (t *tools) getIssue(ctx context.Context, _ *mcp.CallToolRequest, in issueIn
 
 func (t *tools) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in createIn) (*mcp.CallToolResult, any, error) {
 	form, err := t.issueForm(ctx, in.Workspace, in.Project, fields{title: &in.Title, description: in.Description, status: in.Status,
-		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
+		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, estimate: in.Estimate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -502,7 +509,7 @@ func (t *tools) createIssue(ctx context.Context, _ *mcp.CallToolRequest, in crea
 func (t *tools) updateIssue(ctx context.Context, _ *mcp.CallToolRequest, in updateIn) (*mcp.CallToolResult, any, error) {
 	key, _, _ := strings.Cut(in.Identifier, "-")
 	form, err := t.issueForm(ctx, in.Workspace, key, fields{title: in.Title, description: in.Description, status: in.Status,
-		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
+		assignee: in.Assignee, priority: in.Priority, dueDate: in.DueDate, estimate: in.Estimate, labels: in.Labels, parent: in.Parent, cycle: in.Cycle})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -575,6 +582,7 @@ func (t *tools) addComment(ctx context.Context, _ *mcp.CallToolRequest, in comme
 // fields are an issue's settable fields as tools take them; nil leaves one unchanged.
 type fields struct {
 	title, description, status, assignee, priority, dueDate, parent, cycle *string
+	estimate                                                               *int // 0 clears it
 	labels                                                                 []string
 }
 
@@ -621,6 +629,12 @@ func (t *tools) issueForm(ctx context.Context, slug, project string, f fields) (
 	}
 	if f.dueDate != nil {
 		form.Set("due_date", strings.TrimSpace(*f.dueDate))
+	}
+	if f.estimate != nil {
+		form.Set("estimate", "")
+		if *f.estimate != 0 {
+			form.Set("estimate", strconv.Itoa(*f.estimate))
+		}
 	}
 	if f.parent != nil {
 		form.Set("parent", strings.TrimSpace(*f.parent))

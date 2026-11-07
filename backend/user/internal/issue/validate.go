@@ -68,6 +68,14 @@ func checkPriority(s string) string {
 	return ""
 }
 
+// checkEstimate accepts story points 1, 2, 3, 5 or 8, or empty (none).
+func checkEstimate(s string) string {
+	if s == "" || slices.Contains([]string{"1", "2", "3", "5", "8"}, s) {
+		return ""
+	}
+	return "Choose 1, 2, 3, 5 or 8 points."
+}
+
 // checkDueDate accepts YYYY-MM-DD for a real date, or empty.
 func checkDueDate(s string) string {
 	if s == "" {

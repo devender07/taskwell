@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { IssueEvent } from '@/api'
-import { formatDate, priorityLabel } from './fields'
+import { formatDate, points, priorityLabel } from './fields'
 import { PROVIDER_NAME, prRef } from './pull-requests'
 
 type Ref = { identifier: string; title: string }
@@ -36,6 +36,11 @@ export function eventText(e: IssueEvent, ref: (issue: Ref) => ReactNode, subject
     }
     case 'priority':
       return e.data.to === 0 ? <>removed priority{from}</> : <>set priority{of} to {priorityLabel(e.data.to)}</>
+    case 'estimate': {
+      const { from: was, to } = e.data
+      if (!to) return <>removed the estimate{from}</>
+      return was ? <>changed the estimate{of} from {was} to {points(to)}</> : <>set the estimate{of} to {points(to)}</>
+    }
     case 'due_date':
       return e.data.to ? <>set the due date{of} to {formatDate(e.data.to)}</> : <>removed the due date{from}</>
     case 'labels': {

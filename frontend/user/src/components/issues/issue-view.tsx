@@ -26,7 +26,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@taskwell/shared/icons'
 import { api, issuePath, avatarSrc, toFormErrors, type CycleRef, type Issue, type Label, type Status, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
-import { AssignedBy, LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
+import { AssignedBy, EstimateChip, LabelDot, StatusIcon, formatDate, overdue, priorityLabel } from './fields'
 import {
   FILTER_KEYS,
   PRIORITY_ORDER,
@@ -602,6 +602,7 @@ export const IssueRow = memo(function IssueRow({ workspace, issue, group = '', d
       <LabelDots issue={issue} />
       <span className="issue-row-wide text-caption text-secondary flex-noshrink">{issue.status.name}</span>
       {issue.priority ? <span className="text-caption text-secondary flex-noshrink">{priorityLabel(issue.priority)}</span> : null}
+      <EstimateChip estimate={issue.estimate} />
       <DueDate issue={issue} />
       <span className="issue-row-wide flex-noshrink ellipsis" style={{ maxWidth: 160 }}>
         <AssignedBy issue={issue} />
@@ -649,10 +650,11 @@ function CardBody({ issue }: { issue: Issue }) {
       </span>
       <span className="text-label text-primary ellipsis-2">{issue.title}</span>
       <AssignedBy issue={issue} />
-      {issue.labels.length || issue.priority || issue.due_date ? (
+      {issue.labels.length || issue.priority || issue.estimate || issue.due_date ? (
         <span className="flex flex-wrap items-center gap-2">
           <LabelDots issue={issue} />
           {issue.priority ? <span className="text-caption text-secondary">{priorityLabel(issue.priority)}</span> : null}
+          <EstimateChip estimate={issue.estimate} />
           <DueDate issue={issue} />
         </span>
       ) : null}

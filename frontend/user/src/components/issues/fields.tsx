@@ -23,6 +23,20 @@ export const CATEGORIES: { value: StatusCategory; label: string }[] = [
   { value: 'canceled', label: 'Canceled' },
 ]
 
+export const ESTIMATES = [1, 2, 3, 5, 8] as const
+export const points = (n: number) => `${n} ${n === 1 ? 'point' : 'points'}`
+export const estimateOptions: Option[] = [{ value: '', label: 'No estimate' }, ...ESTIMATES.map((n) => ({ value: String(n), label: points(n) }))]
+export const estimateOption = (e: number | null) => estimateOptions.find((o) => o.value === (e ? String(e) : '')) ?? null
+
+export function EstimateChip({ estimate }: { estimate: number | null }) {
+  if (!estimate) return null
+  return (
+    <span role="img" aria-label={`Estimate: ${points(estimate)}`} title={points(estimate)} className="inline-flex items-center justify-center flex-noshrink text-caption text-secondary rounded-full px-2" style={{ minWidth: 20, border: '1px solid rgba(var(--ink), 0.08)' }}>
+      {estimate}
+    </span>
+  )
+}
+
 export const priorityOptions: Option[] = PRIORITIES.map((p) => ({ value: String(p.value), label: p.label }))
 export const statusOptions = (statuses: Status[]): Option[] => statuses.map((s) => ({ value: s.id, label: s.name, icon: <StatusIcon status={s} /> }))
 export const assigneeOptions = (members: Member[]): Option[] => [

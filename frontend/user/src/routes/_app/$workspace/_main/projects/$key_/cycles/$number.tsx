@@ -7,11 +7,11 @@ import { IconButton } from '@taskwell/shared/icon-button'
 import { Popover } from '@taskwell/shared/popover'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { MoreIcon } from '@taskwell/shared/icons'
-import { ApiError, can, cyclesPath, rolloverCycle, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { ApiError, burndownPath, can, cyclesPath, rolloverCycle, type Burndown, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import { FormError } from '@/components/auth/auth-card'
-import { CycleForm, CycleProgress, DeleteCycle, STATE_LABEL } from '@/components/cycles/cycles'
+import { BurndownChart, CycleForm, CycleProgress, DeleteCycle, PointsDone, STATE_LABEL } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
 import { CreateIssueForm } from '@/components/issues/issue-form'
 import { IssueView } from '@/components/issues/issue-view'
@@ -32,13 +32,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
     trackPath(ctx, `${projectPath}/issues`) // status changes move progress and the board
     const projectReq = loaderApi<Project>(ctx, projectPath)
     const sort = ctx.deps.search.sort ?? projectReq.then(defaultSort)
-    const [project, { cycle, issues }, page, cycles, statuses, labels] = await Promise.all([
+    const [project, { cycle, issues }, page, cycles, statuses, labels, burndown] = await Promise.all([
       projectReq,
       loaderApi<{ cycle: Cycle; issues: Issue[] }>(ctx, `${list}/${params.number}`),
       Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
       loaderApi<Cycle[]>(ctx, list),
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
+      loaderApi<Burndown>(ctx, burndownPath(params.workspace, params.key, params.number)),
     ]).catch((e) => {
       if (e instanceof ApiError && e.status === 404) throw notFound()
       throw e
@@ -51,14 +52,14 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycl
         replace: true,
       })
     }
-    return { project, cycle, issues, page, source, cycles, statuses, labels }
+    return { project, cycle, issues, page, source, cycles, statuses, labels, burndown }
   },
   component: CyclePage,
 })
 
 function CyclePage() {
   const workspace = useLoaderData({ from: '/_app/$workspace' })
-  const { project, cycle, issues, page, source, cycles, statuses, labels } = Route.useLoaderData()
+  const { project, cycle, issues, page, source, cycles, statuses, labels, burndown } = Route.useLoaderData()
   const { user } = Route.useRouteContext()
   const search = Route.useSearch()
   const [dialog, setDialog] = useState<'edit' | 'delete' | 'issue' | null>(null)
@@ -106,10 +107,14 @@ function CyclePage() {
             ) : null}
           </div>
         </div>
-        <div style={{ maxWidth: 320 }}>
+        <div className="grid gap-1" style={{ maxWidth: 320 }}>
           <CycleProgress cycle={cycle} />
+          <PointsDone cycle={cycle} />
         </div>
       </header>
+      <section className="p-6 bg-surface border rounded-lg" aria-label="Burndown">
+        <BurndownChart cycle={cycle} data={burndown} />
+      </section>
       {cycle.state === 'past' && open > 0 ? (
         <Rollover workspace={workspace} project={project} cycle={cycle} cycles={cycles} open={open} manage={manage} />
       ) : null}

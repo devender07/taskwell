@@ -38,7 +38,11 @@ export type RoadmapProject = Pick<Project, 'key' | 'name' | 'private' | 'start_d
   milestones: Milestone[]
   cycles: Omit<CycleRef, 'id'>[]
 }
-export type Cycle = CycleRef & { custom_name: string | null; progress: { total: number; started: number; completed: number; canceled: number } }
+export type Cycle = CycleRef & {
+  custom_name: string | null
+  progress: { total: number; started: number; completed: number; canceled: number; points: { total: number; started: number; completed: number } }
+}
+export type Burndown = { planned: number | null; days: { date: string; scope: number; done: number }[] }
 export type IssueRef = { id: string; identifier: string; title: string; status: Status; assignee: PersonRef | null }
 export type SearchIssue = IssueRef & { project: { key: string; name: string }; match: 'title' | 'description' | 'identifier' | null }
 export type SearchResult = { issues: SearchIssue[]; projects: Pick<Project, 'key' | 'name' | 'archived'>[] }
@@ -53,6 +57,7 @@ export type Issue = {
   status: Status
   assignee: PersonRef | null
   priority: number
+  estimate: number | null
   due_date: string | null
   labels: Label[]
   created_by: PersonRef | null
@@ -111,6 +116,7 @@ export type IssueEvent = { id: string; actor: PersonRef | null; created_at: stri
   | { kind: 'status'; data: Change<StatusSnap> & { via?: Pick<PullRequest, 'provider' | 'repo' | 'number' | 'url'> } }
   | { kind: 'assignee'; data: Change<PersonRef | null> }
   | { kind: 'priority'; data: Change<number> }
+  | { kind: 'estimate'; data: Change<number | null> }
   | { kind: 'due_date'; data: Change<string | null> }
   | { kind: 'labels'; data: { added: Label[]; removed: Label[] } }
   | { kind: 'parent'; data: Change<EventRef | null> }
@@ -364,6 +370,7 @@ export const deleteMilestone = (workspace: string, project: string, id: string) 
 
 export const cyclesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/cycles`
 const cyclePath = (workspace: string, project: string, number: number) => `${cyclesPath(workspace, project)}/${number}`
+export const burndownPath = (workspace: string, project: string, number: number | string) => `${cyclesPath(workspace, project)}/${number}/burndown`
 
 export const listCycles = (workspace: string, project: string, signal?: AbortSignal) => api<Cycle[]>(cyclesPath(workspace, project), undefined, 'GET', signal)
 export const createCycle = (workspace: string, project: string, form: FormData) => api<Cycle>(cyclesPath(workspace, project), form)

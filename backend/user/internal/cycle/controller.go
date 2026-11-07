@@ -75,6 +75,38 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 	return nil
 }
 
+// burndown answers the cycle's recorded days with today's points live while it's current, and planned: the first
+// day's scope.
+func (h *Handler) burndown(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, p, ok, err := h.project(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	var c *Cycle
+	if n, ok := number(r); ok {
+		if c, err = h.model.get(r.Context(), p.id, n); err != nil {
+			return err
+		}
+	}
+	if c == nil {
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
+		return nil
+	}
+	days, err := h.model.days(r.Context(), c.ID)
+	if err != nil {
+		return err
+	}
+	if c.State == "current" {
+		days = append(days, Day{time.Now().UTC().Format(time.DateOnly), c.Progress.Points.Total, c.Progress.Points.Completed})
+	}
+	var planned *int
+	if len(days) > 0 {
+		planned = &days[0].Scope
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"planned": planned, "days": append([]Day{}, days...)})
+	return nil
+}
+
 func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, true)
 	if !ok || err != nil {

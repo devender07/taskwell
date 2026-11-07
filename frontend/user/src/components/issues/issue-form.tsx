@@ -13,7 +13,7 @@ import { refetchPaths, reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { fillEmpty } from '@/components/templates/template'
-import { LabelSelect, assigneeOption, loadAssignees, priorityOptions, statusOptions } from './fields'
+import { LabelSelect, assigneeOption, estimateOptions, loadAssignees, priorityOptions, statusOptions } from './fields'
 import { useUndoDelete } from './undo-delete'
 import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
@@ -45,6 +45,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
   const [description, setDescription] = useState<{ doc: Doc | null; length: number }>({ doc: extractDataFromArray(prefill, 'description', null), length: 0 })
   const [statusId, setStatusId] = useState(extractDataFromArray(statuses[0], 'id', ''))
   const [priority, setPriority] = useState('0')
+  const [estimate, setEstimate] = useState('')
   const [assignee, setAssignee] = useState<Option | null>(null)
   const [due, setDue] = useState('')
   const [labelIds, setLabelIds] = useState<string[]>([])
@@ -80,6 +81,7 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
     form.set('description', description.doc ? JSON.stringify(description.doc) : '')
     if (statusId) form.set('status_id', statusId)
     if (priority) form.set('priority', priority)
+    if (estimate) form.set('estimate', estimate)
     form.set('assignee_id', extractDataFromArray(assignee, 'value', ''))
     form.set('due_date', due)
     for (const id of labelIds) form.append('label_ids', id)
@@ -154,6 +156,13 @@ export function CreateIssueForm({ workspace, project, projectPicker, parent, cyc
           value={priorityOptions.find((o) => o.value === priority) ?? null}
           onChange={(o) => setPriority(extractDataFromArray(o, 'value', ''))}
           error={errors?.priority}
+        />
+        <SmartAutocomplete
+          label="Estimate"
+          options={estimateOptions}
+          value={estimateOptions.find((o) => o.value === estimate) ?? null}
+          onChange={(o) => setEstimate(extractDataFromArray(o, 'value', ''))}
+          error={errors?.estimate}
         />
         <SmartAutocomplete
           label="Assignee"

@@ -675,6 +675,9 @@ func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID
 	if f.dueDate = value("due_date"); f.dueDate != nil {
 		errs["due_date"] = checkDueDate(*f.dueDate)
 	}
+	if f.estimate = value("estimate"); f.estimate != nil {
+		errs["estimate"] = checkEstimate(*f.estimate)
+	}
 	f.assigneeID = value("assignee_id")
 	f.parent = value("parent")
 	if f.cycleID = value("cycle"); f.cycleID != nil && *f.cycleID != "" && !web.IsUUID(*f.cycleID) {
