@@ -4,6 +4,7 @@ import { apiUrl } from '@taskwell/shared/api-url'
 import { BackLink } from '@taskwell/shared/back-link'
 import { Button } from '@taskwell/shared/button'
 import { IconButton } from '@taskwell/shared/icon-button'
+import { ProgressRing } from '@taskwell/shared/progress-ring'
 import { ChevronRightIcon, FileIcon, FolderIcon, MoreIcon, UploadIcon, XIcon } from '@taskwell/shared/icons'
 import { Input } from '@taskwell/shared/input'
 import { Popover } from '@taskwell/shared/popover'
@@ -16,7 +17,7 @@ import '@/components/files/files.css'
 import '@/components/projects/projects.css'
 
 type Search = { folder?: string; q?: string }
-type Upload = { id: number; name: string; error: string | null }
+type Upload = { id: number; name: string; sent?: number; error: string | null }
 
 let uploadId = 0
 
@@ -77,7 +78,9 @@ function FilesPageView() {
     const done = new Set<number>()
     await Promise.all(
       files.map((file, i) =>
-        uploadProjectFile(workspace.slug, project.key, file, current).then(
+        uploadProjectFile(workspace.slug, project.key, file, current, (sent) =>
+          setUploads((u) => u.map((x) => (x.id === batch[i]!.id ? { ...x, sent } : x))),
+        ).then(
           () => void done.add(batch[i]!.id),
           (e: Error) => setUploads((u) => u.map((x) => (x.id === batch[i]!.id ? { ...x, error: e.message } : x))),
         ),
@@ -183,7 +186,10 @@ function FilesPageView() {
                   </IconButton>
                 </>
               ) : (
-                <span className="text-caption text-secondary">Uploading…</span>
+                <>
+                  <span className="text-caption text-secondary">{u.sent === undefined ? 'Uploading…' : u.sent < 1 ? `${Math.round(u.sent * 100)}%` : 'Saving…'}</span>
+                  <ProgressRing value={u.sent} size={20} label={`Uploading ${u.name}`} />
+                </>
               )}
             </li>
           ))}

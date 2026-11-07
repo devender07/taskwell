@@ -23,6 +23,7 @@ import { RichText } from './rich-text'
 import { MoreIcon, PathIcon } from '../icons/icons'
 import '../input/input.css'
 import '../smart-autocomplete/smart-autocomplete.css'
+import { ProgressRing, uploadLabel } from '../progress-ring/progress-ring'
 import './rich-editor.css'
 
 export type { Doc }
@@ -40,7 +41,8 @@ type RichEditorProps = {
   error?: string | null
   collab?: { doc: Y.Doc; awareness: Awareness; user: { name: string; color: string } }
   minHeight?: number
-  upload?: (file: File) => Promise<{ url: string; name: string; image: boolean }>
+  // onProgress: the share sent so far (0..1), shown as a ring beside the file's name.
+  upload?: (file: File, onProgress: (sent: number) => void) => Promise<{ url: string; name: string; image: boolean }>
   // Set: attached, pasted and dropped files go here instead of into the document.
   onFiles?: (files: File[]) => void
   // `#` suggests issues (shown as "ENG-12 Fix login"); the mention stores the identifier as both id and label.
@@ -54,7 +56,7 @@ type RichEditorProps = {
 
 type Suggest = { kind: 'people' | 'issues'; items: Option[]; index: number; rect: DOMRect | null; pick: (o: Option) => void }
 
-type Upload = { id: number; name: string; error?: string }
+type Upload = { id: number; name: string; sent?: number; error?: string }
 
 const Image = Node.create({
   name: 'image',
@@ -269,7 +271,8 @@ function Editable({
     for (const file of files) {
       const id = ++uploadSeq.current
       setUploads((list) => [...list, { id, name: file.name }])
-      upload(file).then(
+      const progress = (sent: number) => setUploads((list) => list.map((u) => (u.id === id ? { ...u, sent } : u)))
+      upload(file, progress).then(
         (f) => {
           setUploads((list) => list.filter((u) => u.id !== id))
           if (editor.isDestroyed) return
@@ -329,11 +332,18 @@ function Editable({
           </div>
         ) : null}
       </div>
-      {uploads.map((u) => (
-        <span key={u.id} role={u.error ? 'alert' : 'status'} className={`text-caption ${u.error ? 'text-accent' : 'text-secondary'}`}>
-          {u.error ? `Couldn't upload ${u.name}: ${u.error}` : `Uploading ${u.name}…`}
-        </span>
-      ))}
+      {uploads.map((u) =>
+        u.error ? (
+          <span key={u.id} role="alert" className="text-caption text-accent">
+            Couldn't upload {u.name}: {u.error}
+          </span>
+        ) : (
+          <span key={u.id} className="flex items-center gap-2 text-caption text-secondary">
+            <ProgressRing value={u.sent} label={`Uploading ${u.name}`} />
+            <span className="ellipsis">{uploadLabel(u.name, u.sent)}</span>
+          </span>
+        ),
+      )}
       {error ? <span id={errorId} className="text-caption text-accent">{error}</span> : null}
     </div>
   )

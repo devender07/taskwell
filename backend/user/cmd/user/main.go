@@ -223,6 +223,7 @@ func main() {
 	wg.Go(func() { mailer.Run(work) })
 	wg.Go(func() { webhookH.Run(work) })
 	files := storage.New(cfg)
+	allowUploads(files, cors.Origin(base))
 	fileH := file.New(pool, files, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	fileH.Register(mux)
@@ -258,6 +259,16 @@ func main() {
 	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
+}
+
+// allowUploads lets the web app at origin PUT direct uploads to the bucket. A store that refuses (an R2 token with
+// only object access) needs the rule set once by hand: see deploy/README.md.
+func allowUploads(files *storage.Store, origin string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := files.AllowOrigin(ctx, origin); err != nil {
+		slog.Warn("bucket CORS not set: browsers can't upload until it is", "origin", origin, "err", err)
+	}
 }
 
 // writeDBMetrics writes the email queue's depth and oldest age and Postgres's NOTIFY queue usage; a failed query

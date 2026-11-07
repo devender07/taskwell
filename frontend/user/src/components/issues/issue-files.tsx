@@ -4,13 +4,14 @@ import { apiUrl } from '@taskwell/shared/api-url'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
+import { ProgressRing, uploadLabel } from '@taskwell/shared/progress-ring'
 import { FileIcon, XIcon } from '@taskwell/shared/icons'
 import { api, deleteProjectFile, filesListPath, toFormErrors, uploadFile, type FilesPage, type Issue, type ProjectFile } from '@/api'
 import { subscribePaths } from '@/realtime'
 import { formatBytes } from '@/components/files/bytes'
 import { formatDate } from '@/components/issues/fields'
 
-type Upload = { id: number; name: string; error: string | null }
+type Upload = { id: number; name: string; sent?: number; error: string | null }
 
 const SHOWN = 6
 let uploadId = 0
@@ -32,7 +33,8 @@ export function useIssueFiles(workspace: string, issue: Issue) {
     for (const file of list) {
       const id = ++uploadId
       setUploads((u) => [...u, { id, name: file.name, error: null }])
-      uploadFile(workspace, file, key, issue.id).then(
+      const progress = (sent: number) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, sent } : x)))
+      uploadFile(workspace, file, key, issue.id, progress).then(
         () => (setUploads((u) => u.filter((x) => x.id !== id)), load()),
         (e: Error) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, error: e.message } : x))),
       )
@@ -103,7 +105,10 @@ export function IssueFiles({ state }: { state: IssueFilesState }) {
                   </IconButton>
                 </>
               ) : (
-                <span className="text-secondary">Uploading {u.name}…</span>
+                <>
+                  <ProgressRing value={u.sent} label={`Uploading ${u.name}`} />
+                  <span className="text-secondary ellipsis">{uploadLabel(u.name, u.sent)}</span>
+                </>
               )}
             </li>
           ))}

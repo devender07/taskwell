@@ -487,20 +487,45 @@ export type UploadedFile = { id: string; url: string; name: string; content_type
 
 // Rejects with an Error whose message is ready to show ("Files must be 10 MB or smaller.").
 // `project` links an editor's upload to that project as an attachment.
-export function uploadFile(workspace: string, file: File, project?: string, issue?: string) {
+export function uploadFile(workspace: string, file: File, project?: string, issue?: string, onProgress?: (sent: number) => void) {
   const form = new FormData()
-  form.set('file', file)
   if (project) form.set('project', project)
   if (issue) form.set('issue', issue)
-  return upload<UploadedFile>(`${workspacePath(workspace)}/files`, form)
+  return upload<UploadedFile>(workspace, `${workspacePath(workspace)}/files`, file, form, onProgress)
 }
 
-async function upload<T>(path: string, form: FormData) {
-  try {
-    return await api<T>(path, form)
-  } catch (e) {
-    throw new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
-  }
+const uploadError = (e: unknown) => new Error(e instanceof ApiError ? (e.errors.file ?? e.error ?? FALLBACK) : FALLBACK)
+
+// Sends the file straight to storage: the API hands out a presigned PUT, and returns the upload's id for the
+// endpoint that finishes it (as `file_id`). Rejects with an Error whose message is ready to show.
+// onProgress gets the share of the file sent so far (0..1) while it goes to the bucket.
+export async function directUpload(startPath: string, file: File, onProgress?: (sent: number) => void) {
+  const form = new FormData()
+  form.set('name', file.name)
+  form.set('size', String(file.size))
+  form.set('type', file.type)
+  const { id, url, headers } = await api<{ id: string; url: string; headers: Record<string, string> }>(startPath, form).catch((e) => {
+    throw uploadError(e)
+  })
+  // XMLHttpRequest, not fetch: only it reports upload progress.
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const failed = () => reject(new Error('Upload failed. Try again.'))
+    xhr.open('PUT', url)
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)
+    if (onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total)
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : failed())
+    xhr.onerror = failed
+    xhr.send(file)
+  })
+  return id
+}
+
+async function upload<T>(workspace: string, path: string, file: File, form: FormData, onProgress?: (sent: number) => void) {
+  form.set('file_id', await directUpload(`${workspacePath(workspace)}/uploads`, file, onProgress))
+  return api<T>(path, form).catch((e) => {
+    throw uploadError(e)
+  })
 }
 
 export type Folder = { id: string; name: string; parent_id: string | null; created_by: PersonRef | null; created_at: string; can_edit: boolean }
@@ -519,11 +544,10 @@ export function filesListPath(workspace: string, project: string, folder?: strin
   return `${projectFilesPath(workspace, project)}${query ? `?${query}` : ''}`
 }
 const foldersPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/folders`
-export function uploadProjectFile(workspace: string, project: string, file: File, folder?: string) {
+export function uploadProjectFile(workspace: string, project: string, file: File, folder?: string, onProgress?: (sent: number) => void) {
   const form = new FormData()
-  form.set('file', file)
   if (folder) form.set('folder_id', folder)
-  return upload<ProjectFile>(projectFilesPath(workspace, project), form)
+  return upload<ProjectFile>(workspace, projectFilesPath(workspace, project), file, form, onProgress)
 }
 // folder_id / parent_id "" moves to the root.
 export const updateProjectFile = (workspace: string, project: string, id: string, form: FormData) =>

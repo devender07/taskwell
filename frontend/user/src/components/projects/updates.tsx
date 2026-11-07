@@ -202,7 +202,7 @@ function UpdateForm({ workspace, path, project, health: initial, body, onDone }:
         minHeight={120}
         onChange={(doc, length) => setDraft({ doc, length })}
         error={errors?.body}
-        upload={(file) => uploadFile(workspace.slug, file)}
+        upload={(file, progress) => uploadFile(workspace.slug, file, undefined, undefined, progress)}
       />
       <FormError>{error}</FormError>
       <div className="flex items-center justify-end gap-3">

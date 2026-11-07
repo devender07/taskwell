@@ -1,0 +1,10 @@
+.progress-ring { flex-shrink: 0; transform: rotate(-90deg); }
+.progress-ring circle { fill: none; stroke-width: 3; }
+.progress-ring-track { stroke: rgba(var(--ink), 0.12); }
+.progress-ring-arc { stroke: currentColor; stroke-linecap: round; transition: stroke-dashoffset 150ms linear; }
+.progress-ring-spin { animation: progress-ring-spin 900ms linear infinite; }
+@keyframes progress-ring-spin { to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .progress-ring-arc { transition: none; }
+  .progress-ring-spin { animation-duration: 2.4s; }
+}

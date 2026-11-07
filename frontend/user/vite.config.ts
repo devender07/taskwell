@@ -15,14 +15,20 @@ function toLanding(req: { url?: string }, _res: unknown, next: () => void) {
 }
 
 // Cloudflare Pages headers (what the Caddyfile sets): the CSP lets the app reach VITE_API_URL over https and wss.
-// Images come from the API or its storage redirect, so img-src allows any https origin.
+// Images come from the API or its storage redirect, so img-src allows any https origin. Uploads PUT straight to
+// VITE_UPLOAD_ORIGIN (the bucket).
 let api = ''
+let uploads = ''
 const pagesHeaders: Plugin = {
   name: 'pages-headers',
   apply: 'build',
-  configResolved: (config) => void (api = new URL(config.env.VITE_API_URL).origin),
+  configResolved: (config) => {
+    api = new URL(config.env.VITE_API_URL).origin
+    uploads = config.env.VITE_UPLOAD_ORIGIN ? ` ${new URL(config.env.VITE_UPLOAD_ORIGIN).origin}` : ''
+  },
   generateBundle() {
-    const csp = `default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
+    // Cloudflare Web Analytics: Cloudflare injects its beacon script, which reports to cloudflareinsights.com.
+    const csp = `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}${uploads} https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
     this.emitFile({
       type: 'asset',
       fileName: '_headers',

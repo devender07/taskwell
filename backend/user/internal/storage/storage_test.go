@@ -44,7 +44,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	var old []string
-	if err := s.Old(ctx, time.Now().Add(time.Minute), func(keys []string) error { old = append(old, keys...); return nil }); err != nil {
+	if err := s.Old(ctx, "", time.Now().Add(time.Minute), func(keys []string) error { old = append(old, keys...); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(old, id) {

@@ -35,3 +35,11 @@ func TestCleanName(t *testing.T) {
 		}
 	}
 }
+
+// The file Worker checks the same vector (cdn/sign.check.mjs).
+func TestSign(t *testing.T) {
+	got := sign("test-secret", "/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b/photo%201.png", 1767312000)
+	if want := "7EzqQ3f5boRpA14Ux8-zYIfFyL4IfxF2bb2GA55QiUQ"; got != want {
+		t.Fatalf("sign = %q, want %q", got, want)
+	}
+}

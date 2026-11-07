@@ -128,6 +128,19 @@ func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration)
 	}
 }
 
+// deleteExpiredUploads deletes direct uploads past their hour (file.liveUpload) and returns their ids.
+func (m model) deleteExpiredUploads(ctx context.Context) ([]string, error) {
+	rows, err := m.db.Query(ctx, `delete from uploads where created_at < now() - interval '1 hour' returning id::text`)
+	if err != nil {
+		return nil, fmt.Errorf("delete expired uploads: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("delete expired uploads: %w", err)
+	}
+	return ids, nil
+}
+
 // missingFiles returns the ids without a files row.
 func (m model) missingFiles(ctx context.Context, ids []string) ([]string, error) {
 	rows, err := m.db.Query(ctx, `select u.id::text from unnest($1::uuid[]) as u(id) where not exists (select 1 from files f where f.id = u.id)`, ids)

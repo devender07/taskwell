@@ -30,7 +30,7 @@ type Ctx = {
   me: User
   mentions: { id: string; name: string }[] | ((q: string) => Promise<{ id: string; name: string }[]>)
   issues: (q: string) => Promise<{ id: string; label: string; title: string }[]>
-  upload: (file: File) => ReturnType<typeof uploadFile>
+  upload: (file: File, onProgress: (sent: number) => void) => ReturnType<typeof uploadFile>
   issueHref: (identifier: string) => string
   // After this tab's own change (its events skip this tab): reloads the list and the chat, and bumps `version`.
   refresh: () => Promise<void>
@@ -94,7 +94,7 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
       const refs = await api<IssueRef[]>(`${workspacePath(slug)}/issues?${new URLSearchParams({ q })}`)
       return refs.map((r) => ({ id: r.identifier, label: r.identifier, title: r.title }))
     },
-    upload: (file) => uploadFile(slug, file),
+    upload: (file, progress) => uploadFile(slug, file, undefined, undefined, progress),
     issueHref: (identifier) => `/${encodeURIComponent(slug)}/issue/${encodeURIComponent(identifier)}`,
     refresh: async () => {
       await reloadRoutes(router, INBOX_ROUTES)
