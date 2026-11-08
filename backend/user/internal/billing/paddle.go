@@ -28,8 +28,19 @@ type paddleAPI struct {
 	client *http.Client
 }
 
+// paddleError is a reply of Paddle's that isn't a success.
+type paddleError struct {
+	method, path string
+	status       int
+	code, detail string
+}
+
+func (e *paddleError) Error() string {
+	return fmt.Sprintf("paddle %s %s: %d %s: %s", e.method, e.path, e.status, e.code, e.detail)
+}
+
 // call sends in (when not nil) as JSON to path in the environment env ("production" or else sandbox) with the API
-// key, and decodes the reply's data into out.
+// key, and decodes the reply's data into out. A reply that isn't a success is a *paddleError.
 func (p *paddleAPI) call(ctx context.Context, key, env, method, path string, in, out any) error {
 	base := p.base
 	if base == "" {
@@ -71,7 +82,7 @@ func (p *paddleAPI) call(ctx context.Context, key, env, method, path string, in,
 			} `json:"error"`
 		}
 		_ = json.Unmarshal(b, &e) // a reply that isn't Paddle's error shape still reports the status
-		return fmt.Errorf("paddle %s %s: %d %s: %s", method, path, res.StatusCode, e.Error.Code, e.Error.Detail)
+		return &paddleError{method, path, res.StatusCode, e.Error.Code, e.Error.Detail}
 	}
 	if out == nil {
 		return nil
@@ -89,53 +100,34 @@ type subscription struct {
 	ID              string     `json:"id"`
 	Status          string     `json:"status"`
 	CustomerID      string     `json:"customer_id"`
-	TransactionID   string     `json:"transaction_id"` // on subscription.created: the checkout's transaction
 	CurrencyCode    string     `json:"currency_code"`
 	NextBilledAt    *time.Time `json:"next_billed_at"`
 	ScheduledChange *struct {
 		Action string `json:"action"`
 	} `json:"scheduled_change"`
-	CustomData struct {
-		UserID string `json:"user_id"`
-	} `json:"custom_data"`
-	Items []struct {
-		Price struct {
-			ID string `json:"id"`
-		} `json:"price"`
+	CustomData customData `json:"custom_data"`
+	Items      []struct {
+		Price price `json:"price"`
 	} `json:"items"`
 }
 
-type money struct {
-	Amount       string `json:"amount"` // smallest unit, as a string
-	CurrencyCode string `json:"currency_code"`
+// customData is what our checkout puts on a transaction, and Paddle copies to its subscription: the account and
+// its signature (see Handler.sign).
+type customData struct {
+	UserID string `json:"user_id"`
+	Sig    string `json:"sig"`
 }
 
+// price is the part of a Paddle price billing reads: its plan is custom_data.taskwell_plan.
 type price struct {
-	ID                 string `json:"id"`
-	UnitPrice          money  `json:"unit_price"`
-	UnitPriceOverrides []struct {
-		CountryCodes []string `json:"country_codes"`
-		UnitPrice    money    `json:"unit_price"`
-	} `json:"unit_price_overrides"`
-}
-
-// amounts is the price's base USD amount and its India override's INR amount; ok is false when either is missing.
-func (p price) amounts() (usd, inr int64, ok bool) {
-	parse := func(m money, currency string) (int64, bool) {
-		n, err := strconv.ParseInt(m.Amount, 10, 64)
-		return n, err == nil && m.CurrencyCode == currency
-	}
-	usd, okUSD := parse(p.UnitPrice, "USD")
-	for _, o := range p.UnitPriceOverrides {
-		for _, c := range o.CountryCodes {
-			if c == "IN" {
-				var okINR bool
-				inr, okINR = parse(o.UnitPrice, "INR")
-				return usd, inr, okUSD && okINR
-			}
-		}
-	}
-	return usd, 0, false
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	CustomData struct {
+		Plan string `json:"taskwell_plan"`
+	} `json:"custom_data"`
+	BillingCycle struct {
+		Interval string `json:"interval"`
+	} `json:"billing_cycle"`
 }
 
 // event is a webhook notification; Data is the entity it's about.

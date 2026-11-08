@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@paddle/paddle-js": "^1.6.6",
     "@tanstack/react-router": "^1.132.0",
     "@taskwell/shared": "*",
     "qrcode-generator": "^2.0.4",

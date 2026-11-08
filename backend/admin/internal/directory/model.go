@@ -47,7 +47,7 @@ const workspaceColumns = `w.id::text, w.name, w.slug,
 	(select count(*) from workspace_members where workspace_id = w.id),
 	(select count(*) from projects where workspace_id = w.id),
 	(select count(*) from issues where workspace_id = w.id),
-	w.created_at, coalesce(o.plan, 'starter'), coalesce(o.plan_comped, false)`
+	w.created_at, coalesce(o.plan, 'free'), coalesce(o.plan_comped, false)`
 
 // workspaceFrom joins each workspace's owner, whose plan it has.
 const workspaceFrom = `workspaces w left join users o on o.id = w.created_by`
@@ -167,11 +167,11 @@ func (m *model) subscription(ctx context.Context, id string) (subID, status *str
 // paddle reads the user API's paddle_ config (a missing key is "").
 func (m *model) paddle(ctx context.Context) (paddleConfig, error) {
 	rows, err := m.db.Query(ctx, `select key, value from system_config
-		where key in ('paddle_environment', 'paddle_api_key', 'paddle_price_pro', 'paddle_price_ultimate')`)
+		where key in ('paddle_environment', 'paddle_api_key')`)
 	if err != nil {
 		return paddleConfig{}, fmt.Errorf("read paddle config: %w", err)
 	}
-	c := paddleConfig{prices: map[string]string{}}
+	var c paddleConfig
 	var k, v string
 	_, err = pgx.ForEachRow(rows, []any{&k, &v}, func() error {
 		switch k {
@@ -179,10 +179,6 @@ func (m *model) paddle(ctx context.Context) (paddleConfig, error) {
 			c.env = v
 		case "paddle_api_key":
 			c.key = v
-		case "paddle_price_pro":
-			c.prices[v] = "pro"
-		case "paddle_price_ultimate":
-			c.prices[v] = "ultimate"
 		}
 		return nil
 	})

@@ -1,12 +1,8 @@
 import '@taskwell/shared/tokens.css'
 import '@taskwell/shared/utilities.css'
 import '@taskwell/shared/button.css'
-import '@taskwell/shared/plan-card.css'
 import './landing.css'
 import { apiUrl } from '@taskwell/shared/api-url'
-import { formatMoney } from '@taskwell/shared/money'
-import type { Plan } from '@/api'
-import { planChecks } from '@/components/settings/plans'
 
 document.documentElement.classList.add('js')
 
@@ -124,29 +120,5 @@ currentUser()
     document.getElementById('greeting')!.textContent = `Welcome back, ${user.name.split(' ')[0]}`
   })
   .catch(() => {}) // API unreachable: the page stays as it is for visitors
-
-// Prices in the browser's currency guess (the app decides for real at checkout); paid plans show none while billing is off.
-const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-const currency = zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta' ? 'inr' : 'usd'
-fetch(apiUrl('/api/billing/plans'))
-  .then((res) => (res.ok ? (res.json() as Promise<{ plans: Plan[] }>) : { plans: [] }))
-  .then(({ plans }) => {
-    for (const p of plans) {
-      const card = document.querySelector(`[data-plan="${p.id}"]`)
-      if (!card) continue
-      const items = card.querySelectorAll('[data-checks] li')
-      planChecks(p).forEach((c, i) => items[i]?.lastChild?.replaceWith(c))
-      const price = p.prices?.[currency]
-      if (price === undefined) continue
-      const amount = document.createElement('span')
-      amount.className = 'plan-amount'
-      amount.textContent = price === 0 ? 'Free' : formatMoney(price, currency)
-      const period = document.createElement('span')
-      period.className = 'plan-period'
-      period.textContent = '/ month'
-      card.querySelector('[data-price]')!.replaceChildren(amount, ...(price === 0 ? [] : [period]))
-    }
-  })
-  .catch(() => {})
 
 document.getElementById('year')!.textContent = String(new Date().getFullYear())

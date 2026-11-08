@@ -2,6 +2,9 @@ package billing
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,12 +13,12 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/plan"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -27,12 +30,9 @@ const (
 	errChoosePlan     = "Choose a plan."
 	errSubscribed     = "You already have a subscription. Manage it to change plans."
 	errNoSubscription = "You don't have a subscription yet."
-
-	priceTTL   = time.Hour
-	priceRetry = time.Minute // how long a failed price read is kept, so a Paddle outage isn't hit per request
 )
 
-var errBillingOff = errors.New("billing is off: a paddle_ key is empty")
+var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
 
 // keeps are the subscription statuses that keep the paid plan.
 var keeps = []string{"active", "trialing", "past_due"}
@@ -41,67 +41,40 @@ type Handler struct {
 	model        *model
 	paddle       *paddleAPI
 	config       func(ctx context.Context, key string) (string, error) // sysconfig's Get
+	key          []byte                                                // signs checkout custom_data
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
 	now          func() time.Time
-
-	mu    sync.Mutex // guards cache, and is held while it's refilled
-	cache priceCache
 }
 
-// priceCache is the paid plans' Paddle prices by plan id, as read with settings s at at.
-type priceCache struct {
-	s      settings
-	at     time.Time
-	ttl    time.Duration
-	prices map[string]price
-	err    error
-}
-
-// New takes the auth handler's Authenticate and the workspace handler's Member.
-func New(db *pgxpool.Pool, cfg *sysconfig.Store, authenticate func(*http.Request) (string, error),
+// New takes the JWT secret (the checkout signature's key is derived from it), the auth handler's Authenticate and
+// the workspace handler's Member.
+func New(db *pgxpool.Pool, cfg *sysconfig.Store, jwtSecret string, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
 	return &Handler{model: &model{db: db}, paddle: &paddleAPI{client: &http.Client{Timeout: 10 * time.Second}},
-		config: cfg.Get, authenticate: authenticate, member: member, now: time.Now}
+		config: cfg.Get, key: secret.Key("taskwell checkout", "jwt_secret:"+jwtSecret), authenticate: authenticate,
+		member: member, now: time.Now}
 }
 
-// settings is billing's paddle_ config; prices are the price ids by plan id.
-type settings struct {
-	env, key, token string
-	prices          map[string]string
-}
+// settings is billing's paddle_ config.
+type settings struct{ env, key string }
 
-// planOf is the paid plan whose price id is id.
-func (s settings) planOf(id string) (string, bool) {
-	for p, pr := range s.prices {
-		if pr == id {
-			return p, true
-		}
-	}
-	return "", false
-}
-
-// settings reads the paddle_ config, or errBillingOff while billing is off (the key, client token or a price id empty).
+// settings reads the paddle_ config, or errBillingOff while billing is off: paddle_environment isn't exactly
+// sandbox or production (logged as an error: it's seeded empty so a deploy sets it on purpose) or the key is empty.
 func (h *Handler) settings(ctx context.Context) (settings, error) {
-	get := func(key string, err error) (string, error) {
-		if err != nil {
-			return "", err
-		}
-		return h.config(ctx, key)
-	}
 	var s settings
-	var pro, ult string
 	var err error
-	s.env, err = get("paddle_environment", err)
-	s.key, err = get("paddle_api_key", err)
-	s.token, err = get("paddle_client_token", err)
-	pro, err = get("paddle_price_pro", err)
-	ult, err = get("paddle_price_ultimate", err)
-	if err != nil {
+	if s.env, err = h.config(ctx, "paddle_environment"); err != nil {
 		return s, err
 	}
-	s.prices = map[string]string{"pro": pro, "ultimate": ult}
-	if s.key == "" || s.token == "" || pro == "" || ult == "" {
+	if s.key, err = h.config(ctx, "paddle_api_key"); err != nil {
+		return s, err
+	}
+	if s.env != "sandbox" && s.env != "production" {
+		slog.ErrorContext(ctx, "billing is off: paddle_environment must be sandbox or production", "paddle_environment", s.env)
+		return s, errBillingOff
+	}
+	if s.key == "" {
 		return s, errBillingOff
 	}
 	return s, nil
@@ -117,34 +90,18 @@ func (h *Handler) on(ctx context.Context, w http.ResponseWriter) (settings, bool
 	return s, err == nil, err
 }
 
-// prices returns the paid plans' prices by plan id, read from Paddle and kept for priceTTL (a failure for
-// priceRetry); errBillingOff while billing is off.
-func (h *Handler) prices(ctx context.Context) (map[string]price, error) {
-	s, err := h.settings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if c := h.cache; c.s.key == s.key && c.s.env == s.env && c.s.prices["pro"] == s.prices["pro"] &&
-		c.s.prices["ultimate"] == s.prices["ultimate"] && h.now().Sub(c.at) < c.ttl {
-		return c.prices, c.err
-	}
-	ps := map[string]price{}
-	for p, id := range s.prices {
-		var pr price
-		if err = h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/prices/"+url.PathEscape(id), nil, &pr); err != nil {
-			break
-		}
-		ps[p] = pr
-	}
-	ttl := priceTTL
-	if err != nil {
-		slog.WarnContext(ctx, "paddle prices unavailable", "err", err)
-		ps, ttl = nil, priceRetry
-	}
-	h.cache = priceCache{s: s, at: h.now(), ttl: ttl, prices: ps, err: err}
-	return ps, err
+// mac is the HMAC-SHA256 of the user id that checkout custom_data carries (hex, as sig), so a subscription made from
+// it can be linked to the account: Paddle.js checkout takes any custom_data from the browser.
+func (h *Handler) mac(userID string) []byte {
+	m := hmac.New(sha256.New, h.key)
+	m.Write([]byte(userID))
+	return m.Sum(nil)
+}
+
+// signed reports whether c's sig is its user id's.
+func (h *Handler) signed(c customData) bool {
+	got, err := hex.DecodeString(c.Sig)
+	return err == nil && web.IsUUID(c.UserID) && hmac.Equal(got, h.mac(c.UserID))
 }
 
 // limit is n, or nil for 0 (unlimited).
@@ -155,54 +112,6 @@ func limit[T int | int64](n T) *T {
 	return &n
 }
 
-// plans lists the plans with their limits and prices (null for a paid plan while billing is off or Paddle can't be
-// reached).
-func (h *Handler) plans(w http.ResponseWriter, r *http.Request) error {
-	ps, _ := h.prices(r.Context()) // logged when read; the paid plans show no price meanwhile
-	type planJSON struct {
-		ID           string            `json:"id"`
-		Name         string            `json:"name"`
-		Workspaces   *int              `json:"workspaces"`
-		Projects     *int              `json:"projects"`
-		Members      *int              `json:"members"`
-		StorageBytes *int64            `json:"storage_bytes"`
-		Prices       map[string]*int64 `json:"prices"`
-	}
-	out := make([]planJSON, 0, len(plan.Plans))
-	for _, p := range plan.Plans {
-		j := planJSON{ID: p.ID, Name: p.Name, Workspaces: limit(p.Workspaces), Projects: limit(p.Projects), Members: limit(p.Members), StorageBytes: limit(p.StorageBytes),
-			Prices: map[string]*int64{"usd": nil, "inr": nil}}
-		if p.ID == plan.Starter {
-			var zero int64
-			j.Prices = map[string]*int64{"usd": &zero, "inr": &zero}
-		} else if pr, ok := ps[p.ID]; ok {
-			if usd, inr, ok := pr.amounts(); ok {
-				j.Prices = map[string]*int64{"usd": &usd, "inr": &inr}
-			}
-		}
-		out = append(out, j)
-	}
-	web.JSON(w, http.StatusOK, map[string]any{"plans": out})
-	return nil
-}
-
-// currency is the account's billing currency, or for one that has none, INR when the user's timezone is India's:
-// their profile's, else browserTZ (the request's "tz", what the browser reports). Only for display: Paddle charges
-// in the currency of the billing address.
-func (h *Handler) currency(ctx context.Context, a account, userID, browserTZ string) (string, error) {
-	if a.Currency != nil {
-		return *a.Currency, nil
-	}
-	_, tz, err := h.model.caller(ctx, userID)
-	if tz == "" {
-		tz = browserTZ
-	}
-	if tz == "Asia/Kolkata" || tz == "Asia/Calcutta" {
-		return "inr", err
-	}
-	return "usd", err
-}
-
 // state answers the caller's account billing state.
 func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
@@ -210,20 +119,20 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
-	currency, err := h.currency(ctx, a, userID, r.FormValue("tz"))
-	if err != nil {
-		return err
-	}
 	_, err = h.settings(ctx)
 	if err != nil && !errors.Is(err, errBillingOff) {
 		return err
 	}
+	var currency, interval *string
+	if a.SubscriptionID != nil {
+		currency, interval = a.Currency, a.Interval
+	}
 	p, _ := plan.Get(a.Plan)
 	web.JSON(w, http.StatusOK, map[string]any{
-		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": currency, "renews_at": a.RenewsAt,
-		"cancel_at_period_end": a.CancelAtPeriodEnd,
-		"workspaces":           map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
-		"enabled":              err == nil,
+		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": currency, "interval": interval,
+		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd,
+		"workspaces": map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
+		"enabled":    err == nil,
 	})
 	return nil
 }
@@ -259,31 +168,29 @@ func (h *Handler) workspace(w http.ResponseWriter, r *http.Request, userID strin
 	return nil
 }
 
-// paidPlan is the form's plan when it's a paid one; otherwise it writes the 400.
-func paidPlan(w http.ResponseWriter, r *http.Request) (string, bool) {
-	p := r.FormValue("plan")
-	if p != "pro" && p != "ultimate" {
-		web.Err(w, http.StatusBadRequest, errChoosePlan)
-		return "", false
-	}
-	return p, true
+// paidPlan is the price's paid plan (its custom_data.taskwell_plan), false when it has none.
+func paidPlan(p price) (string, bool) {
+	id := p.CustomData.Plan
+	_, ok := plan.Get(id)
+	return id, ok && id != plan.Free
 }
 
-// item is a subscription or transaction line: one of the price.
+// item is a subscription line: one of the price.
 type item struct {
 	PriceID  string `json:"price_id"`
 	Quantity int    `json:"quantity"`
 }
 
-// checkout makes a Paddle transaction for the form's plan and answers what Paddle.js needs to open its checkout.
+// checkout answers the custom_data, signed, and the email that the pricing page opens a Paddle.js checkout with,
+// for an account with no subscription in force that isn't comped. Paddle isn't called: the form's price_id only has
+// to be there.
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	p, ok := paidPlan(w, r)
-	if !ok {
+	if r.FormValue("price_id") == "" {
+		web.Err(w, http.StatusBadRequest, errChoosePlan)
 		return nil
 	}
-	s, ok, err := h.on(ctx, w)
-	if !ok {
+	if _, ok, err := h.on(ctx, w); !ok {
 		return err
 	}
 	a, err := h.model.account(ctx, userID)
@@ -294,38 +201,21 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 		web.Err(w, http.StatusConflict, errSubscribed)
 		return nil
 	}
-	email, _, err := h.model.caller(ctx, userID)
+	email, err := h.model.email(ctx, userID)
 	if err != nil {
 		return err
 	}
-	body := struct {
-		Items      []item            `json:"items"`
-		CustomData map[string]string `json:"custom_data"`
-		CustomerID *string           `json:"customer_id,omitempty"`
-	}{[]item{{s.prices[p], 1}}, map[string]string{"user_id": userID}, a.CustomerID}
-	var t struct {
-		ID string `json:"id"`
-	}
-	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/transactions", body, &t); err != nil {
-		return err
-	}
-	if err := h.model.saveCheckout(ctx, userID, t.ID); err != nil {
-		return err
-	}
-	env := "sandbox"
-	if s.env == "production" {
-		env = "production"
-	}
-	web.JSON(w, http.StatusOK, map[string]string{"transaction_id": t.ID, "client_token": s.token, "environment": env, "email": email})
+	web.JSON(w, http.StatusOK, map[string]any{"custom_data": customData{userID, hex.EncodeToString(h.mac(userID))}, "email": email})
 	return nil
 }
 
-// change moves the account's subscription to the form's plan, charging the prorated difference now, and answers
-// the billing state.
+// change moves the account's subscription to the form's price (another plan or interval), charging the prorated
+// difference now, and answers the billing state.
 func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	p, ok := paidPlan(w, r)
-	if !ok {
+	id := r.FormValue("price_id")
+	if id == "" {
+		web.Err(w, http.StatusBadRequest, errChoosePlan)
 		return nil
 	}
 	s, ok, err := h.on(ctx, w)
@@ -340,16 +230,27 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 		web.Err(w, http.StatusConflict, errNoSubscription)
 		return nil
 	}
-	if a.Plan == p {
+	var pr price
+	var pe *paddleError
+	err = h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/prices/"+url.PathEscape(id), nil, &pr)
+	if errors.As(err, &pe) && (pe.status == http.StatusNotFound || pe.status == http.StatusBadRequest) {
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
 		return nil
 	}
-	body := map[string]any{"items": []item{{s.prices[p], 1}}, "proration_billing_mode": "prorated_immediately"}
+	if err != nil {
+		return err
+	}
+	p, ok := paidPlan(pr)
+	if !ok || pr.Status != "active" || (p == a.Plan && a.Interval != nil && pr.BillingCycle.Interval == *a.Interval) {
+		web.Err(w, http.StatusBadRequest, errChoosePlan)
+		return nil
+	}
+	body := map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": "prorated_immediately"}
 	var sub subscription
 	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPatch, "/subscriptions/"+url.PathEscape(*a.SubscriptionID), body, &sub); err != nil {
 		return err
 	}
-	if err := h.apply(ctx, s, sub); err != nil {
+	if err := h.apply(ctx, sub); err != nil {
 		return err
 	}
 	return h.state(w, r, userID)
@@ -419,7 +320,7 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode subscription: %w", err)
 		}
-		return h.syncSubscription(ctx, o.ID, o.CustomData.UserID, o.TransactionID)
+		return h.syncSubscription(ctx, o.ID, o.CustomData)
 	case "adjustment.created":
 		var o struct {
 			ID             string `json:"id"`
@@ -442,9 +343,8 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 }
 
 // syncSubscription reads the subscription from Paddle (events arrive out of order: the current object wins) and
-// applies it to its account (see model.sync); userID and transactionID come from the event, for a subscription
-// Paddle doesn't return them on.
-func (h *Handler) syncSubscription(ctx context.Context, id, userID, transactionID string) error {
+// applies it to its account; c is the event's custom_data, for a subscription Paddle doesn't return it on.
+func (h *Handler) syncSubscription(ctx context.Context, id string, c customData) error {
 	s, err := h.settings(ctx)
 	if err != nil {
 		return err
@@ -454,29 +354,35 @@ func (h *Handler) syncSubscription(ctx context.Context, id, userID, transactionI
 		return err
 	}
 	if sub.CustomData.UserID == "" {
-		sub.CustomData.UserID = userID
+		sub.CustomData = c
 	}
-	if sub.TransactionID == "" {
-		sub.TransactionID = transactionID
-	}
-	return h.apply(ctx, s, sub)
+	return h.apply(ctx, sub)
 }
 
-// apply stores Paddle's current subscription on its account.
-func (h *Handler) apply(ctx context.Context, s settings, sub subscription) error {
-	paid := ""
+// apply stores Paddle's current subscription on its account (see model.sync): the one holding it, else the one its
+// custom_data names when that's signed. While it's in force its plan is its first item's price's taskwell_plan; an
+// unknown one is an error, so Paddle retries once the price is fixed.
+func (h *Handler) apply(ctx context.Context, sub subscription) error {
+	paid, interval := "", ""
 	if slices.Contains(keeps, sub.Status) {
 		if len(sub.Items) == 0 {
 			return fmt.Errorf("sync %s: no items", sub.ID)
 		}
+		pr := sub.Items[0].Price
 		var ok bool
-		if paid, ok = s.planOf(sub.Items[0].Price.ID); !ok {
-			return fmt.Errorf("sync %s: unknown price %q", sub.ID, sub.Items[0].Price.ID)
+		if paid, ok = paidPlan(pr); !ok {
+			return fmt.Errorf("sync %s: price %q has no known custom_data.taskwell_plan (%q)", sub.ID, pr.ID, pr.CustomData.Plan)
 		}
+		interval = pr.BillingCycle.Interval
 	}
-	found, err := h.model.sync(ctx, sub, paid)
+	user := ""
+	if h.signed(sub.CustomData) {
+		user = sub.CustomData.UserID
+	}
+	found, err := h.model.sync(ctx, sub, paid, interval, user)
 	if err == nil && !found {
-		slog.WarnContext(ctx, "paddle subscription for no account", "subscription", sub.ID, "user", sub.CustomData.UserID)
+		slog.WarnContext(ctx, "paddle subscription for no account", "subscription", sub.ID, "user", sub.CustomData.UserID,
+			"signed", user != "")
 	}
 	return err
 }

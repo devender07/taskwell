@@ -20,16 +20,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
-const testSecret = "pdl_ntfset_test"
+const (
+	testSecret = "pdl_ntfset_test"
+	testJWT    = "test-jwt-secret"
+)
 
 func sign(secret string, ts int64, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	fmt.Fprintf(mac, "%d:%s", ts, body)
 	return fmt.Sprintf("ts=%d;h1=%s", ts, hex.EncodeToString(mac.Sum(nil)))
+}
+
+// checkoutSig is the sig checkout custom_data carries for the user, computed apart from the handler.
+func checkoutSig(userID string) string {
+	mac := hmac.New(sha256.New, secret.Key("taskwell checkout", "jwt_secret:"+testJWT))
+	mac.Write([]byte(userID))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func TestVerifySignature(t *testing.T) {
@@ -59,10 +70,39 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
+// prices are the fake Paddle's prices: the catalog's shape, custom_data.taskwell_plan and billing_cycle.
+var prices = map[string]string{
+	"pri_starter_m": `{"id":"pri_starter_m","status":"active","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1}}`,
+	"pri_pro_m":     `{"id":"pri_pro_m","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"month","frequency":1}}`,
+	"pri_pro_y":     `{"id":"pri_pro_y","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"year","frequency":1}}`,
+	"pri_adv_y":     `{"id":"pri_adv_y","status":"active","custom_data":{"taskwell_plan":"advanced"},"billing_cycle":{"interval":"year","frequency":1}}`,
+	"pri_nope":      `{"id":"pri_nope","status":"active","custom_data":null,"billing_cycle":{"interval":"month","frequency":1}}`,
+	"pri_old":       `{"id":"pri_old","status":"archived","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1}}`,
+}
+
+// sub is a subscription the fake Paddle holds; cd is its custom_data JSON ("" for null).
+type sub struct {
+	cd, status, price string
+	cancel            bool
+}
+
+func (s sub) json(id string) string {
+	sc, cd := "null", "null"
+	if s.cancel {
+		sc = `{"action":"cancel","effective_at":"2030-03-17T17:46:40Z"}`
+	}
+	if s.cd != "" {
+		cd = s.cd
+	}
+	return fmt.Sprintf(`{"id":%q,"status":%q,"customer_id":"ctm_1","currency_code":"INR",
+		"next_billed_at":"2030-03-17T17:46:40Z","scheduled_change":%s,"custom_data":%s,
+		"items":[{"status":"active","quantity":1,"price":%s}]}`, id, s.status, sc, cd, prices[s.price])
+}
+
 // fakePaddle answers the Paddle calls billing makes and records each request.
 type fakePaddle struct {
 	mu   sync.Mutex
-	subs map[string]string // subscription id → its JSON
+	subs map[string]sub
 	reqs []paddleReq
 }
 
@@ -84,28 +124,29 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	f.reqs = append(f.reqs, paddleReq{r.Method, r.URL.Path, body})
 	reply := func(data string) { fmt.Fprintf(w, `{"data":%s,"meta":{"request_id":"r1"}}`, data) }
+	id, isSub := strings.CutPrefix(r.URL.Path, "/subscriptions/")
+	s, known := f.subs[id]
 	switch p := r.URL.Path; {
-	case p == "/prices/pri_pro":
-		reply(`{"id":"pri_pro","unit_price":{"amount":"1200","currency_code":"USD"},
-			"unit_price_overrides":[{"country_codes":["IN"],"unit_price":{"amount":"69900","currency_code":"INR"}}]}`)
-	case p == "/prices/pri_ult":
-		reply(`{"id":"pri_ult","unit_price":{"amount":"4900","currency_code":"USD"},
-			"unit_price_overrides":[{"country_codes":["GB","IN"],"unit_price":{"amount":"249900","currency_code":"INR"}}]}`)
-	case p == "/transactions":
-		reply(`{"id":"txn_1","status":"ready"}`)
+	case strings.HasPrefix(p, "/prices/") && prices[strings.TrimPrefix(p, "/prices/")] != "":
+		reply(prices[strings.TrimPrefix(p, "/prices/")])
 	case strings.HasPrefix(p, "/customers/") && strings.HasSuffix(p, "/portal-sessions"):
 		reply(`{"id":"cpls_1","urls":{"general":{"overview":"https://customer-portal.paddle.test/1"},"subscriptions":[]}}`)
-	case strings.HasPrefix(p, "/subscriptions/") && f.subs[strings.TrimPrefix(p, "/subscriptions/")] != "":
-		id := strings.TrimPrefix(p, "/subscriptions/")
+	case isSub && known:
 		if r.Method == http.MethodPatch {
-			items := body["items"].([]any)
-			f.subs[id] = strings.Replace(f.subs[id], `"pri_pro"`, fmt.Sprintf("%q", items[0].(map[string]any)["price_id"]), 1)
+			s.price = body["items"].([]any)[0].(map[string]any)["price_id"].(string)
+			f.subs[id] = s
 		}
-		reply(f.subs[id])
+		reply(s.json(id))
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, `{"error":{"type":"request_error","code":"not_found","detail":"no such entity"}}`)
 	}
+}
+
+func (f *fakePaddle) set(id string, s sub) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.subs[id] = s
 }
 
 func (f *fakePaddle) last(method, path string) (paddleReq, int) {
@@ -121,22 +162,13 @@ func (f *fakePaddle) last(method, path string) (paddleReq, int) {
 	return last, n
 }
 
-func subJSON(id, userID, status, priceID string, cancel bool) string {
-	sc := "null"
-	if cancel {
-		sc = `{"action":"cancel","effective_at":"2030-03-17T17:46:40Z"}`
-	}
-	cd := "null"
-	if userID != "" {
-		cd = fmt.Sprintf(`{"user_id":%q}`, userID)
-	}
-	return fmt.Sprintf(`{"id":%q,"status":%q,"customer_id":"ctm_1","currency_code":"INR",
-		"next_billed_at":"2030-03-17T17:46:40Z","scheduled_change":%s,"custom_data":%s,
-		"items":[{"status":"active","quantity":1,"price":{"id":%q}}]}`, id, status, sc, cd, priceID)
+// signedCD is checkout custom_data for the user with sig.
+func signedCD(userID, sig string) string {
+	return fmt.Sprintf(`{"user_id":%q,"sig":%q}`, userID, sig)
 }
 
 // setup makes Ann's workspace with Bob as a plain member, and a billing handler against a fake Paddle whose config
-// is cfg (every paddle_ key and app_base_url set).
+// is cfg (every paddle_ key set).
 func setup(t *testing.T) (pool *pgxpool.Pool, mux *http.ServeMux, f *fakePaddle, cfg map[string]string, wsID, slug, ann, bob string) {
 	t.Helper()
 	pool = dbtest.Pool(t)
@@ -151,13 +183,11 @@ func setup(t *testing.T) (pool *pgxpool.Pool, mux *http.ServeMux, f *fakePaddle,
 		t.Fatal(err)
 	}
 	dbtest.Join(t, pool, wsID, bob, "member")
-	f = &fakePaddle{subs: map[string]string{}}
+	f = &fakePaddle{subs: map[string]sub{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
-	cfg = map[string]string{"paddle_environment": "sandbox", "paddle_api_key": "pdl_key", "paddle_client_token": "test_tok",
-		"paddle_webhook_secret": testSecret, "paddle_price_pro": "pri_pro", "paddle_price_ultimate": "pri_ult",
-		"app_base_url": "http://app.test"}
-	h := New(pool, sysconfig.New(pool), dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, sysconfig.New(pool)).Member)
+	cfg = map[string]string{"paddle_environment": "sandbox", "paddle_api_key": "pdl_key", "paddle_webhook_secret": testSecret}
+	h := New(pool, sysconfig.New(pool), testJWT, dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, sysconfig.New(pool)).Member)
 	h.paddle.base = srv.URL
 	h.config = func(_ context.Context, key string) (string, error) { return cfg[key], nil }
 	mux = http.NewServeMux()
@@ -166,29 +196,30 @@ func setup(t *testing.T) (pool *pgxpool.Pool, mux *http.ServeMux, f *fakePaddle,
 }
 
 type state struct {
-	plan             string
-	comped           bool
-	sub, status, cur *string
-	cus              *string
-	renews           *time.Time
-	cancel           bool
+	plan                     string
+	comped                   bool
+	sub, status, cur, period *string
+	cus                      *string
+	renews                   *time.Time
+	cancel                   bool
 }
 
 func readState(t *testing.T, pool *pgxpool.Pool, userID string) state {
 	t.Helper()
 	var s state
 	if err := pool.QueryRow(context.Background(), `select plan, plan_comped, paddle_subscription_id, subscription_status,
-		billing_currency, paddle_customer_id, renews_at, cancel_at_period_end from users where id = $1`, userID).
-		Scan(&s.plan, &s.comped, &s.sub, &s.status, &s.cur, &s.cus, &s.renews, &s.cancel); err != nil {
+		billing_currency, billing_interval, paddle_customer_id, renews_at, cancel_at_period_end from users where id = $1`, userID).
+		Scan(&s.plan, &s.comped, &s.sub, &s.status, &s.cur, &s.period, &s.cus, &s.renews, &s.cancel); err != nil {
 		t.Fatal(err)
 	}
 	return s
 }
 
-// TestWebhookSync: a signed subscription event sets the account's plan from the subscription Paddle returns (status,
-// currency, renews_at, scheduled cancel, customer, an audit entry by the account in each workspace it owns), a bad
-// signature is refused, a foreign checkout is ignored, a canceled subscription returns the account to Starter, a stale
-// subscription is ignored, a comped account keeps its plan, and adjustments are only logged.
+// TestWebhookSync: a subscription links to the account its custom_data names only when the sig verifies and that
+// account has no other subscription in force; its plan is its price's custom_data.taskwell_plan (unknown: a 500 so
+// Paddle retries) with the price's interval; trialing keeps the plan; canceled returns the account to Free; a stale
+// subscription is ignored; a comped account keeps its plan; a bad webhook signature is refused; adjustments are only
+// logged.
 func TestWebhookSync(t *testing.T) {
 	pool, mux, f, _, wsID, _, ann, bob := setup(t)
 	ctx := context.Background()
@@ -205,45 +236,51 @@ func TestWebhookSync(t *testing.T) {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 		if w.Code != want {
-			t.Fatalf("%s: %d %s, want %d", typ, w.Code, w.Body, want)
+			t.Fatalf("%s %s: %d %s, want %d", typ, data, w.Code, w.Body, want)
 		}
+	}
+	event := func(id, cd string) string {
+		if cd == "" {
+			return fmt.Sprintf(`{"id":%q}`, id)
+		}
+		return fmt.Sprintf(`{"id":%q,"custom_data":%s}`, id, cd)
 	}
 	read := func() state { t.Helper(); return readState(t, pool, ann) }
-	sub1, sub2 := dbtest.Name("sub_"), dbtest.Name("sub_")
+	sub1, sub2, sub3 := dbtest.Name("sub_"), dbtest.Name("sub_"), dbtest.Name("sub_")
+	good := signedCD(ann, checkoutSig(ann))
 
-	checkout := func(user, txn string) {
-		t.Helper()
-		if _, err := pool.Exec(ctx, `update users set paddle_checkout_id = $2 where id = $1`, user, txn); err != nil {
-			t.Fatal(err)
+	// Paddle.js checkout takes any custom_data: a forged, another user's or missing sig doesn't link.
+	for _, cd := range []string{signedCD(ann, "00ff"), signedCD(ann, checkoutSig(bob)), fmt.Sprintf(`{"user_id":%q}`, ann), ""} {
+		id := dbtest.Name("sub_forged_")
+		f.set(id, sub{cd: cd, status: "active", price: "pri_adv_y"})
+		send("subscription.created", event(id, ""), 200)
+		if s := read(); s.plan != "free" || s.sub != nil {
+			t.Fatalf("custom_data %s linked: %+v", cd, s)
 		}
 	}
-	created := func(sub, txn string) string {
-		return fmt.Sprintf(`{"id":%q,"transaction_id":%q,"custom_data":{"user_id":%q}}`, sub, txn, ann)
-	}
-	checkout(ann, "txn_a")
-	checkout(bob, "txn_other")
-	// Anyone can open a Paddle checkout naming this account; a subscription its checkout didn't make doesn't attach,
-	// nor does another account's checkout.
-	f.subs["sub_foreign"] = subJSON("sub_foreign", ann, "active", "pri_ult", false)
-	send("subscription.created", created("sub_foreign", "txn_other"), 200)
-	if s, b := read(), readState(t, pool, bob); s.plan != "starter" || s.sub != nil || b.plan != "starter" || b.sub != nil {
-		t.Fatalf("foreign subscription attached: %+v %+v", s, b)
-	}
-	// Paddle's subscription has no custom_data here; the event's names the account, its transaction is our checkout.
-	f.subs[sub1] = subJSON(sub1, "", "active", "pri_pro", false)
-	send("subscription.created", created(sub1, "txn_a"), 200)
+
+	// Paddle's subscription has no custom_data here; the event's is signed.
+	f.set(sub1, sub{status: "active", price: "pri_pro_m"})
+	send("subscription.created", event(sub1, good), 200)
 	s := read()
-	if s.plan != "pro" || s.sub == nil || *s.sub != sub1 || *s.status != "active" || *s.cur != "inr" || s.cancel ||
-		*s.cus != "ctm_1" || s.renews == nil || s.renews.Unix() != 1900000000 {
+	if s.plan != "pro" || s.sub == nil || *s.sub != sub1 || *s.status != "active" || *s.cur != "inr" || *s.period != "month" ||
+		s.cancel || *s.cus != "ctm_1" || s.renews == nil || s.renews.Unix() != 1900000000 {
 		t.Fatalf("after created: %+v", s)
 	}
 	for _, id := range []string{wsID, ws2} {
 		var detail string
 		var actor *string
 		if err := pool.QueryRow(ctx, `select detail::text, actor_id::text from workspace_audit where workspace_id = $1 and action = 'billing.plan_changed'`, id).
-			Scan(&detail, &actor); err != nil || actor == nil || *actor != ann || detail != `{"to": "pro", "from": "starter"}` {
+			Scan(&detail, &actor); err != nil || actor == nil || *actor != ann || detail != `{"to": "pro", "from": "free"}` {
 			t.Fatalf("audit in %s: %s %v %v", id, detail, actor, err)
 		}
+	}
+
+	// A second signed subscription doesn't replace the one in force.
+	f.set(sub3, sub{cd: good, status: "active", price: "pri_starter_m"})
+	send("subscription.created", event(sub3, good), 200)
+	if s := read(); s.plan != "pro" || *s.sub != sub1 {
+		t.Fatalf("re-linked: %+v", s)
 	}
 
 	r := httptest.NewRequest("POST", "/api/billing/webhook", strings.NewReader(`{"event_type":"subscription.canceled"}`))
@@ -253,33 +290,42 @@ func TestWebhookSync(t *testing.T) {
 		t.Fatalf("bad signature: %d", w.Code)
 	}
 
-	// Without custom_data the account is found by its subscription id.
-	f.subs[sub1] = subJSON(sub1, "", "active", "pri_ult", true)
-	send("subscription.updated", fmt.Sprintf(`{"id":%q}`, sub1), 200)
-	if s := read(); s.plan != "ultimate" || !s.cancel {
+	// Found by its subscription id, unsigned; the plan and interval follow the price.
+	f.set(sub1, sub{status: "active", price: "pri_adv_y", cancel: true})
+	send("subscription.updated", event(sub1, ""), 200)
+	if s := read(); s.plan != "advanced" || *s.period != "year" || !s.cancel {
 		t.Fatalf("after scheduled cancel: %+v", s)
 	}
+	f.set(sub1, sub{status: "trialing", price: "pri_adv_y"})
+	send("subscription.updated", event(sub1, ""), 200)
+	if s := read(); s.plan != "advanced" || *s.status != "trialing" || s.cancel {
+		t.Fatalf("trialing: %+v", s)
+	}
+	f.set(sub1, sub{status: "active", price: "pri_nope"})
+	send("subscription.updated", event(sub1, ""), 500)
+	if s := read(); s.plan != "advanced" {
+		t.Fatalf("price without taskwell_plan applied: %+v", s)
+	}
 
-	f.subs[sub1] = subJSON(sub1, ann, "canceled", "pri_ult", false)
-	send("subscription.canceled", fmt.Sprintf(`{"id":%q}`, sub1), 200)
-	if s := read(); s.plan != "starter" || s.sub != nil || s.status != nil || s.renews != nil || s.cancel || *s.cur != "inr" {
+	f.set(sub1, sub{cd: good, status: "canceled", price: "pri_adv_y"})
+	send("subscription.canceled", event(sub1, ""), 200)
+	if s := read(); s.plan != "free" || s.sub != nil || s.status != nil || s.renews != nil || s.cancel || s.cur != nil || s.period != nil {
 		t.Fatalf("after canceled: %+v", s)
 	}
 
-	checkout(ann, "txn_b")
-	f.subs[sub2] = subJSON(sub2, ann, "active", "pri_pro", false)
-	send("subscription.created", created(sub2, "txn_b"), 200)
-	send("subscription.canceled", fmt.Sprintf(`{"id":%q}`, sub1), 200) // late event of the old subscription
-	if s := read(); s.plan != "pro" || *s.sub != sub2 {
+	f.set(sub2, sub{cd: good, status: "active", price: "pri_pro_y"})
+	send("subscription.created", event(sub2, ""), 200)
+	send("subscription.canceled", event(sub1, ""), 200) // late event of the old subscription
+	if s := read(); s.plan != "pro" || *s.sub != sub2 || *s.period != "year" {
 		t.Fatalf("stale subscription applied: %+v", s)
 	}
 
-	if _, err := pool.Exec(ctx, `update users set plan = 'ultimate', plan_comped = true where id = $1`, ann); err != nil {
+	if _, err := pool.Exec(ctx, `update users set plan = 'advanced', plan_comped = true where id = $1`, ann); err != nil {
 		t.Fatal(err)
 	}
-	f.subs[sub2] = subJSON(sub2, ann, "past_due", "pri_pro", false)
-	send("subscription.past_due", fmt.Sprintf(`{"id":%q}`, sub2), 200)
-	if s := read(); s.plan != "ultimate" || !s.comped || *s.status != "past_due" {
+	f.set(sub2, sub{cd: good, status: "past_due", price: "pri_pro_y"})
+	send("subscription.past_due", event(sub2, ""), 200)
+	if s := read(); s.plan != "advanced" || !s.comped || *s.status != "past_due" {
 		t.Fatalf("comped after past_due: %+v", s)
 	}
 
@@ -288,16 +334,12 @@ func TestWebhookSync(t *testing.T) {
 	send("transaction.completed", `{"id":"txn_1"}`, 200)
 }
 
-// TestCheckout: any account may start a checkout of its own, for a paid plan, while billing is on and it has no
-// subscription; the transaction has the plan's price, the user in custom_data and its customer once known. Also the
-// plan list, the account's billing state, change, the portal, and a workspace's view of its owner's plan.
+// TestCheckout: checkout answers the account's signed custom_data and email (no Paddle call) while billing is on and
+// it has no subscription and isn't comped; also the account's billing state, change (by a price whose custom_data
+// names a paid plan, not the current one), the portal, and a workspace's view of its owner's plan.
 func TestCheckout(t *testing.T) {
 	pool, mux, f, cfg, wsID, slug, ann, bob := setup(t)
 	ctx := context.Background()
-	if _, err := pool.Exec(ctx, `insert into notification_settings (user_id, timezone) values ($1, 'Asia/Kolkata')
-		on conflict (user_id) do update set timezone = excluded.timezone`, ann); err != nil {
-		t.Fatal(err)
-	}
 	base := "/api/billing"
 	do := func(user, method, path string, form url.Values, want int) map[string]any {
 		t.Helper()
@@ -309,74 +351,40 @@ func TestCheckout(t *testing.T) {
 		_ = json.Unmarshal([]byte(body), &v)
 		return v
 	}
-	pro, ult := url.Values{"plan": {"pro"}}, url.Values{"plan": {"ultimate"}}
+	price := func(id string) url.Values { return url.Values{"price_id": {id}} }
 
 	do("", "GET", base, nil, 401)
-	do(ann, "POST", base+"/checkout", url.Values{"plan": {"starter"}}, 400)
+	do(ann, "POST", base+"/checkout", nil, 400)
 	do(ann, "POST", base+"/portal", nil, 409)
-	do(ann, "POST", base+"/change", ult, 409)
-	cfg["paddle_client_token"] = ""
-	do(ann, "POST", base+"/checkout", pro, 503)
-	if b := do(ann, "GET", base, nil, 200); b["enabled"] != false {
-		t.Fatalf("billing off: %v", b)
+	do(ann, "POST", base+"/change", price("pri_pro_y"), 409)
+	for _, env := range []string{"", "live", "Sandbox"} {
+		cfg["paddle_environment"] = env
+		do(ann, "POST", base+"/checkout", price("pri_pro_m"), 503)
+		if b := do(ann, "GET", base, nil, 200); b["enabled"] != false {
+			t.Fatalf("billing with environment %q: %v", env, b)
+		}
 	}
-	if p := do("", "GET", "/api/billing/plans", nil, 200)["plans"].([]any)[1].(map[string]any); fmt.Sprint(p["prices"]) != "map[inr:<nil> usd:<nil>]" {
-		t.Fatalf("pro plan while off %v", p)
-	}
-	cfg["paddle_client_token"] = "test_tok"
+	cfg["paddle_environment"], cfg["paddle_api_key"] = "production", ""
+	do(ann, "POST", base+"/checkout", price("pri_pro_m"), 503)
+	cfg["paddle_environment"], cfg["paddle_api_key"] = "sandbox", "pdl_key"
 
-	got := do(ann, "POST", base+"/checkout", pro, 200)
-	if got["transaction_id"] != "txn_1" || got["client_token"] != "test_tok" || got["environment"] != "sandbox" ||
-		!strings.HasSuffix(got["email"].(string), "@dbtest.test") {
+	got := do(ann, "POST", base+"/checkout", price("pri_pro_m"), 200)
+	if cd := got["custom_data"].(map[string]any); cd["user_id"] != ann || cd["sig"] != checkoutSig(ann) ||
+		!strings.HasSuffix(got["email"].(string), "@dbtest.test") || len(got) != 2 {
 		t.Fatalf("checkout %v", got)
 	}
-	var stored *string
-	if err := pool.QueryRow(ctx, `select paddle_checkout_id from users where id = $1`, ann).Scan(&stored); err != nil || stored == nil || *stored != "txn_1" {
-		t.Fatalf("checkout id stored %v %v", stored, err)
+	if got := do(bob, "POST", base+"/checkout", price("pri_pro_m"), 200); got["custom_data"].(map[string]any)["sig"] != checkoutSig(bob) {
+		t.Fatalf("Bob's checkout %v", got) // Bob pays for his own account
 	}
-	tx, _ := f.last("POST", "/transactions")
-	if b, _ := json.Marshal(tx.body); string(b) != fmt.Sprintf(`{"custom_data":{"user_id":%q},"items":[{"price_id":"pri_pro","quantity":1}]}`, ann) {
-		t.Fatalf("transaction %s", b)
+	if f.mu.Lock(); len(f.reqs) != 0 {
+		t.Fatalf("checkout called Paddle: %v", f.reqs)
 	}
-	if _, err := pool.Exec(ctx, `update users set paddle_customer_id = 'ctm_1' where id = $1`, ann); err != nil {
-		t.Fatal(err)
-	}
-	do(ann, "POST", base+"/checkout", ult, 200)
-	if tx, _ := f.last("POST", "/transactions"); tx.body["customer_id"] != "ctm_1" ||
-		fmt.Sprint(tx.body["items"]) != "[map[price_id:pri_ult quantity:1]]" {
-		t.Fatalf("transaction with a customer %v", tx.body)
-	}
-	do(bob, "POST", base+"/checkout", pro, 200) // Bob pays for his own account
-	if tx, _ := f.last("POST", "/transactions"); fmt.Sprint(tx.body["custom_data"]) != "map[user_id:"+bob+"]" {
-		t.Fatalf("Bob's transaction %v", tx.body)
-	}
+	f.mu.Unlock()
+	do("", "GET", base+"/plans", nil, 404)
 
-	plans := do("", "GET", "/api/billing/plans", nil, 200)["plans"].([]any)
-	if p := plans[0].(map[string]any); fmt.Sprint(p["prices"]) != "map[inr:0 usd:0]" || p["workspaces"] != 1.0 || p["projects"] != 1.0 {
-		t.Fatalf("starter plan %v", p)
-	}
-	if p := plans[1].(map[string]any); p["id"] != "pro" || p["members"] != 10.0 || p["workspaces"] != 2.0 || p["projects"] != 2.0 ||
-		fmt.Sprint(p["prices"]) != "map[inr:69900 usd:1200]" {
-		t.Fatalf("pro plan %v", p)
-	}
-	if p := plans[2].(map[string]any); p["members"] != nil || p["storage_bytes"] != nil || p["workspaces"] != nil ||
-		p["projects"] != nil || fmt.Sprint(p["prices"]) != "map[inr:249900 usd:4900]" {
-		t.Fatalf("ultimate plan %v", p)
-	}
-	do("", "GET", "/api/billing/plans", nil, 200)
-	if _, n := f.last("GET", "/prices/pri_pro"); n != 1 {
-		t.Fatalf("prices read %d times, want 1 (cached)", n)
-	}
-
-	b := do(bob, "GET", base, nil, 200)
-	if b["plan"] != "starter" || b["currency"] != "usd" || b["enabled"] != true || fmt.Sprint(b["workspaces"]) != "map[limit:1 used:0]" {
+	if b := do(bob, "GET", base, nil, 200); b["plan"] != "free" || b["currency"] != nil || b["interval"] != nil || b["enabled"] != true ||
+		fmt.Sprint(b["workspaces"]) != "map[limit:1 used:0]" {
 		t.Fatalf("Bob's billing %v", b)
-	}
-	if b := do(bob, "GET", base+"?tz=Asia/Calcutta", nil, 200); b["currency"] != "inr" {
-		t.Fatalf("Bob's billing with an Indian browser %v", b)
-	}
-	if b := do(ann, "GET", base, nil, 200); b["currency"] != "inr" || fmt.Sprint(b["workspaces"]) != "map[limit:1 used:1]" {
-		t.Fatalf("Ann's billing %v", b)
 	}
 
 	wsBase := "/api/workspaces/" + slug + "/billing"
@@ -384,7 +392,7 @@ func TestCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := do(bob, "GET", wsBase, nil, 200)
-	if v["plan"] != "starter" || v["is_owner"] != false || fmt.Sprint(v["owner"]) != "map[id:"+ann+" name:Ann]" ||
+	if v["plan"] != "free" || v["is_owner"] != false || fmt.Sprint(v["owner"]) != "map[id:"+ann+" name:Ann]" ||
 		fmt.Sprint(v["projects"]) != "map[limit:1 used:1]" || fmt.Sprint(v["members"]) != "map[limit:5 used:2]" ||
 		fmt.Sprint(v["storage"]) != "map[limit_bytes:2.147483648e+09 used_bytes:0]" {
 		t.Fatalf("Bob's view of the workspace %v", v)
@@ -396,33 +404,51 @@ func TestCheckout(t *testing.T) {
 	}
 	do(bob, "GET", wsBase, nil, 403)
 
-	sub := dbtest.Name("sub_")
-	f.subs[sub] = subJSON(sub, ann, "active", "pri_pro", false)
-	if _, err := pool.Exec(ctx, `update users set plan = 'pro', paddle_subscription_id = $2, subscription_status = 'active'
-		where id = $1`, ann, sub); err != nil {
+	id := dbtest.Name("sub_")
+	f.set(id, sub{cd: signedCD(ann, checkoutSig(ann)), status: "active", price: "pri_pro_m"})
+	if _, err := pool.Exec(ctx, `update users set plan = 'pro', paddle_subscription_id = $2, subscription_status = 'active',
+		paddle_customer_id = 'ctm_1', billing_currency = 'inr', billing_interval = 'month' where id = $1`, ann, id); err != nil {
 		t.Fatal(err)
 	}
-	if v := do(ann, "GET", wsBase, nil, 200); v["plan"] != "pro" || v["is_owner"] != true || fmt.Sprint(v["projects"]) != "map[limit:2 used:1]" {
+	if v := do(ann, "GET", wsBase, nil, 200); v["plan"] != "pro" || v["is_owner"] != true || fmt.Sprint(v["projects"]) != "map[limit:<nil> used:1]" {
 		t.Fatalf("Ann's view of the workspace %v", v)
 	}
-	do(ann, "POST", base+"/checkout", pro, 409)
-	do(ann, "POST", base+"/change", pro, 400)
-	do(bob, "POST", base+"/change", ult, 409) // Bob's own account has no subscription
-	if b := do(ann, "POST", base+"/change", ult, 200); b["plan"] != "ultimate" || b["status"] != "active" || b["currency"] != "inr" {
-		t.Fatalf("change answered %v", b)
+	if b := do(ann, "GET", base, nil, 200); b["currency"] != "inr" || b["interval"] != "month" || fmt.Sprint(b["workspaces"]) != "map[limit:3 used:1]" {
+		t.Fatalf("Ann's billing %v", b)
 	}
-	if patch, _ := f.last("PATCH", "/subscriptions/"+sub); patch.body["proration_billing_mode"] != "prorated_immediately" ||
-		fmt.Sprint(patch.body["items"]) != "[map[price_id:pri_ult quantity:1]]" {
+	do(ann, "POST", base+"/checkout", price("pri_adv_y"), 409)
+	dbtest.SetPlan(t, pool, bob, "pro")
+	if _, err := pool.Exec(ctx, `update users set plan_comped = true where id = $1`, bob); err != nil {
+		t.Fatal(err)
+	}
+	do(bob, "POST", base+"/checkout", price("pri_pro_m"), 409) // comped
+	do(bob, "POST", base+"/change", price("pri_adv_y"), 409)   // Bob's own account has no subscription
+
+	for _, p := range []string{"", "pri_missing", "pri_nope", "pri_old", "pri_pro_m"} {
+		do(ann, "POST", base+"/change", price(p), 400)
+	}
+	if _, n := f.last("PATCH", "/subscriptions/"+id); n != 0 {
+		t.Fatalf("a refused change patched the subscription")
+	}
+	if b := do(ann, "POST", base+"/change", price("pri_pro_y"), 200); b["plan"] != "pro" || b["interval"] != "year" ||
+		b["status"] != "active" || b["currency"] != "inr" {
+		t.Fatalf("interval change answered %v", b)
+	}
+	if patch, _ := f.last("PATCH", "/subscriptions/"+id); patch.body["proration_billing_mode"] != "prorated_immediately" ||
+		fmt.Sprint(patch.body["items"]) != "[map[price_id:pri_pro_y quantity:1]]" {
 		t.Fatalf("change body %v", patch.body)
 	}
-	if s := readState(t, pool, ann); s.plan != "ultimate" {
+	if b := do(ann, "POST", base+"/change", price("pri_starter_m"), 200); b["plan"] != "starter" || b["interval"] != "month" {
+		t.Fatalf("plan change answered %v", b)
+	}
+	if s := readState(t, pool, ann); s.plan != "starter" || *s.period != "month" {
 		t.Fatalf("after change: %+v", s)
 	}
 
 	if got := do(ann, "POST", base+"/portal", nil, 200)["url"]; got != "https://customer-portal.paddle.test/1" {
 		t.Fatalf("portal %v", got)
 	}
-	if ps, _ := f.last("POST", "/customers/ctm_1/portal-sessions"); fmt.Sprint(ps.body["subscription_ids"]) != "["+sub+"]" {
+	if ps, _ := f.last("POST", "/customers/ctm_1/portal-sessions"); fmt.Sprint(ps.body["subscription_ids"]) != "["+id+"]" {
 		t.Fatalf("portal body %v", ps.body)
 	}
 }

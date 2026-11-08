@@ -569,31 +569,22 @@ export const deleteFolder = (workspace: string, project: string, id: string) =>
 export const storagePath = (workspace: string) => `${workspacePath(workspace)}/storage`
 export const startExport = (workspace: string) => api<{ url: string }>(`${workspacePath(workspace)}/export`, new FormData())
 
-export type PlanId = 'starter' | 'pro' | 'ultimate'
-export type Currency = 'usd' | 'inr'
-// workspaces / projects / members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Paddle is unreachable.
-export type Plan = {
-  id: PlanId
-  name: string
-  workspaces: number | null
-  projects: number | null
-  members: number | null
-  storage_bytes: number | null
-  prices: Record<Currency, number> | null
-}
+export type PlanId = 'free' | 'starter' | 'pro' | 'advanced'
 export type Usage = { used: number; limit: number | null }
 // The caller's own account: plans belong to the account and cover every workspace it creates.
+// currency and interval: the subscription's, null without one.
 export type Billing = {
   plan: PlanId
   comped: boolean
   status: string | null
-  currency: Currency
+  currency: string | null
+  interval: 'month' | 'year' | null
   renews_at: string | null
   cancel_at_period_end: boolean
   workspaces: Usage
   enabled: boolean
 }
-// A workspace's view of its owner's plan. owner: null when the creator is gone (Starter limits).
+// A workspace's view of its owner's plan. owner: null when the creator is gone (Free limits).
 export type WorkspaceBilling = {
   plan: PlanId
   owner: PersonRef | null
@@ -602,23 +593,17 @@ export type WorkspaceBilling = {
   members: Usage
   storage: { used_bytes: number; limit_bytes: number | null }
 }
-export const plansPath = '/billing/plans'
 export const billingPath = '/billing'
 export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
-// Picks INR for an account not yet billed when the profile has no timezone.
-export const browserTZ = () => Intl.DateTimeFormat().resolvedOptions().timeZone
-export function startCheckout(plan: PlanId) {
+const priceForm = (priceId: string) => {
   const form = new FormData()
-  form.set('plan', plan)
-  form.set('tz', browserTZ())
-  return api<Checkout>(`${billingPath}/checkout`, form)
+  form.set('price_id', priceId)
+  return form
 }
-export type Checkout = { transaction_id: string; client_token: string; environment: 'sandbox' | 'production'; email: string }
-export function changePlan(plan: PlanId) {
-  const form = new FormData()
-  form.set('plan', plan)
-  return api<Billing>(`${billingPath}/change`, form)
-}
+// custom_data is signed by the API so the webhook can trust which account the subscription belongs to.
+export type Checkout = { custom_data: Record<string, string>; email: string }
+export const startCheckout = (priceId: string) => api<Checkout>(`${billingPath}/checkout`, priceForm(priceId))
+export const changePlan = (priceId: string) => api<Billing>(`${billingPath}/change`, priceForm(priceId))
 export const openBillingPortal = () => api<{ url: string }>(`${billingPath}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.

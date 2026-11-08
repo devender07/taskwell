@@ -1,51 +1,44 @@
-import type { Checkout } from '@/api'
+import { initializePaddle, type Paddle, type PricePreviewResponse } from '@paddle/paddle-js'
 
-type Paddle = {
-  Environment: { set(env: 'sandbox'): void }
-  Initialize(opts: { token: string }): void
-  Checkout: {
-    open(opts: {
-      transactionId: string
-      customer: { email: string }
-      settings: { displayMode: 'overlay'; successUrl: string }
-    }): void
-  }
-}
+let paddle: Promise<Paddle> | undefined
 
-declare global {
-  interface Window {
-    Paddle?: Paddle
-  }
-}
-
-let loading: Promise<Paddle> | undefined
-
-// Paddle.js loads on the first checkout only; the token and environment are fixed per deployment.
-function load(token: string, environment: Checkout['environment']) {
-  loading ??= new Promise<Paddle>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.paddle.com/paddle/v2/paddle.js'
-    script.onload = () => {
-      const paddle = window.Paddle!
-      if (environment === 'sandbox') paddle.Environment.set('sandbox')
-      paddle.Initialize({ token })
-      resolve(paddle)
+export function getPaddle() {
+  paddle ??= (async () => {
+    const environment = import.meta.env.VITE_PADDLE_ENV
+    const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN
+    if (environment !== 'sandbox' && environment !== 'production') {
+      throw new Error(`VITE_PADDLE_ENV must be "sandbox" or "production", got ${JSON.stringify(environment)}`)
     }
-    script.onerror = () => {
-      script.remove()
-      loading = undefined
-      reject(new Error('Paddle.js failed to load'))
-    }
-    document.head.append(script)
-  })
-  return loading
+    if (!token) throw new Error('VITE_PADDLE_CLIENT_TOKEN is missing')
+    const p = await initializePaddle({ environment, token })
+    if (!p) throw new Error('Paddle.js failed to load')
+    return p
+  })()
+  paddle.catch(() => (paddle = undefined))
+  return paddle
 }
 
-export async function openCheckout(c: Checkout, successUrl: string) {
-  const paddle = await load(c.client_token, c.environment)
-  paddle.Checkout.open({
-    transactionId: c.transaction_id,
-    customer: { email: c.email },
-    settings: { displayMode: 'overlay', successUrl },
+let previews: Promise<Record<string, string>> | undefined
+
+// Paddle's own formatted total for each price, localized to the visitor's country (Paddle reads it from the IP).
+export function previewPrices(priceIds: string[]) {
+  previews ??= getPaddle()
+    .then((p) =>
+      p.PricePreview({
+        items: priceIds.map((priceId) => ({ priceId, quantity: 1 })),
+      }),
+    )
+    .then((r: PricePreviewResponse) => Object.fromEntries(r.data.details.lineItems.map((l) => [l.price.id, l.formattedTotals.total])))
+  previews.catch(() => (previews = undefined))
+  return previews
+}
+
+export async function openCheckout(priceId: string, email: string, customData: Record<string, string>, successUrl: string) {
+  const p = await getPaddle()
+  p.Checkout.open({
+    items: [{ priceId, quantity: 1 }],
+    customer: { email },
+    customData,
+    settings: { displayMode: 'overlay', variant: 'one-page', successUrl },
   })
 }

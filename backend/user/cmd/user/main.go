@@ -232,7 +232,7 @@ func main() {
 	fileH.Register(mux)
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
-	billing.New(pool, cfg, authenticate, wsH.Member).Register(mux)
+	billing.New(pool, cfg, jwtSecret, authenticate, wsH.Member).Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })

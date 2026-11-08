@@ -88,7 +88,7 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 }
 
 // setPlan comps the user's account with the form's plan (comped=true), or clears its comp (comped=false): back to
-// its Paddle subscription's plan while one is active, else Starter.
+// its Paddle subscription's plan while one is active, else Free.
 func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	var id pgtype.UUID
@@ -101,7 +101,7 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 	case comped != "true" && comped != "false":
 		web.WriteErr(w, http.StatusBadRequest, "Choose whether the plan is comped.")
 		return nil
-	case comped == "true" && !slices.Contains([]string{"starter", "pro", "ultimate"}, plan):
+	case comped == "true" && plan != freePlan && !slices.Contains(paidPlans, plan):
 		web.WriteErr(w, http.StatusBadRequest, "Choose a plan.")
 		return nil
 	}
@@ -114,7 +114,7 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 			web.WriteErr(w, http.StatusNotFound, "User not found.")
 			return nil
 		}
-		plan = "starter"
+		plan = freePlan
 		if subID != nil && status != nil && slices.Contains([]string{"active", "trialing", "past_due"}, *status) {
 			c, err := h.model.paddle(ctx)
 			if err != nil {

@@ -15,7 +15,7 @@ import (
 )
 
 // TestSetPlan comps a user's account, clears the comp back to its active Paddle subscription's plan (read from a fake
-// Paddle), then to Starter once it has none; each change is in admin_audit and the audit log of every workspace the
+// Paddle), then to Free once it has none; each change is in admin_audit and the audit log of every workspace the
 // user owns, and the workspaces list shows the owner's plan. Needs TEST_DATABASE_URL migrated by the user service's
 // tests.
 func TestSetPlan(t *testing.T) {
@@ -50,7 +50,7 @@ func TestSetPlan(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		fmt.Fprint(w, `{"data":{"id":"sub_1","items":[{"price":{"id":"pri_test_pro"}}]}}`)
+		fmt.Fprint(w, `{"data":{"id":"sub_1","items":[{"price":{"id":"pri_test","custom_data":{"taskwell_plan":"pro"}}}]}}`)
 	}))
 	defer paddle.Close()
 	h := &Handler{model: &model{db: pool}, paddle: paddle.URL}
@@ -78,10 +78,11 @@ func TestSetPlan(t *testing.T) {
 
 	set(url.Values{"plan": {"gold"}, "comped": {"true"}}, 400)
 	set(url.Values{"plan": {"pro"}}, 400)
-	if body := set(url.Values{"plan": {"ultimate"}, "comped": {"true"}}, 200); !strings.Contains(body, `"plan":"ultimate","comped":true`) {
+	set(url.Values{"plan": {"ultimate"}, "comped": {"true"}}, 400)
+	if body := set(url.Values{"plan": {"advanced"}, "comped": {"true"}}, 200); !strings.Contains(body, `"plan":"advanced","comped":true`) {
 		t.Fatalf("comp answered %s", body)
 	}
-	if w, err := scanWorkspace(pool.QueryRow(ctx, `select `+workspaceColumns+` from `+workspaceFrom+` where w.id = $1`, ws1)); err != nil || w.Plan != "ultimate" || !w.Comped {
+	if w, err := scanWorkspace(pool.QueryRow(ctx, `select `+workspaceColumns+` from `+workspaceFrom+` where w.id = $1`, ws1)); err != nil || w.Plan != "advanced" || !w.Comped {
 		t.Fatalf("workspace plan %q %v", w.Plan, err)
 	}
 
@@ -97,9 +98,10 @@ func TestSetPlan(t *testing.T) {
 	config("paddle_api_key", "")
 	set(url.Values{"comped": {"false"}}, 502) // billing off: the subscription's plan can't be read
 	config("paddle_api_key", "pdl_key")
-	config("paddle_price_pro", "pri_test_pro")
-	defer config("paddle_price_pro", "")
 	defer config("paddle_api_key", "")
+	set(url.Values{"comped": {"false"}}, 502) // paddle_environment isn't sandbox or production
+	config("paddle_environment", "sandbox")
+	defer config("paddle_environment", "")
 	set(url.Values{"comped": {"false"}}, 200)
 	if p, comped := plan(); p != "pro" || comped {
 		t.Fatalf("cleared with a subscription: %s %v", p, comped)
@@ -109,7 +111,7 @@ func TestSetPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	set(url.Values{"comped": {"false"}}, 200)
-	if p, _ := plan(); p != "starter" {
+	if p, _ := plan(); p != "free" {
 		t.Fatalf("cleared without one: %s", p)
 	}
 	var admin, a1, a2 int

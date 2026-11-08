@@ -11,9 +11,9 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
-// TestPlanLimits: limits are the owner's plan. On Starter (5) members plus pending invites to other emails fill the
+// TestPlanLimits: limits are the owner's plan. On Free (5) members plus pending invites to other emails fill the
 // plan, so a new invite is a 402 while re-inviting a pending email isn't counted twice; joining is refused only once
-// members alone fill it. Pro raises the limit and Ultimate has none; a workspace without an owner is on Starter.
+// members alone fill it. Starter and Pro raise the limit and Advanced has none; a workspace without an owner is on Free.
 func TestPlanLimits(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -65,14 +65,14 @@ func TestPlanLimits(t *testing.T) {
 		t.Fatalf("Cara joins a full workspace: %d %s", code, body)
 	}
 
-	for p, want := range map[string]int{"pro": 10, "ultimate": 0} {
+	for p, want := range map[string]int{"starter": 10, "pro": 25, "advanced": 0} {
 		dbtest.SetPlan(t, pool, ann, p)
 		if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || full || limit != want {
 			t.Fatalf("%s: full %v limit %d %v", p, full, limit, err)
 		}
 	}
 	if code, body := dbtest.Do(t, mux, cara, "POST", "/api/me/invites/"+caraInv+"/accept", nil); code != 200 {
-		t.Fatalf("Cara joins on Ultimate: %d %s", code, body)
+		t.Fatalf("Cara joins on Advanced: %d %s", code, body)
 	}
 
 	if _, err := pool.Exec(ctx, `update workspaces set created_by = null where id = $1`, ws.ID); err != nil {
@@ -84,8 +84,8 @@ func TestPlanLimits(t *testing.T) {
 	}
 }
 
-// TestWorkspaceLimit: a Starter account owns 1 workspace, so creating a 2nd is a 402; Pro allows a 2nd, not a 3rd,
-// and workspaces joined don't count.
+// TestWorkspaceLimit: a Free account owns 1 workspace, so creating a 2nd is a 402; Pro allows a 3rd, not a 4th,
+// Advanced any, and workspaces joined don't count.
 func TestWorkspaceLimit(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -109,7 +109,8 @@ func TestWorkspaceLimit(t *testing.T) {
 	create(402, "Your plan allows 1 workspace. Upgrade to create more.")
 	dbtest.SetPlan(t, pool, ann, "pro")
 	create(201, "")
-	create(402, "Your plan allows 2 workspaces. Upgrade to create more.")
-	dbtest.SetPlan(t, pool, ann, "ultimate")
+	create(201, "")
+	create(402, "Your plan allows 3 workspaces. Upgrade to create more.")
+	dbtest.SetPlan(t, pool, ann, "advanced")
 	create(201, "")
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
-	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
@@ -24,6 +23,7 @@ type account struct {
 	SubscriptionID    *string
 	Status            *string
 	Currency          *string
+	Interval          *string
 	RenewsAt          *time.Time
 	CancelAtPeriodEnd bool
 	Owned             int // workspaces the user created
@@ -36,9 +36,9 @@ func (m *model) account(ctx context.Context, userID string) (account, error) {
 	var a account
 	err := m.db.QueryRow(ctx,
 		`select plan, plan_comped, paddle_customer_id, paddle_subscription_id, subscription_status, billing_currency,
-		        renews_at, cancel_at_period_end, (select count(*) from workspaces where created_by = u.id)
+		        billing_interval, renews_at, cancel_at_period_end, (select count(*) from workspaces where created_by = u.id)
 		   from users u where id = $1`, userID).
-		Scan(&a.Plan, &a.Comped, &a.CustomerID, &a.SubscriptionID, &a.Status, &a.Currency, &a.RenewsAt,
+		Scan(&a.Plan, &a.Comped, &a.CustomerID, &a.SubscriptionID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt,
 			&a.CancelAtPeriodEnd, &a.Owned)
 	if err != nil {
 		return a, fmt.Errorf("read billing: %w", err)
@@ -59,7 +59,7 @@ type usage struct {
 func (m *model) usage(ctx context.Context, workspaceID string) (usage, error) {
 	var u usage
 	err := m.db.QueryRow(ctx,
-		`select coalesce(o.plan, 'starter'), o.id::text, o.name,
+		`select coalesce(o.plan, 'free'), o.id::text, o.name,
 		        (select count(*) from projects where workspace_id = w.id),
 		        (select count(*) from workspace_members where workspace_id = w.id)
 		      + (select count(*) from workspace_invites where workspace_id = w.id and expires_at > now()),
@@ -73,43 +73,36 @@ func (m *model) usage(ctx context.Context, workspaceID string) (usage, error) {
 	return u, nil
 }
 
-// saveCheckout records the transaction a checkout made, so only its subscription can attach to the account.
-func (m *model) saveCheckout(ctx context.Context, userID, transactionID string) error {
-	if _, err := m.db.Exec(ctx, `update users set paddle_checkout_id = $2 where id = $1`, userID, transactionID); err != nil {
-		return fmt.Errorf("save checkout: %w", err)
+// email returns the user's email.
+func (m *model) email(ctx context.Context, userID string) (string, error) {
+	var email string
+	if err := m.db.QueryRow(ctx, `select email from users where id = $1`, userID).Scan(&email); err != nil {
+		return "", fmt.Errorf("read email: %w", err)
 	}
-	return nil
+	return email, nil
 }
 
-// caller returns the user's email and timezone (their notification settings'; "" when unset).
-func (m *model) caller(ctx context.Context, userID string) (email, timezone string, err error) {
-	if err := m.db.QueryRow(ctx, `select u.email, coalesce(n.timezone, '') from users u
-		 left join notification_settings n on n.user_id = u.id where u.id = $1`, userID).
-		Scan(&email, &timezone); err != nil {
-		return "", "", fmt.Errorf("read caller: %w", err)
-	}
-	return email, timezone, nil
-}
-
-// sync applies Paddle's current subscription s, whose plan in force is paid ("" when it isn't in force), to its
-// account: the one holding it, else the one in its custom_data whose last checkout made it (custom_data alone isn't
-// proof: anyone can open a Paddle checkout with any custom_data); false when there's none. A subscription no longer
-// in force returns the account to Starter and clears it, unless the account has moved to another subscription since.
-// A comped account keeps its plan. A plan change is audited as billing.plan_changed in every workspace it owns.
-func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, error) {
+// sync applies Paddle's current subscription s, whose plan in force is paid with interval ("" when it isn't in
+// force), to its account: the one holding it, else user (the one its signed custom_data names; "" when unsigned)
+// while that one has no subscription in force; false when there's none. A subscription no longer in force returns
+// the account to Free and clears it, unless the account has moved to another subscription since. A comped account
+// keeps its plan. A plan change is audited as billing.plan_changed in every workspace it owns.
+func (m *model) sync(ctx context.Context, s subscription, paid, interval, user string) (bool, error) {
 	keep := paid != ""
-	to := plan.Starter
+	to := plan.Free
 	var renews *time.Time
+	var subID, status, currency, cycle *string
 	if keep {
-		to, renews = paid, s.NextBilledAt
+		to, renews, subID, status = paid, s.NextBilledAt, &s.ID, &s.Status
+		if c := strings.ToLower(s.CurrencyCode); c != "" {
+			currency = &c
+		}
+		if interval == "month" || interval == "year" {
+			cycle = &interval
+		}
 	}
-	var currency *string
-	if c := strings.ToLower(s.CurrencyCode); c == "usd" || c == "inr" {
-		currency = &c
-	}
-	user, txn := s.CustomData.UserID, s.TransactionID
-	if !web.IsUUID(user) || txn == "" {
-		user, txn = "00000000-0000-0000-0000-000000000000", ""
+	if user == "" {
+		user = "00000000-0000-0000-0000-000000000000"
 	}
 	found := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -117,8 +110,8 @@ func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, er
 		var comped bool
 		var current *string
 		err := tx.QueryRow(ctx, `select id::text, plan, plan_comped, paddle_subscription_id from users
-			  where paddle_subscription_id = $1 or (id = $2 and paddle_checkout_id = nullif($3, ''))
-			  order by paddle_subscription_id = $1 desc nulls last limit 1 for update`, s.ID, user, txn).
+			  where paddle_subscription_id = $1 or (id = $2 and paddle_subscription_id is null)
+			  order by paddle_subscription_id = $1 desc nulls last limit 1 for update`, s.ID, user).
 			Scan(&id, &from, &comped, &current)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -133,16 +126,12 @@ func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, er
 		if comped {
 			to = from
 		}
-		var subID, status *string
-		if keep {
-			subID, status = &s.ID, &s.Status
-		}
 		cancel := keep && s.ScheduledChange != nil && s.ScheduledChange.Action == "cancel"
 		if _, err := tx.Exec(ctx,
-			`update users set plan = $2, paddle_subscription_id = $3, subscription_status = $4,
-			        billing_currency = coalesce($5, billing_currency), renews_at = $6, cancel_at_period_end = $7,
-			        paddle_customer_id = coalesce(nullif($8, ''), paddle_customer_id)
-			  where id = $1`, id, to, subID, status, currency, renews, cancel, s.CustomerID); err != nil {
+			`update users set plan = $2, paddle_subscription_id = $3, subscription_status = $4, billing_currency = $5,
+			        billing_interval = $6, renews_at = $7, cancel_at_period_end = $8,
+			        paddle_customer_id = coalesce(nullif($9, ''), paddle_customer_id)
+			  where id = $1`, id, to, subID, status, currency, cycle, renews, cancel, s.CustomerID); err != nil {
 			return err
 		}
 		return planChanged(ctx, tx, id, from, to)

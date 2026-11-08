@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as InviteRouteImport } from './routes/invite'
+import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
 import { Route as AppNewWorkspaceRouteImport } from './routes/_app/new-workspace'
+import { Route as AppWelcomeRouteImport } from './routes/_app/welcome'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as authOauthAuthorizeRouteImport } from './routes/(auth)/oauth.authorize'
@@ -72,6 +74,11 @@ const InviteRoute = InviteRouteImport.update({
   path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
   id: '/(auth)/forgot-password',
   path: '/forgot-password',
@@ -100,6 +107,11 @@ const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
 const AppNewWorkspaceRoute = AppNewWorkspaceRouteImport.update({
   id: '/new-workspace',
   path: '/new-workspace',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWelcomeRoute = AppWelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => AppRoute,
 } as any)
 const DocsApiRoute = DocsApiRouteImport.update({
@@ -362,12 +374,14 @@ const AppWorkspaceMainProjectsKeyCyclesNumberRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
   '/new-workspace': typeof AppNewWorkspaceRoute
+  '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -416,12 +430,14 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
   '/new-workspace': typeof AppNewWorkspaceRoute
+  '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -468,12 +484,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/reset-password': typeof authResetPasswordRoute
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
   '/_app/new-workspace': typeof AppNewWorkspaceRoute
+  '/_app/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/(auth)/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -525,12 +543,14 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/invite'
+    | '/pricing'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
     | '/new-workspace'
+    | '/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
@@ -579,12 +599,14 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/invite'
+    | '/pricing'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
     | '/new-workspace'
+    | '/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
@@ -630,12 +652,14 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/invite'
+    | '/pricing'
     | '/(auth)/forgot-password'
     | '/(auth)/reset-password'
     | '/(auth)/signin'
     | '/(auth)/signup'
     | '/_app/$workspace'
     | '/_app/new-workspace'
+    | '/_app/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/(auth)/oauth/authorize'
@@ -686,6 +710,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   InviteRoute: typeof InviteRoute
+  PricingRoute: typeof PricingRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authResetPasswordRoute: typeof authResetPasswordRoute
   authSigninRoute: typeof authSigninRoute
@@ -711,6 +736,13 @@ declare module '@tanstack/react-router' {
       path: '/invite'
       fullPath: '/invite'
       preLoaderRoute: typeof InviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(auth)/forgot-password': {
@@ -753,6 +785,13 @@ declare module '@tanstack/react-router' {
       path: '/new-workspace'
       fullPath: '/new-workspace'
       preLoaderRoute: typeof AppNewWorkspaceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/welcome': {
+      id: '/_app/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof AppWelcomeRouteImport
       parentRoute: typeof AppRoute
     }
     '/docs/api': {
@@ -1213,11 +1252,13 @@ const AppWorkspaceRouteWithChildren = AppWorkspaceRoute._addFileChildren(
 interface AppRouteChildren {
   AppWorkspaceRoute: typeof AppWorkspaceRouteWithChildren
   AppNewWorkspaceRoute: typeof AppNewWorkspaceRoute
+  AppWelcomeRoute: typeof AppWelcomeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceRoute: AppWorkspaceRouteWithChildren,
   AppNewWorkspaceRoute: AppNewWorkspaceRoute,
+  AppWelcomeRoute: AppWelcomeRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -1225,6 +1266,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   InviteRoute: InviteRoute,
+  PricingRoute: PricingRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authResetPasswordRoute: authResetPasswordRoute,
   authSigninRoute: authSigninRoute,

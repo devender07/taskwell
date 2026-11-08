@@ -2,24 +2,20 @@ import type { ReactNode } from 'react'
 import { CheckIcon } from '../icons/icons'
 import './plan-card.css'
 
-export const PLAN_TAGLINES: Record<'starter' | 'pro' | 'ultimate', string> = {
-  starter: 'For small teams trying Taskwell',
-  pro: 'For growing teams',
-  ultimate: 'For larger teams and lots of files',
-}
-
 const INCLUDES = ['Projects and issues', 'List and board views', 'Cycles and roadmap', 'Notes', 'Chat', 'AI testing', 'MCP and API', 'Webhooks', 'GitHub and GitLab']
 
 type PlanCardProps = {
   name: string
   tagline: string
-  price?: string // "Free" or a formatted amount; undefined while prices are unknown
+  price?: string // Paddle's formatted amount; undefined while it loads
+  period: string // "/ month"
+  note?: string // under the price, e.g. the trial
   featured?: boolean
   checks: string[]
   children?: ReactNode // the CTA
 }
 
-export function PlanCard({ name, tagline, price, featured, checks, children }: PlanCardProps) {
+export function PlanCard({ name, tagline, price, period, note, featured, checks, children }: PlanCardProps) {
   return (
     <li className="plan-card" data-featured={featured || undefined}>
       <div className="plan-head">
@@ -28,9 +24,14 @@ export function PlanCard({ name, tagline, price, featured, checks, children }: P
       </div>
       <p className="plan-tagline">{tagline}</p>
       <p className="plan-price">
-        {price === undefined ? null : <span className="plan-amount">{price}</span>}
-        {price === undefined || price === 'Free' ? null : <span className="plan-period">/ month</span>}
+        {price === undefined ? null : (
+          <>
+            <span className="plan-amount">{price}</span>
+            <span className="plan-period">{period}</span>
+          </>
+        )}
       </p>
+      <p className="plan-note">{note}</p>
       {children ?? <span aria-hidden="true" />}
       <ul className="plan-checks">
         {checks.map((c) => (
@@ -56,7 +57,7 @@ export function PlanIncludes() {
           </li>
         ))}
       </ul>
-      <p>Prices exclude tax, added at checkout. Customers in India pay in INR, by card or UPI.</p>
+      <p>Prices are in your local currency and include estimated tax for your location. Paddle, our reseller, confirms the tax at checkout and emails the invoice.</p>
     </section>
   )
 }

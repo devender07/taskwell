@@ -8,22 +8,28 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 )
 
 var paddleClient = &http.Client{Timeout: 10 * time.Second}
 
-// paddleConfig is the user API's paddle_ config.
-type paddleConfig struct {
-	env, key string
-	prices   map[string]string // plan id by price id
-}
+// paidPlans are the user API's paid plan ids (its package plan), free is the plan without a subscription.
+var paidPlans = []string{"starter", "pro", "advanced"}
 
-// subscriptionPlan reads the plan of the Paddle subscription with the id, by its first item's price. base, when not
-// "", overrides the API base paddle_environment picks.
+const freePlan = "free"
+
+// paddleConfig is the user API's paddle_ config.
+type paddleConfig struct{ env, key string }
+
+// subscriptionPlan reads the plan of the Paddle subscription with the id: its first item's price's
+// custom_data.taskwell_plan, as the user API does. base, when not "", overrides the API base paddle_environment picks.
 func subscriptionPlan(ctx context.Context, base string, c paddleConfig, id string) (string, error) {
 	if c.key == "" {
 		return "", errors.New("paddle_api_key is empty")
+	}
+	if c.env != "sandbox" && c.env != "production" {
+		return "", fmt.Errorf("paddle_environment %q isn't sandbox or production", c.env)
 	}
 	if base == "" {
 		base = "https://sandbox-api.paddle.com"
@@ -48,7 +54,10 @@ func subscriptionPlan(ctx context.Context, base string, c paddleConfig, id strin
 		Data struct {
 			Items []struct {
 				Price struct {
-					ID string `json:"id"`
+					ID         string `json:"id"`
+					CustomData struct {
+						Plan string `json:"taskwell_plan"`
+					} `json:"custom_data"`
 				} `json:"price"`
 			} `json:"items"`
 		} `json:"data"`
@@ -59,9 +68,9 @@ func subscriptionPlan(ctx context.Context, base string, c paddleConfig, id strin
 	if len(s.Data.Items) == 0 {
 		return "", errors.New("paddle subscription: no items")
 	}
-	plan, ok := c.prices[s.Data.Items[0].Price.ID]
-	if !ok || s.Data.Items[0].Price.ID == "" {
-		return "", fmt.Errorf("paddle subscription: unknown price %q", s.Data.Items[0].Price.ID)
+	p := s.Data.Items[0].Price
+	if !slices.Contains(paidPlans, p.CustomData.Plan) {
+		return "", fmt.Errorf("paddle subscription: price %q has no known custom_data.taskwell_plan (%q)", p.ID, p.CustomData.Plan)
 	}
-	return plan, nil
+	return p.CustomData.Plan, nil
 }

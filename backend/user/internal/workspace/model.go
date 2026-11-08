@@ -416,7 +416,7 @@ func (m *model) seatsFull(ctx context.Context, workspaceID, email string) (bool,
 func roomFor(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
 	var id string
 	var n int
-	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'starter'),
+	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'free'),
 		        (select count(*) from workspace_members m where m.workspace_id = w.id and m.user_id <> $2)
 		   from workspaces w left join users u on u.id = w.created_by where w.id = $1 for no key update of w`,
 		workspaceID, userID).Scan(&id, &n); err != nil {

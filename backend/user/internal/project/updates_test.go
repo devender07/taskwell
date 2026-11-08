@@ -31,7 +31,7 @@ func TestUpdates(t *testing.T) {
 	}
 	dbtest.Join(t, pool, wsID, mia, "member")
 	dbtest.Join(t, pool, wsID, otto, "member")
-	dbtest.SetPlan(t, pool, ann, "ultimate") // room for several projects
+	dbtest.SetPlan(t, pool, ann, "advanced") // room for several projects
 
 	mux := http.NewServeMux()
 	New(pool, dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, nil).Member).Register(mux)

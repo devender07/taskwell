@@ -251,7 +251,7 @@ func (m *model) create(ctx context.Context, workspaceID, userID string, in input
 func roomForProject(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	var id string
 	var n int
-	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'starter'), (select count(*) from projects where workspace_id = w.id)
+	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'free'), (select count(*) from projects where workspace_id = w.id)
 		   from workspaces w left join users u on u.id = w.created_by where w.id = $1 for no key update of w`,
 		workspaceID).Scan(&id, &n); err != nil {
 		return fmt.Errorf("check project limit: %w", err)

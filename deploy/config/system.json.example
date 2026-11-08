@@ -18,8 +18,5 @@
 
   "paddle_environment": "sandbox",
   "paddle_api_key": "",
-  "paddle_client_token": "",
-  "paddle_webhook_secret": "",
-  "paddle_price_pro": "",
-  "paddle_price_ultimate": ""
+  "paddle_webhook_secret": ""
 }

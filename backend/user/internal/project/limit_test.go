@@ -14,7 +14,7 @@ import (
 )
 
 // TestProjectLimit: projects are limited by the workspace owner's plan, archived ones included: a 2nd is a 402 on
-// Starter, a 3rd on Pro, none on Ultimate. A member creating one counts against the owner's plan, not their own.
+// Free, a 6th on Starter, none on Pro. A member creating one counts against the owner's plan, not their own.
 func TestProjectLimit(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -29,7 +29,7 @@ func TestProjectLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	dbtest.Join(t, pool, wsID, mia, "admin")
-	dbtest.SetPlan(t, pool, mia, "ultimate")
+	dbtest.SetPlan(t, pool, mia, "advanced")
 	mux := http.NewServeMux()
 	New(pool, dbtest.Auth, workspace.New(pool, dbtest.Auth, nil, nil).Member).Register(mux)
 	create := func(user string, want int, msg string) {
@@ -45,9 +45,11 @@ func TestProjectLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	create(mia, 402, "This workspace's plan allows 1 project. Its owner can upgrade for more.")
+	dbtest.SetPlan(t, pool, ann, "starter")
+	for range 4 {
+		create(mia, 201, "")
+	}
+	create(ann, 402, "This workspace's plan allows 5 projects. Its owner can upgrade for more.")
 	dbtest.SetPlan(t, pool, ann, "pro")
-	create(mia, 201, "")
-	create(ann, 402, "This workspace's plan allows 2 projects. Its owner can upgrade for more.")
-	dbtest.SetPlan(t, pool, ann, "ultimate")
 	create(ann, 201, "")
 }

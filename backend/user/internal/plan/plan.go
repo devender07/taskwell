@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Plan is one of the three plans; 0 for a limit is unlimited. Projects, Members and StorageBytes are per workspace.
+// Plan is one of the plans; 0 for a limit is unlimited. Projects, Members and StorageBytes are per workspace.
 type Plan struct {
 	ID           string
 	Name         string
@@ -20,13 +20,15 @@ type Plan struct {
 	StorageBytes int64
 }
 
-const Starter = "starter"
+// Free is the plan of an account with no subscription in force.
+const Free = "free"
 
-// Plans is every plan in display order.
+// Plans is every plan in display order. The paid ones match the taskwell_plan in the custom_data of their Paddle prices.
 var Plans = []Plan{
-	{ID: Starter, Name: "Starter", Workspaces: 1, Projects: 1, Members: 5, StorageBytes: 2 << 30},
-	{ID: "pro", Name: "Pro", Workspaces: 2, Projects: 2, Members: 10, StorageBytes: 100 << 30},
-	{ID: "ultimate", Name: "Ultimate"},
+	{ID: Free, Name: "Free", Workspaces: 1, Projects: 1, Members: 5, StorageBytes: 2 << 30},
+	{ID: "starter", Name: "Starter", Workspaces: 1, Projects: 5, Members: 10, StorageBytes: 20 << 30},
+	{ID: "pro", Name: "Pro", Workspaces: 3, Members: 25, StorageBytes: 100 << 30},
+	{ID: "advanced", Name: "Advanced"},
 }
 
 // Get returns the plan with the id.
@@ -62,10 +64,10 @@ func ForUser(ctx context.Context, q Querier, userID string) (Plan, error) {
 	return get(id, err)
 }
 
-// ForWorkspace returns the plan of the workspace's owner (its creator), Starter when it has none.
+// ForWorkspace returns the plan of the workspace's owner (its creator), Free when it has none.
 func ForWorkspace(ctx context.Context, q Querier, workspaceID string) (Plan, error) {
 	var id string
-	err := q.QueryRow(ctx, `select coalesce(u.plan, 'starter') from workspaces w left join users u on u.id = w.created_by
+	err := q.QueryRow(ctx, `select coalesce(u.plan, 'free') from workspaces w left join users u on u.id = w.created_by
 		where w.id = $1`, workspaceID).Scan(&id)
 	return get(id, err)
 }
