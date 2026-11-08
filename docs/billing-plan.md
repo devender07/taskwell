@@ -1,5 +1,10 @@
 # Billing plan
 
+> **Current contract: the "Paddle catalog and pricing page" section at the end.** It supersedes the plans, prices,
+> checkout, plans endpoint and pricing cards described above it; account ownership, limits enforcement, webhook
+> signature, sync rules, portal and admin comps stay as described.
+
+
 Plans belong to an **account** (a user), not to a workspace. The account that creates a workspace owns it
 (`workspaces.created_by`), and every workspace it owns gets the limits of its plan. Paid through **Paddle** (merchant
 of record: charges, VAT / sales tax / GST, payout to an Indian bank). Customers in India pay in INR (card, UPI
@@ -155,3 +160,87 @@ Admin audit `user.plan_set`.
 - Browser against a fake Paddle: billing page as owner and as a non-owner member, workspace and project limits,
   landing cards.
 - `npm run build`, `npm run check`.
+
+## Paddle catalog and pricing page (current)
+
+### Catalog (made in the Paddle sandbox; ids are the source of truth)
+
+| Plan | Product | Monthly price | Yearly price | USD month / year |
+| --- | --- | --- | --- | --- |
+| Starter | `pro_01m6wk3cc4p29t26qnkzbjng3m` | `pri_01m6wk3cmqzf6zhwrsdhq79xhx` | `pri_01m6wk3cxd0b6mdhphsj67m1hk` | 5.00 / 48.00 |
+| Pro | `pro_01m6wk3d7377t9adbde1f375ra` | `pri_01m6wk3df6zkt76e4zsz6q1x8a` | `pri_01m6wk3dqt1m882m8a68khw5fk` | 9.99 / 100.00 |
+| Advanced | `pro_01m6wk3e2m3w4x2mqjsx5kdgt8` | `pri_01m6wk3eavpqzpc1gjs4ace2p9` | `pri_01m6wk3ekevk50xcfe07vjxbnk` | 49.99 / 500.00 |
+
+7-day trial (card required) on every price; GB / IE / AU overrides; tax mode `location`. Every price and product
+carries `custom_data.taskwell_plan` (`starter` / `pro` / `advanced`): **the backend maps a subscription to a plan by
+its price's `custom_data.taskwell_plan`**, so prices made later need it too. Default payment link:
+`https://taskwell.dev/pricing` (Paddle.js there opens `?_ptxn=` checkouts by itself).
+
+### Plans and limits (`internal/plan`, easy to edit)
+
+An account with no subscription in force is on **Free**. Ids: `free`, `starter`, `pro`, `advanced`.
+
+| Plan | Workspaces | Projects per workspace | Members per workspace | Storage per workspace |
+| --- | --- | --- | --- | --- |
+| Free | 1 | 1 | 5 | 2 GB |
+| Starter | 1 | 5 | 10 | 20 GB |
+| Pro | 3 | Unlimited | 25 | 100 GB |
+| Advanced | Unlimited | Unlimited | Unlimited | Unlimited |
+
+Migration `031_billing.sql` (rewritten in place again): `users.plan` default `'free'`, check in
+(`free`,`starter`,`pro`,`advanced`); add `billing_interval text check in ('month','year')`; **drop**
+`paddle_checkout_id`; `billing_currency` becomes free text (any ISO code, lowercased; no check). `system_config`:
+`paddle_environment` (seeded **empty**: billing refuses to run, logging an error, until it's exactly `sandbox` or
+`production`), `paddle_api_key` (secret), `paddle_webhook_secret` (secret). The client token and price-id keys are
+gone (the frontend has them).
+
+### Checkout: client-side, signed custom_data
+
+The pricing page opens Paddle.js checkout with the exact price shown: `Paddle.Checkout.open({items: [{priceId,
+quantity: 1}], customer: {email}, customData, settings: {displayMode: 'overlay', variant: 'one-page', successUrl:
+<origin>/welcome}})`. To link the subscription to the account without trusting client data:
+
+- `POST /api/billing/checkout` (signed in; FormData `price_id`): `200` `{"custom_data": {"user_id": "<uuid>",
+  "sig": "<hex HMAC-SHA256 of user_id, key derived from jwt_secret like the export tokens>"}, "email": "<caller's>"}`.
+  `409` "You already have a subscription. Manage it to change plans." (in force, or comped). `400` "Choose a plan."
+  for an empty `price_id`. `503` "Billing isn't set up yet." when `paddle_environment` isn't sandbox/production. No
+  Paddle API call here.
+- Webhook `subscription.*`: account = the one holding `paddle_subscription_id`; else `custom_data.user_id` **only
+  if** `custom_data.sig` verifies (hmac.Equal) **and** that account has no other subscription in force. Plan = the
+  subscription's `items[0].price.custom_data.taskwell_plan` (unknown → error, Paddle retries). Interval =
+  `items[0].price.billing_cycle.interval`. Status `trialing` keeps the plan (as today). Rest of sync unchanged; a
+  subscription no longer in force returns the account to `free`.
+- `POST /api/billing/change` (FormData `price_id`): reads the price (`GET /prices/{id}`) to check its
+  `taskwell_plan`, then `PATCH /subscriptions/{id}` with it, `proration_billing_mode: prorated_immediately` (an
+  interval change works the same way). `400` "Choose a plan." for an unknown price or the current one.
+- `GET /api/billing` gains `"interval": "month"|"year"|null`; `currency` is the subscription's (null without one).
+  `enabled` = environment valid and API key set. `GET /api/billing/plans` is **removed** (prices come from Paddle.js,
+  features from the frontend tiers file).
+- Portal unchanged.
+
+### Frontend
+
+- Dependency `@paddle/paddle-js` (asked for). `src/paddle.ts`: `getPaddle()` = `initializePaddle({environment:
+  import.meta.env.VITE_PADDLE_ENV, token: import.meta.env.VITE_PADDLE_CLIENT_TOKEN})` once; **throws** when
+  `VITE_PADDLE_ENV` isn't `sandbox`/`production` or the token is missing. Env in `frontend/user/.env.development`
+  and `.env.production` (sandbox values for now) and a new `frontend/user/.env.example`.
+- `src/pricing/tiers.ts`: `export interface Tier { id: 'starter' | 'pro' | 'advanced'; name: 'Starter' | 'Pro' |
+  'Advanced'; description: string; features: string[]; priceId: { month: string; year: string }; featured?: boolean
+  }` and `TIERS` with the ids above (Pro featured, "Most popular").
+- `src/pricing/pricing-table.tsx`: monthly / yearly toggle (in the URL via the owning route's `validateSearch`
+  where it has one); prices from `Paddle.PricePreview({items: all six prices})`, shown **only** as Paddle's
+  `formattedTotals.total` strings (no math, no Intl, no reformatting), with "/ month" or "/ year"; no
+  `address.countryCode` (no server-side country header in this stack, so Paddle detects it from the IP). Each tier:
+  name, description, price, "7-day free trial", Subscribe button, features. Buttons:
+  - signed out → `/signup?redirect=/pricing?interval=…` (or signin if signup has no redirect; check `safeRedirect`).
+  - signed in, no subscription → POST checkout, then `Paddle.Checkout.open(...)` as above with the email prefilled.
+  - subscribed → current tier+interval "Current plan"; others "Switch plan" (confirm dialog, POST change).
+- Routes: public `/pricing` (pricing table + "Every plan includes" + FAQ moved from the landing page; works signed in
+  or out; loads Paddle.js so `?_ptxn=` checkouts open), signed-in `/welcome` ("You're subscribed" / trial text,
+  polls `/api/billing` a few times until the plan shows, link to the dashboard). Landing page: the pricing section
+  and FAQ become a short "Plans from Starter to Advanced, 7-day free trial" block linking to `/pricing`; nav
+  "Pricing" → `/pricing`. Settings → Billing: "This workspace" as now; "Your plan" shows plan, interval, status,
+  renewal, Manage billing, and the same `PricingTable`.
+- CSP (production headers in `vite.config.ts`): keep Paddle domains; make sure checkout `variant: 'one-page'` and
+  PricePreview work (Paddle.js calls `*.paddle.com`; frames `buy.paddle.com` / `sandbox-buy.paddle.com`).
+- Admin: plan names Free / Starter / Pro / Advanced in both pages and the Set plan dialog.
