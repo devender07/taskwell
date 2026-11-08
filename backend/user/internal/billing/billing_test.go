@@ -156,6 +156,9 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.status, s.updated = "active", s.updated.Add(time.Minute)
 		f.subs[id] = s
 		reply(s.json())
+	case isSub && known && r.Method == http.MethodPatch && s.status == "trialing" && body["proration_billing_mode"] != "do_not_bill":
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"type":"request_error","code":"subscription_trialing_items_update_invalid_options","detail":"use do_not_bill"}}`)
 	case isSub && known && r.Method == http.MethodPatch:
 		s.price = body["items"].([]any)[0].(map[string]any)["price_id"].(string)
 		s.updated = time.Now()
@@ -612,7 +615,7 @@ func TestRepeatTrial(t *testing.T) {
 	}
 }
 
-// TestChangeInTrial: Paddle only takes do_not_bill for a trialing subscription's items, so a switch in a trial uses it.
+// TestChangeInTrial: a switch tries prorated_immediately; only Paddle refusing it for a trial falls back to do_not_bill.
 func TestChangeInTrial(t *testing.T) {
 	x := setup(t)
 	s := sub{id: "sub_trial_" + x.tag, customer: "ctm_" + x.tag, cd: signedCD(x.ann, checkoutSig(x.ann)), status: "trialing", price: "pri_starter_m",
@@ -624,7 +627,17 @@ func TestChangeInTrial(t *testing.T) {
 	if b := x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_pro_m"}}, 200); b["plan"] != "pro" || b["status"] != "trialing" {
 		t.Fatalf("change in trial answered %v", b)
 	}
-	if patch, _ := x.f.last("PATCH", "/subscriptions/"+s.id); patch.body["proration_billing_mode"] != "do_not_bill" {
-		t.Fatalf("change in trial body %v", patch.body)
+	if patch, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 2 || patch.body["proration_billing_mode"] != "do_not_bill" {
+		t.Fatalf("change in trial: %d patches, last %v", n, patch.body)
+	}
+	// The mirror still says trialing but Paddle has billed it: Paddle's answer wins, so it's prorated.
+	x.f.mu.Lock()
+	s = x.f.subs[s.id]
+	s.status = "active"
+	x.f.subs[s.id] = s
+	x.f.mu.Unlock()
+	x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_starter_m"}}, 200)
+	if patch, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 3 || patch.body["proration_billing_mode"] != "prorated_immediately" {
+		t.Fatalf("change after the trial: %d patches, last %v", n, patch.body)
 	}
 }

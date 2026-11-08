@@ -245,14 +245,17 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
 		return nil
 	}
-	// In a trial there's nothing to prorate (Paddle only takes do_not_bill then): the new price is billed when it ends.
-	mode := "prorated_immediately"
-	if a.Status != nil && *a.Status == "trialing" {
-		mode = "do_not_bill"
-	}
-	body := map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": mode}
+	// Paddle decides whether it's in a trial (the mirror can lag): a trialing subscription refuses any mode but
+	// do_not_bill, and then there's nothing to prorate; the new price is billed when the trial ends.
+	path := "/subscriptions/" + url.PathEscape(*a.SubscriptionID)
 	var sub subscription
-	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPatch, "/subscriptions/"+url.PathEscape(*a.SubscriptionID), body, &sub); err != nil {
+	err = h.paddle.call(ctx, s.key, s.env, http.MethodPatch, path,
+		map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": "prorated_immediately"}, &sub)
+	if errors.As(err, &pe) && pe.code == "subscription_trialing_items_update_invalid_options" {
+		err = h.paddle.call(ctx, s.key, s.env, http.MethodPatch, path,
+			map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": "do_not_bill"}, &sub)
+	}
+	if err != nil {
 		return err
 	}
 	if err := h.saveSubscription(ctx, sub); err != nil {
