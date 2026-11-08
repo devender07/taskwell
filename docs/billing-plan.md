@@ -244,3 +244,63 @@ quantity: 1}], customer: {email}, customData, settings: {displayMode: 'overlay',
 - CSP (production headers in `vite.config.ts`): keep Paddle domains; make sure checkout `variant: 'one-page'` and
   PricePreview work (Paddle.js calls `*.paddle.com`; frames `buy.paddle.com` / `sandbox-buy.paddle.com`).
 - Admin: plan names Free / Starter / Pro / Advanced in both pages and the Set plan dialog.
+
+## Fulfillment: mirrored customers and subscriptions (current)
+
+Paddle state is mirrored from verified webhook events into two tables; the account's effective plan is derived from
+them. Folded into `031_billing.sql` (still never deployed):
+
+```sql
+-- users keeps only: plan (cached effective plan, read by limits), plan_comped. The other paddle/subscription columns
+-- on users go away (they live on the subscription row).
+create table paddle_customers (
+    customer_id text primary key,                         -- ctm_…
+    user_id uuid references users (id) on delete set null,
+    email text not null default '',                       -- '' until customer.created/updated arrives
+    paddle_updated_at timestamptz,                        -- the entity's updated_at; older events don't overwrite
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+create table paddle_subscriptions (
+    subscription_id text primary key,                     -- sub_…
+    customer_id text not null references paddle_customers (customer_id),
+    user_id uuid references users (id) on delete set null,
+    status text not null,                                 -- active, trialing, past_due, paused, canceled
+    price_id text not null,
+    product_id text not null,
+    plan text not null,                                   -- price custom_data.taskwell_plan
+    billing_interval text,
+    currency_code text,
+    next_billed_at timestamptz,
+    scheduled_change_action text,                         -- cancel, pause, resume
+    scheduled_change_at timestamptz,
+    paddle_updated_at timestamptz not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+create index on paddle_subscriptions (user_id);
+```
+
+- **Verification first**: the stdlib `Paddle-Signature` check runs on the raw body before anything is parsed; a bad
+  signature → `400` (never 2xx). A handler error → `500` so Paddle retries.
+- **Routing** (typed structs per entity): `subscription.created|updated|canceled|activated|trialing|past_due|paused|
+  resumed` → `subscriptionEvent`; `customer.created|updated` → `customerEvent`; `transaction.completed` →
+  `transactionEvent` (ensures the customer row exists, links it to the account when the transaction's
+  `custom_data` is signed, logs); `adjustment.created` → warn log; anything else → `200`, ignored.
+- **Idempotent, order-safe**: every write is `insert … on conflict (id) do update … where excluded.paddle_updated_at
+  >= <table>.paddle_updated_at`. A subscription event for an unknown customer inserts a placeholder customer
+  (`email ''`) that customer events fill in. Everything comes from the event payload (no API re-read).
+- **Linking to an account**: a subscription row keeps its `user_id` once set. A new one gets it only from signed
+  `custom_data` (`user_id` + `sig`, as the checkout endpoint makes), and only when that account has no other
+  subscription granting access. The customer row gets the same `user_id`.
+- **Access helper** `grantsAccess(status string) bool`: `active`, `trialing`, `past_due` (grace while Paddle retries)
+  → true; `paused`, `canceled` and anything else → false. A `scheduled_change` never revokes access by itself.
+- **Effective plan**: after each subscription write (same transaction), the account's `users.plan` = the plan of its
+  most recently updated subscription that grants access, else `free`; `plan_comped` keeps the admin's plan. Plan
+  changes are audited and published as before.
+- `GET /api/billing`: `status`, `currency`, `interval`, `renews_at` (`next_billed_at`), `cancel_at_period_end`
+  (`scheduled_change_action = 'cancel'`) come from that subscription row (nulls without one).
+- **Portal**: signed in first; the customer and subscription come from `paddle_subscriptions` by the session's user
+  (never from the client); `POST /customers/{customer_id}/portal-sessions` with `subscription_ids`. `409` without one.
+- **Change**: the session user's subscription granting access, as before.
+- **Admin clear comp**: the plan comes from the mirrored rows (no Paddle call).
