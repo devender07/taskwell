@@ -89,6 +89,7 @@ type subscription struct {
 	ID              string     `json:"id"`
 	Status          string     `json:"status"`
 	CustomerID      string     `json:"customer_id"`
+	TransactionID   string     `json:"transaction_id"` // on subscription.created: the checkout's transaction
 	CurrencyCode    string     `json:"currency_code"`
 	NextBilledAt    *time.Time `json:"next_billed_at"`
 	ScheduledChange *struct {

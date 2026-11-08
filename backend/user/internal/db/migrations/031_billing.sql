@@ -4,6 +4,7 @@ alter table workspaces
     add column plan_comped boolean not null default false,  -- set by a platform admin; Paddle events leave it alone
     add column paddle_customer_id text,
     add column paddle_subscription_id text unique,
+    add column paddle_checkout_id text,                     -- the last transaction our checkout made; links its subscription
     add column subscription_status text,                    -- Paddle's status, null without a subscription
     add column billing_currency text check (billing_currency in ('usd', 'inr')),
     add column renews_at timestamptz,                       -- next_billed_at

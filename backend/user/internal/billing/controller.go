@@ -314,6 +314,9 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/transactions", body, &t); err != nil {
 		return err
 	}
+	if err := h.model.saveCheckout(ctx, ws.ID, t.ID); err != nil {
+		return err
+	}
 	env := "sandbox"
 	if s.env == "production" {
 		env = "production"
@@ -429,7 +432,7 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode subscription: %w", err)
 		}
-		return h.syncSubscription(ctx, o.ID, o.CustomData.WorkspaceID)
+		return h.syncSubscription(ctx, o.ID, o.CustomData.WorkspaceID, o.TransactionID)
 	case "adjustment.created":
 		var o struct {
 			ID             string `json:"id"`
@@ -461,9 +464,9 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 }
 
 // syncSubscription reads the subscription from Paddle (events arrive out of order: the current object wins) and
-// applies it to its workspace: the subscription's custom_data workspace, else the event's (workspaceID), else the one
-// holding the subscription.
-func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID string) error {
+// applies it to its workspace (see model.sync); workspaceID and transactionID come from the event, for a
+// subscription Paddle doesn't return them on.
+func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID, transactionID string) error {
 	s, err := h.settings(ctx)
 	if err != nil {
 		return err
@@ -474,6 +477,9 @@ func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID string) 
 	}
 	if sub.CustomData.WorkspaceID == "" {
 		sub.CustomData.WorkspaceID = workspaceID
+	}
+	if sub.TransactionID == "" {
+		sub.TransactionID = transactionID
 	}
 	return h.apply(ctx, s, sub)
 }

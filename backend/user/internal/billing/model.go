@@ -57,6 +57,14 @@ func (m *model) usage(ctx context.Context, workspaceID string) (seats int, bytes
 	return seats, bytes, nil
 }
 
+// saveCheckout records the transaction a checkout made, so only its subscription can attach to the workspace.
+func (m *model) saveCheckout(ctx context.Context, workspaceID, transactionID string) error {
+	if _, err := m.db.Exec(ctx, `update workspaces set paddle_checkout_id = $2 where id = $1`, workspaceID, transactionID); err != nil {
+		return fmt.Errorf("save checkout: %w", err)
+	}
+	return nil
+}
+
 // caller returns the user's email and timezone (their notification settings'; "" when unset).
 func (m *model) caller(ctx context.Context, userID string) (email, timezone string, err error) {
 	if err := m.db.QueryRow(ctx, `select u.email, coalesce(n.timezone, '') from users u
@@ -68,7 +76,8 @@ func (m *model) caller(ctx context.Context, userID string) (email, timezone stri
 }
 
 // sync applies Paddle's current subscription s, whose plan in force is paid ("" when it isn't in force), to its
-// workspace: the one in its custom_data, else the one with the subscription; false when there's none. A subscription
+// workspace: the one holding it, else the one in its custom_data whose last checkout made it (custom_data alone isn't
+// proof: anyone can open a Paddle checkout with any custom_data); false when there's none. A subscription
 // no longer in force returns the workspace to Starter and clears it, unless the workspace has moved to another
 // subscription since. A comped workspace keeps its plan. A plan change is audited as billing.plan_changed.
 func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, error) {
@@ -82,9 +91,9 @@ func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, er
 	if c := strings.ToLower(s.CurrencyCode); c == "usd" || c == "inr" {
 		currency = &c
 	}
-	where, arg := `paddle_subscription_id = $1`, s.ID
-	if web.IsUUID(s.CustomData.WorkspaceID) {
-		where, arg = `id = $1`, s.CustomData.WorkspaceID
+	ws, txn := s.CustomData.WorkspaceID, s.TransactionID
+	if !web.IsUUID(ws) || txn == "" {
+		ws, txn = "00000000-0000-0000-0000-000000000000", ""
 	}
 	found := false
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -92,7 +101,9 @@ func (m *model) sync(ctx context.Context, s subscription, paid string) (bool, er
 		var comped bool
 		var current *string
 		err := tx.QueryRow(ctx, `select id::text, slug, plan, plan_comped, paddle_subscription_id from workspaces
-			  where `+where+` for update`, arg).Scan(&id, &slug, &from, &comped, &current)
+			  where paddle_subscription_id = $1 or (id = $2 and paddle_checkout_id = nullif($3, ''))
+			  order by paddle_subscription_id = $1 desc nulls last limit 1 for update`, s.ID, ws, txn).
+			Scan(&id, &slug, &from, &comped, &current)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

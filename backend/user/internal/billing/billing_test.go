@@ -206,9 +206,25 @@ func TestWebhookSync(t *testing.T) {
 	read := func() state { t.Helper(); return readState(t, pool, wsID) }
 	sub1, sub2 := dbtest.Name("sub_"), dbtest.Name("sub_")
 
-	// Paddle's subscription has no custom_data here; the event's names the workspace.
+	checkout := func(txn string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `update workspaces set paddle_checkout_id = $2 where id = $1`, wsID, txn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	created := func(sub, txn string) string {
+		return fmt.Sprintf(`{"id":%q,"transaction_id":%q,"custom_data":{"workspace_id":%q}}`, sub, txn, wsID)
+	}
+	checkout("txn_a")
+	// Anyone can open a Paddle checkout naming this workspace; a subscription its checkout didn't make doesn't attach.
+	f.subs["sub_foreign"] = subJSON("sub_foreign", wsID, "active", "pri_ult", false)
+	send("subscription.created", created("sub_foreign", "txn_other"), 200)
+	if s := read(); s.plan != "starter" || s.sub != nil {
+		t.Fatalf("foreign subscription attached: %+v", s)
+	}
+	// Paddle's subscription has no custom_data here; the event's names the workspace, its transaction is our checkout.
 	f.subs[sub1] = subJSON(sub1, "", "active", "pri_pro", false)
-	send("subscription.created", fmt.Sprintf(`{"id":%q,"custom_data":{"workspace_id":%q}}`, sub1, wsID), 200)
+	send("subscription.created", created(sub1, "txn_a"), 200)
 	s := read()
 	if s.plan != "pro" || s.sub == nil || *s.sub != sub1 || *s.status != "active" || *s.cur != "inr" || s.cancel ||
 		*s.cus != "ctm_1" || s.renews == nil || s.renews.Unix() != 1900000000 {
@@ -241,8 +257,9 @@ func TestWebhookSync(t *testing.T) {
 		t.Fatalf("after canceled: %+v", s)
 	}
 
+	checkout("txn_b")
 	f.subs[sub2] = subJSON(sub2, wsID, "active", "pri_pro", false)
-	send("subscription.activated", fmt.Sprintf(`{"id":%q}`, sub2), 200)
+	send("subscription.created", created(sub2, "txn_b"), 200)
 	send("subscription.canceled", fmt.Sprintf(`{"id":%q}`, sub1), 200) // late event of the old subscription
 	if s := read(); s.plan != "pro" || *s.sub != sub2 {
 		t.Fatalf("stale subscription applied: %+v", s)
@@ -315,6 +332,10 @@ func TestCheckout(t *testing.T) {
 	if got["transaction_id"] != "txn_1" || got["client_token"] != "test_tok" || got["environment"] != "sandbox" ||
 		!strings.HasSuffix(got["email"].(string), "@dbtest.test") {
 		t.Fatalf("checkout %v", got)
+	}
+	var stored *string
+	if err := pool.QueryRow(ctx, `select paddle_checkout_id from workspaces where id = $1`, wsID).Scan(&stored); err != nil || stored == nil || *stored != "txn_1" {
+		t.Fatalf("checkout id stored %v %v", stored, err)
 	}
 	tx, _ := f.last("POST", "/transactions")
 	if b, _ := json.Marshal(tx.body); string(b) != fmt.Sprintf(`{"custom_data":{"workspace_id":%q},"items":[{"price_id":"pri_pro","quantity":1}]}`, wsID) {

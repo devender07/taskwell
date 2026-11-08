@@ -37,6 +37,7 @@ alter table workspaces
     add column plan_comped boolean not null default false,
     add column paddle_customer_id text,
     add column paddle_subscription_id text unique,
+    add column paddle_checkout_id text,                     -- the last transaction our checkout made
     add column subscription_status text,                    -- Paddle's status, null without a subscription
     add column billing_currency text check (billing_currency in ('usd', 'inr')),
     add column renews_at timestamptz,                       -- next_billed_at
@@ -111,7 +112,9 @@ matches (constant time), `ts` within 5 minutes; bad → `400` "Invalid signature
 
 - `subscription.created`, `subscription.updated`, `subscription.activated`, `subscription.past_due`,
   `subscription.paused`, `subscription.resumed`, `subscription.canceled`: workspace from `data.custom_data.workspace_id`
-  (set by our transaction) or else by `paddle_subscription_id`; then sync.
+  only together with the event's `transaction_id` equal to the workspace's `paddle_checkout_id` (custom_data alone
+  isn't proof: anyone can open a Paddle checkout with any custom_data), or else by `paddle_subscription_id`; then
+  sync. Checkout stores the transaction id in `paddle_checkout_id`.
 - `adjustment.created` (refunds and chargebacks): audit `billing.refunded` / `billing.disputed` (`action` refund vs
   chargeback) via the subscription id, logged at warn.
 
