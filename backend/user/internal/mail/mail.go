@@ -1,17 +1,21 @@
-// Package mail queues plain-text email in outbound_mail and sends it over SMTP, using settings from system_config,
-// from a worker, so no request waits on SMTP.
+// Package mail queues email in outbound_mail (plain text, with an optional HTML part) and sends it over SMTP, using
+// settings from system_config, from a worker, so no request waits on SMTP.
 package mail
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -53,7 +57,14 @@ type Execer interface {
 // Enqueue queues a plain-text message to one recipient through q (pass a transaction to queue it only if that
 // commits) and wakes the worker.
 func (m *Mailer) Enqueue(ctx context.Context, q Execer, to, subject, body string) error {
-	if _, err := q.Exec(ctx, `insert into outbound_mail (recipient, subject, body) values ($1, $2, $3)`, to, subject, body); err != nil {
+	return m.EnqueueHTML(ctx, q, to, subject, body, "")
+}
+
+// EnqueueHTML is Enqueue with an HTML part (see Render); body is the plain-text part for clients that don't show
+// HTML. An empty html sends plain text only.
+func (m *Mailer) EnqueueHTML(ctx context.Context, q Execer, to, subject, body, html string) error {
+	if _, err := q.Exec(ctx, `insert into outbound_mail (recipient, subject, body, html) values ($1, $2, $3, nullif($4, ''))`,
+		to, subject, body, html); err != nil {
 		return fmt.Errorf("queue mail: %w", err)
 	}
 	m.Wake()
@@ -116,21 +127,21 @@ func (m *Mailer) sendNext(ctx context.Context) (bool, error) {
 	if s.host == "" {
 		return false, nil
 	}
-	var id, to, subject, body string
+	var id, to, subject, body, html string
 	var attempts int
 	err := m.db.QueryRow(ctx,
 		`update outbound_mail set attempts = attempts + 1, next_attempt_at = now() + make_interval(secs => $1)
 		 where id = (select id from outbound_mail where failed_at is null and next_attempt_at <= now()
 		             order by next_attempt_at limit 1 for update skip locked)
-		 returning id::text, recipient, subject, body, attempts`, (m.timeout+30*time.Second).Seconds()).
-		Scan(&id, &to, &subject, &body, &attempts)
+		 returning id::text, recipient, subject, body, coalesce(html, ''), attempts`, (m.timeout+30*time.Second).Seconds()).
+		Scan(&id, &to, &subject, &body, &html, &attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("claim mail: %w", err)
 	}
-	sendErr := m.send(ctx, s, to, subject, body)
+	sendErr := m.send(ctx, s, to, subject, body, html)
 	if ctx.Err() != nil {
 		return false, nil // shutting down: the claim expires and the next run retries it
 	}
@@ -153,7 +164,7 @@ func (m *Mailer) sendNext(ctx context.Context) (bool, error) {
 
 // send delivers one message within m.timeout, using STARTTLS when the server offers it. The subject is Q-encoded
 // when needed, which also neutralizes CR/LF from user-supplied names.
-func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body string) error {
+func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body, html string) error {
 	sender, err := mail.ParseAddress(s.from)
 	if err != nil {
 		return fmt.Errorf("parse smtp_from: %w", err)
@@ -187,9 +198,7 @@ func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body strin
 			return fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	msg := "From: " + s.from + "\r\nTo: " + to + "\r\nSubject: " + mime.QEncoding.Encode("UTF-8", subject) +
-		"\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" +
-		strings.ReplaceAll(body, "\n", "\r\n")
+	msg := compose(s.from, to, subject, body, html)
 	if err := cl.Mail(sender.Address); err != nil {
 		return fmt.Errorf("smtp mail from: %w", err)
 	}
@@ -200,7 +209,7 @@ func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body strin
 	if err != nil {
 		return fmt.Errorf("smtp data: %w", err)
 	}
-	if _, err := w.Write([]byte(msg)); err != nil {
+	if _, err := w.Write(msg); err != nil {
 		return fmt.Errorf("smtp write: %w", err)
 	}
 	if err := w.Close(); err != nil {
@@ -208,4 +217,35 @@ func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body strin
 	}
 	_ = cl.Quit() // the server has accepted the message: retrying on a failed QUIT would send it twice
 	return nil
+}
+
+// compose is the message as sent: plain text, or multipart/alternative with the HTML part last (the one clients
+// prefer). Parts are quoted-printable so no line passes SMTP's 998-byte limit.
+func compose(from, to, subject, body, html string) []byte {
+	var b bytes.Buffer
+	b.WriteString("From: " + from + "\r\nTo: " + to + "\r\nSubject: " + mime.QEncoding.Encode("UTF-8", subject) +
+		"\r\nMIME-Version: 1.0\r\n")
+	part := func(w *bytes.Buffer, text string) {
+		q := quotedprintable.NewWriter(w)
+		q.Write([]byte(strings.ReplaceAll(text, "\n", "\r\n"))) // a bytes.Buffer doesn't fail
+		q.Close()
+	}
+	if html == "" {
+		b.WriteString("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
+		part(&b, body)
+		return b.Bytes()
+	}
+	var parts bytes.Buffer
+	mw := multipart.NewWriter(&parts)
+	for _, p := range []struct{ typ, text string }{{"text/plain", body}, {"text/html", html}} {
+		w, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {p.typ + "; charset=UTF-8"},
+			"Content-Transfer-Encoding": {"quoted-printable"}})
+		var e bytes.Buffer
+		part(&e, p.text)
+		w.Write(e.Bytes())
+	}
+	mw.Close()
+	b.WriteString("Content-Type: multipart/alternative; boundary=" + mw.Boundary() + "\r\n\r\n")
+	b.Write(parts.Bytes())
+	return b.Bytes()
 }

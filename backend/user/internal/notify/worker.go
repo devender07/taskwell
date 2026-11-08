@@ -55,7 +55,11 @@ func (h *Handler) queueEmails(ctx context.Context, settle time.Duration) error {
 	for ctx.Err() == nil {
 		more, err := h.model.queueNext(ctx, settle, func(tx pgx.Tx, to string, m message) error {
 			subject, body := instantEmail(m, base)
-			return h.mail.Enqueue(ctx, tx, to, subject, body)
+			html, err := instantHTML(m, base)
+			if err != nil {
+				return err
+			}
+			return h.mail.EnqueueHTML(ctx, tx, to, subject, body, html)
 		})
 		if err != nil {
 			return err

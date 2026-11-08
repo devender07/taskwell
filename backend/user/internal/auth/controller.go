@@ -99,10 +99,16 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	subject := "Your Taskwell verification code: " + code
 	body := fmt.Sprintf("Your Taskwell verification code is %s\n\nEnter it on the sign-up page to finish creating your account. "+
 		"It expires in %d minutes. If you didn't sign up for Taskwell, ignore this email.\n", code, minutes)
+	html, err := mail.Render(mail.Email{Preview: "Your verification code is " + code, Heading: "Confirm your email",
+		Intro: "Enter this code on the sign-up page to finish creating your Taskwell account.", Code: code,
+		Note: fmt.Sprintf("It expires in %d minutes. If you didn't sign up for Taskwell, you can ignore this email.", minutes)})
+	if err != nil {
+		return err
+	}
 	err = h.model.startSignup(ctx, strings.TrimSpace(name), email, string(ph), wsName, secret.Hash(code+"."+nonce), minutes)
 	if errors.Is(err, errEmailTaken) {
 		// Answer exactly as for a new address, so sign-up can't tell who has an account; tell the owner instead.
-		if subject, body, err = h.signupTakenMail(ctx); err != nil {
+		if subject, body, html, err = h.signupTakenMail(ctx); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -114,7 +120,7 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: nonce, Path: "/api/auth/signup", MaxAge: minutes * 60,
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
-	if err := h.mail.Enqueue(ctx, h.model.db, email, subject, body); err != nil {
+	if err := h.mail.EnqueueHTML(ctx, h.model.db, email, subject, body, html); err != nil {
 		return err
 	}
 	web.JSON(w, http.StatusAccepted, map[string]string{"email": email})
@@ -122,16 +128,20 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 }
 
 // signupTakenMail is what a sign-up with an existing account's email sends that account instead of a code.
-func (h *Handler) signupTakenMail(ctx context.Context) (subject, body string, err error) {
+func (h *Handler) signupTakenMail(ctx context.Context) (subject, body, html string, err error) {
 	base, err := h.cfg.Get(ctx, "app_base_url")
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	base = strings.TrimRight(base, "/")
+	html, err = mail.Render(mail.Email{Preview: "You already have a Taskwell account.", Heading: "You already have an account",
+		Intro:  "Someone tried to create a Taskwell account with this email, but you already have one. Sign in instead.",
+		Button: "Sign in", URL: base + "/signin",
+		Note: "Forgot your password? Reset it at " + base + "/forgot-password. If this wasn't you, you can ignore this email. Your account hasn't changed."})
 	return "Someone tried to sign up with your email",
 		fmt.Sprintf("Someone tried to create a Taskwell account with this email, but you already have one.\n\n"+
 			"Sign in instead:\n\n%s/signin\n\nForgot your password? Reset it here:\n\n%s/forgot-password\n\n"+
-			"If this wasn't you, you can ignore this email. Your account hasn't changed.\n", base, base), nil
+			"If this wasn't you, you can ignore this email. Your account hasn't changed.\n", base, base), html, err
 }
 
 // signupVerify finishes a sign-up with the emailed code and signs the new account in.
@@ -239,9 +249,12 @@ func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return h.sendSecret(w, r, web.NormEmail(email), purposeCode, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
+	return h.sendSecret(w, r, web.NormEmail(email), purposeCode, "otp_ttl_minutes", code, func(minutes int) (string, string, string, error) {
+		html, err := mail.Render(mail.Email{Preview: "Your sign-in code is " + code, Heading: "Your sign-in code",
+			Intro: "Enter this code to sign in to Taskwell.", Code: code,
+			Note: fmt.Sprintf("It expires in %d minutes. If you didn't ask for it, you can ignore this email. Never share this code.", minutes)})
 		return "Your Taskwell sign-in code: " + code,
-			fmt.Sprintf("Your Taskwell sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), nil
+			fmt.Sprintf("Your Taskwell sign-in code is %s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", code, minutes), html, err
 	})
 }
 
@@ -255,21 +268,24 @@ func (h *Handler) forgot(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	token := secret.NewToken()
-	return h.sendSecret(w, r, web.NormEmail(email), purposeReset, "reset_ttl_minutes", token, func(minutes int) (string, string, error) {
+	return h.sendSecret(w, r, web.NormEmail(email), purposeReset, "reset_ttl_minutes", token, func(minutes int) (string, string, string, error) {
 		base, err := h.cfg.Get(r.Context(), "app_base_url")
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 		link := strings.TrimRight(base, "/") + "/reset-password?token=" + url.QueryEscape(token)
+		html, err := mail.Render(mail.Email{Preview: "Reset your Taskwell password.", Heading: "Reset your password",
+			Intro: "Choose a new password for your Taskwell account.", Button: "Reset password", URL: link,
+			Note: fmt.Sprintf("The link expires in %d minutes. If you didn't ask for it, you can ignore this email.", minutes)})
 		return "Reset your Taskwell password",
-			fmt.Sprintf("Reset your Taskwell password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), nil
+			fmt.Sprintf("Reset your Taskwell password by opening this link:\n\n%s\n\nIt expires in %d minutes. If you didn't ask for it, ignore this email.\n", link, minutes), html, err
 	})
 }
 
 // sendSecret stores a new single-use secret for the account (if it exists), voids older unused
 // ones of the same purpose, and emails it. Always answers 204 so callers can't probe for accounts.
 func (h *Handler) sendSecret(w http.ResponseWriter, r *http.Request, email, purpose, ttlKey, code string,
-	compose func(minutes int) (subject, body string, err error)) error {
+	compose func(minutes int) (subject, body, html string, err error)) error {
 	ctx := r.Context()
 	if ok, err := h.mail.Configured(ctx); err != nil {
 		return err
@@ -292,11 +308,11 @@ func (h *Handler) sendSecret(w http.ResponseWriter, r *http.Request, email, purp
 	if err := h.model.replaceToken(ctx, userID, purpose, secret.Hash(code), minutes); err != nil {
 		return err
 	}
-	subject, body, err := compose(minutes)
+	subject, body, html, err := compose(minutes)
 	if err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, email, subject, body); err != nil {
+	if err := h.mail.EnqueueHTML(ctx, h.model.db, email, subject, body, html); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -377,11 +393,15 @@ func (h *Handler) passwordCode(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return h.sendSecret(w, r, p.Email, purposePasswordSet, "otp_ttl_minutes", code, func(minutes int) (string, string, error) {
+	return h.sendSecret(w, r, p.Email, purposePasswordSet, "otp_ttl_minutes", code, func(minutes int) (string, string, string, error) {
+		html, err := mail.Render(mail.Email{Preview: "Your code to add a password is " + code, Heading: "Add a password",
+			Intro: "Enter this code to add a password to your Taskwell account.", Code: code,
+			Note: fmt.Sprintf("It expires in %d minutes. If you didn't ask for it, someone may be signed in to your account: "+
+				"sign out of every device by resetting your password.", minutes)})
 		return "Your Taskwell code to add a password: " + code,
 			fmt.Sprintf("Your code to add a password to your Taskwell account is %s\n\nIt expires in %d minutes. "+
 				"If you didn't ask for it, someone may be signed in to your account: sign out of every device by "+
-				"resetting your password.\n", code, minutes), nil
+				"resetting your password.\n", code, minutes), html, err
 	})
 }
 
@@ -506,15 +526,28 @@ func (h *Handler) emailCode(w http.ResponseWriter, r *http.Request) error {
 	if err := h.model.startEmailChange(ctx, p.ID, email, secret.Hash(oldCode), secret.Hash(newCodeV), minutes); err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, p.Email, "Your Taskwell code to change your email: "+oldCode,
-		fmt.Sprintf("Someone asked to change your Taskwell account's email to %s. Your code to allow it is %s\n\n"+
-			"It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your account, "+
-			"so reset your password to sign them out.\n", email, oldCode, minutes)); err != nil {
+	oldHTML, err := mail.Render(mail.Email{Preview: "Your code to allow the email change is " + oldCode, Heading: "Allow the email change",
+		Intro: "Someone asked to change your Taskwell account's email to " + email + ". Enter this code to allow it.", Code: oldCode,
+		Note: fmt.Sprintf("It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your "+
+			"account, so reset your password to sign them out.", minutes)})
+	if err != nil {
 		return err
 	}
-	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Taskwell code to confirm this email: "+newCodeV,
+	newHTML, err := mail.Render(mail.Email{Preview: "Your code to confirm this email is " + newCodeV, Heading: "Confirm your new email",
+		Intro: "Enter this code to make this your Taskwell account's email.", Code: newCodeV,
+		Note: fmt.Sprintf("It expires in %d minutes. If you didn't ask for it, you can ignore this email.", minutes)})
+	if err != nil {
+		return err
+	}
+	if err := h.mail.EnqueueHTML(ctx, h.model.db, p.Email, "Your Taskwell code to change your email: "+oldCode,
+		fmt.Sprintf("Someone asked to change your Taskwell account's email to %s. Your code to allow it is %s\n\n"+
+			"It expires in %d minutes. If this wasn't you, don't share the code: someone may be signed in to your account, "+
+			"so reset your password to sign them out.\n", email, oldCode, minutes), oldHTML); err != nil {
+		return err
+	}
+	if err := h.mail.EnqueueHTML(ctx, h.model.db, email, "Your Taskwell code to confirm this email: "+newCodeV,
 		fmt.Sprintf("Your code to make this your Taskwell account's email is %s\n\nIt expires in %d minutes. "+
-			"If you didn't ask for it, you can ignore this email.\n", newCodeV, minutes)); err != nil {
+			"If you didn't ask for it, you can ignore this email.\n", newCodeV, minutes), newHTML); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
