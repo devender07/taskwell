@@ -199,8 +199,8 @@ alter table workspaces
 ### API changes
 
 - `GET /api/billing/plans`: `prices.inr` comes from the Razorpay plan's `item.amount` (cached an hour like Stripe's);
-  `prices.usd` from Stripe. Either can be missing → that key is absent... keep the shape: `prices` is
-  `{"usd": n|null, "inr": n|null}` for paid plans.
+  `prices.usd` from Stripe. For paid plans `prices` is `{"usd": n|null, "inr": n|null}`, null where that gateway
+  is off or unreachable.
 - `GET .../billing` gains `"provider": "stripe" | "razorpay" | null` (the subscription's gateway). `enabled` is
   whether the gateway for this viewer's currency (or the subscription's) is configured.
 - `POST .../billing/checkout`: for INR, creates a Razorpay subscription (`plan_id`, `total_count=120`,
@@ -222,8 +222,8 @@ alter table workspaces
 Razorpay sync: plan from `plan_id` (matching `razorpay_plan_pro` / `_ultimate`); status `active`, `authenticated`
 → the paid plan, `pending` (a charge is retrying) → paid plan, shown like past due; `halted`, `cancelled`,
 `completed`, `expired` → Starter and clear `razorpay_subscription_id` and `billing_provider`; `created` → nothing
-changes yet. `renews_at` from `current_end` (unix seconds), `cancel_at_period_end` from `ended_at` being null with
-a scheduled cancel (`has_scheduled_changes` / status `active` after cancel at cycle end: use the cancel call's reply).
+changes yet. `renews_at` from `current_end` (unix seconds). `cancel_at_period_end` is true once our cancel call
+succeeded (Razorpay keeps the subscription `active` until the cycle ends), until the subscription ends.
 Statuses are stored as Razorpay sends them; the frontend treats `pending` like `past_due`. Same audit entries.
 
 Razorpay calls: Basic auth key id:secret, `https://api.razorpay.com`, JSON or form bodies, 10-second timeout, base
