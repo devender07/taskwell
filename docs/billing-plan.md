@@ -170,3 +170,69 @@ unless a Stripe subscription is active (then its plan). Recorded in `admin_audit
 - Against a Stripe sandbox when keys are present: `deploy/stripe-setup.sh`, `stripe listen --forward-to`, a test
   card checkout, portal switch and cancel.
 - Frontend: `npm run build`.
+
+## Razorpay for INR (follow-up)
+
+Stripe doesn't onboard Indian businesses, so INR goes through Razorpay; USD stays on Stripe until a worldwide gateway
+is picked. Routing is by currency: `inr` → Razorpay, `usd` → Stripe. A currency whose gateway has no keys is off
+(`enabled: false` for that viewer). The currency rule (profile timezone, else browser) is unchanged.
+
+### Razorpay objects
+
+`deploy/razorpay-setup.sh <key id> <key secret>` creates two monthly plans (`period=monthly`, `interval=1`,
+`item[name]=Taskwell Pro` / `Taskwell Ultimate`, `item[amount]=149900` / `399900`, `item[currency]=INR`) and prints
+their ids. The webhook is added by hand in the Razorpay Dashboard (`<api>/api/billing/razorpay/webhook`, events
+`subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`,
+`subscription.cancelled`, `subscription.completed`, `subscription.updated`); README says how.
+
+### Schema: migration `032_razorpay.sql`
+
+```sql
+alter table workspaces
+    add column billing_provider text check (billing_provider in ('stripe', 'razorpay')),  -- set with the subscription
+    add column razorpay_subscription_id text unique;
+```
+
+`system_config` (group Payments in the admin app, since they start with `razorpay_`): `razorpay_key_id`,
+`razorpay_key_secret` (secret), `razorpay_webhook_secret` (secret), `razorpay_plan_pro`, `razorpay_plan_ultimate`.
+
+### API changes
+
+- `GET /api/billing/plans`: `prices.inr` comes from the Razorpay plan's `item.amount` (cached an hour like Stripe's);
+  `prices.usd` from Stripe. Either can be missing → that key is absent... keep the shape: `prices` is
+  `{"usd": n|null, "inr": n|null}` for paid plans.
+- `GET .../billing` gains `"provider": "stripe" | "razorpay" | null` (the subscription's gateway). `enabled` is
+  whether the gateway for this viewer's currency (or the subscription's) is configured.
+- `POST .../billing/checkout`: for INR, creates a Razorpay subscription (`plan_id`, `total_count=120`,
+  `customer_notify=1`, `notes[workspace_id]`), stores `billing_provider='razorpay'`, `razorpay_subscription_id`,
+  `billing_currency='inr'`, `subscription_status` from the reply, and answers `{"url": short_url}` (Razorpay's hosted
+  payment page; the customer comes back to the billing page by themselves, which updates live). `409` as before when a
+  subscription in force exists; a `created` subscription nobody paid is replaced (cancelled first).
+- `POST .../billing/change` (new, FormData `plan`): Razorpay only. `PATCH /v1/subscriptions/{id}` with the new
+  `plan_id`, `schedule_change_at=now`; then sync. `400` "Choose a plan.", `409` "This workspace has no subscription
+  yet." For Stripe subscriptions answer `409` "Manage this subscription in the billing portal."
+- `POST .../billing/cancel` (new): Razorpay only. `POST /v1/subscriptions/{id}/cancel` with `cancel_at_cycle_end=1`,
+  sync (sets `cancel_at_period_end`). Same 409s.
+- `POST .../billing/portal`: Stripe only; for Razorpay `409` "Use switch plan or cancel for this subscription."
+- `POST /api/billing/razorpay/webhook` (public): `X-Razorpay-Signature` = hex HMAC-SHA256 of the raw body with
+  `razorpay_webhook_secret`, constant-time compare; bad → `400`. Every `subscription.*` event syncs the subscription
+  in `payload.subscription.entity.id` (re-read with `GET /v1/subscriptions/{id}`), workspace found by
+  `razorpay_subscription_id`.
+
+Razorpay sync: plan from `plan_id` (matching `razorpay_plan_pro` / `_ultimate`); status `active`, `authenticated`
+→ the paid plan, `pending` (a charge is retrying) → paid plan, shown like past due; `halted`, `cancelled`,
+`completed`, `expired` → Starter and clear `razorpay_subscription_id` and `billing_provider`; `created` → nothing
+changes yet. `renews_at` from `current_end` (unix seconds), `cancel_at_period_end` from `ended_at` being null with
+a scheduled cancel (`has_scheduled_changes` / status `active` after cancel at cycle end: use the cancel call's reply).
+Statuses are stored as Razorpay sends them; the frontend treats `pending` like `past_due`. Same audit entries.
+
+Razorpay calls: Basic auth key id:secret, `https://api.razorpay.com`, JSON or form bodies, 10-second timeout, base
+URL a field for tests. Stdlib only.
+
+### Frontend
+
+- Billing page with `provider === 'razorpay'`: paid cards say "Switch plan" (POST change, confirm dialog "Switch to
+  Ultimate now? The new price applies from today."), and under the cards "Cancel subscription" (confirm "Cancel at the
+  end of this billing period?") instead of "Manage billing". After cancel the plan line reads "Cancels on …".
+- `pending` status reads "Payment failed. Razorpay will retry." like `past_due`.
+- Landing page unchanged (prices come from the same endpoint).
