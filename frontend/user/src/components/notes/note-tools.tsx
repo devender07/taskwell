@@ -40,42 +40,46 @@ export const titleKeyDown = (e: { key: string; preventDefault: () => void }) => 
   focusNote(true)
 }
 
-// The preset colors, then a custom one that opens the picker inline (a popover in the color popover would close it).
+// The preset colors, then a custom one that opens the color picker in its own popover.
 export function NoteColors({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
   const preset = COLORS.some((c) => c.value === value)
-  const [custom, setCustom] = useState(!preset)
   return (
-    <div className="grid gap-3">
-      <div className="note-swatches" role="group" aria-label="Color">
-        {COLORS.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            className="note-swatch"
-            aria-label={c.label}
-            title={c.label}
-            aria-pressed={value === c.value}
-            style={{ background: c.value || 'var(--surface)' }}
-            onClick={() => (setCustom(false), onChange(c.value))}
-          />
-        ))}
+    <div className="note-swatches" role="group" aria-label="Color">
+      {COLORS.map((c) => (
         <button
+          key={c.value}
           type="button"
-          className="note-swatch note-swatch-custom"
-          aria-label="Custom color"
-          title="Custom color"
-          aria-pressed={!preset}
-          aria-expanded={custom}
-          style={preset ? undefined : { background: value }}
-          onClick={() => setCustom((o) => !o)}
+          className="note-swatch"
+          aria-label={c.label}
+          title={c.label}
+          aria-pressed={value === c.value}
+          style={{ background: c.value || 'var(--surface)' }}
+          onClick={() => onChange(c.value)}
         />
-      </div>
-      {custom ? <ColorPanel value={value || SWATCHES[0]!} onChange={onChange} swatches={[]} alpha={false} /> : null}
+      ))}
+      <Popover
+        aria-label="Custom color"
+        placement="bottom-start"
+        trigger={(p) => (
+          <button
+            {...p}
+            type="button"
+            className="note-swatch note-swatch-custom"
+            aria-label="Custom color"
+            title="Custom color"
+            aria-pressed={!preset}
+            aria-haspopup="dialog"
+            style={preset ? undefined : { background: value }}
+          />
+        )}
+      >
+        <ColorPanel value={value || SWATCHES[0]!} onChange={onChange} swatches={[]} alpha={false} />
+      </Popover>
     </div>
   )
 }
 
-// The color popover's content: a preset closes it; the custom picker saves when it closes.
+// The color popover's content: a preset closes it; a custom color saves when it closes.
 function ColorMenu({ color, onDone, close }: { color: string; onDone: (color: string) => void; close: () => void }) {
   const [value, setValue] = useState(color)
   const latest = useRef(color)
