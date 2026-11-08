@@ -1,7 +1,8 @@
 # Billing plan
 
-Flat-priced plans per workspace (not per seat), paid with Stripe. Indian accounts see and pay prices in INR, everyone
-else in USD. No AI credits: AI testing keeps its own monthly limit.
+Flat-priced plans per workspace (not per seat), paid through **Paddle** (merchant of record: it charges the customer,
+collects and files VAT / sales tax / GST, and pays out to an Indian bank). Stripe and Razorpay are not used. Customers
+in India pay in INR (cards, UPI AutoPay), everyone else in USD. No AI credits: AI testing keeps its own monthly limit.
 
 | Plan | Price / month | Members | Storage |
 | --- | --- | --- | --- |
@@ -9,230 +10,165 @@ else in USD. No AI credits: AI testing keeps its own monthly limit.
 | Pro | $29 · ₹1,499 | 10 | 100 GB |
 | Ultimate | $79 · ₹3,999 | Unlimited | Unlimited |
 
-Members means members plus pending invites, guests included. Monthly billing only.
+Members means members plus pending invites, guests included. Every feature is on every plan; plans differ only in
+members and storage. Monthly billing only. Prices exclude tax (Paddle adds it at checkout by the buyer's country).
 
-Out of scope: yearly prices, trials, per-seat pricing, taxes (no `automatic_tax`; prices are shown as they're
-charged), invoices in the app (the Stripe customer portal lists them), dunning emails of our own (Stripe sends them).
+Out of scope: yearly prices, trials, per-seat pricing, invoices in the app (Paddle's customer portal has them).
 
-## Stripe objects
+## Paddle objects
 
-Made once per Stripe account (sandbox and live) by `deploy/stripe-setup.sh <secret key>` with curl:
+Made once per environment (sandbox, then live) by `deploy/paddle-setup.sh <api key> <api base url of Taskwell>`:
 
-- Product "Taskwell Pro", price lookup key `pro_monthly`: `unit_amount=2900`, `currency=usd`, recurring monthly,
-  `currency_options[inr][unit_amount]=149900`.
-- Product "Taskwell Ultimate", price lookup key `ultimate_monthly`: `7900` USD, `399900` INR.
-- A customer portal configuration (default): cancel at period end, update payment method, invoice history, switch
-  between the two prices (`features[subscription_update]` with both products, `proration_behavior=create_prorations`).
-- A webhook endpoint at `<api>/api/billing/webhook` with the events below; the script prints its signing secret.
+- Products "Taskwell Pro" and "Taskwell Ultimate" (`tax_category=saas`).
+- One monthly price each (`billing_cycle={interval: month, frequency: 1}`): base `unit_price` USD 2900 / 7900, and
+  `unit_price_overrides` `[{country_codes: ["IN"], unit_price: {amount: "149900" / "399900", currency_code: "INR"}}]`.
+  Paddle picks the override from the buyer's country at checkout, so the currency follows their billing address.
+- A notification destination (webhook) at `<api>/api/billing/webhook` for the events below; the script prints its
+  secret and the two price ids.
 
-The script is idempotent enough: it reuses prices found by lookup key and skips what exists.
+The script reuses products/prices it finds (`custom_data.taskwell_plan`) and skips what exists. Sandbox uses
+`https://sandbox-api.paddle.com`, live `https://api.paddle.com`; the script takes `PADDLE_API` to switch.
 
-Prices aren't stored in Taskwell. The API reads them from Stripe by lookup key (`expand[]=data.currency_options`)
-and keeps them in memory for an hour.
-
-## Schema: migration `031_billing.sql`
+## Schema: migration `031_billing.sql` (rewritten in place; never deployed)
 
 ```sql
 alter table workspaces
     add column plan text not null default 'starter' check (plan in ('starter', 'pro', 'ultimate')),
-    add column plan_comped boolean not null default false,  -- set by a platform admin; Stripe events leave it alone
-    add column stripe_customer_id text unique,
-    add column stripe_subscription_id text,
-    add column subscription_status text,                    -- Stripe's status, null without a subscription
+    add column plan_comped boolean not null default false,
+    add column paddle_customer_id text,
+    add column paddle_subscription_id text unique,
+    add column subscription_status text,                    -- Paddle's status, null without a subscription
     add column billing_currency text check (billing_currency in ('usd', 'inr')),
-    add column renews_at timestamptz,                       -- current period end
+    add column renews_at timestamptz,                       -- next_billed_at
     add column cancel_at_period_end boolean not null default false;
-delete from system_config where key = 'upload_quota_mb';     -- storage now comes from the plan
+delete from system_config where key = 'upload_quota_mb';
 ```
 
-`plan` is always the plan in force. Existing workspaces start on Starter; the admin app comps a plan where needed.
+## `system_config` keys (admin app group "Payments": prefix `paddle_`)
 
-## `system_config` keys
+- `paddle_environment`: `sandbox` or `production` (default `sandbox`).
+- `paddle_api_key` (secret): server API key.
+- `paddle_client_token`: client-side token for Paddle.js (public by design).
+- `paddle_webhook_secret` (secret): the notification destination's secret.
+- `paddle_price_pro`, `paddle_price_ultimate`: price ids (`pri_…`).
 
-- `stripe_secret_key` (secret): a restricted key (`rk_…`) with write on Customers, Checkout Sessions, Customer portal,
-  Subscriptions, and read on Prices and Products. Empty: billing is off (pages show "Billing isn't set up yet.") and
-  limits still apply.
-- `stripe_webhook_secret` (secret): the endpoint's `whsec_…`.
+Billing is on when `paddle_api_key`, `paddle_client_token` and both price ids are set. Off: pages show "Billing isn't
+set up yet." and limits still apply.
 
-Both seeded empty by the migration, editable in the admin app's config page.
+## Limits (unchanged)
 
-## Limits
-
-One Go file `internal/billing/plans.go`: the three plans with member and storage limits (`0` = unlimited), plus
-`Limits(ctx, db, workspaceID)`.
-
-- **Invites** (`createInvite`): members + pending invites ≥ the limit → `402` `{"error": "Your plan allows 5
-  members. Upgrade to invite more."}` (wording takes the number).
-- **Joining** (`accept`, `acceptByID`): members ≥ the limit → `402` `{"error": "This workspace is full. Ask an
-  admin to upgrade its plan."}`.
-- **Storage**: `file.room` and the `storage` endpoint take the plan's limit in place of `upload_quota_mb`;
-  unlimited → no quota check, `quota_bytes: null`. Full message: "This workspace is out of storage (2 GB). Delete
-  some files or upgrade the plan."
-
-A downgrade or cancel removes nobody and nothing; it only stops new invites, joins and uploads while over.
+`internal/plan`: invites and joins `402`, storage via `file.room` / `storage` (`quota_bytes: null` = unlimited).
 
 ## Currency
 
-- A workspace with `billing_currency` keeps it (a Stripe customer can't switch).
-- Otherwise INR when the signed-in user's profile timezone is `Asia/Kolkata` or `Asia/Calcutta`, else USD.
-- The landing page guesses the same from the browser's timezone.
+- A workspace with a subscription shows its `billing_currency`.
+- Otherwise display currency is INR when the profile timezone (else the browser's, `tz` param) is Indian, else USD.
+- The charged currency is Paddle's decision from the billing address; the webhook stores what was charged.
 
 ## API contract
 
-All under the user API. Permission `billing.manage` ("Manage billing"), group Workspace, admin has it.
+Permission `billing.manage` ("Manage billing"), group Workspace.
 
 ### `GET /api/billing/plans` (public)
 
-`200` `{"plans": [{"id": "starter"|"pro"|"ultimate", "name", "members": 5|10|null, "storage_bytes": n|null,
-"prices": {"usd": 2900, "inr": 149900} | null}]}`. Amounts are in the smallest unit. `prices` is `{"usd": 0, "inr":
-0}` for Starter and `null` for paid plans while billing is off or Stripe can't be reached.
+`200` `{"plans": [{"id", "name", "members": n|null, "storage_bytes": n|null, "prices": {"usd": n|null, "inr":
+n|null}}]}`. Smallest units. Starter `{"usd": 0, "inr": 0}`. Paid amounts read from Paddle (`GET /prices/{id}`: base
+`unit_price` for USD, the `IN` override for INR), cached an hour (a failure a minute); null when off or unreachable.
 
-### `GET /api/workspaces/{slug}/billing`
+### `GET /api/workspaces/{slug}/billing?tz=`
 
-Any member can read it (the sidebar/settings show the plan); `can_manage` says whether they can act.
-
-`200` `{"plan", "comped": bool, "status": string|null, "currency": "usd"|"inr", "renews_at": string|null,
-"cancel_at_period_end": bool, "members": {"used", "limit": n|null}, "storage": {"used_bytes", "limit_bytes":
-n|null}, "can_manage": bool, "enabled": bool}`
-
-`404` `{"error": "Workspace not found."}`
+`200` `{"plan", "comped", "status": string|null, "currency": "usd"|"inr", "renews_at": string|null,
+"cancel_at_period_end": bool, "members": {"used", "limit"}, "storage": {"used_bytes", "limit_bytes"},
+"can_manage": bool, "enabled": bool}`. Guests `403`. `404` unknown workspace.
 
 ### `POST /api/workspaces/{slug}/billing/checkout` (FormData `plan` = `pro` | `ultimate`)
 
-Creates the Stripe customer the first time (name: workspace name, email: the caller's, metadata `workspace_id`), then a
-Checkout Session: `mode=subscription`, the plan's price, `currency`, `client_reference_id` = workspace id,
-`allow_promotion_codes=true`, `integration_identifier=taskwell_billing_<8 letters>`, success
-`<app_base_url>/<slug>/settings/billing?checkout=done`, cancel `<app_base_url>/<slug>/settings/billing`. No
-`payment_method_types`.
+Creates a Paddle transaction (`POST /transactions`: `items: [{price_id, quantity: 1}]`, `custom_data:
+{workspace_id}`, `customer_id` when the workspace has one) and answers what Paddle.js needs to open it:
 
-- `200` `{"url": "<checkout url>"}`
-- `400` `{"error": "Choose a plan."}` for anything else
-- `403` `{"error": "You don't have permission to manage billing."}`
-- `409` `{"error": "This workspace already has a subscription. Manage it to change plans."}` (active subscription, or
-  comped)
-- `503` `{"error": "Billing isn't set up yet."}`
+- `200` `{"transaction_id": "txn_…", "client_token": "…", "environment": "sandbox"|"production", "email": "<caller's
+  email>"}`
+- `400` "Choose a plan.", `403` "You don't have permission to manage billing.", `409` "This workspace already has a
+  subscription. Manage it to change plans." (subscription in force or comped), `503` "Billing isn't set up yet."
+
+### `POST /api/workspaces/{slug}/billing/change` (FormData `plan`)
+
+`PATCH /subscriptions/{id}` with `items: [{price_id, quantity: 1}]`, `proration_billing_mode:
+prorated_immediately`, then sync. `200` the billing state (same shape as GET). `400` "Choose a plan." (incl. the
+current plan), `409` "This workspace has no subscription yet.", `403`, `503`.
 
 ### `POST /api/workspaces/{slug}/billing/portal`
 
-`200` `{"url": "<portal url>"}` back to the billing page. `403` as above, `409` `{"error": "This workspace has no
-subscription yet."}` when there's no customer, `503` as above.
+`POST /customers/{customer_id}/portal-sessions` with `subscription_ids: [id]`; `200` `{"url":
+urls.general.overview}` (cancel, payment method, invoices live there). `409` "This workspace has no subscription
+yet.", `403`, `503`.
 
-### `POST /api/billing/webhook` (public, Stripe)
+### `POST /api/billing/webhook` (public, Paddle)
 
-Verifies `Stripe-Signature` (HMAC-SHA256 of `<t>.<body>` with the webhook secret, 5-minute tolerance, any `v1`
-matches) with the stdlib; bad → `400`. Body capped at 1 MB. Unknown events → `200`.
+`Paddle-Signature: ts=<unix>;h1=<hex>`: HMAC-SHA256 of `<ts>:<raw body>` with `paddle_webhook_secret`, any `h1`
+matches (constant time), `ts` within 5 minutes; bad → `400` "Invalid signature.". Body capped at 1 MB. Unknown events
+→ `200`.
 
-- `checkout.session.completed`: workspace by `client_reference_id`; saves `stripe_customer_id` if not set and
-  `stripe_subscription_id`, then syncs the subscription.
-- `customer.subscription.created` / `updated` / `deleted`: workspace by the subscription's customer id; sync.
-- `invoice.paid`, `invoice.payment_failed`: sync the invoice's subscription.
-- `charge.dispute.created`, `charge.refunded`: logged at warn and recorded in the workspace audit log
-  (`billing.disputed`, `billing.refunded`) via the charge's customer.
+- `subscription.created`, `subscription.updated`, `subscription.activated`, `subscription.past_due`,
+  `subscription.paused`, `subscription.resumed`, `subscription.canceled`: workspace from `data.custom_data.workspace_id`
+  (set by our transaction) or else by `paddle_subscription_id`; then sync.
+- `adjustment.created` (refunds and chargebacks): audit `billing.refunded` / `billing.disputed` (`action` refund vs
+  chargeback) via the subscription id, logged at warn.
 
-Sync = `GET /v1/subscriptions/{id}` (events can arrive out of order, so the current object wins) then: plan from the
-first item's price lookup key; status, currency, `renews_at` from the item's `current_period_end`,
-`cancel_at_period_end`. Status `active`, `trialing` or `past_due` keeps the paid plan; anything else (`canceled`,
-`unpaid`, `incomplete_expired`, …) sets `plan='starter'` and clears `stripe_subscription_id`. A comped workspace keeps
-its plan. Every plan change records `billing.plan_changed` `{from, to}` in the audit log (actor null).
+Sync = `GET /subscriptions/{id}` (current object wins over event order): plan from `items[0].price.id`; status;
+`currency_code` lowercased; `renews_at` = `next_billed_at`; `cancel_at_period_end` = `scheduled_change.action ==
+"cancel"`; `paddle_customer_id` = `customer_id`. `active`, `trialing`, `past_due` keep the paid plan; `paused`,
+`canceled` set Starter and clear `paddle_subscription_id`. A comped workspace keeps its plan. Plan changes record
+`billing.plan_changed` `{from, to}` (actor null). An older subscription's events after the workspace moved to a
+newer one are ignored.
 
-Stripe calls: `net/http` with form encoding, `Authorization: Bearer`, `Stripe-Version: 2026-09-30.endive`, a
-10-second timeout; no Stripe SDK. The API base is a field so tests point it at `httptest`.
+Paddle calls: `net/http`, JSON bodies, `Authorization: Bearer <api key>`, base by `paddle_environment`, 10-second
+timeout, base a field for tests; no SDK.
 
 ## Admin app
 
-Workspaces page: a Plan column (Starter / Pro / Ultimate, "comped" when set) and an action to set a workspace's plan
-by hand (comp) or clear the comp. Admin API:
-`POST /api/workspaces/{id}/plan` FormData `plan`, `comped` (`true`/`false`); clearing a comp returns it to Starter
-unless a Stripe subscription is active (then its plan). Recorded in `admin_audit` as `workspace.plan_set`.
+Workspaces page: Plan column and "Set plan" (comp / clear comp). `POST /api/workspaces/{id}/plan` FormData `plan`,
+`comped`; clearing a comp reads the Paddle subscription (if any, in force) for its plan, else Starter. `502` when
+Paddle can't be read. Admin audit `workspace.plan_set`. Config page group "Payments" for `paddle_` keys.
 
-## Frontend (user app)
+## Frontend
 
-- **Settings → Billing** (`/$workspace/settings/billing`), nav item shown to every member (read-only without
-  `billing.manage`). Title "Billing", subtitle "Plans are priced per workspace, not per person."
-  - Current plan line: "Pro · renews on 12 Dec" / "Cancels on 12 Dec" / "Payment failed. Update your card." (past due)
-    / "Comped by Taskwell".
-  - Usage meters: Members `4 of 5`, Storage `1.2 GB of 2 GB` ("Unlimited" for null).
-  - Three plan cards (name, price in the workspace's currency with `Intl.NumberFormat`, "/ month", members, storage).
-    Current plan says "Current plan". Others: "Upgrade" (POST checkout → `location.assign(url)`) while on Starter;
-    "Manage billing" (POST portal) when subscribed; nothing for managers' readers.
-  - `?checkout=done` shows "Thanks. Your plan updates in a few seconds." and refetches the billing state a few times.
-  - "Manage billing" button under the cards when subscribed.
-- Invite form and uploads show the 402 messages as they come.
-- Landing page: a Pricing section (the three cards, currency from the browser's timezone, "Get started" to sign up),
-  prices from `GET /api/billing/plans`; while those are null, paid cards show no price.
-- `src/api.ts`: types and calls.
+### Paddle.js
+
+Loaded on demand (only when a checkout opens) from `https://cdn.paddle.com/paddle/v2/paddle.js`, initialised with
+the checkout reply's `client_token` and `environment` (`Paddle.Environment.set('sandbox')` for sandbox), then
+`Paddle.Checkout.open({transactionId, customer: {email}, settings: {displayMode: 'overlay', successUrl:
+<billing page>?checkout=done}})`. The CSP (`user/vite.config.ts` production headers) allows Paddle's checkout
+domains (check Paddle's CSP doc for the current list).
+
+### Pricing cards (billing page and landing page share one card design)
+
+- Three cards, same size, stacked on phones. Pro is highlighted: "Most popular" badge and an accent border.
+- Each card: name, one-line value statement ("For small teams trying Taskwell" / "For growing teams" / "For larger
+  teams and lots of files"), price ("Free", or "$29" + "/ month per workspace"), the CTA, then a check list:
+  members, storage, "Every Taskwell feature".
+- Below the cards: "Every plan includes" list (projects, issues, list and board views, cycles and roadmap, notes,
+  chat, AI testing, MCP and API, webhooks, GitHub and GitLab) and a tax line "Prices exclude tax, added at checkout.
+  Customers in India pay in INR, by card or UPI."
+- Landing page adds a short FAQ: per person or per workspace; what happens over a limit; cancel any time; payment
+  methods; tax invoices.
+
+### Billing page
+
+- Plan line: "Pro · renews on 12 Dec" / "Cancels on 12 Dec" / "Payment failed. Update your payment method." (past
+  due) / "Comped by Taskwell".
+- Usage meters as now.
+- Buttons with `can_manage && enabled`, never when comped: on Starter, paid cards "Upgrade" (checkout → Paddle
+  overlay). Subscribed: other paid cards "Switch plan" (confirm "Switch to Ultimate now? You'll be charged the
+  prorated difference today."), Starter card nothing, and "Manage billing" (portal) under the cards for cancel,
+  payment method and invoices.
+- `?checkout=done`: "Thanks. Your plan updates in a few seconds." and refetch; the realtime event also refreshes.
 
 ## Verification
 
-- `go vet`, `go test`: webhook signature (good, bad, stale); sync from a fake Stripe server (active → plan set,
-  canceled → Starter, comped untouched); checkout builds the right form (currency, price, client_reference_id) against
-  a fake; invite and join refused over the limit; storage quota per plan, unlimited skips it.
-- Against a Stripe sandbox when keys are present: `deploy/stripe-setup.sh`, `stripe listen --forward-to`, a test
-  card checkout, portal switch and cancel.
-- Frontend: `npm run build`.
-
-## Razorpay for INR (follow-up)
-
-Stripe doesn't onboard Indian businesses, so INR goes through Razorpay; USD stays on Stripe until a worldwide gateway
-is picked. Routing is by currency: `inr` → Razorpay, `usd` → Stripe. A currency whose gateway has no keys is off
-(`enabled: false` for that viewer). The currency rule (profile timezone, else browser) is unchanged.
-
-### Razorpay objects
-
-`deploy/razorpay-setup.sh <key id> <key secret>` creates two monthly plans (`period=monthly`, `interval=1`,
-`item[name]=Taskwell Pro` / `Taskwell Ultimate`, `item[amount]=149900` / `399900`, `item[currency]=INR`) and prints
-their ids. The webhook is added by hand in the Razorpay Dashboard (`<api>/api/billing/razorpay/webhook`, events
-`subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`,
-`subscription.cancelled`, `subscription.completed`, `subscription.updated`); README says how.
-
-### Schema: migration `032_razorpay.sql`
-
-```sql
-alter table workspaces
-    add column billing_provider text check (billing_provider in ('stripe', 'razorpay')),  -- set with the subscription
-    add column razorpay_subscription_id text unique;
-```
-
-`system_config` (group Payments in the admin app, since they start with `razorpay_`): `razorpay_key_id`,
-`razorpay_key_secret` (secret), `razorpay_webhook_secret` (secret), `razorpay_plan_pro`, `razorpay_plan_ultimate`.
-
-### API changes
-
-- `GET /api/billing/plans`: `prices.inr` comes from the Razorpay plan's `item.amount` (cached an hour like Stripe's);
-  `prices.usd` from Stripe. For paid plans `prices` is `{"usd": n|null, "inr": n|null}`, null where that gateway
-  is off or unreachable.
-- `GET .../billing` gains `"provider": "stripe" | "razorpay" | null` (the subscription's gateway). `enabled` is
-  whether the gateway for this viewer's currency (or the subscription's) is configured.
-- `POST .../billing/checkout`: for INR, creates a Razorpay subscription (`plan_id`, `total_count=120`,
-  `customer_notify=1`, `notes[workspace_id]`), stores `billing_provider='razorpay'`, `razorpay_subscription_id`,
-  `billing_currency='inr'`, `subscription_status` from the reply, and answers `{"url": short_url}` (Razorpay's hosted
-  payment page; the customer comes back to the billing page by themselves, which updates live). `409` as before when a
-  subscription in force exists; a `created` subscription nobody paid is replaced (cancelled first).
-- `POST .../billing/change` (new, FormData `plan`): Razorpay only. `PATCH /v1/subscriptions/{id}` with the new
-  `plan_id`, `schedule_change_at=now`; then sync. `400` "Choose a plan.", `409` "This workspace has no subscription
-  yet." For Stripe subscriptions answer `409` "Manage this subscription in the billing portal."
-- `POST .../billing/cancel` (new): Razorpay only. `POST /v1/subscriptions/{id}/cancel` with `cancel_at_cycle_end=1`,
-  sync (sets `cancel_at_period_end`). Same 409s.
-- `POST .../billing/portal`: Stripe only; for Razorpay `409` "Use switch plan or cancel for this subscription."
-- `POST /api/billing/razorpay/webhook` (public): `X-Razorpay-Signature` = hex HMAC-SHA256 of the raw body with
-  `razorpay_webhook_secret`, constant-time compare; bad → `400`. Every `subscription.*` event syncs the subscription
-  in `payload.subscription.entity.id` (re-read with `GET /v1/subscriptions/{id}`), workspace found by
-  `razorpay_subscription_id`.
-
-Razorpay sync: plan from `plan_id` (matching `razorpay_plan_pro` / `_ultimate`); status `active`, `authenticated`
-→ the paid plan, `pending` (a charge is retrying) → paid plan, shown like past due; `halted`, `cancelled`,
-`completed`, `expired` → Starter and clear `razorpay_subscription_id` and `billing_provider`; `created` → nothing
-changes yet. `renews_at` from `current_end` (unix seconds). `cancel_at_period_end` is true once our cancel call
-succeeded (Razorpay keeps the subscription `active` until the cycle ends), until the subscription ends.
-Statuses are stored as Razorpay sends them; the frontend treats `pending` like `past_due`. Same audit entries.
-
-Razorpay calls: Basic auth key id:secret, `https://api.razorpay.com`, JSON or form bodies, 10-second timeout, base
-URL a field for tests. Stdlib only.
-
-### Frontend
-
-- Billing page with `provider === 'razorpay'`: paid cards say "Switch plan" (POST change, confirm dialog "Switch to
-  Ultimate now? The new price applies from today."), and under the cards "Cancel subscription" (confirm "Cancel at the
-  end of this billing period?") instead of "Manage billing". After cancel the plan line reads "Cancels on …".
-- `pending` status reads "Payment failed. Razorpay will retry." like `past_due`.
-- Landing page unchanged (prices come from the same endpoint).
+- `go vet`, `go test`: Paddle signature (good, bad, stale, two h1); sync from a fake Paddle (active → plan, INR,
+  renews_at; scheduled cancel; canceled → Starter; comped untouched; stale subscription ignored); checkout transaction
+  body (price, custom_data, customer_id when known) and reply; change (PATCH body, 400 same plan, 409); portal;
+  plans from fake prices (base USD, IN override INR); limits as before.
+- Paddle sandbox when keys exist: setup script, a test-card checkout, switch plan, cancel in the portal.
+- Frontend: `npm run build`, `npm run check`, phone and desktop screenshots of both pricing layouts.
