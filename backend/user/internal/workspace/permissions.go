@@ -52,8 +52,6 @@ const (
 	PermWorkspaceExport = "workspace.export"
 	// PermAuditView lets a member read the workspace audit log (docs/workspace-audit-plan.md).
 	PermAuditView = "audit.view"
-	// PermBillingManage lets a member change the workspace's plan and payment details (docs/billing-plan.md).
-	PermBillingManage = "billing.manage"
 )
 
 // catalog is every permission in display order.
@@ -64,7 +62,6 @@ var catalog = []Permission{
 	{PermIntegrationsManage, "Workspace", "Manage GitHub, GitLab and webhooks", true},
 	{PermWorkspaceExport, "Workspace", "Export workspace data", true},
 	{PermAuditView, "Workspace", "See the audit log", true},
-	{PermBillingManage, "Workspace", "Manage billing", true},
 	{permMembersInvite, "Members", "Invite people, resend and cancel invites", true},
 	{permMembersManage, "Members", "Change members' roles and remove members", true},
 	{permRolesManage, "Members", "Create, edit and delete roles", true},

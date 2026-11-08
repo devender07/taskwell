@@ -1,5 +1,6 @@
--- Flat-priced plans per workspace, paid with Paddle (docs/billing-plan.md). plan is always the plan in force.
-alter table workspaces
+-- Flat-priced plans per account, paid with Paddle (docs/billing-plan.md); a workspace has its creator's limits.
+-- plan is always the plan in force.
+alter table users
     add column plan text not null default 'starter' check (plan in ('starter', 'pro', 'ultimate')),
     add column plan_comped boolean not null default false,  -- set by a platform admin; Paddle events leave it alone
     add column paddle_customer_id text,

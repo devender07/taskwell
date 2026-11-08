@@ -127,7 +127,7 @@ func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, 
 	if err != nil {
 		return 0, "", err
 	}
-	p, err := plan.Limits(ctx, h.model.db, workspaceID)
+	p, err := plan.ForWorkspace(ctx, h.model.db, workspaceID)
 	if err != nil {
 		return 0, "", err
 	}
@@ -140,7 +140,7 @@ func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, 
 		return 0, "", err
 	}
 	if left := p.StorageBytes - used; left < limit {
-		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%s). Delete some files or upgrade the plan.",
+		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.",
 			plan.GB(p.StorageBytes))
 	}
 	return limit, tooLarge, nil
@@ -313,7 +313,7 @@ func (h *Handler) storage(w http.ResponseWriter, r *http.Request, userID string)
 		web.Err(w, http.StatusNotFound, "Workspace not found.")
 		return nil
 	}
-	p, err := plan.Limits(r.Context(), h.model.db, ws.ID)
+	p, err := plan.ForWorkspace(r.Context(), h.model.db, ws.ID)
 	if err != nil {
 		return err
 	}

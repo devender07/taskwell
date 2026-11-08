@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { formatDate, listQuery, PLANS, validateListSearch, type WorkspaceRow } from '@/api'
 import { Pager, SearchForm } from '@/components/app/list-controls'
-import { PlanButton } from '@/components/workspaces/plan-button'
 import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/workspaces')({
@@ -29,7 +28,6 @@ function Workspaces() {
               <th className="num">Projects</th>
               <th className="num">Issues</th>
               <th>Created</th>
-              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -45,12 +43,11 @@ function Workspaces() {
                 <td className="num">{w.projects}</td>
                 <td className="num">{w.issues}</td>
                 <td className="text-secondary">{formatDate(w.created_at)}</td>
-                <td className="text-right"><PlanButton workspace={w} /></td>
               </tr>
             ))}
             {workspaces.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-secondary text-center">No workspaces found.</td>
+                <td colSpan={7} className="text-secondary text-center">No workspaces found.</td>
               </tr>
             ) : null}
           </tbody>

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -76,6 +77,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 	}
 	p, err := h.model.create(r.Context(), ws.ID, userID, in, r.PostForm.Get("private") == "true", ids(r, "member_ids"),
 		event(ws, userID))
+	if over := plan.Exceeded(""); errors.As(err, &over) {
+		web.Err(w, http.StatusPaymentRequired, over.Error())
+		return nil
+	}
 	if errors.Is(err, errDates) {
 		web.Fields(w, http.StatusBadRequest, map[string]string{"target_date": errDateOrder})
 		return nil

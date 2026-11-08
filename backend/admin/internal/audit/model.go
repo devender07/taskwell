@@ -25,7 +25,7 @@ const (
 	MFAEnrolled   = "mfa.enrolled"
 	RecoveryUsed  = "mfa.recovery_used"
 
-	PlanSet = "workspace.plan_set" // target: "<slug>: <plan>", plus " (comped)"
+	PlanSet = "user.plan_set" // target: "<email>: <plan>", plus " (comped)"
 )
 
 // Execer is a pool or a transaction: pass the transaction that makes the change so the record commits with it.

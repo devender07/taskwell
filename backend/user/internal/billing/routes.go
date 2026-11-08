@@ -1,6 +1,6 @@
-// Package billing is the workspace plans paid with Paddle: the plan list, a workspace's billing state, checkout,
-// plan changes and the customer portal, and Paddle's webhook (docs/billing-plan.md). The plans and their limits are
-// in package plan.
+// Package billing is the account plans paid with Paddle: the plan list, an account's billing state, checkout, plan
+// changes and the customer portal, a workspace's view of its owner's plan, and Paddle's webhook
+// (docs/billing-plan.md). The plans and their limits are in package plan.
 //
 // routes.go mounts the endpoints, controller.go handles HTTP, paddle.go is the Paddle client and webhook signature
 // check, and model.go owns every SQL query.
@@ -22,8 +22,9 @@ const (
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/billing/plans", web.Public(maxBody, h.plans))
 	mux.HandleFunc("POST /api/billing/webhook", web.Public(maxWebhook, h.webhook))
-	mux.HandleFunc("GET /api/workspaces/{slug}/billing", web.Wrap(h.authenticate, maxBody, h.get))
-	mux.HandleFunc("POST /api/workspaces/{slug}/billing/checkout", web.Wrap(h.authenticate, maxBody, h.checkout))
-	mux.HandleFunc("POST /api/workspaces/{slug}/billing/change", web.Wrap(h.authenticate, maxBody, h.change))
-	mux.HandleFunc("POST /api/workspaces/{slug}/billing/portal", web.Wrap(h.authenticate, maxBody, h.portal))
+	mux.HandleFunc("GET /api/billing", web.Wrap(h.authenticate, maxBody, h.state))
+	mux.HandleFunc("POST /api/billing/checkout", web.Wrap(h.authenticate, maxBody, h.checkout))
+	mux.HandleFunc("POST /api/billing/change", web.Wrap(h.authenticate, maxBody, h.change))
+	mux.HandleFunc("POST /api/billing/portal", web.Wrap(h.authenticate, maxBody, h.portal))
+	mux.HandleFunc("GET /api/workspaces/{slug}/billing", web.Wrap(h.authenticate, maxBody, h.workspace))
 }

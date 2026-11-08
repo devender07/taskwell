@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
@@ -52,6 +53,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	ws, err := h.model.create(r.Context(), userID, name, slug)
+	if over := plan.Exceeded(""); errors.As(err, &over) {
+		web.Err(w, http.StatusPaymentRequired, over.Error())
+		return nil
+	}
 	if errors.Is(err, errNoCreate) {
 		web.Err(w, http.StatusForbidden, "You don't have permission to create workspaces.")
 		return nil

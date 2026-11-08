@@ -19,6 +19,7 @@ func TestMyInvites(t *testing.T) {
 	ctx := context.Background()
 	ann, bob, cara := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob"), dbtest.User(t, pool, "Cara")
 	m := &model{db: pool}
+	dbtest.SetPlan(t, pool, ann, "pro") // two workspaces
 	mk := func(user, name string) Workspace {
 		t.Helper()
 		ws, err := m.create(ctx, user, name, dbtest.Name("my-invites-"))

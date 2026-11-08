@@ -87,13 +87,13 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 	return nil
 }
 
-// setPlan comps the workspace with the form's plan (comped=true), or clears its comp (comped=false): back to its
-// Paddle subscription's plan while one is active, else Starter.
+// setPlan comps the user's account with the form's plan (comped=true), or clears its comp (comped=false): back to
+// its Paddle subscription's plan while one is active, else Starter.
 func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	var id pgtype.UUID
 	if id.Scan(r.PathValue("id")) != nil {
-		web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+		web.WriteErr(w, http.StatusNotFound, "User not found.")
 		return nil
 	}
 	plan, comped := r.FormValue("plan"), r.FormValue("comped")
@@ -111,7 +111,7 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 			return err
 		}
 		if !found {
-			web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+			web.WriteErr(w, http.StatusNotFound, "User not found.")
 			return nil
 		}
 		plan = "starter"
@@ -122,19 +122,19 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 			}
 			if plan, err = subscriptionPlan(ctx, h.paddle, c, *subID); err != nil {
 				slog.WarnContext(ctx, "read paddle subscription", "subscription", *subID, "err", err)
-				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the workspace's subscription from Paddle. Try again.")
+				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the user's subscription from Paddle. Try again.")
 				return nil
 			}
 		}
 	}
-	ws, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true")
+	u, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true")
 	if err != nil {
 		return err
 	}
-	if ws == nil {
-		web.WriteErr(w, http.StatusNotFound, "Workspace not found.")
+	if u == nil {
+		web.WriteErr(w, http.StatusNotFound, "User not found.")
 		return nil
 	}
-	web.WriteJSON(w, http.StatusOK, ws)
+	web.WriteJSON(w, http.StatusOK, u)
 	return nil
 }

@@ -96,7 +96,7 @@ type subscription struct {
 		Action string `json:"action"`
 	} `json:"scheduled_change"`
 	CustomData struct {
-		WorkspaceID string `json:"workspace_id"`
+		UserID string `json:"user_id"`
 	} `json:"custom_data"`
 	Items []struct {
 		Price struct {

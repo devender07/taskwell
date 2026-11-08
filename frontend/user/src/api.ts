@@ -571,8 +571,18 @@ export const startExport = (workspace: string) => api<{ url: string }>(`${worksp
 
 export type PlanId = 'starter' | 'pro' | 'ultimate'
 export type Currency = 'usd' | 'inr'
-// members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Paddle is unreachable.
-export type Plan = { id: PlanId; name: string; members: number | null; storage_bytes: number | null; prices: Record<Currency, number> | null }
+// workspaces / projects / members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Paddle is unreachable.
+export type Plan = {
+  id: PlanId
+  name: string
+  workspaces: number | null
+  projects: number | null
+  members: number | null
+  storage_bytes: number | null
+  prices: Record<Currency, number> | null
+}
+export type Usage = { used: number; limit: number | null }
+// The caller's own account: plans belong to the account and cover every workspace it creates.
 export type Billing = {
   plan: PlanId
   comped: boolean
@@ -580,28 +590,36 @@ export type Billing = {
   currency: Currency
   renews_at: string | null
   cancel_at_period_end: boolean
-  members: { used: number; limit: number | null }
-  storage: { used_bytes: number; limit_bytes: number | null }
-  can_manage: boolean
+  workspaces: Usage
   enabled: boolean
 }
+// A workspace's view of its owner's plan. owner: null when the creator is gone (Starter limits).
+export type WorkspaceBilling = {
+  plan: PlanId
+  owner: PersonRef | null
+  is_owner: boolean
+  projects: Usage
+  members: Usage
+  storage: { used_bytes: number; limit_bytes: number | null }
+}
 export const plansPath = '/billing/plans'
-export const billingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
-// Picks INR for a workspace not yet billed when the profile has no timezone.
+export const billingPath = '/billing'
+export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
+// Picks INR for an account not yet billed when the profile has no timezone.
 export const browserTZ = () => Intl.DateTimeFormat().resolvedOptions().timeZone
-export function startCheckout(workspace: string, plan: PlanId) {
+export function startCheckout(plan: PlanId) {
   const form = new FormData()
   form.set('plan', plan)
   form.set('tz', browserTZ())
-  return api<Checkout>(`${billingPath(workspace)}/checkout`, form)
+  return api<Checkout>(`${billingPath}/checkout`, form)
 }
 export type Checkout = { transaction_id: string; client_token: string; environment: 'sandbox' | 'production'; email: string }
-export function changePlan(workspace: string, plan: PlanId) {
+export function changePlan(plan: PlanId) {
   const form = new FormData()
   form.set('plan', plan)
-  return api<Billing>(`${billingPath(workspace)}/change`, form)
+  return api<Billing>(`${billingPath}/change`, form)
 }
-export const openBillingPortal = (workspace: string) => api<{ url: string }>(`${billingPath(workspace)}/portal`, new FormData())
+export const openBillingPortal = () => api<{ url: string }>(`${billingPath}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
 const avatarVersions = new Map<string, number>()

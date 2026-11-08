@@ -22,7 +22,7 @@ const (
 	errNoMail         = "Email is not configured. Contact your administrator."
 	errUnverified     = "Verify your email before inviting people."
 	errInviteLimit    = "Too many invites were sent today. Try again tomorrow."
-	errFullWorkspace  = "This workspace is full. Ask an admin to upgrade its plan."
+	errFullWorkspace  = "This workspace is full. Ask its owner to upgrade."
 )
 
 // members lists the workspace's members; people who can invite also get its invites. With ?limit= (1 to 100) it's
@@ -101,7 +101,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if full, limit, err := h.model.seatsFull(ctx, ws.ID, email); err != nil {
 		return err
 	} else if full {
-		web.Err(w, http.StatusPaymentRequired, fmt.Sprintf("Your plan allows %d members. Upgrade to invite more.", limit))
+		web.Err(w, http.StatusPaymentRequired, fmt.Sprintf("This workspace's plan allows %d members. Its owner can upgrade for more.", limit))
 		return nil
 	}
 	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/cycle"
 	"github.com/devender07/taskwell/backend/user/internal/db"
 	"github.com/devender07/taskwell/backend/user/internal/notify"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -193,12 +194,16 @@ func auditMembers(ctx context.Context, tx pgx.Tx, workspaceID, actorID, action, 
 }
 
 // create adds a project and publishes e; a private one gets the creator and memberIDs (workspace members) as
-// members. Returns errTaken when the key is in use in the workspace, errNotMember for a member id that isn't one,
-// errDates when the target date is before the start date.
+// members. Returns plan.Exceeded when the workspace has as many projects as its owner's plan allows, errTaken when the
+// key is in use in the workspace, errNotMember for a member id that isn't one, errDates when the target date is
+// before the start date.
 func (m *model) create(ctx context.Context, workspaceID, userID string, in input, private bool, memberIDs []string,
 	e realtime.Event) (Project, error) {
 	var p Project
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := roomForProject(ctx, tx, workspaceID); err != nil {
+			return err
+		}
 		if err := checkMembers(ctx, tx, workspaceID, memberIDs); err != nil {
 			return err
 		}
@@ -232,13 +237,30 @@ func (m *model) create(ctx context.Context, workspaceID, userID string, in input
 	if db.IsCheckViolation(err, "projects_dates") {
 		return p, errDates
 	}
-	if errors.Is(err, errNotMember) {
+	if over := plan.Exceeded(""); errors.Is(err, errNotMember) || errors.As(err, &over) {
 		return p, err
 	}
 	if err != nil {
 		return p, fmt.Errorf("create project: %w", err)
 	}
 	return p, nil
+}
+
+// roomForProject locks the workspace row in tx (so concurrent creates count in turn) and returns plan.Exceeded when
+// its projects, archived included, fill its owner's plan.
+func roomForProject(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	var id string
+	var n int
+	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'starter'), (select count(*) from projects where workspace_id = w.id)
+		   from workspaces w left join users u on u.id = w.created_by where w.id = $1 for no key update of w`,
+		workspaceID).Scan(&id, &n); err != nil {
+		return fmt.Errorf("check project limit: %w", err)
+	}
+	if p, ok := plan.Get(id); ok && p.Projects > 0 && n >= p.Projects {
+		return plan.Exceeded(fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.",
+			plan.Count(p.Projects, "project")))
+	}
+	return nil
 }
 
 // get returns the project with the key when the viewer can see it; nil otherwise.

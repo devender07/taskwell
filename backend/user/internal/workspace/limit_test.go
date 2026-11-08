@@ -11,9 +11,9 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
-// TestPlanLimits: on Starter (5) members plus pending invites to other emails fill the plan, so a new invite is a
-// 402 while re-inviting a pending email isn't counted twice; joining is refused only once members alone fill it.
-// Pro raises the limit and Ultimate has none.
+// TestPlanLimits: limits are the owner's plan. On Starter (5) members plus pending invites to other emails fill the
+// plan, so a new invite is a 402 while re-inviting a pending email isn't counted twice; joining is refused only once
+// members alone fill it. Pro raises the limit and Ultimate has none; a workspace without an owner is on Starter.
 func TestPlanLimits(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -49,7 +49,7 @@ func TestPlanLimits(t *testing.T) {
 	mux := http.NewServeMux()
 	New(pool, dbtest.Auth, nil, nil).Register(mux)
 	code, body := dbtest.Do(t, mux, ann, "POST", "/api/workspaces/"+ws.Slug+"/invites", url.Values{"email": {"new@dbtest.test"}})
-	if code != 402 || !strings.Contains(body, "Your plan allows 5 members. Upgrade to invite more.") {
+	if code != 402 || !strings.Contains(body, "This workspace's plan allows 5 members. Its owner can upgrade for more.") {
 		t.Fatalf("invite over the limit: %d %s", code, body)
 	}
 	if full, _, err := m.seatsFull(ctx, ws.ID, email(bob)); err != nil || full {
@@ -61,14 +61,12 @@ func TestPlanLimits(t *testing.T) {
 	}
 	caraInv := invite(email(cara))
 	code, body = dbtest.Do(t, mux, cara, "POST", "/api/me/invites/"+caraInv+"/accept", nil)
-	if code != 402 || !strings.Contains(body, "This workspace is full. Ask an admin to upgrade its plan.") {
+	if code != 402 || !strings.Contains(body, "This workspace is full. Ask its owner to upgrade.") {
 		t.Fatalf("Cara joins a full workspace: %d %s", code, body)
 	}
 
 	for p, want := range map[string]int{"pro": 10, "ultimate": 0} {
-		if _, err := pool.Exec(ctx, `update workspaces set plan = $2 where id = $1`, ws.ID, p); err != nil {
-			t.Fatal(err)
-		}
+		dbtest.SetPlan(t, pool, ann, p)
 		if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || full || limit != want {
 			t.Fatalf("%s: full %v limit %d %v", p, full, limit, err)
 		}
@@ -76,4 +74,42 @@ func TestPlanLimits(t *testing.T) {
 	if code, body := dbtest.Do(t, mux, cara, "POST", "/api/me/invites/"+caraInv+"/accept", nil); code != 200 {
 		t.Fatalf("Cara joins on Ultimate: %d %s", code, body)
 	}
+
+	if _, err := pool.Exec(ctx, `update workspaces set created_by = null where id = $1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `delete from workspaces where id = $1`, ws.ID) })
+	if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || !full || limit != 5 {
+		t.Fatalf("owner-less: full %v limit %d %v", full, limit, err)
+	}
+}
+
+// TestWorkspaceLimit: a Starter account owns 1 workspace, so creating a 2nd is a 402; Pro allows a 2nd, not a 3rd,
+// and workspaces joined don't count.
+func TestWorkspaceLimit(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
+	m := &model{db: pool}
+	bobs, err := m.create(ctx, bob, "Bob's", dbtest.Name("bobs-"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbtest.Join(t, pool, bobs.ID, ann, "admin")
+	mux := http.NewServeMux()
+	New(pool, dbtest.Auth, nil, nil).Register(mux)
+	create := func(want int, msg string) {
+		t.Helper()
+		code, body := dbtest.Do(t, mux, ann, "POST", "/api/workspaces", url.Values{"name": {"Ann's"}, "slug": {dbtest.Name("anns-")}})
+		if code != want || !strings.Contains(body, msg) {
+			t.Fatalf("create: %d %s, want %d %q", code, body, want, msg)
+		}
+	}
+	create(201, "")
+	create(402, "Your plan allows 1 workspace. Upgrade to create more.")
+	dbtest.SetPlan(t, pool, ann, "pro")
+	create(201, "")
+	create(402, "Your plan allows 2 workspaces. Upgrade to create more.")
+	dbtest.SetPlan(t, pool, ann, "ultimate")
+	create(201, "")
 }

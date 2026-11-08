@@ -23,11 +23,10 @@ import (
 
 const (
 	errNotFound       = "Workspace not found."
-	errForbidden      = "You don't have permission to manage billing."
 	errOff            = "Billing isn't set up yet."
 	errChoosePlan     = "Choose a plan."
-	errSubscribed     = "This workspace already has a subscription. Manage it to change plans."
-	errNoSubscription = "This workspace has no subscription yet."
+	errSubscribed     = "You already have a subscription. Manage it to change plans."
+	errNoSubscription = "You don't have a subscription yet."
 
 	priceTTL   = time.Hour
 	priceRetry = time.Minute // how long a failed price read is kept, so a Paddle outage isn't hit per request
@@ -163,13 +162,15 @@ func (h *Handler) plans(w http.ResponseWriter, r *http.Request) error {
 	type planJSON struct {
 		ID           string            `json:"id"`
 		Name         string            `json:"name"`
+		Workspaces   *int              `json:"workspaces"`
+		Projects     *int              `json:"projects"`
 		Members      *int              `json:"members"`
 		StorageBytes *int64            `json:"storage_bytes"`
 		Prices       map[string]*int64 `json:"prices"`
 	}
 	out := make([]planJSON, 0, len(plan.Plans))
 	for _, p := range plan.Plans {
-		j := planJSON{ID: p.ID, Name: p.Name, Members: limit(p.Members), StorageBytes: limit(p.StorageBytes),
+		j := planJSON{ID: p.ID, Name: p.Name, Workspaces: limit(p.Workspaces), Projects: limit(p.Projects), Members: limit(p.Members), StorageBytes: limit(p.StorageBytes),
 			Prices: map[string]*int64{"usd": nil, "inr": nil}}
 		if p.ID == plan.Starter {
 			var zero int64
@@ -185,26 +186,7 @@ func (h *Handler) plans(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// access returns the path's workspace for a member (not a guest), and with manage only for one with billing.manage;
-// otherwise it writes the 404 or 403 and returns nil.
-func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string, manage bool) (*workspace.Workspace, error) {
-	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
-	switch {
-	case err != nil:
-		return nil, err
-	case ws == nil:
-		web.Err(w, http.StatusNotFound, errNotFound)
-		return nil, nil
-	case workspace.DenyGuest(w, ws):
-		return nil, nil
-	case manage && !workspace.Has(ws.Permissions, workspace.PermBillingManage):
-		web.Err(w, http.StatusForbidden, errForbidden)
-		return nil, nil
-	}
-	return ws, nil
-}
-
-// currency is the workspace's billing currency, or for one that has none, INR when the user's timezone is India's:
+// currency is the account's billing currency, or for one that has none, INR when the user's timezone is India's:
 // their profile's, else browserTZ (the request's "tz", what the browser reports). Only for display: Paddle charges
 // in the currency of the billing address.
 func (h *Handler) currency(ctx context.Context, a account, userID, browserTZ string) (string, error) {
@@ -221,22 +203,10 @@ func (h *Handler) currency(ctx context.Context, a account, userID, browserTZ str
 	return "usd", err
 }
 
-func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) error {
-	ws, err := h.access(w, r, userID, false)
-	if ws == nil {
-		return err
-	}
-	return h.state(w, r, ws, userID)
-}
-
-// state answers the workspace's billing state.
-func (h *Handler) state(w http.ResponseWriter, r *http.Request, ws *workspace.Workspace, userID string) error {
+// state answers the caller's account billing state.
+func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	a, err := h.model.account(ctx, ws.ID)
-	if err != nil {
-		return err
-	}
-	seats, bytes, err := h.model.usage(ctx, ws.ID)
+	a, err := h.model.account(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -252,10 +222,39 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, ws *workspace.Wo
 	web.JSON(w, http.StatusOK, map[string]any{
 		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": currency, "renews_at": a.RenewsAt,
 		"cancel_at_period_end": a.CancelAtPeriodEnd,
-		"members":              map[string]any{"used": seats, "limit": limit(p.Members)},
-		"storage":              map[string]any{"used_bytes": bytes, "limit_bytes": limit(p.StorageBytes)},
-		"can_manage":           workspace.Has(ws.Permissions, workspace.PermBillingManage),
+		"workspaces":           map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
 		"enabled":              err == nil,
+	})
+	return nil
+}
+
+// workspace answers the path's workspace's view of its owner's plan, for a member (not a guest).
+func (h *Handler) workspace(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	ws, err := h.member(ctx, userID, r.PathValue("slug"))
+	switch {
+	case err != nil:
+		return err
+	case ws == nil:
+		web.Err(w, http.StatusNotFound, errNotFound)
+		return nil
+	case workspace.DenyGuest(w, ws):
+		return nil
+	}
+	u, err := h.model.usage(ctx, ws.ID)
+	if err != nil {
+		return err
+	}
+	var owner map[string]string
+	if u.OwnerID != nil {
+		owner = map[string]string{"id": *u.OwnerID, "name": *u.OwnerName}
+	}
+	p, _ := plan.Get(u.Plan)
+	web.JSON(w, http.StatusOK, map[string]any{
+		"plan": u.Plan, "owner": owner, "is_owner": u.OwnerID != nil && *u.OwnerID == userID,
+		"projects": map[string]any{"used": u.Projects, "limit": limit(p.Projects)},
+		"members":  map[string]any{"used": u.Seats, "limit": limit(p.Members)},
+		"storage":  map[string]any{"used_bytes": u.Bytes, "limit_bytes": limit(p.StorageBytes)},
 	})
 	return nil
 }
@@ -279,10 +278,6 @@ type item struct {
 // checkout makes a Paddle transaction for the form's plan and answers what Paddle.js needs to open its checkout.
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	ws, err := h.access(w, r, userID, true)
-	if ws == nil {
-		return err
-	}
 	p, ok := paidPlan(w, r)
 	if !ok {
 		return nil
@@ -291,7 +286,7 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 	if !ok {
 		return err
 	}
-	a, err := h.model.account(ctx, ws.ID)
+	a, err := h.model.account(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -307,14 +302,14 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 		Items      []item            `json:"items"`
 		CustomData map[string]string `json:"custom_data"`
 		CustomerID *string           `json:"customer_id,omitempty"`
-	}{[]item{{s.prices[p], 1}}, map[string]string{"workspace_id": ws.ID}, a.CustomerID}
+	}{[]item{{s.prices[p], 1}}, map[string]string{"user_id": userID}, a.CustomerID}
 	var t struct {
 		ID string `json:"id"`
 	}
 	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/transactions", body, &t); err != nil {
 		return err
 	}
-	if err := h.model.saveCheckout(ctx, ws.ID, t.ID); err != nil {
+	if err := h.model.saveCheckout(ctx, userID, t.ID); err != nil {
 		return err
 	}
 	env := "sandbox"
@@ -325,14 +320,10 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 	return nil
 }
 
-// change moves the workspace's subscription to the form's plan, charging the prorated difference now, and answers
+// change moves the account's subscription to the form's plan, charging the prorated difference now, and answers
 // the billing state.
 func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	ws, err := h.access(w, r, userID, true)
-	if ws == nil {
-		return err
-	}
 	p, ok := paidPlan(w, r)
 	if !ok {
 		return nil
@@ -341,7 +332,7 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return err
 	}
-	a, err := h.model.account(ctx, ws.ID)
+	a, err := h.model.account(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -361,21 +352,17 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 	if err := h.apply(ctx, s, sub); err != nil {
 		return err
 	}
-	return h.state(w, r, ws, userID)
+	return h.state(w, r, userID)
 }
 
-// portal answers a Paddle customer portal link for the workspace's subscription.
+// portal answers a Paddle customer portal link for the account's subscription.
 func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
-	ws, err := h.access(w, r, userID, true)
-	if ws == nil {
-		return err
-	}
 	s, ok, err := h.on(ctx, w)
 	if !ok {
 		return err
 	}
-	a, err := h.model.account(ctx, ws.ID)
+	a, err := h.model.account(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -432,7 +419,7 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode subscription: %w", err)
 		}
-		return h.syncSubscription(ctx, o.ID, o.CustomData.WorkspaceID, o.TransactionID)
+		return h.syncSubscription(ctx, o.ID, o.CustomData.UserID, o.TransactionID)
 	case "adjustment.created":
 		var o struct {
 			ID             string `json:"id"`
@@ -447,26 +434,17 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode adjustment: %w", err)
 		}
-		action := map[string]string{"refund": "billing.refunded", "chargeback": "billing.disputed"}[o.Action]
-		if action == "" {
-			return nil
-		}
-		slog.WarnContext(ctx, "paddle "+o.Action, "event", e.ID, "adjustment", o.ID, "subscription", o.SubscriptionID,
+		slog.WarnContext(ctx, "paddle adjustment "+o.Action, "event", e.ID, "adjustment", o.ID, "subscription", o.SubscriptionID,
 			"amount", o.Totals.Total, "currency", o.CurrencyCode, "reason", o.Reason)
-		found, err := h.model.recordAdjustment(ctx, o.SubscriptionID, action,
-			map[string]any{"amount": o.Totals.Total, "currency": o.CurrencyCode, "reason": o.Reason})
-		if err == nil && !found {
-			slog.WarnContext(ctx, "paddle adjustment for no workspace", "event", e.ID, "subscription", o.SubscriptionID)
-		}
-		return err
+		return nil
 	}
 	return nil
 }
 
 // syncSubscription reads the subscription from Paddle (events arrive out of order: the current object wins) and
-// applies it to its workspace (see model.sync); workspaceID and transactionID come from the event, for a
-// subscription Paddle doesn't return them on.
-func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID, transactionID string) error {
+// applies it to its account (see model.sync); userID and transactionID come from the event, for a subscription
+// Paddle doesn't return them on.
+func (h *Handler) syncSubscription(ctx context.Context, id, userID, transactionID string) error {
 	s, err := h.settings(ctx)
 	if err != nil {
 		return err
@@ -475,8 +453,8 @@ func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID, transac
 	if err := h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &sub); err != nil {
 		return err
 	}
-	if sub.CustomData.WorkspaceID == "" {
-		sub.CustomData.WorkspaceID = workspaceID
+	if sub.CustomData.UserID == "" {
+		sub.CustomData.UserID = userID
 	}
 	if sub.TransactionID == "" {
 		sub.TransactionID = transactionID
@@ -484,7 +462,7 @@ func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID, transac
 	return h.apply(ctx, s, sub)
 }
 
-// apply stores Paddle's current subscription on its workspace.
+// apply stores Paddle's current subscription on its account.
 func (h *Handler) apply(ctx context.Context, s settings, sub subscription) error {
 	paid := ""
 	if slices.Contains(keeps, sub.Status) {
@@ -498,7 +476,7 @@ func (h *Handler) apply(ctx context.Context, s settings, sub subscription) error
 	}
 	found, err := h.model.sync(ctx, sub, paid)
 	if err == nil && !found {
-		slog.WarnContext(ctx, "paddle subscription for no workspace", "subscription", sub.ID, "workspace", sub.CustomData.WorkspaceID)
+		slog.WarnContext(ctx, "paddle subscription for no account", "subscription", sub.ID, "user", sub.CustomData.UserID)
 	}
 	return err
 }

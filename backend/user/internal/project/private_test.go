@@ -31,6 +31,7 @@ func TestPrivate(t *testing.T) {
 	}
 	dbtest.Join(t, pool, wsID, mia, "member")
 	dbtest.Join(t, pool, wsID, otto, "member")
+	dbtest.SetPlan(t, pool, ann, "ultimate") // room for several projects
 	// Mia may manage projects, so she can manage the members of the projects she sees.
 	if _, err := pool.Exec(ctx, `update workspace_roles set permissions = permissions || '{projects.manage}'
 		where workspace_id = $1 and builtin = 'member'`, wsID); err != nil {

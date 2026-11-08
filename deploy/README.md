@@ -78,7 +78,8 @@ Worker logs: `npx wrangler@4 tail` from `cdn/`. Worker check: `node cdn/worker.c
 
 ## Billing (Paddle)
 
-Plans are paid through Paddle, the merchant of record (docs/billing-plan.md). Sandbox first, then live:
+Plans belong to an account and cover every workspace it creates (Pro $12 / ₹699, Ultimate $49 / ₹2,499 a month);
+they're paid through Paddle, the merchant of record (docs/billing-plan.md). Sandbox first, then live:
 
 1. **Sandbox account** at sandbox-vendors.paddle.com (live: vendors.paddle.com, after Paddle approves the account).
 2. **API key** (Developer tools > Authentication > API keys) with these permissions: products read/write, prices
@@ -89,7 +90,8 @@ Plans are paid through Paddle, the merchant of record (docs/billing-plan.md). Sa
    approved at once; live, Paddle reviews it. Set the default payment link (Checkout > Checkout settings) to
    `https://taskwell.dev`.
 5. **Run the setup script** (needs `jq`). It makes the Pro and Ultimate products and monthly prices (USD, with an INR
-   override for India) and the notification destination at `/api/billing/webhook`, reusing what exists:
+   override for India) and the notification destination at `/api/billing/webhook`, reusing what exists. A reused
+   price whose amounts differ is updated, so re-running after a price change fixes it:
 
    ```sh
    deploy/paddle-setup.sh pdl_sdbx_apikey_... https://api.taskwell.dev

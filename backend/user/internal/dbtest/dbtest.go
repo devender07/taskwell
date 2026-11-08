@@ -93,3 +93,11 @@ func Do(t testing.TB, h http.Handler, userID, method, path string, form url.Valu
 	h.ServeHTTP(w, r)
 	return w.Code, w.Body.String()
 }
+
+// SetPlan puts the user's account on the plan ("starter", "pro" or "ultimate").
+func SetPlan(t testing.TB, p *pgxpool.Pool, userID, plan string) {
+	t.Helper()
+	if _, err := p.Exec(context.Background(), `update users set plan = $2 where id = $1`, userID, plan); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -40,12 +40,17 @@ func PublishRevoked(ctx context.Context, tx pgx.Tx, actorID, userID string) erro
 		Paths: []string{"/me"}})
 }
 
-// PublishBilling tells the workspace's tabs in the user app that its billing changed when tx commits: the user
-// service's workspace.billing event.
-func PublishBilling(ctx context.Context, tx pgx.Tx, workspaceID, slug string) error {
-	ws := "/workspaces/" + slug
-	return notify(ctx, tx, envelope{Aud: "ws:" + workspaceID}, Event{Kind: "workspace.billing", Workspace: slug,
-		Paths: []string{ws + "/billing", ws + "/storage"}})
+// PublishBilling tells the user's tabs in the user app, and those of each workspace they own (id → slug), that
+// billing changed when tx commits: the user service's billing.changed and workspace.billing events.
+func PublishBilling(ctx context.Context, tx pgx.Tx, userID string, owned map[string]string) error {
+	for id, slug := range owned {
+		ws := "/workspaces/" + slug
+		if err := notify(ctx, tx, envelope{Aud: "ws:" + id}, Event{Kind: "workspace.billing", Workspace: slug,
+			Paths: []string{ws + "/billing", ws + "/storage"}}); err != nil {
+			return err
+		}
+	}
+	return notify(ctx, tx, envelope{Aud: "user:" + userID}, Event{Kind: "billing.changed", Paths: []string{"/billing"}})
 }
 
 // Publish sends an admin event of kind about paths to every admin tab when tx commits, stamped with the request's

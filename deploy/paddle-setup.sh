@@ -2,7 +2,8 @@
 # Makes the Paddle objects billing needs, once per Paddle environment (sandbox, then live): the products "Taskwell
 # Pro" and "Taskwell Ultimate" with one monthly price each (USD, with an INR override for India), and the notification
 # destination at <api>/api/billing/webhook (docs/billing-plan.md). It prints the paddle_ config values. Products and
-# prices found by custom_data.taskwell_plan, and a destination with the same URL, are reused. Needs curl and jq.
+# prices found by custom_data.taskwell_plan, and a destination with the same URL, are reused; a reused price whose
+# amounts differ is updated to these, so re-running fixes prices. Needs curl and jq.
 # Usage: deploy/paddle-setup.sh API_KEY https://api.taskwell.dev
 #   PADDLE_API=https://api.paddle.com deploy/paddle-setup.sh ...   (live; the default is the sandbox)
 set -euo pipefail
@@ -26,24 +27,31 @@ paddle() {
 }
 
 # price PLAN NAME USD_CENTS INR_PAISE: echoes the plan's active monthly price id, making its product and price when
-# missing.
+# missing and updating the price's amounts when they differ.
 price() {
-  local product found
+  local product found amounts
   product=$(paddle GET "/products?status=active&per_page=200" | jq -r --arg p "$1" '[.[] | select(.custom_data.taskwell_plan == $p)][0].id // empty')
   if [ -z "$product" ]; then
     product=$(paddle POST /products "$(jq -nc --arg n "$2" --arg p "$1" '{name: $n, tax_category: "saas", custom_data: {taskwell_plan: $p}}')" | jq -r .id)
   fi
-  found=$(paddle GET "/prices?product_id=$product&status=active&per_page=200" | jq -r --arg p "$1" '[.[] | select(.custom_data.taskwell_plan == $p)][0].id // empty')
-  if [ -n "$found" ]; then echo "$found"; return; fi
-  paddle POST /prices "$(jq -nc --arg prod "$product" --arg n "$2" --arg p "$1" --arg usd "$3" --arg inr "$4" '{
+  amounts=$(jq -nc --arg usd "$3" --arg inr "$4" '{unit_price: {amount: $usd, currency_code: "USD"},
+    unit_price_overrides: [{country_codes: ["IN"], unit_price: {amount: $inr, currency_code: "INR"}}]}')
+  found=$(paddle GET "/prices?product_id=$product&status=active&per_page=200" | jq -c --arg p "$1" '[.[] | select(.custom_data.taskwell_plan == $p)][0] // empty')
+  if [ -n "$found" ]; then
+    if [ "$(jq -c '{unit_price: {amount: .unit_price.amount, currency_code: .unit_price.currency_code},
+        unit_price_overrides: [.unit_price_overrides[] | {country_codes, unit_price: {amount: .unit_price.amount, currency_code: .unit_price.currency_code}}]}' <<<"$found")" != "$amounts" ]; then
+      paddle PATCH "/prices/$(jq -r .id <<<"$found")" "$amounts" >/dev/null
+    fi
+    jq -r .id <<<"$found"
+    return
+  fi
+  paddle POST /prices "$(jq -c --arg prod "$product" --arg n "$2" --arg p "$1" '. + {
     description: "\($n) monthly", name: "Monthly", product_id: $prod,
-    unit_price: {amount: $usd, currency_code: "USD"},
-    unit_price_overrides: [{country_codes: ["IN"], unit_price: {amount: $inr, currency_code: "INR"}}],
-    billing_cycle: {interval: "month", frequency: 1}, custom_data: {taskwell_plan: $p}}')" | jq -r .id
+    billing_cycle: {interval: "month", frequency: 1}, custom_data: {taskwell_plan: $p}}' <<<"$amounts")" | jq -r .id
 }
 
-PRO=$(price pro "Taskwell Pro" 2900 149900)
-ULT=$(price ultimate "Taskwell Ultimate" 7900 399900)
+PRO=$(price pro "Taskwell Pro" 1200 69900)
+ULT=$(price ultimate "Taskwell Ultimate" 4900 249900)
 
 SECRET=$(paddle GET /notification-settings | jq -r --arg url "$HOOK" '[.[] | select(.destination == $url)][0].endpoint_secret_key // empty')
 if [ -z "$SECRET" ]; then

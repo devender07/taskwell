@@ -14,9 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestSetPlan comps a workspace, clears the comp back to its active Paddle subscription's plan (read from a fake
-// Paddle), then to Starter once it has none; each change is in admin_audit and the workspace's audit log. Needs
-// TEST_DATABASE_URL migrated by the user service's tests.
+// TestSetPlan comps a user's account, clears the comp back to its active Paddle subscription's plan (read from a fake
+// Paddle), then to Starter once it has none; each change is in admin_audit and the audit log of every workspace the
+// user owns, and the workspaces list shows the owner's plan. Needs TEST_DATABASE_URL migrated by the user service's
+// tests.
 func TestSetPlan(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -28,14 +29,21 @@ func TestSetPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	slug := "plan-" + strings.ToLower(rand.Text()[:8])
-	var id string
-	if err := pool.QueryRow(ctx, `insert into workspaces (name, slug) values ('Plan', $1) returning id::text`, slug).Scan(&id); err != nil {
+	email := "plan-" + strings.ToLower(rand.Text()[:8]) + "@dbtest.test"
+	var id, ws1, ws2 string
+	if err := pool.QueryRow(ctx, `insert into users (name, email) values ('Plan', $1) returning id::text`, email).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
+	for _, ws := range []*string{&ws1, &ws2} {
+		if err := pool.QueryRow(ctx, `insert into workspaces (name, slug, created_by) values ('Plan', $1, $2) returning id::text`,
+			"plan-"+strings.ToLower(rand.Text()[:8]), id).Scan(ws); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `delete from workspaces where id = $1`, id)
-		_, _ = pool.Exec(context.Background(), `delete from admin_audit where target like $1`, slug+":%")
+		_, _ = pool.Exec(context.Background(), `delete from workspaces where created_by = $1`, id)
+		_, _ = pool.Exec(context.Background(), `delete from users where id = $1`, id)
+		_, _ = pool.Exec(context.Background(), `delete from admin_audit where target like $1`, email+":%")
 	})
 	paddle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/subscriptions/sub_1" || r.Header.Get("Authorization") != "Bearer pdl_key" {
@@ -48,7 +56,7 @@ func TestSetPlan(t *testing.T) {
 	h := &Handler{model: &model{db: pool}, paddle: paddle.URL}
 	set := func(form url.Values, want int) string {
 		t.Helper()
-		r := httptest.NewRequest("POST", "/api/workspaces/"+id+"/plan", strings.NewReader(form.Encode()))
+		r := httptest.NewRequest("POST", "/api/users/"+id+"/plan", strings.NewReader(form.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.SetPathValue("id", id)
 		w := httptest.NewRecorder()
@@ -62,7 +70,7 @@ func TestSetPlan(t *testing.T) {
 	}
 	plan := func() (p string, comped bool) {
 		t.Helper()
-		if err := pool.QueryRow(ctx, `select plan, plan_comped from workspaces where id = $1`, id).Scan(&p, &comped); err != nil {
+		if err := pool.QueryRow(ctx, `select plan, plan_comped from users where id = $1`, id).Scan(&p, &comped); err != nil {
 			t.Fatal(err)
 		}
 		return p, comped
@@ -73,8 +81,11 @@ func TestSetPlan(t *testing.T) {
 	if body := set(url.Values{"plan": {"ultimate"}, "comped": {"true"}}, 200); !strings.Contains(body, `"plan":"ultimate","comped":true`) {
 		t.Fatalf("comp answered %s", body)
 	}
+	if w, err := scanWorkspace(pool.QueryRow(ctx, `select `+workspaceColumns+` from `+workspaceFrom+` where w.id = $1`, ws1)); err != nil || w.Plan != "ultimate" || !w.Comped {
+		t.Fatalf("workspace plan %q %v", w.Plan, err)
+	}
 
-	if _, err := pool.Exec(ctx, `update workspaces set paddle_subscription_id = 'sub_1', subscription_status = 'active' where id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `update users set paddle_subscription_id = 'sub_1', subscription_status = 'active' where id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	config := func(key, value string) {
@@ -94,18 +105,19 @@ func TestSetPlan(t *testing.T) {
 		t.Fatalf("cleared with a subscription: %s %v", p, comped)
 	}
 
-	if _, err := pool.Exec(ctx, `update workspaces set paddle_subscription_id = null, subscription_status = null where id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `update users set paddle_subscription_id = null, subscription_status = null where id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	set(url.Values{"comped": {"false"}}, 200)
 	if p, _ := plan(); p != "starter" {
 		t.Fatalf("cleared without one: %s", p)
 	}
-	var admin, ws int
-	if err := pool.QueryRow(ctx, `select (select count(*) from admin_audit where action = 'workspace.plan_set' and target like $2),
-		(select count(*) from workspace_audit where workspace_id = $1 and action = 'billing.plan_changed')`, id, slug+":%").
-		Scan(&admin, &ws); err != nil || admin != 3 || ws != 3 {
-		t.Fatalf("audit: admin %d, workspace %d, %v", admin, ws, err)
+	var admin, a1, a2 int
+	if err := pool.QueryRow(ctx, `select (select count(*) from admin_audit where action = 'user.plan_set' and target like $3),
+		(select count(*) from workspace_audit where workspace_id = $1 and action = 'billing.plan_changed'),
+		(select count(*) from workspace_audit where workspace_id = $2 and action = 'billing.plan_changed')`, ws1, ws2, email+":%").
+		Scan(&admin, &a1, &a2); err != nil || admin != 3 || a1 != 3 || a2 != 3 {
+		t.Fatalf("audit: admin %d, workspaces %d %d, %v", admin, a1, a2, err)
 	}
 	set(url.Values{"comped": {"false"}}, 200) // no change: admin_audit only
 }

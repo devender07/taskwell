@@ -3,16 +3,16 @@ import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Checkbox } from '@taskwell/shared/checkbox'
 import { Dialog } from '@taskwell/shared/dialog'
-import { api, PLANS, toFormErrors, type WorkspaceRow } from '@/api'
+import { api, PLANS, toFormErrors, type UserRow } from '@/api'
 
-export function PlanButton({ workspace }: { workspace: WorkspaceRow }) {
+export function PlanButton({ user }: { user: UserRow }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
 
   const [error, save, pending] = useActionState(async (_prev: string | null, form: FormData) => {
     form.set('comped', form.get('comped') ? 'true' : 'false')
     try {
-      await api(`/workspaces/${encodeURIComponent(workspace.id)}/plan`, form)
+      await api(`/users/${encodeURIComponent(user.id)}/plan`, form)
     } catch (e) {
       return toFormErrors(e).error
     }
@@ -29,20 +29,20 @@ export function PlanButton({ workspace }: { workspace: WorkspaceRow }) {
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`Set ${workspace.name}'s plan`}
-        description="A comped plan stays until you clear it; Paddle events leave it alone. Clearing a comp returns the workspace to its paid plan, or Starter."
+        title={`Set ${user.name}'s plan`}
+        description="A comped plan stays until you clear it; Paddle events leave it alone. Clearing a comp returns the account to its paid plan, or Starter."
       >
         <form action={save} className="grid gap-4">
           <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }}>
             <legend className="text-label text-primary mb-2 p-0">Plan</legend>
             {Object.entries(PLANS).map(([id, name]) => (
               <label key={id} className="checkbox" style={{ minHeight: 44 }}>
-                <input type="radio" name="plan" value={id} defaultChecked={workspace.plan === id} />
+                <input type="radio" name="plan" value={id} defaultChecked={user.plan === id} />
                 {name}
               </label>
             ))}
           </fieldset>
-          <Checkbox name="comped" label="Comped" defaultChecked={workspace.comped} />
+          <Checkbox name="comped" label="Comped" defaultChecked={user.comped} />
           {error ? <p role="alert" className="text-caption text-accent">{error}</p> : null}
           <div className="flex justify-end gap-3">
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>

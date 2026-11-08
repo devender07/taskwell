@@ -82,10 +82,33 @@ func (m *model) list(ctx context.Context, userID string) ([]Workspace, error) {
 	return ws, nil
 }
 
-// create inserts the workspace with its built-in roles and makes the user its admin.
-// Returns errTaken on a duplicate slug.
+// create inserts the workspace with its built-in roles and makes the user its admin. Returns errNoCreate without the
+// permission, plan.Exceeded when the user already owns as many workspaces as their plan allows, errTaken on a
+// duplicate slug.
 func (m *model) create(ctx context.Context, userID, name, slug string) (Workspace, error) {
-	return create(ctx, m.db, userID, name, slug)
+	var ws Workspace
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var can bool
+		var id string
+		var owned int
+		// The user row lock makes concurrent creates count in turn.
+		if err := tx.QueryRow(ctx, `select can_create_workspace(u.id), u.plan,
+			        (select count(*) from workspaces where created_by = u.id)
+			   from users u where u.id = $1 for no key update`, userID).Scan(&can, &id, &owned); err != nil {
+			return fmt.Errorf("check workspace limit: %w", err)
+		}
+		p, _ := plan.Get(id)
+		switch {
+		case !can:
+			return errNoCreate
+		case p.Workspaces > 0 && owned >= p.Workspaces:
+			return plan.Exceeded(fmt.Sprintf("Your plan allows %s. Upgrade to create more.", plan.Count(p.Workspaces, "workspace")))
+		}
+		var err error
+		ws, err = create(ctx, tx, userID, name, slug)
+		return err
+	})
+	return ws, err
 }
 
 // create runs in its own transaction on conn, or a savepoint when conn is a pgx.Tx (so errTaken leaves the caller's tx usable).
@@ -374,7 +397,7 @@ func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, 
 // plan, and the plan's member limit.
 // ponytail: concurrent invites each see the same count and can overshoot by a few; joining still stops at the limit.
 func (m *model) seatsFull(ctx context.Context, workspaceID, email string) (bool, int, error) {
-	p, err := plan.Limits(ctx, m.db, workspaceID)
+	p, err := plan.ForWorkspace(ctx, m.db, workspaceID)
 	if err != nil || p.Members == 0 {
 		return false, 0, err
 	}
@@ -389,12 +412,14 @@ func (m *model) seatsFull(ctx context.Context, workspaceID, email string) (bool,
 }
 
 // roomFor locks the workspace row in tx (so concurrent joins count in turn) and returns errFull when its members
-// fill its plan and the user isn't one of them.
+// fill its owner's plan and the user isn't one of them.
 func roomFor(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
 	var id string
 	var n int
-	if err := tx.QueryRow(ctx, `select w.plan, (select count(*) from workspace_members m where m.workspace_id = w.id and m.user_id <> $2)
-		  from workspaces w where w.id = $1 for no key update of w`, workspaceID, userID).Scan(&id, &n); err != nil {
+	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'starter'),
+		        (select count(*) from workspace_members m where m.workspace_id = w.id and m.user_id <> $2)
+		   from workspaces w left join users u on u.id = w.created_by where w.id = $1 for no key update of w`,
+		workspaceID, userID).Scan(&id, &n); err != nil {
 		return fmt.Errorf("check room: %w", err)
 	}
 	if p, ok := plan.Get(id); ok && p.Members > 0 && n >= p.Members {

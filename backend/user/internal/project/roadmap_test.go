@@ -31,6 +31,7 @@ func TestRoadmap(t *testing.T) {
 	}
 	dbtest.Join(t, pool, wsID, mia, "member")
 	dbtest.Join(t, pool, wsID, otto, "member")
+	dbtest.SetPlan(t, pool, ann, "ultimate") // room for several projects
 	if _, err := pool.Exec(ctx, `with r as (insert into workspace_roles (workspace_id, name, permissions) values ($1, 'Lead', '{projects.manage}') returning id)
 		update workspace_members set role_id = (select id from r) where workspace_id = $1 and user_id = $2`, wsID, mia); err != nil {
 		t.Fatal(err)
