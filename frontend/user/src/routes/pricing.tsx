@@ -27,7 +27,7 @@ const FAQ = [
     'Who pays?',
     "The person who creates workspaces. One plan covers every workspace you create and everyone in them, up to its limits. Members you invite don't need a plan.",
   ],
-  ['How does the free trial work?', 'Every plan starts with 7 days free. Add a card at checkout; you are charged when the trial ends unless you cancel first.'],
+  ['How does the free trial work?', 'Your first subscription starts with 7 days free, once per account. Add a card at checkout; you are charged when the trial ends unless you cancel first.'],
   ['What do we get without a plan?', 'Free gives you 1 workspace with 1 project, up to 5 members and 2 GB of storage.'],
   [
     'What happens if we go over a limit?',
@@ -58,7 +58,7 @@ function Pricing() {
         <header className="pricing-head grid gap-4">
           <h1>Plans for every team</h1>
           <p className="text-secondary m-0" style={{ maxWidth: 640 }}>
-            One price for your account covers every workspace you create. Every plan starts with a 7-day free trial.
+            One price for your account covers every workspace you create. Your first subscription starts with a 7-day free trial.
           </p>
         </header>
         <PricingTable

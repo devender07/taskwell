@@ -26,7 +26,8 @@ type account struct {
 	Interval          *string
 	RenewsAt          *time.Time
 	CancelAtPeriodEnd bool
-	Owned             int // workspaces the user created
+	TrialUsed         bool // the account has had a subscription, so its next checkout gets no trial
+	Owned             int  // workspaces the user created
 }
 
 // current is the user's ($1) current subscription: its most recently updated one granting access ($2).
@@ -40,10 +41,11 @@ func (m *model) account(ctx context.Context, userID string) (account, error) {
 	var a account
 	err := m.db.QueryRow(ctx,
 		`select u.plan, u.plan_comped, s.subscription_id, s.price_id, s.status, s.currency_code, s.billing_interval, s.next_billed_at,
-		        coalesce(s.scheduled_change_action = 'cancel', false), (select count(*) from workspaces where created_by = u.id)
+		        coalesce(s.scheduled_change_action = 'cancel', false), (select count(*) from workspaces where created_by = u.id),
+		        exists (select 1 from paddle_subscriptions where user_id = u.id)
 		   from users u left join lateral (`+current+`) s on true where u.id = $1`, userID, granting).
 		Scan(&a.Plan, &a.Comped, &a.SubscriptionID, &a.PriceID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt,
-			&a.CancelAtPeriodEnd, &a.Owned)
+			&a.CancelAtPeriodEnd, &a.Owned, &a.TrialUsed)
 	if err != nil {
 		return a, fmt.Errorf("read billing: %w", err)
 	}
@@ -62,6 +64,18 @@ func (m *model) portalTarget(ctx context.Context, userID string) (customerID, su
 		return "", "", false, fmt.Errorf("read portal subscription: %w", err)
 	}
 	return customerID, subID, true, nil
+}
+
+// hadEarlier reports whether the user had a subscription before subID (mirrored earlier), so subID gets no trial.
+func (m *model) hadEarlier(ctx context.Context, userID, subID string) (bool, error) {
+	var had bool
+	err := m.db.QueryRow(ctx, `select exists (select 1 from paddle_subscriptions o, paddle_subscriptions s
+		where s.subscription_id = $2 and o.user_id = $1 and o.subscription_id <> $2 and o.created_at < s.created_at)`,
+		userID, subID).Scan(&had)
+	if err != nil {
+		return false, fmt.Errorf("read earlier subscriptions: %w", err)
+	}
+	return had, nil
 }
 
 // usage is a workspace's view of its owner's plan.

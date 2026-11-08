@@ -176,6 +176,20 @@ carries `custom_data.taskwell_plan` (`starter` / `pro` / `advanced`): **the back
 its price's `custom_data.taskwell_plan`**, so prices made later need it too. Default payment link:
 `https://taskwell.dev/pricing` (Paddle.js there opens `?_ptxn=` checkouts by itself).
 
+**One trial per account.** Each price has a copy without the trial (quantity fixed at 1, `custom_data.trial` =
+`none`), in `tiers.ts` as `noTrial`:
+
+| Plan | Monthly, no trial | Yearly, no trial |
+| --- | --- | --- |
+| Starter | `pri_01m6wq0rxmnyjvzjex4bf82vcj` | `pri_01m6wq0sdxk937m927rr54d6g3` |
+| Pro | `pri_01m6wq0sxs3t3h70px2h59y38b` | `pri_01m6wq0tfs1z76jdtnsp5av839` |
+| Advanced | `pri_01m6wq0tzz40vgs3g3sw7c4sct` | `pri_01m6wq0vg2br8ejp563cw79zqc` |
+
+`GET /api/billing` answers `trial_used` (the account has any mirrored subscription); the pricing page then checks out
+and switches plans on the no-trial prices. Backstop: a `trialing` subscription linked to an account that had an
+earlier one is activated (`POST /subscriptions/{id}/activate`, billed now) from its webhook. A new email is a new
+account, so it gets a new trial; the card required at checkout is the guard there.
+
 ### Plans and limits (`internal/plan`, easy to edit)
 
 An account with no subscription in force is on **Free**. Ids: `free`, `starter`, `pro`, `advanced`.

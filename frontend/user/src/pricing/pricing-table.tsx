@@ -73,9 +73,10 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   const subscribed = SUBSCRIBED.includes(billing?.status ?? '')
   const actions = billing ? billing.enabled && !billing.comped : true
   const period = interval === 'month' ? '/ month' : '/ year'
+  const trial = !billing?.trial_used
 
   const cta = (t: Tier) => {
-    const priceId = t.priceId[interval]
+    const priceId = (trial ? t.priceId : t.noTrial)[interval]
     const variant = t.featured ? 'secondary' : 'primary'
     if (!billing) {
       return (
@@ -88,7 +89,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
     if (!actions) return null
     return (
       <Button variant={variant} disabled={pending} onClick={() => (subscribed ? setSwitchTo(t) : subscribe(priceId))}>
-        {subscribed ? 'Switch plan' : 'Start free trial'}
+        {subscribed ? 'Switch plan' : trial ? 'Start free trial' : 'Subscribe'}
       </Button>
     )
   }
@@ -108,7 +109,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
             tagline={t.description}
             price={prices?.[t.priceId[interval]]}
             period={period}
-            note="7-day free trial"
+            note={trial ? '7-day free trial' : undefined}
             featured={t.featured}
             checks={t.features}
           >
@@ -128,7 +129,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
       >
         <div className="grid gap-4">
           <FormError>{error}</FormError>
-          <Button variant="secondary" className="w-full" disabled={pending} onClick={() => switchTo && confirmSwitch(switchTo.priceId[interval])}>
+          <Button variant="secondary" className="w-full" disabled={pending} onClick={() => switchTo && confirmSwitch(switchTo.noTrial[interval])}>
             {pending ? 'Switching…' : 'Switch plan'}
           </Button>
         </div>

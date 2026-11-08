@@ -131,7 +131,7 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) e
 	p, _ := plan.Get(a.Plan)
 	web.JSON(w, http.StatusOK, map[string]any{
 		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": a.Currency, "interval": a.Interval,
-		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd,
+		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd, "trial_used": a.TrialUsed,
 		"workspaces": map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
 		"enabled":    err == nil,
 	})
@@ -393,9 +393,36 @@ func (h *Handler) saveSubscription(ctx context.Context, sub subscription) error 
 		link = sub.CustomData.UserID
 	}
 	applied, user, err := h.model.saveSubscription(ctx, row, link)
-	if err == nil && applied && user == nil {
+	if err != nil || !applied {
+		return err
+	}
+	if user == nil {
 		slog.WarnContext(ctx, "paddle subscription for no account", "subscription", sub.ID, "user", sub.CustomData.UserID,
 			"signed", link != "")
+		return nil
 	}
-	return err
+	if sub.Status != "trialing" {
+		return nil
+	}
+	return h.endRepeatTrial(ctx, sub.ID, *user)
+}
+
+// endRepeatTrial ends a trial on an account that had a subscription before (one trial per account): Paddle bills it
+// now and it's active. The pricing page offers such an account the no-trial prices, so this only catches a checkout
+// opened on a trial price some other way. An error makes Paddle retry the event.
+func (h *Handler) endRepeatTrial(ctx context.Context, subID, userID string) error {
+	had, err := h.model.hadEarlier(ctx, userID, subID)
+	if err != nil || !had {
+		return err
+	}
+	s, err := h.settings(ctx)
+	if err != nil {
+		return fmt.Errorf("end repeat trial %s: %w", subID, err)
+	}
+	var active subscription
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/subscriptions/"+url.PathEscape(subID)+"/activate", nil, &active); err != nil {
+		return fmt.Errorf("end repeat trial %s: %w", subID, err)
+	}
+	slog.InfoContext(ctx, "paddle repeat trial ended", "subscription", subID, "user", userID)
+	return h.saveSubscription(ctx, active)
 }

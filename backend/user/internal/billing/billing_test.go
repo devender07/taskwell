@@ -145,6 +145,17 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(prices[strings.TrimPrefix(p, "/prices/")])
 	case strings.HasPrefix(p, "/customers/") && strings.HasSuffix(p, "/portal-sessions"):
 		reply(`{"id":"cpls_1","urls":{"general":{"overview":"https://customer-portal.paddle.test/1"},"subscriptions":[]}}`)
+	case strings.HasSuffix(p, "/activate") && r.Method == http.MethodPost:
+		id := strings.TrimSuffix(id, "/activate")
+		s, ok := f.subs[id]
+		if !ok || s.status != "trialing" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"type":"request_error","code":"subscription_not_trialing","detail":"not trialing"}}`)
+			return
+		}
+		s.status, s.updated = "active", s.updated.Add(time.Minute)
+		f.subs[id] = s
+		reply(s.json())
 	case isSub && known && r.Method == http.MethodPatch:
 		s.price = body["items"].([]any)[0].(map[string]any)["price_id"].(string)
 		s.updated = time.Now()
@@ -560,5 +571,43 @@ func TestEndpoints(t *testing.T) {
 	}
 	if ps, n := f.last("POST", "/customers/"+s.customer+"/portal-sessions"); n != 1 || fmt.Sprint(ps.body["subscription_ids"]) != "["+s.id+"]" {
 		t.Fatalf("portal body %v %d", ps.body, n)
+	}
+}
+
+// TestRepeatTrial: one trial per account. GET /api/billing says when it's used; a later trialing subscription is
+// activated (billed now) and mirrored active; a first trial is left alone.
+func TestRepeatTrial(t *testing.T) {
+	x := setup(t)
+	ann, f := x.ann, x.f
+	cd := signedCD(ann, checkoutSig(ann))
+	if b := x.do(t, ann, "GET", "/api/billing", nil, 200); b["trial_used"] != false {
+		t.Fatalf("new account: %v", b)
+	}
+	first := sub{id: "sub_first_" + x.tag, customer: "ctm_" + x.tag, cd: cd, status: "trialing", price: "pri_pro_m", updated: time.Now().Add(-time.Hour)}
+	x.send(t, "subscription.created", first.json(), 200)
+	if _, n := f.last("POST", "/subscriptions/"+first.id+"/activate"); n != 0 || x.row(t, first.id).status != "trialing" {
+		t.Fatal("a first trial was ended")
+	}
+	first.status, first.updated = "canceled", first.updated.Add(time.Minute)
+	x.send(t, "subscription.canceled", first.json(), 200)
+	if b := x.do(t, ann, "GET", "/api/billing", nil, 200); b["trial_used"] != true || b["plan"] != "free" {
+		t.Fatalf("after a canceled trial: %v", b)
+	}
+
+	again := sub{id: "sub_again_" + x.tag, customer: first.customer, cd: cd, status: "trialing", price: "pri_adv_y", updated: time.Now()}
+	f.mu.Lock()
+	f.subs[again.id] = again
+	f.mu.Unlock()
+	x.send(t, "subscription.created", again.json(), 200)
+	if _, n := f.last("POST", "/subscriptions/"+again.id+"/activate"); n != 1 {
+		t.Fatalf("repeat trial activated %d times", n)
+	}
+	if rw := x.row(t, again.id); rw.status != "active" || !is(rw.user, ann) || x.plan(t, ann) != "advanced" {
+		t.Fatalf("repeat trial: %+v %s", rw, x.plan(t, ann))
+	}
+	// Paddle's own activated event, and a late copy of the trialing one, change nothing more.
+	x.send(t, "subscription.trialing", again.json(), 200)
+	if _, n := f.last("POST", "/subscriptions/"+again.id+"/activate"); n != 1 || x.row(t, again.id).status != "active" {
+		t.Fatal("a late trialing event re-ran the activation")
 	}
 }

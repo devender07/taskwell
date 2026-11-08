@@ -581,6 +581,7 @@ export type Billing = {
   interval: 'month' | 'year' | null
   renews_at: string | null
   cancel_at_period_end: boolean
+  trial_used: boolean
   workspaces: Usage
   enabled: boolean
 }

@@ -6,6 +6,8 @@ export interface Tier {
   description: string
   features: string[]
   priceId: { month: string; year: string }
+  // The same prices without the trial, for an account that has had a subscription (one trial per account).
+  noTrial: { month: string; year: string }
   featured?: boolean
 }
 
@@ -21,6 +23,10 @@ export const TIERS: Tier[] = [
       month: 'pri_01m6wk3cmqzf6zhwrsdhq79xhx',
       year: 'pri_01m6wk3cxd0b6mdhphsj67m1hk',
     },
+    noTrial: {
+      month: 'pri_01m6wq0rxmnyjvzjex4bf82vcj',
+      year: 'pri_01m6wq0sdxk937m927rr54d6g3',
+    },
   },
   {
     id: 'pro',
@@ -30,6 +36,10 @@ export const TIERS: Tier[] = [
     priceId: {
       month: 'pri_01m6wk3df6zkt76e4zsz6q1x8a',
       year: 'pri_01m6wk3dqt1m882m8a68khw5fk',
+    },
+    noTrial: {
+      month: 'pri_01m6wq0sxs3t3h70px2h59y38b',
+      year: 'pri_01m6wq0tfs1z76jdtnsp5av839',
     },
     featured: true,
   },
@@ -41,6 +51,10 @@ export const TIERS: Tier[] = [
     priceId: {
       month: 'pri_01m6wk3eavpqzpc1gjs4ace2p9',
       year: 'pri_01m6wk3ekevk50xcfe07vjxbnk',
+    },
+    noTrial: {
+      month: 'pri_01m6wq0tzz40vgs3g3sw7c4sct',
+      year: 'pri_01m6wq0vg2br8ejp563cw79zqc',
     },
   },
 ]
