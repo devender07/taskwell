@@ -37,7 +37,9 @@
     "./realtime": "./src/realtime/paths.ts",
     "./socket": "./src/realtime/socket.ts",
     "./api-errors": "./src/api/errors.ts",
-    "./progress-ring": "./src/components/progress-ring/progress-ring.tsx"
+    "./progress-ring": "./src/components/progress-ring/progress-ring.tsx",
+    "./plan-card": "./src/components/plan-card/plan-card.tsx",
+    "./plan-card.css": "./src/components/plan-card/plan-card.css"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

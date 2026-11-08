@@ -15,6 +15,11 @@
   "s3_bucket": "taskwell",
   "s3_access_key_id": "",
   "s3_secret_access_key": "",
-  "stripe_secret_key": "",
-  "stripe_webhook_secret": ""
+
+  "paddle_environment": "sandbox",
+  "paddle_api_key": "",
+  "paddle_client_token": "",
+  "paddle_webhook_secret": "",
+  "paddle_price_pro": "",
+  "paddle_price_ultimate": ""
 }

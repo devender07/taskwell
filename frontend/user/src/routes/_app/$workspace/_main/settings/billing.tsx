@@ -1,23 +1,31 @@
-import { useActionState, useEffect } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { Button } from "@taskwell/shared/button";
+import { Dialog } from "@taskwell/shared/dialog";
 import { formatMoney } from "@taskwell/shared/money";
+import {
+  PLAN_TAGLINES,
+  PlanCard,
+  PlanIncludes,
+} from "@taskwell/shared/plan-card";
 import { shortDate } from "@taskwell/shared/time";
 import {
   api,
   billingPath,
   browserTZ,
+  changePlan,
   openBillingPortal,
   plansPath,
   startCheckout,
   toFormErrors,
   type Billing,
   type Plan,
-  type PlanId,
 } from "@/api";
+import { openCheckout } from "@/paddle";
 import { trackPath } from "@/realtime";
 import { FormError } from "@/components/auth/auth-card";
 import { formatBytes } from "@/components/files/bytes";
+import { planChecks } from "@/components/settings/plans";
 import "@/components/home/home.css";
 
 type Search = { checkout?: "done" };
@@ -44,7 +52,8 @@ const SUBSCRIBED = ["active", "trialing", "past_due"];
 
 function statusLine(b: Billing) {
   if (b.comped) return "Comped by Taskwell";
-  if (b.status === "past_due") return "Payment failed. Update your card.";
+  if (b.status === "past_due")
+    return "Payment failed. Update your payment method.";
   if (!b.renews_at) return "";
   return b.cancel_at_period_end
     ? `Cancels on ${shortDate(b.renews_at)}`
@@ -57,7 +66,11 @@ function BillingSettings() {
   const { billing, plans } = Route.useLoaderData();
   const router = useRouter();
   const subscribed = SUBSCRIBED.includes(billing.status ?? "");
-  const actions = billing.enabled && billing.can_manage;
+  const actions = billing.enabled && billing.can_manage && !billing.comped;
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [switchTo, setSwitchTo] = useState<Plan | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!checkout) return;
@@ -69,21 +82,34 @@ function BillingSettings() {
     return () => clearInterval(id);
   }, [checkout, router]);
 
-  const [error, act, pending] = useActionState(
-    async (_prev: string | null, form: FormData) => {
+  const run = (task: () => Promise<void>) =>
+    startTransition(async () => {
+      setError(null);
       try {
-        const plan = form.get("plan") as PlanId | null;
-        const { url } = plan
-          ? await startCheckout(workspace, plan)
-          : await openBillingPortal(workspace);
-        location.assign(url);
-        return null;
+        await task();
       } catch (e) {
-        return toFormErrors(e).error;
+        setError(toFormErrors(e).error);
       }
-    },
-    null,
-  );
+    });
+
+  const upgrade = (p: Plan) =>
+    run(async () => {
+      const c = await startCheckout(workspace, p.id);
+      await openCheckout(
+        c,
+        `${location.origin}${location.pathname}?checkout=done`,
+      );
+    });
+
+  const confirmSwitch = (p: Plan) =>
+    run(async () => {
+      await changePlan(workspace, p.id);
+      setConfirming(false);
+      await router.invalidate();
+    });
+
+  const manage = () =>
+    run(async () => location.assign((await openBillingPortal(workspace)).url));
 
   const current = plans.find((p) => p.id === billing.plan);
   const line = statusLine(billing);
@@ -139,84 +165,77 @@ function BillingSettings() {
           format={formatBytes}
         />
       </section>
-      <form action={act} className="grid gap-4">
-        <ul className="plan-grid">
-          {plans.map((p) => {
-            const isCurrent = p.id === billing.plan;
-            const price = p.prices?.[billing.currency];
-            return (
-              <li
-                key={p.id}
-                className="plan-card grid gap-3 p-6 bg-surface border rounded-lg"
-                aria-current={isCurrent || undefined}
-                style={{ alignContent: "start" }}
-              >
-                <h3 className="text-label m-0">{p.name}</h3>
-                {price === undefined ? null : (
-                  <p className="m-0">
-                    <span className="text-h2">
-                      {price === 0
-                        ? "Free"
-                        : formatMoney(price, billing.currency)}
-                    </span>
-                    {price === 0 ? null : (
-                      <span className="text-body-sm text-secondary">
-                        {" "}
-                        / month
-                      </span>
-                    )}
-                  </p>
-                )}
-                <p className="text-body-sm text-secondary m-0">
-                  {p.members === null
-                    ? "Unlimited members"
-                    : `Up to ${p.members} members`}
-                  <br />
-                  {p.storage_bytes === null
-                    ? "Unlimited storage"
-                    : `${formatBytes(p.storage_bytes)} storage`}
-                </p>
-                {isCurrent ? (
-                  <p className="text-label text-secondary m-0">Current plan</p>
-                ) : !actions ||
-                  billing.comped ||
-                  p.id === "starter" ? null : subscribed ? (
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    style={{ justifySelf: "start" }}
-                    disabled={pending}
-                  >
-                    Switch plan
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    name="plan"
-                    value={p.id}
-                    variant="secondary"
-                    style={{ justifySelf: "start" }}
-                    disabled={pending}
-                  >
-                    Upgrade
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        {actions && subscribed ? (
+      <ul className="plan-grid">
+        {plans.map((p) => {
+          const price = p.prices?.[billing.currency];
+          const featured = p.id === "pro";
+          return (
+            <PlanCard
+              key={p.id}
+              name={p.name}
+              tagline={PLAN_TAGLINES[p.id]}
+              price={
+                price === undefined
+                  ? undefined
+                  : price === 0
+                    ? "Free"
+                    : formatMoney(price, billing.currency)
+              }
+              featured={featured}
+              checks={planChecks(p)}
+            >
+              {p.id === billing.plan ? (
+                <p className="plan-current">Current plan</p>
+              ) : !actions || p.id === "starter" ? null : (
+                <Button
+                  variant={featured ? "secondary" : "primary"}
+                  disabled={pending}
+                  onClick={() => {
+                    if (!subscribed) return upgrade(p);
+                    setSwitchTo(p);
+                    setConfirming(true);
+                  }}
+                >
+                  {subscribed ? "Switch plan" : "Upgrade"}
+                </Button>
+              )}
+            </PlanCard>
+          );
+        })}
+      </ul>
+      {actions && subscribed ? (
+        <Button
+          variant="primary"
+          style={{ justifySelf: "start" }}
+          disabled={pending}
+          onClick={manage}
+        >
+          Manage billing
+        </Button>
+      ) : null}
+      {confirming ? null : <FormError>{error}</FormError>}
+      <PlanIncludes />
+      <Dialog
+        open={confirming}
+        onClose={() => {
+          setConfirming(false);
+          setError(null);
+        }}
+        title={`Switch to ${switchTo?.name ?? ""} now?`}
+        description="You'll be charged the prorated difference today."
+      >
+        <div className="grid gap-4">
+          <FormError>{error}</FormError>
           <Button
-            type="submit"
-            variant="primary"
-            style={{ justifySelf: "start" }}
+            variant="secondary"
+            className="w-full"
             disabled={pending}
+            onClick={() => switchTo && confirmSwitch(switchTo)}
           >
-            Manage billing
+            {pending ? "Switching…" : "Switch plan"}
           </Button>
-        ) : null}
-        <FormError>{error}</FormError>
-      </form>
+        </div>
+      </Dialog>
     </main>
   );
 }

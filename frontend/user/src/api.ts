@@ -571,7 +571,7 @@ export const startExport = (workspace: string) => api<{ url: string }>(`${worksp
 
 export type PlanId = 'starter' | 'pro' | 'ultimate'
 export type Currency = 'usd' | 'inr'
-// members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Stripe is unreachable.
+// members / storage_bytes: null is unlimited. prices: null for a paid plan while billing is off or Paddle is unreachable.
 export type Plan = { id: PlanId; name: string; members: number | null; storage_bytes: number | null; prices: Record<Currency, number> | null }
 export type Billing = {
   plan: PlanId
@@ -593,7 +593,13 @@ export function startCheckout(workspace: string, plan: PlanId) {
   const form = new FormData()
   form.set('plan', plan)
   form.set('tz', browserTZ())
-  return api<{ url: string }>(`${billingPath(workspace)}/checkout`, form)
+  return api<Checkout>(`${billingPath(workspace)}/checkout`, form)
+}
+export type Checkout = { transaction_id: string; client_token: string; environment: 'sandbox' | 'production'; email: string }
+export function changePlan(workspace: string, plan: PlanId) {
+  const form = new FormData()
+  form.set('plan', plan)
+  return api<Billing>(`${billingPath(workspace)}/change`, form)
 }
 export const openBillingPortal = (workspace: string) => api<{ url: string }>(`${billingPath(workspace)}/portal`, new FormData())
 

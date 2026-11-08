@@ -1,7 +1,6 @@
 package billing
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
@@ -29,17 +29,18 @@ const (
 	errSubscribed     = "This workspace already has a subscription. Manage it to change plans."
 	errNoSubscription = "This workspace has no subscription yet."
 
-	// integrationID tags this app's Checkout Sessions in the Stripe Dashboard.
-	integrationID = "taskwell_billing_qmzvktra"
-	priceTTL      = time.Hour
-	priceRetry    = time.Minute // how long a failed price read is kept, so a Stripe outage isn't hit per request
+	priceTTL   = time.Hour
+	priceRetry = time.Minute // how long a failed price read is kept, so a Paddle outage isn't hit per request
 )
 
-var errNoKey = errors.New("stripe_secret_key is empty")
+var errBillingOff = errors.New("billing is off: a paddle_ key is empty")
+
+// keeps are the subscription statuses that keep the paid plan.
+var keeps = []string{"active", "trialing", "past_due"}
 
 type Handler struct {
 	model        *model
-	stripe       *stripeAPI
+	paddle       *paddleAPI
 	config       func(ctx context.Context, key string) (string, error) // sysconfig's Get
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
@@ -49,9 +50,9 @@ type Handler struct {
 	cache priceCache
 }
 
-// priceCache is the paid plans' Stripe prices by plan id, as read with key at at.
+// priceCache is the paid plans' Paddle prices by plan id, as read with settings s at at.
 type priceCache struct {
-	key    string
+	s      settings
 	at     time.Time
 	ttl    time.Duration
 	prices map[string]price
@@ -61,66 +62,90 @@ type priceCache struct {
 // New takes the auth handler's Authenticate and the workspace handler's Member.
 func New(db *pgxpool.Pool, cfg *sysconfig.Store, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
-	return &Handler{model: &model{db: db}, stripe: &stripeAPI{base: stripeBase, client: &http.Client{Timeout: 10 * time.Second}},
+	return &Handler{model: &model{db: db}, paddle: &paddleAPI{client: &http.Client{Timeout: 10 * time.Second}},
 		config: cfg.Get, authenticate: authenticate, member: member, now: time.Now}
 }
 
-// key returns the Stripe secret key, or errNoKey while billing is off.
-func (h *Handler) key(ctx context.Context) (string, error) {
-	k, err := h.config(ctx, "stripe_secret_key")
-	if err == nil && k == "" {
-		err = errNoKey
-	}
-	return k, err
+// settings is billing's paddle_ config; prices are the price ids by plan id.
+type settings struct {
+	env, key, token string
+	prices          map[string]string
 }
 
-// prices returns the paid plans' prices by plan id, read from Stripe by lookup key and kept for priceTTL (a failure
-// for priceRetry); errNoKey while billing is off.
+// planOf is the paid plan whose price id is id.
+func (s settings) planOf(id string) (string, bool) {
+	for p, pr := range s.prices {
+		if pr == id {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// settings reads the paddle_ config, or errBillingOff while billing is off (the key, client token or a price id empty).
+func (h *Handler) settings(ctx context.Context) (settings, error) {
+	get := func(key string, err error) (string, error) {
+		if err != nil {
+			return "", err
+		}
+		return h.config(ctx, key)
+	}
+	var s settings
+	var pro, ult string
+	var err error
+	s.env, err = get("paddle_environment", err)
+	s.key, err = get("paddle_api_key", err)
+	s.token, err = get("paddle_client_token", err)
+	pro, err = get("paddle_price_pro", err)
+	ult, err = get("paddle_price_ultimate", err)
+	if err != nil {
+		return s, err
+	}
+	s.prices = map[string]string{"pro": pro, "ultimate": ult}
+	if s.key == "" || s.token == "" || pro == "" || ult == "" {
+		return s, errBillingOff
+	}
+	return s, nil
+}
+
+// on is settings for a handler that needs billing on: false after writing the 503 while it's off.
+func (h *Handler) on(ctx context.Context, w http.ResponseWriter) (settings, bool, error) {
+	s, err := h.settings(ctx)
+	if errors.Is(err, errBillingOff) {
+		web.Err(w, http.StatusServiceUnavailable, errOff)
+		return s, false, nil
+	}
+	return s, err == nil, err
+}
+
+// prices returns the paid plans' prices by plan id, read from Paddle and kept for priceTTL (a failure for
+// priceRetry); errBillingOff while billing is off.
 func (h *Handler) prices(ctx context.Context) (map[string]price, error) {
-	key, err := h.key(ctx)
+	s, err := h.settings(ctx)
 	if err != nil {
 		return nil, err
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if c := h.cache; c.key == key && h.now().Sub(c.at) < c.ttl {
+	if c := h.cache; c.s.key == s.key && c.s.env == s.env && c.s.prices["pro"] == s.prices["pro"] &&
+		c.s.prices["ultimate"] == s.prices["ultimate"] && h.now().Sub(c.at) < c.ttl {
 		return c.prices, c.err
 	}
-	form := url.Values{"active": {"true"}, "expand[]": {"data.currency_options"}}
-	for _, p := range plan.Plans {
-		if p.LookupKey != "" {
-			form.Add("lookup_keys[]", p.LookupKey)
-		}
-	}
-	var list struct {
-		Data []price `json:"data"`
-	}
 	ps := map[string]price{}
-	err = h.stripe.call(ctx, key, http.MethodGet, "/v1/prices", form, "", &list)
-	for _, pr := range list.Data {
-		if p, ok := plan.ByLookupKey(pr.LookupKey); ok {
-			ps[p.ID] = pr
+	for p, id := range s.prices {
+		var pr price
+		if err = h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/prices/"+url.PathEscape(id), nil, &pr); err != nil {
+			break
 		}
-	}
-	if err == nil && len(ps) < len(plan.Plans)-1 {
-		err = fmt.Errorf("stripe prices: found %d of %d lookup keys", len(ps), len(plan.Plans)-1)
+		ps[p] = pr
 	}
 	ttl := priceTTL
 	if err != nil {
-		slog.WarnContext(ctx, "stripe prices unavailable", "err", err)
+		slog.WarnContext(ctx, "paddle prices unavailable", "err", err)
 		ps, ttl = nil, priceRetry
 	}
-	h.cache = priceCache{key: key, at: h.now(), ttl: ttl, prices: ps, err: err}
+	h.cache = priceCache{s: s, at: h.now(), ttl: ttl, prices: ps, err: err}
 	return ps, err
-}
-
-// amount is the price in currency, in its smallest unit.
-func amount(pr price, currency string) (int64, bool) {
-	if pr.Currency == currency {
-		return pr.UnitAmount, true
-	}
-	o, ok := pr.CurrencyOptions[currency]
-	return o.UnitAmount, ok
 }
 
 // limit is n, or nil for 0 (unlimited).
@@ -131,27 +156,27 @@ func limit[T int | int64](n T) *T {
 	return &n
 }
 
-// plans lists the plans with their limits and prices (null for a paid plan while billing is off or Stripe can't be
+// plans lists the plans with their limits and prices (null for a paid plan while billing is off or Paddle can't be
 // reached).
 func (h *Handler) plans(w http.ResponseWriter, r *http.Request) error {
 	ps, _ := h.prices(r.Context()) // logged when read; the paid plans show no price meanwhile
 	type planJSON struct {
-		ID           string           `json:"id"`
-		Name         string           `json:"name"`
-		Members      *int             `json:"members"`
-		StorageBytes *int64           `json:"storage_bytes"`
-		Prices       map[string]int64 `json:"prices"`
+		ID           string            `json:"id"`
+		Name         string            `json:"name"`
+		Members      *int              `json:"members"`
+		StorageBytes *int64            `json:"storage_bytes"`
+		Prices       map[string]*int64 `json:"prices"`
 	}
 	out := make([]planJSON, 0, len(plan.Plans))
 	for _, p := range plan.Plans {
-		j := planJSON{ID: p.ID, Name: p.Name, Members: limit(p.Members), StorageBytes: limit(p.StorageBytes)}
-		if p.LookupKey == "" {
-			j.Prices = map[string]int64{"usd": 0, "inr": 0}
+		j := planJSON{ID: p.ID, Name: p.Name, Members: limit(p.Members), StorageBytes: limit(p.StorageBytes),
+			Prices: map[string]*int64{"usd": nil, "inr": nil}}
+		if p.ID == plan.Starter {
+			var zero int64
+			j.Prices = map[string]*int64{"usd": &zero, "inr": &zero}
 		} else if pr, ok := ps[p.ID]; ok {
-			usd, okUSD := amount(pr, "usd")
-			inr, okINR := amount(pr, "inr")
-			if okUSD && okINR {
-				j.Prices = map[string]int64{"usd": usd, "inr": inr}
+			if usd, inr, ok := pr.amounts(); ok {
+				j.Prices = map[string]*int64{"usd": &usd, "inr": &inr}
 			}
 		}
 		out = append(out, j)
@@ -180,8 +205,8 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID string, 
 }
 
 // currency is the workspace's billing currency, or for one that has none, INR when the user's timezone is India's:
-// their profile's, else browserTZ (the request's "tz", what the browser reports).
-// ponytail: a timezone is easy to fake for the INR price; check the card's country at checkout if that gets abused.
+// their profile's, else browserTZ (the request's "tz", what the browser reports). Only for display: Paddle charges
+// in the currency of the billing address.
 func (h *Handler) currency(ctx context.Context, a account, userID, browserTZ string) (string, error) {
 	if a.Currency != nil {
 		return *a.Currency, nil
@@ -197,11 +222,16 @@ func (h *Handler) currency(ctx context.Context, a account, userID, browserTZ str
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) error {
-	ctx := r.Context()
 	ws, err := h.access(w, r, userID, false)
 	if ws == nil {
 		return err
 	}
+	return h.state(w, r, ws, userID)
+}
+
+// state answers the workspace's billing state.
+func (h *Handler) state(w http.ResponseWriter, r *http.Request, ws *workspace.Workspace, userID string) error {
+	ctx := r.Context()
 	a, err := h.model.account(ctx, ws.ID)
 	if err != nil {
 		return err
@@ -214,8 +244,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 	if err != nil {
 		return err
 	}
-	_, err = h.key(ctx)
-	if err != nil && !errors.Is(err, errNoKey) {
+	_, err = h.settings(ctx)
+	if err != nil && !errors.Is(err, errBillingOff) {
 		return err
 	}
 	p, _ := plan.Get(a.Plan)
@@ -230,31 +260,35 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) err
 	return nil
 }
 
-// back is the billing settings page of the workspace.
-func (h *Handler) back(ctx context.Context, slug string) (string, error) {
-	base, err := h.config(ctx, "app_base_url")
-	return base + "/" + url.PathEscape(slug) + "/settings/billing", err
+// paidPlan is the form's plan when it's a paid one; otherwise it writes the 400.
+func paidPlan(w http.ResponseWriter, r *http.Request) (string, bool) {
+	p := r.FormValue("plan")
+	if p != "pro" && p != "ultimate" {
+		web.Err(w, http.StatusBadRequest, errChoosePlan)
+		return "", false
+	}
+	return p, true
 }
 
-// checkout answers a Stripe Checkout link that subscribes the workspace to the form's plan, creating its Stripe
-// customer the first time.
+// item is a subscription or transaction line: one of the price.
+type item struct {
+	PriceID  string `json:"price_id"`
+	Quantity int    `json:"quantity"`
+}
+
+// checkout makes a Paddle transaction for the form's plan and answers what Paddle.js needs to open its checkout.
 func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
 	ws, err := h.access(w, r, userID, true)
 	if ws == nil {
 		return err
 	}
-	p, ok := plan.Get(r.FormValue("plan"))
-	if !ok || p.LookupKey == "" {
-		web.Err(w, http.StatusBadRequest, errChoosePlan)
+	p, ok := paidPlan(w, r)
+	if !ok {
 		return nil
 	}
-	key, err := h.key(ctx)
-	if errors.Is(err, errNoKey) {
-		web.Err(w, http.StatusServiceUnavailable, errOff)
-		return nil
-	}
-	if err != nil {
+	s, ok, err := h.on(ctx, w)
+	if !ok {
 		return err
 	}
 	a, err := h.model.account(ctx, ws.ID)
@@ -265,101 +299,104 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 		web.Err(w, http.StatusConflict, errSubscribed)
 		return nil
 	}
-	ps, err := h.prices(ctx)
+	email, _, err := h.model.caller(ctx, userID)
 	if err != nil {
 		return err
 	}
-	currency, err := h.currency(ctx, a, userID, r.FormValue("tz"))
-	if err != nil {
+	body := struct {
+		Items      []item            `json:"items"`
+		CustomData map[string]string `json:"custom_data"`
+		CustomerID *string           `json:"customer_id,omitempty"`
+	}{[]item{{s.prices[p], 1}}, map[string]string{"workspace_id": ws.ID}, a.CustomerID}
+	var t struct {
+		ID string `json:"id"`
+	}
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/transactions", body, &t); err != nil {
 		return err
 	}
-	if _, ok := amount(ps[p.ID], currency); !ok {
-		return fmt.Errorf("checkout: price %s has no %s amount", ps[p.ID].ID, currency)
+	env := "sandbox"
+	if s.env == "production" {
+		env = "production"
 	}
-	customer := ""
-	if a.CustomerID != nil {
-		customer = *a.CustomerID
-	} else {
-		email, _, err := h.model.caller(ctx, userID)
-		if err != nil {
-			return err
-		}
-		var c struct {
-			ID string `json:"id"`
-		}
-		if err := h.stripe.call(ctx, key, http.MethodPost, "/v1/customers",
-			url.Values{"name": {ws.Name}, "email": {email}, "metadata[workspace_id]": {ws.ID}}, "customer-"+ws.ID, &c); err != nil {
-			return err
-		}
-		if customer, err = h.model.saveCustomer(ctx, ws.ID, c.ID); err != nil {
-			return err
-		}
-	}
-	back, err := h.back(ctx, ws.Slug)
-	if err != nil {
-		return err
-	}
-	var s struct {
-		URL string `json:"url"`
-	}
-	if err := h.stripe.call(ctx, key, http.MethodPost, "/v1/checkout/sessions", url.Values{
-		"mode":                    {"subscription"},
-		"customer":                {customer},
-		"line_items[0][price]":    {ps[p.ID].ID},
-		"line_items[0][quantity]": {"1"},
-		"currency":                {currency},
-		"client_reference_id":     {ws.ID},
-		"allow_promotion_codes":   {"true"},
-		"integration_identifier":  {integrationID},
-		"success_url":             {back + "?checkout=done"},
-		"cancel_url":              {back},
-	}, "", &s); err != nil {
-		return err
-	}
-	web.JSON(w, http.StatusOK, map[string]string{"url": s.URL})
+	web.JSON(w, http.StatusOK, map[string]string{"transaction_id": t.ID, "client_token": s.token, "environment": env, "email": email})
 	return nil
 }
 
-// portal answers a Stripe customer portal link for the workspace, back to its billing page.
-func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) error {
+// change moves the workspace's subscription to the form's plan, charging the prorated difference now, and answers
+// the billing state.
+func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
 	ws, err := h.access(w, r, userID, true)
 	if ws == nil {
 		return err
 	}
-	key, err := h.key(ctx)
-	if errors.Is(err, errNoKey) {
-		web.Err(w, http.StatusServiceUnavailable, errOff)
+	p, ok := paidPlan(w, r)
+	if !ok {
 		return nil
 	}
-	if err != nil {
+	s, ok, err := h.on(ctx, w)
+	if !ok {
 		return err
 	}
 	a, err := h.model.account(ctx, ws.ID)
 	if err != nil {
 		return err
 	}
-	if a.CustomerID == nil {
+	if a.SubscriptionID == nil {
 		web.Err(w, http.StatusConflict, errNoSubscription)
 		return nil
 	}
-	back, err := h.back(ctx, ws.Slug)
+	if a.Plan == p {
+		web.Err(w, http.StatusBadRequest, errChoosePlan)
+		return nil
+	}
+	body := map[string]any{"items": []item{{s.prices[p], 1}}, "proration_billing_mode": "prorated_immediately"}
+	var sub subscription
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPatch, "/subscriptions/"+url.PathEscape(*a.SubscriptionID), body, &sub); err != nil {
+		return err
+	}
+	if err := h.apply(ctx, s, sub); err != nil {
+		return err
+	}
+	return h.state(w, r, ws, userID)
+}
+
+// portal answers a Paddle customer portal link for the workspace's subscription.
+func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	ws, err := h.access(w, r, userID, true)
+	if ws == nil {
+		return err
+	}
+	s, ok, err := h.on(ctx, w)
+	if !ok {
+		return err
+	}
+	a, err := h.model.account(ctx, ws.ID)
 	if err != nil {
 		return err
 	}
-	var s struct {
-		URL string `json:"url"`
+	if a.CustomerID == nil || a.SubscriptionID == nil {
+		web.Err(w, http.StatusConflict, errNoSubscription)
+		return nil
 	}
-	if err := h.stripe.call(ctx, key, http.MethodPost, "/v1/billing_portal/sessions",
-		url.Values{"customer": {*a.CustomerID}, "return_url": {back}}, "", &s); err != nil {
+	var ps struct {
+		URLs struct {
+			General struct {
+				Overview string `json:"overview"`
+			} `json:"general"`
+		} `json:"urls"`
+	}
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/customers/"+url.PathEscape(*a.CustomerID)+"/portal-sessions",
+		map[string][]string{"subscription_ids": {*a.SubscriptionID}}, &ps); err != nil {
 		return err
 	}
-	web.JSON(w, http.StatusOK, map[string]string{"url": s.URL})
+	web.JSON(w, http.StatusOK, map[string]string{"url": ps.URLs.General.Overview})
 	return nil
 }
 
-// webhook takes Stripe's events: a bad signature is a 400, a failure to apply one a 500 (Stripe retries), anything
-// else a 200.
+// webhook takes Paddle's notifications: a bad signature is a 400, a failure to apply one a 500 (Paddle retries),
+// anything else a 200.
 func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	body, err := io.ReadAll(r.Body)
@@ -367,17 +404,17 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) error {
 		web.Err(w, http.StatusBadRequest, "Invalid payload.")
 		return nil
 	}
-	secret, err := h.config(ctx, "stripe_webhook_secret")
+	secret, err := h.config(ctx, "paddle_webhook_secret")
 	if err != nil {
 		return err
 	}
 	var e event
-	if !verifySignature(r.Header.Get("Stripe-Signature"), body, secret, h.now()) || json.Unmarshal(body, &e) != nil {
+	if !verifySignature(r.Header.Get("Paddle-Signature"), body, secret, h.now()) || json.Unmarshal(body, &e) != nil {
 		web.Err(w, http.StatusBadRequest, "Invalid signature.")
 		return nil
 	}
 	if err := h.handle(ctx, e); err != nil {
-		return fmt.Errorf("stripe event %s %s: %w", e.Type, e.ID, err)
+		return fmt.Errorf("paddle event %s %s: %w", e.Type, e.ID, err)
 	}
 	web.JSON(w, http.StatusOK, map[string]bool{"received": true})
 	return nil
@@ -385,98 +422,77 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) error {
 
 // handle applies one event; see docs/billing-plan.md for which.
 func (h *Handler) handle(ctx context.Context, e event) error {
-	// The fields of every object handled: a checkout session, subscription, invoice, charge or dispute.
-	var o struct {
-		ID                string `json:"id"`
-		Mode              string `json:"mode"`
-		ClientReferenceID string `json:"client_reference_id"`
-		Customer          string `json:"customer"`
-		Subscription      string `json:"subscription"` // a checkout session's; an invoice's on old API versions
-		Parent            struct {
-			SubscriptionDetails struct {
-				Subscription string `json:"subscription"`
-			} `json:"subscription_details"`
-		} `json:"parent"`
-		Charge         string `json:"charge"`
-		Amount         int64  `json:"amount"`
-		AmountRefunded int64  `json:"amount_refunded"`
-		Currency       string `json:"currency"`
-		Reason         string `json:"reason"`
-	}
 	switch e.Type {
-	case "checkout.session.completed", "customer.subscription.created", "customer.subscription.updated",
-		"customer.subscription.deleted", "invoice.paid", "invoice.payment_failed", "charge.dispute.created", "charge.refunded":
-	default:
-		return nil
-	}
-	if err := json.Unmarshal(e.Data.Object, &o); err != nil {
-		return fmt.Errorf("decode object: %w", err)
-	}
-	switch e.Type {
-	case "checkout.session.completed":
-		if o.Mode != "subscription" || o.Subscription == "" {
+	case "subscription.created", "subscription.updated", "subscription.activated", "subscription.past_due",
+		"subscription.paused", "subscription.resumed", "subscription.canceled":
+		var o subscription
+		if err := json.Unmarshal(e.Data, &o); err != nil {
+			return fmt.Errorf("decode subscription: %w", err)
+		}
+		return h.syncSubscription(ctx, o.ID, o.CustomData.WorkspaceID)
+	case "adjustment.created":
+		var o struct {
+			ID             string `json:"id"`
+			Action         string `json:"action"`
+			SubscriptionID string `json:"subscription_id"`
+			CurrencyCode   string `json:"currency_code"`
+			Reason         string `json:"reason"`
+			Totals         struct {
+				Total string `json:"total"`
+			} `json:"totals"`
+		}
+		if err := json.Unmarshal(e.Data, &o); err != nil {
+			return fmt.Errorf("decode adjustment: %w", err)
+		}
+		action := map[string]string{"refund": "billing.refunded", "chargeback": "billing.disputed"}[o.Action]
+		if action == "" {
 			return nil
 		}
-		if !web.IsUUID(o.ClientReferenceID) {
-			slog.WarnContext(ctx, "stripe checkout without a workspace", "event", e.ID, "client_reference_id", o.ClientReferenceID)
-			return nil
+		slog.WarnContext(ctx, "paddle "+o.Action, "event", e.ID, "adjustment", o.ID, "subscription", o.SubscriptionID,
+			"amount", o.Totals.Total, "currency", o.CurrencyCode, "reason", o.Reason)
+		found, err := h.model.recordAdjustment(ctx, o.SubscriptionID, action,
+			map[string]any{"amount": o.Totals.Total, "currency": o.CurrencyCode, "reason": o.Reason})
+		if err == nil && !found {
+			slog.WarnContext(ctx, "paddle adjustment for no workspace", "event", e.ID, "subscription", o.SubscriptionID)
 		}
-		found, err := h.model.linkCheckout(ctx, o.ClientReferenceID, o.Customer, o.Subscription)
-		if err != nil || !found {
-			if !found {
-				slog.WarnContext(ctx, "stripe checkout for a missing workspace", "event", e.ID, "workspace", o.ClientReferenceID)
-			}
-			return err
-		}
-		return h.syncSubscription(ctx, o.Subscription)
-	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
-		return h.syncSubscription(ctx, o.ID)
-	case "invoice.paid", "invoice.payment_failed":
-		if sub := cmp.Or(o.Parent.SubscriptionDetails.Subscription, o.Subscription); sub != "" {
-			return h.syncSubscription(ctx, sub)
-		}
-		return nil
-	case "charge.dispute.created":
-		key, err := h.key(ctx)
-		if err != nil {
-			return err
-		}
-		var c struct {
-			Customer string `json:"customer"`
-		}
-		if err := h.stripe.call(ctx, key, http.MethodGet, "/v1/charges/"+url.PathEscape(o.Charge), nil, "", &c); err != nil {
-			return err
-		}
-		slog.WarnContext(ctx, "stripe dispute", "event", e.ID, "customer", c.Customer, "amount", o.Amount, "currency", o.Currency, "reason", o.Reason)
-		return h.recordCharge(ctx, e, c.Customer, "billing.disputed", map[string]any{"amount": o.Amount, "currency": o.Currency, "reason": o.Reason})
-	default: // charge.refunded
-		slog.WarnContext(ctx, "stripe refund", "event", e.ID, "customer", o.Customer, "amount", o.AmountRefunded, "currency", o.Currency)
-		return h.recordCharge(ctx, e, o.Customer, "billing.refunded", map[string]any{"amount": o.AmountRefunded, "currency": o.Currency})
+		return err
 	}
+	return nil
 }
 
-func (h *Handler) recordCharge(ctx context.Context, e event, customer, action string, detail map[string]any) error {
-	found, err := h.model.recordCharge(ctx, customer, action, detail)
-	if err == nil && !found {
-		slog.WarnContext(ctx, "stripe charge for no workspace", "event", e.ID, "customer", customer)
-	}
-	return err
-}
-
-// syncSubscription reads the subscription from Stripe (events arrive out of order: the current object wins) and
-// applies it to its workspace.
-func (h *Handler) syncSubscription(ctx context.Context, id string) error {
-	key, err := h.key(ctx)
+// syncSubscription reads the subscription from Paddle (events arrive out of order: the current object wins) and
+// applies it to its workspace: the subscription's custom_data workspace, else the event's (workspaceID), else the one
+// holding the subscription.
+func (h *Handler) syncSubscription(ctx context.Context, id, workspaceID string) error {
+	s, err := h.settings(ctx)
 	if err != nil {
 		return err
 	}
-	var s subscription
-	if err := h.stripe.call(ctx, key, http.MethodGet, "/v1/subscriptions/"+url.PathEscape(id), nil, "", &s); err != nil {
+	var sub subscription
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &sub); err != nil {
 		return err
 	}
-	found, err := h.model.sync(ctx, s)
+	if sub.CustomData.WorkspaceID == "" {
+		sub.CustomData.WorkspaceID = workspaceID
+	}
+	return h.apply(ctx, s, sub)
+}
+
+// apply stores Paddle's current subscription on its workspace.
+func (h *Handler) apply(ctx context.Context, s settings, sub subscription) error {
+	paid := ""
+	if slices.Contains(keeps, sub.Status) {
+		if len(sub.Items) == 0 {
+			return fmt.Errorf("sync %s: no items", sub.ID)
+		}
+		var ok bool
+		if paid, ok = s.planOf(sub.Items[0].Price.ID); !ok {
+			return fmt.Errorf("sync %s: unknown price %q", sub.ID, sub.Items[0].Price.ID)
+		}
+	}
+	found, err := h.model.sync(ctx, sub, paid)
 	if err == nil && !found {
-		slog.WarnContext(ctx, "stripe subscription for no workspace", "subscription", id, "customer", s.Customer)
+		slog.WarnContext(ctx, "paddle subscription for no workspace", "subscription", sub.ID, "workspace", sub.CustomData.WorkspaceID)
 	}
 	return err
 }

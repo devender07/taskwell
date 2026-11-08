@@ -218,26 +218,64 @@
             <h2 class="heading">One price for the whole workspace</h2>
             <p class="lead">Plans are priced per workspace, not per person. Start free and upgrade when your team grows.</p>
           </header>
-          <ul class="feature-grid">
-            <li class="feature reveal" data-plan="starter">
-              <h3>Starter</h3>
-              <p class="plan-price" data-price hidden></p>
-              <p data-limits>Up to 5 members<br />2 GB storage</p>
-              <a href="/signup" class="button button-primary plan-cta">Get started</a>
+          <ul class="plan-grid">
+            <li class="plan-card reveal" data-plan="starter">
+              <div class="plan-head"><h3 class="plan-name">Starter</h3></div>
+              <p class="plan-tagline">For small teams trying Taskwell</p>
+              <p class="plan-price" data-price></p>
+              <a href="/signup" class="button button-primary">Get started</a>
+              <ul class="plan-checks" data-checks>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Up to 5 members</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>2 GB storage</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Every Taskwell feature</li>
+              </ul>
             </li>
-            <li class="feature reveal" data-plan="pro">
-              <h3>Pro</h3>
-              <p class="plan-price" data-price hidden></p>
-              <p data-limits>Up to 10 members<br />100 GB storage</p>
-              <a href="/signup" class="button button-primary plan-cta">Get started</a>
+            <li class="plan-card reveal" data-plan="pro" data-featured>
+              <div class="plan-head"><h3 class="plan-name">Pro</h3><span class="plan-badge">Most popular</span></div>
+              <p class="plan-tagline">For growing teams</p>
+              <p class="plan-price" data-price></p>
+              <a href="/signup" class="button button-secondary">Get started</a>
+              <ul class="plan-checks" data-checks>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Up to 10 members</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>100 GB storage</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Every Taskwell feature</li>
+              </ul>
             </li>
-            <li class="feature reveal" data-plan="ultimate">
-              <h3>Ultimate</h3>
-              <p class="plan-price" data-price hidden></p>
-              <p data-limits>Unlimited members<br />Unlimited storage</p>
-              <a href="/signup" class="button button-primary plan-cta">Get started</a>
+            <li class="plan-card reveal" data-plan="ultimate">
+              <div class="plan-head"><h3 class="plan-name">Ultimate</h3></div>
+              <p class="plan-tagline">For larger teams and lots of files</p>
+              <p class="plan-price" data-price></p>
+              <a href="/signup" class="button button-primary">Get started</a>
+              <ul class="plan-checks" data-checks>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Unlimited members</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Unlimited storage</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Every Taskwell feature</li>
+              </ul>
             </li>
           </ul>
+          <section class="plan-includes reveal" aria-labelledby="plan-includes">
+            <h3 id="plan-includes">Every plan includes</h3>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Projects and issues</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>List and board views</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Cycles and roadmap</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Notes</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Chat</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>AI testing</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>MCP and API</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Webhooks</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>GitHub and GitLab</li>
+            </ul>
+            <p>Prices exclude tax, added at checkout. Customers in India pay in INR, by card or UPI.</p>
+          </section>
+          <section class="faq reveal" aria-labelledby="faq">
+            <h3 id="faq" class="text-h2">Questions</h3>
+            <details><summary>Is it priced per person or per workspace?</summary><p>Per workspace. One price covers everyone on the plan, up to its member limit.</p></details>
+            <details><summary>What happens if we go over a limit?</summary><p>Nothing is deleted. You can't invite more members or upload more files until you upgrade or make room.</p></details>
+            <details><summary>Can we cancel any time?</summary><p>Yes. Cancel from billing settings and keep your plan until the end of the month you paid for, then you move to Starter.</p></details>
+            <details><summary>How can we pay?</summary><p>Cards, PayPal and more, depending on your country. Customers in India can also pay by UPI.</p></details>
+            <details><summary>Do we get tax invoices?</summary><p>Yes. Paddle, our reseller, emails a tax invoice for every payment. You can also find them under Manage billing.</p></details>
+          </section>
         </div>
       </section>
 

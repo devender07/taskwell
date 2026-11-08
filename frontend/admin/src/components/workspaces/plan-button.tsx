@@ -30,7 +30,7 @@ export function PlanButton({ workspace }: { workspace: WorkspaceRow }) {
         open={open}
         onClose={() => setOpen(false)}
         title={`Set ${workspace.name}'s plan`}
-        description="A comped plan stays until you clear it; Stripe events leave it alone. Clearing a comp returns the workspace to its paid plan, or Starter."
+        description="A comped plan stays until you clear it; Paddle events leave it alone. Clearing a comp returns the workspace to its paid plan, or Starter."
       >
         <form action={save} className="grid gap-4">
           <fieldset className="grid gap-1 m-0 p-0" style={{ border: 0 }}>

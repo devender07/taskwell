@@ -76,18 +76,33 @@ Check: open an image in the app; in the browser's network panel it should redire
 to `files.taskwell.dev/…` and load with `200`.
 Worker logs: `npx wrangler@4 tail` from `cdn/`. Worker check: `node cdn/worker.check.mjs`.
 
-## Billing (Stripe)
+## Billing (Paddle)
 
-Plans are paid with Stripe (docs/billing-plan.md). Once per Stripe account, sandbox first, then live (needs `jq`):
+Plans are paid through Paddle, the merchant of record (docs/billing-plan.md). Sandbox first, then live:
 
-```sh
-deploy/stripe-setup.sh sk_test_... https://api.taskwell.dev   # prints stripe_webhook_secret
-```
+1. **Sandbox account** at sandbox-vendors.paddle.com (live: vendors.paddle.com, after Paddle approves the account).
+2. **API key** (Developer tools > Authentication > API keys) with these permissions: products read/write, prices
+   read/write, transactions write, subscriptions read/write, customers read, customer portal sessions write,
+   notification settings read/write (the last three writes are for the setup script; the API needs the rest).
+3. **Client-side token** (same page), for Paddle.js in the browser.
+4. **Approved domain** (Checkout > Website approval): `taskwell.dev`, so checkout opens there. In the sandbox it's
+   approved at once; live, Paddle reviews it. Set the default payment link (Checkout > Checkout settings) to
+   `https://taskwell.dev`.
+5. **Run the setup script** (needs `jq`). It makes the Pro and Ultimate products and monthly prices (USD, with an INR
+   override for India) and the notification destination at `/api/billing/webhook`, reusing what exists:
 
-It makes the Pro and Ultimate prices (lookup keys `pro_monthly`, `ultimate_monthly`, USD with INR), the default
-customer portal configuration and the webhook endpoint, reusing what exists. It needs a full secret key; give the API
-a restricted key (`rk_…`) instead: write on Customers, Checkout Sessions, Customer portal and Subscriptions, read on
-Prices, Products and Charges (a dispute's customer is read from its charge). Put that key in `stripe_secret_key` and
-the printed `whsec_…` in `stripe_webhook_secret` (admin app Config page, or `system.json`). Both empty: billing is off,
-and the Starter limits still apply. Locally: `stripe listen --forward-to localhost:8090/api/billing/webhook` and use
-the `whsec_…` it prints.
+   ```sh
+   deploy/paddle-setup.sh pdl_sdbx_apikey_... https://api.taskwell.dev
+   ```
+
+6. **Config keys** (admin app Config page, "Payments", or `system.json`): `paddle_environment` = `sandbox`,
+   `paddle_api_key`, `paddle_client_token`, and the printed `paddle_price_pro`, `paddle_price_ultimate` and
+   `paddle_webhook_secret`. Billing is on once the key, the client token and both prices are set; until then the
+   pages say billing isn't set up and the Starter limits still apply.
+
+Test with a sandbox card (`4242 4242 4242 4242`, any future date, CVC `100`). Locally, the webhook needs a public URL
+(a tunnel to `localhost:8090`) as the script's second argument.
+
+**Switch to production:** repeat steps 2 to 5 in the live dashboard, with `PADDLE_API=https://api.paddle.com
+deploy/paddle-setup.sh pdl_live_apikey_... https://api.taskwell.dev`, then set `paddle_environment` = `production`
+and the live key, token, price ids and secret.

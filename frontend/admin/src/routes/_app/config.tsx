@@ -14,7 +14,7 @@ function group(key: string): (typeof GROUPS)[number] {
   if (key.startsWith('smtp_')) return 'SMTP'
   if (key.startsWith('google_')) return 'Google'
   if (key.startsWith('app_')) return 'App'
-  if (key.startsWith('stripe_')) return 'Payments'
+  if (key.startsWith('paddle_')) return 'Payments'
   if (key.startsWith('upload_') || key.startsWith('s3_')) return 'Uploads'
   if (key.startsWith('digest_') || key.startsWith('notification')) return 'Notifications'
   return 'Auth and tokens'

@@ -144,10 +144,10 @@ func (m *model) setSuspended(ctx context.Context, adminID, ip, id string, suspen
 	return u, nil
 }
 
-// subscription returns the workspace's Stripe subscription id and status (nil without one); found is false when
+// subscription returns the workspace's Paddle subscription id and status (nil without one); found is false when
 // there's no such workspace.
 func (m *model) subscription(ctx context.Context, id string) (subID, status *string, found bool, err error) {
-	err = m.db.QueryRow(ctx, `select stripe_subscription_id, subscription_status from workspaces where id = $1`, id).
+	err = m.db.QueryRow(ctx, `select paddle_subscription_id, subscription_status from workspaces where id = $1`, id).
 		Scan(&subID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, false, nil
@@ -158,18 +158,36 @@ func (m *model) subscription(ctx context.Context, id string) (subID, status *str
 	return subID, status, true, nil
 }
 
-// stripeKey is the user API's Stripe secret key ("" while billing is off).
-func (m *model) stripeKey(ctx context.Context) (string, error) {
-	var k string
-	err := m.db.QueryRow(ctx, `select value from system_config where key = 'stripe_secret_key'`).Scan(&k)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("read stripe key: %w", err)
+// paddle reads the user API's paddle_ config (a missing key is "").
+func (m *model) paddle(ctx context.Context) (paddleConfig, error) {
+	rows, err := m.db.Query(ctx, `select key, value from system_config
+		where key in ('paddle_environment', 'paddle_api_key', 'paddle_price_pro', 'paddle_price_ultimate')`)
+	if err != nil {
+		return paddleConfig{}, fmt.Errorf("read paddle config: %w", err)
 	}
-	return k, nil
+	c := paddleConfig{prices: map[string]string{}}
+	var k, v string
+	_, err = pgx.ForEachRow(rows, []any{&k, &v}, func() error {
+		switch k {
+		case "paddle_environment":
+			c.env = v
+		case "paddle_api_key":
+			c.key = v
+		case "paddle_price_pro":
+			c.prices[v] = "pro"
+		case "paddle_price_ultimate":
+			c.prices[v] = "ultimate"
+		}
+		return nil
+	})
+	if err != nil {
+		return paddleConfig{}, fmt.Errorf("read paddle config: %w", err)
+	}
+	return c, nil
 }
 
 // setPlan sets the workspace's plan and whether it's comped, by the admin, and returns it, or nil when there's no
-// such workspace. It's recorded in admin_audit, and a change of plan in the workspace's audit log too, like Stripe's.
+// such workspace. It's recorded in admin_audit, and a change of plan in the workspace's audit log too, like Paddle's.
 func (m *model) setPlan(ctx context.Context, adminID, ip, id, plan string, comped bool) (*Workspace, error) {
 	var ws *Workspace
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {

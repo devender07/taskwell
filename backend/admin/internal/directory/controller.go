@@ -21,11 +21,11 @@ const (
 type Handler struct {
 	model  *model
 	auth   web.Authenticator
-	stripe string // Stripe's API base; tests point it at httptest
+	paddle string // Paddle's API base, "" for paddle_environment's; tests point it at httptest
 }
 
 func New(db *pgxpool.Pool, auth web.Authenticator) *Handler {
-	return &Handler{model: &model{db: db}, auth: auth, stripe: stripeBase}
+	return &Handler{model: &model{db: db}, auth: auth}
 }
 
 // search reads ?q= (cut to maxQuery characters) and the 1-based ?page= (anything invalid is page 1) as a query and an offset.
@@ -88,7 +88,7 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 }
 
 // setPlan comps the workspace with the form's plan (comped=true), or clears its comp (comped=false): back to its
-// Stripe subscription's plan while one is active, else Starter.
+// Paddle subscription's plan while one is active, else Starter.
 func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	var id pgtype.UUID
@@ -116,13 +116,13 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 		}
 		plan = "starter"
 		if subID != nil && status != nil && slices.Contains([]string{"active", "trialing", "past_due"}, *status) {
-			key, err := h.model.stripeKey(ctx)
+			c, err := h.model.paddle(ctx)
 			if err != nil {
 				return err
 			}
-			if plan, err = subscriptionPlan(ctx, h.stripe, key, *subID); err != nil {
-				slog.WarnContext(ctx, "read stripe subscription", "subscription", *subID, "err", err)
-				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the workspace's subscription from Stripe. Try again.")
+			if plan, err = subscriptionPlan(ctx, h.paddle, c, *subID); err != nil {
+				slog.WarnContext(ctx, "read paddle subscription", "subscription", *subID, "err", err)
+				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the workspace's subscription from Paddle. Try again.")
 				return nil
 			}
 		}

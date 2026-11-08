@@ -1,11 +1,12 @@
 import '@taskwell/shared/tokens.css'
 import '@taskwell/shared/utilities.css'
 import '@taskwell/shared/button.css'
+import '@taskwell/shared/plan-card.css'
 import './landing.css'
 import { apiUrl } from '@taskwell/shared/api-url'
 import { formatMoney } from '@taskwell/shared/money'
 import type { Plan } from '@/api'
-import { formatBytes } from '@/components/files/bytes'
+import { planChecks } from '@/components/settings/plans'
 
 document.documentElement.classList.add('js')
 
@@ -133,16 +134,17 @@ fetch(apiUrl('/api/billing/plans'))
     for (const p of plans) {
       const card = document.querySelector(`[data-plan="${p.id}"]`)
       if (!card) continue
-      const members = p.members === null ? 'Unlimited members' : `Up to ${p.members} members`
-      const storage = p.storage_bytes === null ? 'Unlimited storage' : `${formatBytes(p.storage_bytes)} storage`
-      card.querySelector('[data-limits]')!.replaceChildren(members, document.createElement('br'), storage)
+      const items = card.querySelectorAll('[data-checks] li')
+      planChecks(p).forEach((c, i) => items[i]?.lastChild?.replaceWith(c))
       const price = p.prices?.[currency]
       if (price === undefined) continue
-      const el = card.querySelector<HTMLElement>('[data-price]')!
-      const month = document.createElement('span')
-      month.textContent = ' / month'
-      el.replaceChildren(price === 0 ? 'Free' : formatMoney(price, currency), ...(price === 0 ? [] : [month]))
-      el.hidden = false
+      const amount = document.createElement('span')
+      amount.className = 'plan-amount'
+      amount.textContent = price === 0 ? 'Free' : formatMoney(price, currency)
+      const period = document.createElement('span')
+      period.className = 'plan-period'
+      period.textContent = '/ month'
+      card.querySelector('[data-price]')!.replaceChildren(amount, ...(price === 0 ? [] : [period]))
     }
   })
   .catch(() => {})

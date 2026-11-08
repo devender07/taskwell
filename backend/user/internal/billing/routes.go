@@ -1,7 +1,8 @@
-// Package billing is the workspace plans paid with Stripe: the plan list, a workspace's billing state, Checkout and
-// the customer portal, and Stripe's webhook (docs/billing-plan.md). The plans and their limits are in package plan.
+// Package billing is the workspace plans paid with Paddle: the plan list, a workspace's billing state, checkout,
+// plan changes and the customer portal, and Paddle's webhook (docs/billing-plan.md). The plans and their limits are
+// in package plan.
 //
-// routes.go mounts the endpoints, controller.go handles HTTP, stripe.go is the Stripe client and webhook signature
+// routes.go mounts the endpoints, controller.go handles HTTP, paddle.go is the Paddle client and webhook signature
 // check, and model.go owns every SQL query.
 package billing
 
@@ -23,5 +24,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/billing/webhook", web.Public(maxWebhook, h.webhook))
 	mux.HandleFunc("GET /api/workspaces/{slug}/billing", web.Wrap(h.authenticate, maxBody, h.get))
 	mux.HandleFunc("POST /api/workspaces/{slug}/billing/checkout", web.Wrap(h.authenticate, maxBody, h.checkout))
+	mux.HandleFunc("POST /api/workspaces/{slug}/billing/change", web.Wrap(h.authenticate, maxBody, h.change))
 	mux.HandleFunc("POST /api/workspaces/{slug}/billing/portal", web.Wrap(h.authenticate, maxBody, h.portal))
 }

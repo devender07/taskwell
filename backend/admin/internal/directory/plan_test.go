@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestSetPlan comps a workspace, clears the comp back to its active Stripe subscription's plan (read from a fake
-// Stripe), then to Starter once it has none; each change is in admin_audit and the workspace's audit log. Needs
+// TestSetPlan comps a workspace, clears the comp back to its active Paddle subscription's plan (read from a fake
+// Paddle), then to Starter once it has none; each change is in admin_audit and the workspace's audit log. Needs
 // TEST_DATABASE_URL migrated by the user service's tests.
 func TestSetPlan(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -37,15 +37,15 @@ func TestSetPlan(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `delete from workspaces where id = $1`, id)
 		_, _ = pool.Exec(context.Background(), `delete from admin_audit where target like $1`, slug+":%")
 	})
-	stripe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/subscriptions/sub_1" {
+	paddle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/subscriptions/sub_1" || r.Header.Get("Authorization") != "Bearer pdl_key" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		fmt.Fprint(w, `{"id":"sub_1","items":{"data":[{"price":{"lookup_key":"pro_monthly"}}]}}`)
+		fmt.Fprint(w, `{"data":{"id":"sub_1","items":[{"price":{"id":"pri_test_pro"}}]}}`)
 	}))
-	defer stripe.Close()
-	h := &Handler{model: &model{db: pool}, stripe: stripe.URL}
+	defer paddle.Close()
+	h := &Handler{model: &model{db: pool}, paddle: paddle.URL}
 	set := func(form url.Values, want int) string {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/api/workspaces/"+id+"/plan", strings.NewReader(form.Encode()))
@@ -74,25 +74,27 @@ func TestSetPlan(t *testing.T) {
 		t.Fatalf("comp answered %s", body)
 	}
 
-	if _, err := pool.Exec(ctx, `update workspaces set stripe_subscription_id = 'sub_1', subscription_status = 'active' where id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `update workspaces set paddle_subscription_id = 'sub_1', subscription_status = 'active' where id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `update system_config set value = '' where key = 'stripe_secret_key'`); err != nil {
-		t.Fatal(err)
+	config := func(key, value string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `update system_config set value = $2 where key = $1`, key, value); err != nil {
+			t.Fatal(err)
+		}
 	}
+	config("paddle_api_key", "")
 	set(url.Values{"comped": {"false"}}, 502) // billing off: the subscription's plan can't be read
-	if _, err := pool.Exec(ctx, `update system_config set value = 'rk_test' where key = 'stripe_secret_key'`); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `update system_config set value = '' where key = 'stripe_secret_key'`)
-	})
+	config("paddle_api_key", "pdl_key")
+	config("paddle_price_pro", "pri_test_pro")
+	defer config("paddle_price_pro", "")
+	defer config("paddle_api_key", "")
 	set(url.Values{"comped": {"false"}}, 200)
 	if p, comped := plan(); p != "pro" || comped {
 		t.Fatalf("cleared with a subscription: %s %v", p, comped)
 	}
 
-	if _, err := pool.Exec(ctx, `update workspaces set stripe_subscription_id = null, subscription_status = null where id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `update workspaces set paddle_subscription_id = null, subscription_status = null where id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	set(url.Values{"comped": {"false"}}, 200)

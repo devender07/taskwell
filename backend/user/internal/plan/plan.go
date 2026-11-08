@@ -15,7 +15,6 @@ type Plan struct {
 	Name         string
 	Members      int
 	StorageBytes int64
-	LookupKey    string // the Stripe price's lookup key; "" for Starter
 }
 
 const Starter = "starter"
@@ -23,24 +22,14 @@ const Starter = "starter"
 // Plans is every plan in display order.
 var Plans = []Plan{
 	{ID: Starter, Name: "Starter", Members: 5, StorageBytes: 2 << 30},
-	{ID: "pro", Name: "Pro", Members: 10, StorageBytes: 100 << 30, LookupKey: "pro_monthly"},
-	{ID: "ultimate", Name: "Ultimate", LookupKey: "ultimate_monthly"},
+	{ID: "pro", Name: "Pro", Members: 10, StorageBytes: 100 << 30},
+	{ID: "ultimate", Name: "Ultimate"},
 }
 
 // Get returns the plan with the id.
 func Get(id string) (Plan, bool) {
 	for _, p := range Plans {
 		if p.ID == id {
-			return p, true
-		}
-	}
-	return Plan{}, false
-}
-
-// ByLookupKey returns the paid plan whose Stripe price has the lookup key.
-func ByLookupKey(key string) (Plan, bool) {
-	for _, p := range Plans {
-		if p.LookupKey != "" && p.LookupKey == key {
 			return p, true
 		}
 	}

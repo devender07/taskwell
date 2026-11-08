@@ -28,7 +28,8 @@ const pagesHeaders: Plugin = {
   },
   generateBundle() {
     // Cloudflare Web Analytics: Cloudflare injects its beacon script, which reports to cloudflareinsights.com.
-    const csp = `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}${uploads} https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
+    // Paddle.js loads from cdn.paddle.com, opens checkout in a frame on (sandbox-)buy.paddle.com and calls its APIs.
+    const csp = `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com https://cdn.paddle.com; img-src 'self' data: blob: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline'; frame-src https://buy.paddle.com https://sandbox-buy.paddle.com; connect-src 'self' ${api} ${api.replace(/^http/, 'ws')}${uploads} https://cloudflareinsights.com https://*.paddle.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`
     this.emitFile({
       type: 'asset',
       fileName: '_headers',
@@ -37,7 +38,7 @@ const pagesHeaders: Plugin = {
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self "https://buy.paddle.com" "https://sandbox-buy.paddle.com"), usb=()
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
