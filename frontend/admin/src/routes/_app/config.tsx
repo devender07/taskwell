@@ -8,12 +8,13 @@ export const Route = createFileRoute('/_app/config')({
   component: Config,
 })
 
-const GROUPS = ['App', 'Auth and tokens', 'SMTP', 'Google', 'Uploads', 'Notifications'] as const
+const GROUPS = ['App', 'Auth and tokens', 'SMTP', 'Google', 'Uploads', 'Payments', 'Notifications'] as const
 
 function group(key: string): (typeof GROUPS)[number] {
   if (key.startsWith('smtp_')) return 'SMTP'
   if (key.startsWith('google_')) return 'Google'
   if (key.startsWith('app_')) return 'App'
+  if (key.startsWith('stripe_')) return 'Payments'
   if (key.startsWith('upload_') || key.startsWith('s3_')) return 'Uploads'
   if (key.startsWith('digest_') || key.startsWith('notification')) return 'Notifications'
   return 'Auth and tokens'
