@@ -611,3 +611,20 @@ func TestRepeatTrial(t *testing.T) {
 		t.Fatal("a late trialing event re-ran the activation")
 	}
 }
+
+// TestChangeInTrial: Paddle only takes do_not_bill for a trialing subscription's items, so a switch in a trial uses it.
+func TestChangeInTrial(t *testing.T) {
+	x := setup(t)
+	s := sub{id: "sub_trial_" + x.tag, customer: "ctm_" + x.tag, cd: signedCD(x.ann, checkoutSig(x.ann)), status: "trialing", price: "pri_starter_m",
+		updated: time.Now().Add(-time.Hour)}
+	x.f.mu.Lock()
+	x.f.subs[s.id] = s
+	x.f.mu.Unlock()
+	x.send(t, "subscription.created", s.json(), 200)
+	if b := x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_pro_m"}}, 200); b["plan"] != "pro" || b["status"] != "trialing" {
+		t.Fatalf("change in trial answered %v", b)
+	}
+	if patch, _ := x.f.last("PATCH", "/subscriptions/"+s.id); patch.body["proration_billing_mode"] != "do_not_bill" {
+		t.Fatalf("change in trial body %v", patch.body)
+	}
+}

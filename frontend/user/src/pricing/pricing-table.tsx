@@ -125,7 +125,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
           setError(null)
         }}
         title={`Switch to ${switchTo?.name ?? ''} ${interval === 'month' ? 'monthly' : 'yearly'} now?`}
-        description="You'll be charged the prorated difference today."
+        description={billing?.status === 'trialing' ? "Your free trial continues. You'll be charged the new price when it ends." : "You'll be charged the prorated difference today."}
       >
         <div className="grid gap-4">
           <FormError>{error}</FormError>
