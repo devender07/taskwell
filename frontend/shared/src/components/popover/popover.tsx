@@ -40,7 +40,7 @@ export function Popover({ trigger, children, placement = 'bottom-start', arrow =
     return () => clearTimeout(t)
   }, [state])
 
-  // Position before paint, then follow scroll and resize while open.
+  // Position before paint, then follow scroll, resize and the panel's own size while open.
   useLayoutEffect(() => {
     const panel = panelRef.current
     const anchor = triggerRef.current
@@ -61,7 +61,10 @@ export function Popover({ trigger, children, placement = 'bottom-start', arrow =
     if (!panel.contains(document.activeElement)) panel.focus({ preventScroll: true }) // keep an autoFocus field's focus
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
+    const grows = new ResizeObserver(place) // content that expands while open, e.g. an inline color picker
+    grows.observe(panel)
     return () => {
+      grows.disconnect()
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }

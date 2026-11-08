@@ -127,3 +127,4 @@ form.note-composer { padding: var(--space-4); }
 .note-card:hover .note-select, .note-card:focus-within .note-select, [data-selecting] .note-select { opacity: 1; }
 @media (hover: none) { .note-select { opacity: 1; } }
 .note-card[data-selected] { border-color: var(--text-2); }
+.note-swatch-custom { background: conic-gradient(#f91880, #f2c94c, #00ba7c, #26b5ce, #5e6ad2, #bb87fc, #f91880); }
