@@ -1,7 +1,6 @@
 package directory
 
 import (
-	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -19,9 +18,8 @@ const (
 )
 
 type Handler struct {
-	model  *model
-	auth   web.Authenticator
-	paddle string // Paddle's API base, "" for paddle_environment's; tests point it at httptest
+	model *model
+	auth  web.Authenticator
 }
 
 func New(db *pgxpool.Pool, auth web.Authenticator) *Handler {
@@ -87,8 +85,13 @@ func (h *Handler) setSuspended(w http.ResponseWriter, r *http.Request, adminID s
 	return nil
 }
 
+// paidPlans are the user API's paid plan ids (its package plan), free is the plan without a subscription.
+var paidPlans = []string{"starter", "pro", "advanced"}
+
+const freePlan = "free"
+
 // setPlan comps the user's account with the form's plan (comped=true), or clears its comp (comped=false): back to
-// its Paddle subscription's plan while one is active, else Free.
+// the plan of its mirrored Paddle subscription granting access, else Free.
 func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	var id pgtype.UUID
@@ -104,28 +107,6 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 	case comped == "true" && plan != freePlan && !slices.Contains(paidPlans, plan):
 		web.WriteErr(w, http.StatusBadRequest, "Choose a plan.")
 		return nil
-	}
-	if comped == "false" {
-		subID, status, found, err := h.model.subscription(ctx, r.PathValue("id"))
-		if err != nil {
-			return err
-		}
-		if !found {
-			web.WriteErr(w, http.StatusNotFound, "User not found.")
-			return nil
-		}
-		plan = freePlan
-		if subID != nil && status != nil && slices.Contains([]string{"active", "trialing", "past_due"}, *status) {
-			c, err := h.model.paddle(ctx)
-			if err != nil {
-				return err
-			}
-			if plan, err = subscriptionPlan(ctx, h.paddle, c, *subID); err != nil {
-				slog.WarnContext(ctx, "read paddle subscription", "subscription", *subID, "err", err)
-				web.WriteErr(w, http.StatusBadGateway, "Couldn't read the user's subscription from Paddle. Try again.")
-				return nil
-			}
-		}
 	}
 	u, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true")
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,8 +35,12 @@ const (
 
 var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
 
-// keeps are the subscription statuses that keep the paid plan.
-var keeps = []string{"active", "trialing", "past_due"}
+// granting are the subscription statuses that grant access to its plan: past_due is the grace while Paddle retries.
+var granting = []string{"active", "trialing", "past_due"}
+
+// grantsAccess reports whether a subscription with the status grants access to its plan; a scheduled change never
+// revokes it by itself.
+func grantsAccess(status string) bool { return slices.Contains(granting, status) }
 
 type Handler struct {
 	model        *model
@@ -123,13 +128,9 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil && !errors.Is(err, errBillingOff) {
 		return err
 	}
-	var currency, interval *string
-	if a.SubscriptionID != nil {
-		currency, interval = a.Currency, a.Interval
-	}
 	p, _ := plan.Get(a.Plan)
 	web.JSON(w, http.StatusOK, map[string]any{
-		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": currency, "interval": interval,
+		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": a.Currency, "interval": a.Interval,
 		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd,
 		"workspaces": map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
 		"enabled":    err == nil,
@@ -240,8 +241,7 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return err
 	}
-	p, ok := paidPlan(pr)
-	if !ok || pr.Status != "active" || (p == a.Plan && a.Interval != nil && pr.BillingCycle.Interval == *a.Interval) {
+	if _, ok := paidPlan(pr); !ok || pr.Status != "active" || pr.ID == *a.PriceID {
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
 		return nil
 	}
@@ -250,7 +250,7 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPatch, "/subscriptions/"+url.PathEscape(*a.SubscriptionID), body, &sub); err != nil {
 		return err
 	}
-	if err := h.apply(ctx, sub); err != nil {
+	if err := h.saveSubscription(ctx, sub); err != nil {
 		return err
 	}
 	return h.state(w, r, userID)
@@ -263,11 +263,11 @@ func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return err
 	}
-	a, err := h.model.account(ctx, userID)
+	customerID, subID, found, err := h.model.portalTarget(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if a.CustomerID == nil || a.SubscriptionID == nil {
+	if !found {
 		web.Err(w, http.StatusConflict, errNoSubscription)
 		return nil
 	}
@@ -278,8 +278,8 @@ func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) 
 			} `json:"general"`
 		} `json:"urls"`
 	}
-	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/customers/"+url.PathEscape(*a.CustomerID)+"/portal-sessions",
-		map[string][]string{"subscription_ids": {*a.SubscriptionID}}, &ps); err != nil {
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/customers/"+url.PathEscape(customerID)+"/portal-sessions",
+		map[string][]string{"subscription_ids": {subID}}, &ps); err != nil {
 		return err
 	}
 	web.JSON(w, http.StatusOK, map[string]string{"url": ps.URLs.General.Overview})
@@ -311,16 +311,41 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// handle applies one event; see docs/billing-plan.md for which.
+// handle applies one event, from its payload only (docs/billing-plan.md): subscriptions and customers are mirrored,
+// a completed transaction links its customer, adjustments are logged, anything else is ignored.
 func (h *Handler) handle(ctx context.Context, e event) error {
 	switch e.Type {
-	case "subscription.created", "subscription.updated", "subscription.activated", "subscription.past_due",
-		"subscription.paused", "subscription.resumed", "subscription.canceled":
+	case "subscription.created", "subscription.updated", "subscription.canceled", "subscription.activated",
+		"subscription.trialing", "subscription.past_due", "subscription.paused", "subscription.resumed":
 		var o subscription
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode subscription: %w", err)
 		}
-		return h.syncSubscription(ctx, o.ID, o.CustomData)
+		return h.saveSubscription(ctx, o)
+	case "customer.created", "customer.updated":
+		var o customer
+		if err := json.Unmarshal(e.Data, &o); err != nil {
+			return fmt.Errorf("decode customer: %w", err)
+		}
+		if o.ID == "" || o.UpdatedAt.IsZero() {
+			return fmt.Errorf("customer %q: no id or updated_at", o.ID)
+		}
+		return h.model.saveCustomer(ctx, o)
+	case "transaction.completed":
+		var o transaction
+		if err := json.Unmarshal(e.Data, &o); err != nil {
+			return fmt.Errorf("decode transaction: %w", err)
+		}
+		user := ""
+		if h.signed(o.CustomData) {
+			user = o.CustomData.UserID
+		}
+		slog.InfoContext(ctx, "paddle transaction completed", "event", e.ID, "transaction", o.ID, "customer", o.CustomerID,
+			"subscription", o.SubscriptionID, "user", user)
+		if o.CustomerID == "" {
+			return nil
+		}
+		return h.model.linkCustomer(ctx, o.CustomerID, user)
 	case "adjustment.created":
 		var o struct {
 			ID             string `json:"id"`
@@ -337,52 +362,40 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 		}
 		slog.WarnContext(ctx, "paddle adjustment "+o.Action, "event", e.ID, "adjustment", o.ID, "subscription", o.SubscriptionID,
 			"amount", o.Totals.Total, "currency", o.CurrencyCode, "reason", o.Reason)
-		return nil
 	}
 	return nil
 }
 
-// syncSubscription reads the subscription from Paddle (events arrive out of order: the current object wins) and
-// applies it to its account; c is the event's custom_data, for a subscription Paddle doesn't return it on.
-func (h *Handler) syncSubscription(ctx context.Context, id string, c customData) error {
-	s, err := h.settings(ctx)
-	if err != nil {
-		return err
+// saveSubscription mirrors a subscription entity (see model.saveSubscription), linking a new one to the account its
+// custom_data names when that's signed. Its plan is its first item's price's custom_data.taskwell_plan; an unknown
+// one on a subscription granting access is an error, so Paddle retries once the price is fixed.
+func (h *Handler) saveSubscription(ctx context.Context, sub subscription) error {
+	if sub.ID == "" || sub.CustomerID == "" || sub.UpdatedAt.IsZero() || len(sub.Items) == 0 {
+		return fmt.Errorf("subscription %q: no id, customer_id, updated_at or items", sub.ID)
 	}
-	var sub subscription
-	if err := h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/subscriptions/"+url.PathEscape(id), nil, &sub); err != nil {
-		return err
+	pr := sub.Items[0].Price
+	if _, ok := paidPlan(pr); !ok && grantsAccess(sub.Status) {
+		return fmt.Errorf("subscription %s: price %q has no known custom_data.taskwell_plan (%q)", sub.ID, pr.ID, pr.CustomData.Plan)
 	}
-	if sub.CustomData.UserID == "" {
-		sub.CustomData = c
+	row := subscriptionRow{ID: sub.ID, CustomerID: sub.CustomerID, Status: sub.Status, PriceID: pr.ID, ProductID: pr.ProductID,
+		Plan: pr.CustomData.Plan, NextBilledAt: sub.NextBilledAt, UpdatedAt: sub.UpdatedAt}
+	if i := pr.BillingCycle.Interval; i != "" {
+		row.Interval = &i
 	}
-	return h.apply(ctx, sub)
-}
-
-// apply stores Paddle's current subscription on its account (see model.sync): the one holding it, else the one its
-// custom_data names when that's signed. While it's in force its plan is its first item's price's taskwell_plan; an
-// unknown one is an error, so Paddle retries once the price is fixed.
-func (h *Handler) apply(ctx context.Context, sub subscription) error {
-	paid, interval := "", ""
-	if slices.Contains(keeps, sub.Status) {
-		if len(sub.Items) == 0 {
-			return fmt.Errorf("sync %s: no items", sub.ID)
-		}
-		pr := sub.Items[0].Price
-		var ok bool
-		if paid, ok = paidPlan(pr); !ok {
-			return fmt.Errorf("sync %s: price %q has no known custom_data.taskwell_plan (%q)", sub.ID, pr.ID, pr.CustomData.Plan)
-		}
-		interval = pr.BillingCycle.Interval
+	if c := strings.ToLower(sub.CurrencyCode); c != "" {
+		row.Currency = &c
 	}
-	user := ""
+	if sc := sub.ScheduledChange; sc != nil && sc.Action != "" {
+		row.ScheduledAction, row.ScheduledAt = &sc.Action, sc.EffectiveAt
+	}
+	link := ""
 	if h.signed(sub.CustomData) {
-		user = sub.CustomData.UserID
+		link = sub.CustomData.UserID
 	}
-	found, err := h.model.sync(ctx, sub, paid, interval, user)
-	if err == nil && !found {
+	applied, user, err := h.model.saveSubscription(ctx, row, link)
+	if err == nil && applied && user == nil {
 		slog.WarnContext(ctx, "paddle subscription for no account", "subscription", sub.ID, "user", sub.CustomData.UserID,
-			"signed", user != "")
+			"signed", link != "")
 	}
 	return err
 }

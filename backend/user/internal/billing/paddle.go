@@ -95,15 +95,17 @@ func (p *paddleAPI) call(ctx context.Context, key, env, method, path string, in,
 	return nil
 }
 
-// subscription is the part of a Paddle subscription sync reads.
+// subscription is the part of a Paddle subscription entity billing mirrors.
 type subscription struct {
 	ID              string     `json:"id"`
 	Status          string     `json:"status"`
 	CustomerID      string     `json:"customer_id"`
 	CurrencyCode    string     `json:"currency_code"`
 	NextBilledAt    *time.Time `json:"next_billed_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 	ScheduledChange *struct {
-		Action string `json:"action"`
+		Action      string     `json:"action"`
+		EffectiveAt *time.Time `json:"effective_at"`
 	} `json:"scheduled_change"`
 	CustomData customData `json:"custom_data"`
 	Items      []struct {
@@ -111,8 +113,24 @@ type subscription struct {
 	} `json:"items"`
 }
 
+// customer is the part of a Paddle customer entity billing mirrors.
+type customer struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// transaction is the part of a Paddle transaction entity billing reads.
+type transaction struct {
+	ID             string     `json:"id"`
+	Status         string     `json:"status"`
+	CustomerID     string     `json:"customer_id"`
+	SubscriptionID string     `json:"subscription_id"`
+	CustomData     customData `json:"custom_data"`
+}
+
 // customData is what our checkout puts on a transaction, and Paddle copies to its subscription: the account and
-// its signature (see Handler.sign).
+// its signature (see Handler.mac).
 type customData struct {
 	UserID string `json:"user_id"`
 	Sig    string `json:"sig"`
@@ -121,6 +139,7 @@ type customData struct {
 // price is the part of a Paddle price billing reads: its plan is custom_data.taskwell_plan.
 type price struct {
 	ID         string `json:"id"`
+	ProductID  string `json:"product_id"`
 	Status     string `json:"status"`
 	CustomData struct {
 		Plan string `json:"taskwell_plan"`

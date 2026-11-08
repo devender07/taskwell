@@ -150,46 +150,9 @@ func (m *model) setSuspended(ctx context.Context, adminID, ip, id string, suspen
 	return u, nil
 }
 
-// subscription returns the user's Paddle subscription id and status (nil without one); found is false when there's
-// no such user.
-func (m *model) subscription(ctx context.Context, id string) (subID, status *string, found bool, err error) {
-	err = m.db.QueryRow(ctx, `select paddle_subscription_id, subscription_status from users where id = $1`, id).
-		Scan(&subID, &status)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil, false, nil
-	}
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("read subscription: %w", err)
-	}
-	return subID, status, true, nil
-}
-
-// paddle reads the user API's paddle_ config (a missing key is "").
-func (m *model) paddle(ctx context.Context) (paddleConfig, error) {
-	rows, err := m.db.Query(ctx, `select key, value from system_config
-		where key in ('paddle_environment', 'paddle_api_key')`)
-	if err != nil {
-		return paddleConfig{}, fmt.Errorf("read paddle config: %w", err)
-	}
-	var c paddleConfig
-	var k, v string
-	_, err = pgx.ForEachRow(rows, []any{&k, &v}, func() error {
-		switch k {
-		case "paddle_environment":
-			c.env = v
-		case "paddle_api_key":
-			c.key = v
-		}
-		return nil
-	})
-	if err != nil {
-		return paddleConfig{}, fmt.Errorf("read paddle config: %w", err)
-	}
-	return c, nil
-}
-
 // setPlan sets the user's plan and whether it's comped, by the admin, and returns them, or nil when there's no such
-// user. It's recorded in admin_audit, and a change of plan in the audit log of every workspace they own too, like
+// user. Clearing the comp (comped false) ignores plan: the plan becomes that of the user's most recently updated
+// mirrored Paddle subscription granting access (active, trialing, past_due, as the user API's grantsAccess), else Free. It's recorded in admin_audit, and a change of plan in the audit log of every workspace they own too, like
 // Paddle's.
 func (m *model) setPlan(ctx context.Context, adminID, ip, id, plan string, comped bool) (*User, error) {
 	var u *User
@@ -201,6 +164,13 @@ func (m *model) setPlan(ctx context.Context, adminID, ip, id, plan string, compe
 		}
 		if err != nil {
 			return err
+		}
+		if !comped {
+			if err := tx.QueryRow(ctx, `select coalesce((select plan from paddle_subscriptions
+				  where user_id = $1 and status in ('active', 'trialing', 'past_due')
+				  order by paddle_updated_at desc limit 1), 'free')`, id).Scan(&plan); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `update users set plan = $2, plan_comped = $3 where id = $1`, id, plan, comped); err != nil {
 			return err

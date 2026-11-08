@@ -3,8 +3,6 @@ package directory
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -14,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestSetPlan comps a user's account, clears the comp back to its active Paddle subscription's plan (read from a fake
-// Paddle), then to Free once it has none; each change is in admin_audit and the audit log of every workspace the
+// TestSetPlan comps a user's account, clears the comp back to the plan of its mirrored Paddle subscription granting
+// access, then to Free once it's paused; each change is in admin_audit and the audit log of every workspace the
 // user owns, and the workspaces list shows the owner's plan. Needs TEST_DATABASE_URL migrated by the user service's
 // tests.
 func TestSetPlan(t *testing.T) {
@@ -45,15 +43,7 @@ func TestSetPlan(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `delete from users where id = $1`, id)
 		_, _ = pool.Exec(context.Background(), `delete from admin_audit where target like $1`, email+":%")
 	})
-	paddle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/subscriptions/sub_1" || r.Header.Get("Authorization") != "Bearer pdl_key" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		fmt.Fprint(w, `{"data":{"id":"sub_1","items":[{"price":{"id":"pri_test","custom_data":{"taskwell_plan":"pro"}}}]}}`)
-	}))
-	defer paddle.Close()
-	h := &Handler{model: &model{db: pool}, paddle: paddle.URL}
+	h := &Handler{model: &model{db: pool}}
 	set := func(form url.Values, want int) string {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/api/users/"+id+"/plan", strings.NewReader(form.Encode()))
@@ -86,33 +76,29 @@ func TestSetPlan(t *testing.T) {
 		t.Fatalf("workspace plan %q %v", w.Plan, err)
 	}
 
-	if _, err := pool.Exec(ctx, `update users set paddle_subscription_id = 'sub_1', subscription_status = 'active' where id = $1`, id); err != nil {
+	cus, sub := "ctm_"+email, "sub_"+email
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from paddle_subscriptions where subscription_id = $1`, sub)
+		_, _ = pool.Exec(context.Background(), `delete from paddle_customers where customer_id = $1`, cus)
+	})
+	if _, err := pool.Exec(ctx, `insert into paddle_customers (customer_id, user_id) values ($1, $2)`, cus, id); err != nil {
 		t.Fatal(err)
 	}
-	config := func(key, value string) {
-		t.Helper()
-		if _, err := pool.Exec(ctx, `update system_config set value = $2 where key = $1`, key, value); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := pool.Exec(ctx, `insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id, product_id, plan, paddle_updated_at)
+		values ($2, $1, $3, 'past_due', 'pri_1', 'pro_1', 'pro', now())`, cus, sub, id); err != nil {
+		t.Fatal(err)
 	}
-	config("paddle_api_key", "")
-	set(url.Values{"comped": {"false"}}, 502) // billing off: the subscription's plan can't be read
-	config("paddle_api_key", "pdl_key")
-	defer config("paddle_api_key", "")
-	set(url.Values{"comped": {"false"}}, 502) // paddle_environment isn't sandbox or production
-	config("paddle_environment", "sandbox")
-	defer config("paddle_environment", "")
 	set(url.Values{"comped": {"false"}}, 200)
 	if p, comped := plan(); p != "pro" || comped {
 		t.Fatalf("cleared with a subscription: %s %v", p, comped)
 	}
 
-	if _, err := pool.Exec(ctx, `update users set paddle_subscription_id = null, subscription_status = null where id = $1`, id); err != nil {
+	if _, err := pool.Exec(ctx, `update paddle_subscriptions set status = 'paused' where subscription_id = $1`, sub); err != nil {
 		t.Fatal(err)
 	}
 	set(url.Values{"comped": {"false"}}, 200)
 	if p, _ := plan(); p != "free" {
-		t.Fatalf("cleared without one: %s", p)
+		t.Fatalf("cleared without one granting access: %s", p)
 	}
 	var admin, a1, a2 int
 	if err := pool.QueryRow(ctx, `select (select count(*) from admin_audit where action = 'user.plan_set' and target like $3),
