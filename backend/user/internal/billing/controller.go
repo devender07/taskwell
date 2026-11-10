@@ -32,6 +32,8 @@ const (
 	errChoosePlan     = "Choose a plan."
 	errSubscribed     = "You already have a subscription. Manage it to change plans."
 	errNoSubscription = "You don't have a subscription yet."
+	errPastDue        = "Your last payment failed. Update your payment method before switching plans."
+	errCantSwitch     = "This plan change can't be made right now. Try again in a while, or use Manage billing."
 )
 
 var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
@@ -220,53 +222,120 @@ func (h *Handler) checkout(w http.ResponseWriter, r *http.Request, userID string
 	return nil
 }
 
-// change moves the account's subscription to the form's price (another plan or interval), charging the prorated
-// difference now (in a trial, nothing until it ends), and answers the billing state.
-func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) error {
+// switchPlan checks the form's price against the account's subscription and answers the Paddle update that moves
+// the subscription to it (another plan or interval): the subscription's path and the PATCH body. path is "" when it
+// has answered the request itself.
+func (h *Handler) switchPlan(w http.ResponseWriter, r *http.Request, userID string) (s settings, path string, body map[string]any, err error) {
 	ctx := r.Context()
 	id := r.FormValue("price_id")
 	if id == "" {
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
-		return nil
+		return s, "", nil, nil
 	}
 	s, ok, err := h.on(ctx, w)
 	if !ok {
-		return err
+		return s, "", nil, err
 	}
 	a, err := h.model.account(ctx, userID)
 	if err != nil {
-		return err
+		return s, "", nil, err
 	}
 	if a.SubscriptionID == nil {
 		web.Err(w, http.StatusConflict, errNoSubscription)
-		return nil
+		return s, "", nil, nil
 	}
 	var pr price
 	var pe *paddleError
 	err = h.paddle.call(ctx, s.key, s.env, http.MethodGet, "/prices/"+url.PathEscape(id), nil, &pr)
 	if errors.As(err, &pe) && (pe.status == http.StatusNotFound || pe.status == http.StatusBadRequest) {
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
-		return nil
+		return s, "", nil, nil
 	}
 	if err != nil {
-		return err
+		return s, "", nil, err
 	}
 	if _, ok := paidPlan(pr); !ok || pr.Status != "active" || pr.ID == *a.PriceID {
 		web.Err(w, http.StatusBadRequest, errChoosePlan)
+		return s, "", nil, nil
+	}
+	// Paddle says what state it's in (the mirror can lag). A trialing subscription takes do_not_bill only: there's
+	// nothing to prorate, and the new price is billed when the trial ends. A past_due one can't be changed at all.
+	path = "/subscriptions/" + url.PathEscape(*a.SubscriptionID)
+	var cur subscription
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodGet, path, nil, &cur); err != nil {
+		return s, "", nil, err
+	}
+	mode := "prorated_immediately"
+	switch cur.Status {
+	case "trialing":
+		mode = "do_not_bill"
+	case "past_due":
+		web.Err(w, http.StatusConflict, errPastDue)
+		return s, "", nil, nil
+	}
+	return s, path, map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": mode}, nil
+}
+
+// refused answers 409 when err is Paddle refusing a subscription update (e.g. its next billing is minutes away), and
+// returns nil; any other error is returned.
+func refused(ctx context.Context, w http.ResponseWriter, err error) error {
+	var pe *paddleError
+	if errors.As(err, &pe) && (pe.status == http.StatusBadRequest || pe.status == http.StatusConflict) {
+		slog.WarnContext(ctx, "paddle refused a plan switch", "err", err)
+		web.Err(w, http.StatusConflict, errCantSwitch)
 		return nil
 	}
-	// Paddle decides whether it's in a trial (the mirror can lag): a trialing subscription refuses any mode but
-	// do_not_bill, and then there's nothing to prorate; the new price is billed when the trial ends.
-	path := "/subscriptions/" + url.PathEscape(*a.SubscriptionID)
-	var sub subscription
-	err = h.paddle.call(ctx, s.key, s.env, http.MethodPatch, path,
-		map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": "prorated_immediately"}, &sub)
-	if errors.As(err, &pe) && pe.code == "subscription_trialing_items_update_invalid_options" {
-		err = h.paddle.call(ctx, s.key, s.env, http.MethodPatch, path,
-			map[string]any{"items": []item{{pr.ID, 1}}, "proration_billing_mode": "do_not_bill"}, &sub)
-	}
-	if err != nil {
+	return err
+}
+
+// previewChange answers what switching to the form's price would cost, from Paddle's preview; nothing changes.
+// today is the prorated charge or credit made now (null in a trial), recurring the price of each period after.
+func (h *Handler) previewChange(w http.ResponseWriter, r *http.Request, userID string) error {
+	s, path, body, err := h.switchPlan(w, r, userID)
+	if path == "" {
 		return err
+	}
+	var p struct {
+		Status        string     `json:"status"`
+		CurrencyCode  string     `json:"currency_code"`
+		NextBilledAt  *time.Time `json:"next_billed_at"`
+		UpdateSummary *struct {
+			Result struct {
+				Action string `json:"action"` // charge or credit
+				Amount string `json:"amount"` // minor units
+			} `json:"result"`
+		} `json:"update_summary"`
+		Recurring struct {
+			Totals struct {
+				Total string `json:"total"`
+			} `json:"totals"`
+		} `json:"recurring_transaction_details"`
+	}
+	if err := h.paddle.call(r.Context(), s.key, s.env, http.MethodPatch, path+"/preview", body, &p); err != nil {
+		return refused(r.Context(), w, err)
+	}
+	var today map[string]string
+	if u := p.UpdateSummary; u != nil && u.Result.Amount != "" && u.Result.Amount != "0" {
+		today = map[string]string{"action": u.Result.Action, "amount": u.Result.Amount}
+	}
+	web.JSON(w, http.StatusOK, map[string]any{
+		"trialing": p.Status == "trialing", "today": today, "recurring": p.Recurring.Totals.Total,
+		"currency": p.CurrencyCode, "next_billed_at": p.NextBilledAt,
+	})
+	return nil
+}
+
+// change moves the account's subscription to the form's price (another plan or interval), charging the prorated
+// difference now (in a trial, nothing until it ends), and answers the billing state.
+func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	s, path, body, err := h.switchPlan(w, r, userID)
+	if path == "" {
+		return err
+	}
+	var sub subscription
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPatch, path, body, &sub); err != nil {
+		return refused(ctx, w, err)
 	}
 	if err := h.saveSubscription(ctx, sub); err != nil {
 		return err

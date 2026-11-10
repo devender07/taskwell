@@ -170,9 +170,24 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.status, s.updated = "active", s.updated.Add(time.Minute)
 		f.subs[id] = s
 		reply(s.json())
+	case isSub && known && r.Method == http.MethodGet:
+		reply(s.json())
+	case isSub && r.Method == http.MethodPatch && strings.HasSuffix(id, "/preview"):
+		// As Paddle answers: no update_summary in a trial, a prorated charge otherwise.
+		summary := `{"result":{"action":"charge","amount":"1234","currency_code":"INR"}}`
+		if f.subs[strings.TrimSuffix(id, "/preview")].status == "trialing" {
+			summary = "null"
+		}
+		reply(`{"status":"` + f.subs[strings.TrimSuffix(id, "/preview")].status + `","currency_code":"INR","next_billed_at":"2030-03-17T17:46:40Z",
+			"update_summary":` + summary + `,"recurring_transaction_details":{"totals":{"total":"150000"}}}`)
+	// A trialing subscription takes do_not_bill only; changing its billing cycle with another mode is refused with a
+	// different code than changing its plan (as the sandbox does).
 	case isSub && known && r.Method == http.MethodPatch && s.status == "trialing" && body["proration_billing_mode"] != "do_not_bill":
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error":{"type":"request_error","code":"subscription_trialing_items_update_invalid_options","detail":"use do_not_bill"}}`)
+		fmt.Fprint(w, `{"error":{"type":"request_error","code":"subscription_new_items_not_valid","detail":"use do_not_bill"}}`)
+	case isSub && known && r.Method == http.MethodPatch && s.status == "locked":
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"type":"request_error","code":"subscription_locked_renewal","detail":"renews soon"}}`)
 	case isSub && known && r.Method == http.MethodPatch:
 		s.price = body["items"].([]any)[0].(map[string]any)["price_id"].(string)
 		s.updated = time.Now()
@@ -708,30 +723,57 @@ func TestRepeatTrial(t *testing.T) {
 	}
 }
 
-// TestChangeInTrial: a switch tries prorated_immediately; only Paddle refusing it for a trial falls back to do_not_bill.
+// TestChangeInTrial: Paddle's own status of the subscription picks the mode: do_not_bill in a trial (a plan or an
+// interval change), prorated_immediately after it; a past_due one, and one Paddle refuses, answer 409 unchanged.
 func TestChangeInTrial(t *testing.T) {
 	x := setup(t)
 	s := sub{id: "sub_trial_" + x.tag, customer: "ctm_" + x.tag, cd: signedCD(x.ann, checkoutSig(x.ann)), status: "trialing", price: "pri_starter_m",
 		updated: time.Now().Add(-time.Hour)}
-	x.f.mu.Lock()
-	x.f.subs[s.id] = s
-	x.f.mu.Unlock()
+	set := func(status string) {
+		x.f.mu.Lock()
+		defer x.f.mu.Unlock()
+		if cur, ok := x.f.subs[s.id]; ok {
+			s = cur
+		}
+		s.status = status
+		x.f.subs[s.id] = s
+	}
+	price := func(id string) url.Values { return url.Values{"price_id": {id}} }
+	patches := func(n int, mode string) {
+		t.Helper()
+		if patch, got := x.f.last("PATCH", "/subscriptions/"+s.id); got != n || patch.body["proration_billing_mode"] != mode {
+			t.Fatalf("%d patches, last %v; want %d with %s", got, patch.body, n, mode)
+		}
+	}
+	set("trialing")
 	x.send(t, "subscription.created", s.json(), 200)
-	if b := x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_pro_m"}}, 200); b["plan"] != "pro" || b["status"] != "trialing" {
+	if p := x.do(t, x.ann, "POST", "/api/billing/change/preview", price("pri_pro_y"), 200); p["trialing"] != true || p["today"] != nil ||
+		p["recurring"] != "150000" || p["currency"] != "INR" || p["next_billed_at"] != "2030-03-17T17:46:40Z" {
+		t.Fatalf("preview in trial answered %v", p)
+	}
+	if _, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 0 || x.row(t, s.id).price != "pri_starter_m" {
+		t.Fatal("a preview changed the subscription")
+	}
+	if b := x.do(t, x.ann, "POST", "/api/billing/change", price("pri_pro_y"), 200); b["plan"] != "pro" || b["status"] != "trialing" || b["interval"] != "year" {
 		t.Fatalf("change in trial answered %v", b)
 	}
-	if patch, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 2 || patch.body["proration_billing_mode"] != "do_not_bill" {
-		t.Fatalf("change in trial: %d patches, last %v", n, patch.body)
-	}
+	patches(1, "do_not_bill")
 	// The mirror still says trialing but Paddle has billed it: Paddle's answer wins, so it's prorated.
-	x.f.mu.Lock()
-	s = x.f.subs[s.id]
-	s.status = "active"
-	x.f.subs[s.id] = s
-	x.f.mu.Unlock()
-	x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_starter_m"}}, 200)
-	if patch, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 3 || patch.body["proration_billing_mode"] != "prorated_immediately" {
-		t.Fatalf("change after the trial: %d patches, last %v", n, patch.body)
+	set("active")
+	if p := x.do(t, x.ann, "POST", "/api/billing/change/preview", price("pri_starter_m"), 200); p["trialing"] != false ||
+		fmt.Sprint(p["today"]) != "map[action:charge amount:1234]" {
+		t.Fatalf("preview after the trial answered %v", p)
+	}
+	x.do(t, x.ann, "POST", "/api/billing/change", price("pri_starter_m"), 200)
+	patches(2, "prorated_immediately")
+	set("past_due")
+	x.do(t, x.ann, "POST", "/api/billing/change", price("pri_pro_m"), 409)
+	x.do(t, x.ann, "POST", "/api/billing/change/preview", price("pri_pro_m"), 409)
+	patches(2, "prorated_immediately")
+	set("locked")
+	x.do(t, x.ann, "POST", "/api/billing/change", price("pri_pro_m"), 409)
+	if x.row(t, s.id).price != "pri_starter_m" {
+		t.Fatal("a refused change moved the mirror")
 	}
 }
 

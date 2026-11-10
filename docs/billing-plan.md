@@ -227,6 +227,16 @@ quantity: 1}], customer: {email}, customData, settings: {displayMode: 'overlay',
 - `POST /api/billing/change` (FormData `price_id`): reads the price (`GET /prices/{id}`) to check its
   `taskwell_plan`, then `PATCH /subscriptions/{id}` with it, `proration_billing_mode: prorated_immediately` (an
   interval change works the same way). `400` "Choose a plan." for an unknown price or the current one.
+  The mode comes from Paddle's own status of the subscription (`GET /subscriptions/{id}`): `trialing` →
+  `do_not_bill` (the only mode a trial takes, for a plan or an interval change), `past_due` → `409` "Your last
+  payment failed. Update your payment method before switching plans.", else `prorated_immediately`. Paddle refusing
+  the update (400/409) → `409` "This plan change can't be made right now. Try again in a while, or use Manage
+  billing."
+- `POST /api/billing/change/preview` (FormData `price_id`): the same checks and errors, then `PATCH
+  /subscriptions/{id}/preview`; nothing changes. `200` `{"trialing": bool, "today": {"action": "charge"|"credit",
+  "amount": "<minor units>"}|null, "recurring": "<minor units>", "currency": "USD", "next_billed_at": "<RFC 3339>"|null}`.
+  The switch dialog shows it before confirming; buttons read "Upgrade to Pro", "Downgrade to Starter", "Switch to
+  yearly".
 - `GET /api/billing` gains `"interval": "month"|"year"|null`; `currency` is the subscription's (null without one).
   `enabled` = environment valid and API key set. `GET /api/billing/plans` is **removed** (prices come from Paddle.js,
   features from the frontend tiers file).

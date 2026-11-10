@@ -664,6 +664,16 @@ const priceForm = (priceId: string) => {
 export type Checkout = { custom_data: Record<string, string>; email: string }
 export const startCheckout = (priceId: string) => api<Checkout>(`${billingPath}/checkout`, priceForm(priceId))
 export const changePlan = (priceId: string) => api<Billing>(`${billingPath}/change`, priceForm(priceId))
+// What a plan switch would cost: today is the prorated charge or credit made now (null in a trial or when there's
+// none), recurring the price of each period after; amounts are in the currency's minor units.
+export type ChangePreview = {
+  trialing: boolean
+  today: { action: 'charge' | 'credit'; amount: string } | null
+  recurring: string
+  currency: string
+  next_billed_at: string | null
+}
+export const previewPlanChange = (priceId: string) => api<ChangePreview>(`${billingPath}/change/preview`, priceForm(priceId))
 export const openBillingPortal = () => api<{ url: string }>(`${billingPath}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.

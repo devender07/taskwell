@@ -23,6 +23,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/billing", web.Wrap(h.authenticate, maxBody, h.state))
 	mux.HandleFunc("POST /api/billing/checkout", web.Wrap(h.authenticate, maxBody, h.checkout))
 	mux.HandleFunc("POST /api/billing/change", web.Wrap(h.authenticate, maxBody, h.change))
+	mux.HandleFunc("POST /api/billing/change/preview", web.Wrap(h.authenticate, maxBody, h.previewChange))
 	mux.HandleFunc("POST /api/billing/portal", web.Wrap(h.authenticate, maxBody, h.portal))
 	mux.HandleFunc("GET /api/workspaces/{slug}/billing", web.Wrap(h.authenticate, maxBody, h.workspace))
 }

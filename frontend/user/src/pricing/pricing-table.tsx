@@ -4,9 +4,11 @@ import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { PlanCard, PlanIncludes } from '@taskwell/shared/plan-card'
 import { Tabs } from '@taskwell/shared/tabs'
-import { ApiError, changePlan, getFeaturePlans, startCheckout, toFormErrors, type Billing, type Feature } from '@/api'
+import { useToast } from '@taskwell/shared/toast'
+import { ApiError, changePlan, getFeaturePlans, previewPlanChange, startCheckout, toFormErrors, type Billing, type ChangePreview, type Feature } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { openCheckout, previewPrices } from '@/paddle'
+import { switchLabel, switchSummary } from '@/pricing/switch'
 import { FREE, PRICE_IDS, TIERS, type Interval, type Tier } from '@/pricing/tiers'
 
 const INTERVALS: { value: Interval; label: string }[] = [
@@ -59,6 +61,8 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [switchTo, setSwitchTo] = useState<Tier | null>(null)
+  const [preview, setPreview] = useState<ChangePreview | null>(null)
+  const toast = useToast()
   const [featurePlans, setFeaturePlans] = useState<Partial<Record<Feature, string[]>> | null>(null)
 
   useEffect(() => {
@@ -93,10 +97,17 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
       await openCheckout(priceId, c.email, c.custom_data, `${location.origin}/welcome`)
     })
 
-  const confirmSwitch = (priceId: string) =>
+  const openSwitch = (t: Tier) => {
+    setSwitchTo(t)
+    setPreview(null)
+    run(async () => setPreview(await previewPlanChange(t.noTrial[interval])))
+  }
+
+  const confirmSwitch = (t: Tier) =>
     run(async () => {
-      await changePlan(priceId)
+      await changePlan(t.noTrial[interval])
       setSwitchTo(null)
+      toast.show({ message: `You're now on ${t.name} ${interval === 'month' ? 'monthly' : 'yearly'}.` })
       await onChanged?.()
     })
 
@@ -119,8 +130,8 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
     if (subscribed && billing.plan === t.id && billing.interval === interval) return <p className="plan-current">Current plan</p>
     if (!actions) return null
     return (
-      <Button variant={variant} disabled={pending} onClick={() => (subscribed ? setSwitchTo(t) : subscribe(priceId))}>
-        {subscribed ? 'Switch plan' : trial ? 'Start free trial' : 'Subscribe'}
+      <Button variant={variant} disabled={pending} onClick={() => (subscribed ? openSwitch(t) : subscribe(priceId))}>
+        {subscribed ? switchLabel(billing.plan, t, interval) : trial ? 'Start free trial' : 'Subscribe'}
       </Button>
     )
   }
@@ -165,13 +176,15 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
           setSwitchTo(null)
           setError(null)
         }}
-        title={`Switch to ${switchTo?.name ?? ''} ${interval === 'month' ? 'monthly' : 'yearly'} now?`}
-        description={billing?.status === 'trialing' ? "Your free trial continues. You'll be charged the new price when it ends." : "You'll be charged the prorated difference today."}
+        title={switchTo && billing ? `${switchLabel(billing.plan, switchTo, interval)}${billing.plan === switchTo.id ? ' billing' : ` ${interval === 'month' ? 'monthly' : 'yearly'}`}?` : ''}
       >
         <div className="grid gap-4">
+          <div className="grid gap-1 text-body-sm text-secondary" aria-live="polite">
+            {preview ? switchSummary(preview, interval).map((line) => <p key={line} className="m-0">{line}</p>) : error ? null : <p className="m-0">Working out the price…</p>}
+          </div>
           <FormError>{error}</FormError>
-          <Button variant="secondary" className="w-full" disabled={pending} onClick={() => switchTo && confirmSwitch(switchTo.noTrial[interval])}>
-            {pending ? 'Switching…' : 'Switch plan'}
+          <Button variant="secondary" className="w-full" disabled={pending || !preview} onClick={() => switchTo && confirmSwitch(switchTo)}>
+            {pending && preview ? 'Switching…' : switchTo && billing ? switchLabel(billing.plan, switchTo, interval) : ''}
           </Button>
         </div>
       </Dialog>
