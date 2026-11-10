@@ -127,9 +127,30 @@ func (m *model) create(ctx context.Context, e realtime.Event, wsID, id, url stri
 
 // update changes the fields that aren't nil; false when the webhook isn't the workspace's.
 func (m *model) update(ctx context.Context, e realtime.Event, wsID, id string, url *string, events []string, active *bool) (bool, error) {
-	return m.change(ctx, e,
-		`update webhooks set url = coalesce($3, url), events = coalesce($4, events), active = coalesce($5, active)
-		 where workspace_id = $1 and id = $2`, wsID, id, url, events, active)
+	found := false
+	err := publishing(ctx, m.db, e, func(tx pgx.Tx) error {
+		var from, to string
+		err := tx.QueryRow(ctx,
+			`update webhooks w set url = coalesce($3, w.url), events = coalesce($4, w.events), active = coalesce($5, w.active)
+			   from webhooks o where o.id = w.id and w.workspace_id = $1 and w.id = $2 returning o.url, w.url`,
+			wsID, id, url, events, active).Scan(&from, &to)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		detail := map[string]any{}
+		if from != to {
+			detail["from"], detail["to"] = auditHost(from), auditHost(to)
+		}
+		if active != nil {
+			detail["active"] = *active
+		}
+		return wsaudit.Record(ctx, tx, wsID, e.Actor, "webhook.updated", auditHost(to), detail)
+	})
+	return found, err
 }
 
 func (m *model) setSecret(ctx context.Context, e realtime.Event, wsID, id, sealed string) (bool, error) {

@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@taskwell/shared/tabs'
 import { redirectIfSignedIn, safeRedirect } from '@/api'
-import { AuthCard, FormError, GoogleButton, OrDivider } from '@/components/auth/auth-card'
+import { AuthCard, FormError, GoogleButton, LegalCaption, OrDivider } from '@/components/auth/auth-card'
 import { OtpForm } from '@/components/auth/otp-form'
 import { PasswordForm } from '@/components/auth/password-form'
 
@@ -64,6 +64,7 @@ function SignIn() {
         onChange={(m) => navigate({ search: { ...(m === 'password' && { method: m }), ...(redirect && { redirect }) }, replace: true })}
       />
       {method === 'otp' ? <OtpForm redirect={redirect} /> : <PasswordForm redirect={redirect} />}
+      <LegalCaption />
     </AuthCard>
   )
 }

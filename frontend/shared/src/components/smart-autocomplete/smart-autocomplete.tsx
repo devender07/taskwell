@@ -56,8 +56,9 @@ export function SmartAutocomplete({
   const [prevSelected, setPrevSelected] = useState(selected)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
-  const [loaded, setLoaded] = useState<Option[]>([])
-  const [loading, setLoading] = useState(false)
+  // The last results loadOptions gave and the term they're for: shown while the next search runs, so the list
+  // doesn't swap to "Searching…" and back on every keystroke.
+  const [loaded, setLoaded] = useState<{ term: string; options: Option[] } | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -74,7 +75,8 @@ export function SmartAutocomplete({
 
   // Showing the selected label means "not searching yet": list everything.
   const term = query === (selected?.label ?? '') ? '' : query
-  const found = loadOptions ? loaded : filterOptions(options, term)
+  const found = loadOptions ? (loaded?.options ?? []) : filterOptions(options, term)
+  const searching = Boolean(loadOptions) && loaded?.term !== term
   const typed = term.trim()
   const results =
     create && typed && !found.some((o) => o.label.toLowerCase() === typed.toLowerCase())
@@ -96,21 +98,17 @@ export function SmartAutocomplete({
   useEffect(() => {
     if (!remote || !open) return
     const ctrl = new AbortController()
-    setLoading(true)
     const t = setTimeout(() => {
       loadRef.current?.(term, ctrl.signal).then(
         (opts) => {
-          setLoaded(opts)
+          setLoaded({ term, options: opts })
           setActive(0)
-          setLoading(false)
         },
         () => {
-          if (ctrl.signal.aborted) return
-          setLoaded([])
-          setLoading(false)
+          if (!ctrl.signal.aborted) setLoaded({ term, options: [] })
         },
       )
-    }, DEBOUNCE_MS)
+    }, term ? DEBOUNCE_MS : 0)
     return () => {
       clearTimeout(t)
       ctrl.abort()
@@ -165,8 +163,14 @@ export function SmartAutocomplete({
     setActive(Math.max(0, results.findIndex((o) => o.value === selected?.value)))
   }
 
+  // Results for a typed term would show stale on the next open, which lists everything.
+  function forgetSearch() {
+    setLoaded((l) => (l?.term ? null : l))
+  }
+
   function close() {
     pressing.current = false
+    forgetSearch()
     setOpen(false)
     setQuery(selected?.label ?? '')
   }
@@ -177,6 +181,7 @@ export function SmartAutocomplete({
     setOwn(option)
     onChange?.(option)
     setQuery(option?.label ?? '')
+    forgetSearch()
     setOpen(false)
   }
 
@@ -232,8 +237,8 @@ export function SmartAutocomplete({
         {name ? <input type="hidden" name={name} value={selected?.value ?? ''} /> : null}
         {open ? (
           <div ref={panelRef} className="autocomplete-panel">
-            {loading || results.length === 0 ? (
-              <p className="autocomplete-note" role="status">{loading ? 'Searching…' : emptyText}</p>
+            {results.length === 0 ? (
+              <p className="autocomplete-note" role="status">{searching ? 'Searching…' : emptyText}</p>
             ) : (
               <ul id={listId} ref={listRef} role="listbox" aria-label={label ?? ariaLabel} className="autocomplete-list">
                 {results.map((o, i) => (

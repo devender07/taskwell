@@ -13,3 +13,5 @@ assert.equal(auditDetail('member.invited', { role: 'Guest', guest: true }), 'Gue
 assert.equal(auditDetail('webhook.created', {}), '')
 assert.equal(auditDetail('billing.plan_changed', { from: 'starter', to: 'pro' }), 'Starter → Pro')
 console.log('ok')
+assert.equal(auditDetail('webhook.updated', { from: 'https://a.test', to: 'https://b.test', active: false }), 'https://a.test → https://b.test, Turned off')
+assert.equal(auditDetail('test_account.updated', { password_changed: true }), 'Password changed')

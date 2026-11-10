@@ -272,6 +272,7 @@ type notificationSettingsIn struct {
 	Chat        *bool   `json:"chat,omitempty" jsonschema:"chat mentions and direct messages"`
 	Weekly      *bool   `json:"weekly,omitempty" jsonschema:"the Monday summary email"`
 	DueDates    *bool   `json:"due_dates,omitempty" jsonschema:"due-soon and overdue reminders"`
+	Projects    *bool   `json:"projects,omitempty" jsonschema:"being added to a project"`
 	Timezone    *string `json:"timezone,omitempty" jsonschema:"IANA name such as Europe/Berlin, for the digest; empty is UTC"`
 }
 
@@ -829,7 +830,7 @@ func (t *tools) updateNotificationSettings(ctx context.Context, _ *mcp.CallToolR
 		}
 	}
 	for f, v := range map[string]*bool{"mentions": in.Mentions, "assignments": in.Assignments, "status": in.Status,
-		"comments": in.Comments, "chat": in.Chat, "weekly": in.Weekly, "due_dates": in.DueDates} {
+		"comments": in.Comments, "chat": in.Chat, "weekly": in.Weekly, "due_dates": in.DueDates, "projects": in.Projects} {
 		if v != nil {
 			form.Set(f, strconv.FormatBool(*v))
 		}

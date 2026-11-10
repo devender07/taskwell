@@ -148,17 +148,28 @@ func instantEmail(m message, base string) (subject, body string) {
 
 // instantHTML returns the HTML part of the email for one notification, or "" to send it as plain text only.
 func instantHTML(m message, base string) (string, error) {
-	if m.kind != "assigned" {
-		return "", nil
+	settings := strings.TrimRight(base, "/") + "/" + m.slug + "/settings/notifications"
+	switch m.kind {
+	case "assigned":
+		return mail.Render(mail.Email{
+			Preview: m.actor + " assigned you " + m.identifier + ": " + m.title,
+			Heading: m.actor + " assigned you an issue",
+			Intro:   "It's on your plate now in " + m.workspace + ".",
+			Card:    &mail.Card{Label: m.identifier, Title: m.title, Meta: m.workspace},
+			Button:  "Open " + m.identifier, URL: issueURL(base, m),
+			Footer: "Email settings", FooterURL: settings,
+		})
+	case "project_added":
+		return mail.Render(mail.Email{
+			Preview: m.actor + " added you to " + m.projectName,
+			Heading: m.actor + " added you to a project",
+			Intro:   "You're now a member of " + m.projectName + " in " + m.workspace + ".",
+			Card:    &mail.Card{Label: m.projectKey, Title: m.projectName, Meta: m.workspace},
+			Button:  "Open project", URL: projectURL(base, m),
+			Footer: "Email settings", FooterURL: settings,
+		})
 	}
-	return mail.Render(mail.Email{
-		Preview: m.actor + " assigned you " + m.identifier + ": " + m.title,
-		Heading: m.actor + " assigned you an issue",
-		Intro:   "It's on your plate now in " + m.workspace + ".",
-		Card:    &mail.Card{Label: m.identifier, Title: m.title, Meta: m.workspace},
-		Button:  "Open " + m.identifier, URL: issueURL(base, m),
-		Footer: "Email settings", FooterURL: strings.TrimRight(base, "/") + "/" + m.slug + "/settings/notifications",
-	})
+	return "", nil
 }
 
 // digestLines caps a digest's notification lines.

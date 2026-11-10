@@ -216,6 +216,12 @@ func TestFeedback(t *testing.T) {
 	if fm.Enabled || fm.Token != nil {
 		t.Fatalf("form off %+v", fm)
 	}
+	var audit string
+	if err := pool.QueryRow(ctx, `select string_agg(action, ', ' order by id) from workspace_audit
+		where workspace_id = $1 and action like 'feedback_form.%'`, wsID).Scan(&audit); err != nil ||
+		audit != "feedback_form.enabled, feedback_form.link_reset, feedback_form.disabled" {
+		t.Errorf("form audit %q %v", audit, err)
+	}
 	call("", "POST", pub+old, url.Values{"body": {"x"}, "email": {"c@d.co"}}, 404)
 
 	// Rate limit: 10 per IP, from an address of its own.

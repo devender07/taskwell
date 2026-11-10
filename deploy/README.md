@@ -35,6 +35,10 @@ The user API won't start until `app_base_url` is `https://`. That is why `system
 deploy (which creates the tables) and is followed by a restart. `create-admin.sh` prints the authenticator setup key and
 recovery codes once, so save them.
 
+Off-server backups (needed for compliance: a lost server otherwise takes its backups with it): install rclone, configure
+a crypt remote over an R2 bucket as root (`rclone config`), then `echo 'RCLONE_REMOTE=taskwell-crypt:' | sudo tee
+/etc/taskwell-backup.env && sudo chmod 600 /etc/taskwell-backup.env`. Restore drill: `docs/compliance/runbooks.md`.
+
 Frontends: `deploy/frontend.sh user` (or `admin`) builds into `dist/prod/<app>/web` and deploys it to the app's
 Cloudflare Worker (assets only, `frontend/<app>/wrangler.toml`: `taskwell` at taskwell.dev, `admin-taskwell` at
 admin.taskwell.dev). Log in once with `npx wrangler@4 login`.

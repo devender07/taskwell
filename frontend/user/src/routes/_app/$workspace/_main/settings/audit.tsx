@@ -1,4 +1,5 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+import { Pagination } from '@taskwell/shared/pagination'
 import { Tabs } from '@taskwell/shared/tabs'
 import { fullTime } from '@taskwell/shared/time'
 import { ApiError, auditPath, type AuditCategory, type AuditPage } from '@/api'
@@ -16,16 +17,16 @@ const CATEGORIES: { value: AuditCategory | 'all'; label: string }[] = [
   { value: 'billing', label: 'Billing' },
 ]
 
-type Search = { category?: AuditCategory; before?: string }
+type Search = { category?: AuditCategory; page?: number }
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/audit')({
   validateSearch: (search): Search => ({
     category: CATEGORIES.some((c) => c.value !== 'all' && c.value === search.category) ? (search.category as AuditCategory) : undefined,
-    before: typeof search.before === 'string' && search.before ? search.before : undefined,
+    page: Number.isInteger(search.page) && (search.page as number) > 1 ? (search.page as number) : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: (ctx) =>
-    loaderApi<AuditPage>(ctx, auditPath(ctx.params.workspace, ctx.deps.category, ctx.deps.before)).catch((e) => {
+    loaderApi<AuditPage>(ctx, auditPath(ctx.params.workspace, ctx.deps.category, ctx.deps.page)).catch((e) => {
       if (e instanceof ApiError && e.status === 403) return null
       throw e
     }),
@@ -33,9 +34,8 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/audit')({
 })
 
 function AuditSettings() {
-  const { workspace } = Route.useParams()
   const page = Route.useLoaderData()
-  const { category, before } = Route.useSearch()
+  const { category, page: n = 1 } = Route.useSearch()
   const navigate = Route.useNavigate()
   return (
     <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
@@ -79,18 +79,7 @@ function AuditSettings() {
               </tbody>
             </table>
           </div>
-          <nav className="flex gap-4 text-body-sm" aria-label="Pages">
-            {before ? (
-              <Link to="/$workspace/settings/audit" params={{ workspace }} search={{ category }}>
-                Newest
-              </Link>
-            ) : null}
-            {page.more ? (
-              <Link to="/$workspace/settings/audit" params={{ workspace }} search={{ category, before: page.entries.at(-1)?.id }}>
-                Older
-              </Link>
-            ) : null}
-          </nav>
+          <Pagination page={n} hasNext={page.more} onPage={(p) => navigate({ search: { category, page: p > 1 ? p : undefined } })} />
         </>
       ) : (
         <p className="text-body-sm text-secondary">You don't have permission to see the audit log.</p>

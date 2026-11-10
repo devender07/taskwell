@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -176,7 +177,7 @@ func (h *Handler) permissions(w http.ResponseWriter, _ *http.Request, _ string) 
 	return nil
 }
 
-// audit lists a page of the workspace audit log, newest first (?before= the last id shown, ?category= one of
+// audit lists a page of the workspace audit log, newest first (?page= from 1, ?category= one of
 // wsaudit.Categories; an unknown one is ignored).
 func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, "")
@@ -188,12 +189,16 @@ func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) e
 		return nil
 	}
 	q := r.URL.Query()
-	before := q.Get("before")
-	if before != "" && !web.IsUUID(before) {
-		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
-		return nil
+	page := 1
+	if v := q.Get("page"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 1000 {
+			web.Err(w, http.StatusBadRequest, "Invalid page.")
+			return nil
+		}
+		page = n
 	}
-	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, userID, before, wsaudit.Categories[q.Get("category")])
+	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, userID, page, wsaudit.Categories[q.Get("category")])
 	if err != nil {
 		return err
 	}

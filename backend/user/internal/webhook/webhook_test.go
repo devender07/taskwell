@@ -218,7 +218,7 @@ func TestAPI(t *testing.T) {
 	if err := f.pool.QueryRow(context.Background(), `select string_agg(action || ' ' || target, ', ' order by id) from workspace_audit
 		where workspace_id = $1 and target = 'https://hooks.example' and action like 'webhook.%' and actor_id = $2`,
 		f.wsID, f.ann).Scan(&audit); err != nil ||
-		!strings.HasPrefix(audit, "webhook.created https://hooks.example, webhook.secret_rolled https://hooks.example, ") ||
+		!strings.HasPrefix(audit, "webhook.created https://hooks.example, webhook.updated https://hooks.example, webhook.updated https://hooks.example, webhook.secret_rolled https://hooks.example, ") ||
 		!strings.HasSuffix(audit, ", webhook.deleted https://hooks.example") { // the limit check's webhooks come between
 		t.Errorf("audit log %q %v", audit, err)
 	}

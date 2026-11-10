@@ -23,7 +23,7 @@ var retention = []struct{ table, where string }{
 	// Used tokens stay two weeks: presenting one revokes its sign-in (reuse detection).
 	{"refresh_tokens", `expires_at < now() or used_at < now() - interval '14 days'`},
 	{"auth_tokens", `coalesce(used_at, expires_at) < now() - interval '1 day'`},
-	{"notifications", `read_at < now() - interval '90 days'`},
+	{"notifications", `read_at < now() - interval '90 days' or created_at < now() - interval '1 year'`},
 	{"outbound_mail", `failed_at < now() - interval '30 days'`},
 	{"webhook_deliveries", `created_at < now() - interval '30 days'`},
 	// The longest failure window is an hour; sign-in attempts also prune them as they go.
@@ -38,6 +38,8 @@ var retention = []struct{ table, where string }{
 	// Trashed issues go for good after 30 days, with their comments and the rest (cascades).
 	{"issues_all", `deleted_at < now() - interval '30 days'`},
 	{"workspace_audit", `at < now() - interval '1 year'`},
+	{"account_events", `at < now() - interval '1 year'`},
+	{"browser_sessions", `closed_at < now() - interval '30 days'`},
 	{"oauth_clients", `created_at < now() - interval '30 days' and not exists (select 1 from oauth_codes c where c.client_id = oauth_clients.id)`},
 }
 

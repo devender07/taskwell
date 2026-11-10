@@ -16,6 +16,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/doc"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 var (
@@ -734,6 +735,9 @@ func (m *model) createSite(ctx context.Context, wsID, slug, actorID, base, host 
 			wsID, base, host).Scan(&s.ID); err != nil {
 			return err
 		}
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, "test_site.added", host, nil); err != nil {
+			return err
+		}
 		return publishWS(ctx, tx, wsID, slug, actorID, "test_sites.changed", "/test-sites")
 	})
 	if isUnique(err) {
@@ -747,18 +751,23 @@ func (m *model) createSite(ctx context.Context, wsID, slug, actorID, base, host 
 
 // deleteSite removes the workspace's site; errNotFound when there's none.
 func (m *model) deleteSite(ctx context.Context, wsID, slug, actorID, id string) error {
-	return m.deleteRow(ctx, `delete from test_sites where id = $1 and workspace_id = $2`, wsID, slug, actorID, id,
-		"test_sites.changed", "/test-sites")
+	return m.deleteRow(ctx, `delete from test_sites where id = $1 and workspace_id = $2 returning host`, wsID, slug, actorID, id,
+		"test_site.removed", "test_sites.changed", "/test-sites")
 }
 
-func (m *model) deleteRow(ctx context.Context, sql, wsID, slug, actorID, id, kind, path string) error {
+// deleteRow runs sql (returning the name the audit entry shows), recording action and publishing kind.
+func (m *model) deleteRow(ctx context.Context, sql, wsID, slug, actorID, id, action, kind, path string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, sql, id, wsID)
+		var name string
+		err := tx.QueryRow(ctx, sql, id, wsID).Scan(&name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return errNotFound
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, action, name, nil); err != nil {
+			return err
 		}
 		return publishWS(ctx, tx, wsID, slug, actorID, kind, path)
 	})
@@ -829,6 +838,13 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 		if tag.RowsAffected() == 0 {
 			return errNotFound
 		}
+		action, detail := "test_account.added", map[string]any(nil)
+		if id != "" {
+			action, detail = "test_account.updated", map[string]any{"password_changed": password != ""}
+		}
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, action, label, detail); err != nil {
+			return err
+		}
 		return publishWS(ctx, tx, wsID, slug, actorID, "test_accounts.changed", "/test-accounts")
 	})
 	switch {
@@ -841,8 +857,8 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 }
 
 func (m *model) deleteAccount(ctx context.Context, wsID, slug, actorID, id string) error {
-	return m.deleteRow(ctx, `delete from test_accounts where id = $1 and workspace_id = $2`, wsID, slug, actorID, id,
-		"test_accounts.changed", "/test-accounts")
+	return m.deleteRow(ctx, `delete from test_accounts where id = $1 and workspace_id = $2 returning label`, wsID, slug, actorID, id,
+		"test_account.removed", "test_accounts.changed", "/test-accounts")
 }
 
 // password returns the workspace's account's sealed password; "" when there's none.

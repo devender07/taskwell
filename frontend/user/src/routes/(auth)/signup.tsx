@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { redirectIfSignedIn, safeRedirect } from '@/api'
-import { AuthCard, GoogleButton, OrDivider } from '@/components/auth/auth-card'
+import { AuthCard, GoogleButton, LegalCaption, OrDivider } from '@/components/auth/auth-card'
 import { SignupForm } from '@/components/auth/signup-form'
 
 export const Route = createFileRoute('/(auth)/signup')({
@@ -27,6 +27,7 @@ function SignUp() {
       <GoogleButton />
       <OrDivider />
       <SignupForm redirect={redirect} />
+      <LegalCaption />
     </AuthCard>
   )
 }

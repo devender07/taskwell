@@ -11,6 +11,7 @@ type Email struct {
 	Preview           string // the inbox preview line after the subject
 	Heading           string
 	Intro             string
+	Text              string // plain text shown as written, line breaks kept (Enqueue's plain-text emails)
 	Code              string // a one-time code, shown large
 	Card              *Card  // e.g. the issue an email is about
 	Button, URL       string // the call to action
@@ -36,10 +37,14 @@ var layout = template.Must(template.New("email").Parse(`<!doctype html>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F5F5F7;">
 <tr><td align="center" style="padding:40px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<tr><td style="padding:0 8px 24px;font-size:18px;line-height:24px;font-weight:590;color:#1D1D1F;letter-spacing:-0.2px;">Taskwell</td></tr>
+<tr><td style="padding:0 8px 24px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="padding-right:8px;"><img src="cid:logo" width="32" height="32" alt="" style="display:block;border:0;border-radius:7px;"></td>
+<td style="font-size:18px;line-height:24px;font-weight:590;color:#1D1D1F;letter-spacing:-0.2px;">Taskwell</td>
+</tr></table></td></tr>
 <tr><td style="background:#FFFFFF;border:1px solid #E0E0E0;border-radius:8px;padding:40px 32px;">
 <h1 style="margin:0 0 12px;font-size:24px;line-height:32px;font-weight:590;color:#1D1D1F;">{{.Heading}}</h1>
 {{if .Intro}}<p style="margin:0 0 24px;font-size:15px;line-height:24px;color:#1D1D1F;">{{.Intro}}</p>{{end}}
+{{if .Text}}<div style="font-size:15px;line-height:24px;color:#1D1D1F;white-space:pre-wrap;word-break:break-word;">{{.Text}}</div>{{end}}
 {{if .Code}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
 <tr><td align="center" style="background:#F5F5F7;border:1px solid #E0E0E0;border-radius:8px;padding:24px 16px;font-family:'Berkeley Mono',SFMono-Regular,Menlo,Consolas,monospace;font-size:32px;line-height:40px;font-weight:590;letter-spacing:8px;color:#1D1D1F;">{{.Code}}</td></tr>
 </table>{{end}}

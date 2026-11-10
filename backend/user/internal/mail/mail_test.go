@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -237,18 +238,36 @@ func TestCompose(t *testing.T) {
 	if err != nil || typ != "multipart/alternative" {
 		t.Fatalf("content type %q %v", typ, err)
 	}
-	r := multipart.NewReader(msg.Body, params["boundary"])
 	var got []string
-	for {
-		p, err := r.NextPart() // decodes quoted-printable
-		if err != nil {
-			break
+	var logo []byte
+	var walk func(body io.Reader, boundary string)
+	walk = func(body io.Reader, boundary string) {
+		r := multipart.NewReader(body, boundary)
+		for {
+			p, err := r.NextPart() // decodes quoted-printable
+			if err != nil {
+				return
+			}
+			typ, params, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+			switch typ {
+			case "multipart/related":
+				got = append(got, typ)
+				walk(p, params["boundary"])
+			case "image/png":
+				if p.Header.Get("Content-Id") != "<logo>" {
+					t.Errorf("logo content id %q", p.Header.Get("Content-Id"))
+				}
+				logo, _ = io.ReadAll(base64.NewDecoder(base64.StdEncoding, p))
+			default:
+				b, _ := io.ReadAll(p)
+				got = append(got, p.Header.Get("Content-Type")+"|"+strings.ReplaceAll(string(b), "\r\n", "\n"))
+			}
 		}
-		b, _ := io.ReadAll(p)
-		got = append(got, p.Header.Get("Content-Type")+"|"+strings.ReplaceAll(string(b), "\r\n", "\n"))
 	}
-	if len(got) != 2 || got[0] != "text/plain; charset=UTF-8|Your code is 123456\n" || got[1] != "text/html; charset=UTF-8|"+html {
-		t.Fatalf("parts %q", got)
+	walk(msg.Body, params["boundary"])
+	if len(got) != 3 || got[0] != "text/plain; charset=UTF-8|Your code is 123456\n" || got[1] != "multipart/related" ||
+		got[2] != "text/html; charset=UTF-8|"+html || !strings.Contains(html, `src="cid:logo"`) || !bytes.Equal(logo, logoPNG) {
+		t.Fatalf("parts %q, logo %d bytes", got, len(logo))
 	}
 
 	plain := compose("Taskwell <no-reply@taskwell.test>", "ann@example.test", "Hi", "Hello "+long+"\n", "")

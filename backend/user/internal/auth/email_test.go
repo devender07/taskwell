@@ -23,10 +23,10 @@ func TestEmailChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, bad, err := m.changeEmail(ctx, ann, secret.Hash("000000"), newCode, nil); err != nil || !slices.Equal(bad, []string{"old_code"}) {
+	if _, _, bad, err := m.changeEmail(ctx, ann, secret.Hash("000000"), newCode, nil, meta{}); err != nil || !slices.Equal(bad, []string{"old_code"}) {
 		t.Fatalf("wrong old code: bad %v err %v", bad, err)
 	}
-	if _, _, bad, err := m.changeEmail(ctx, bob, oldCode, newCode, nil); err != nil || len(bad) != 2 {
+	if _, _, bad, err := m.changeEmail(ctx, bob, oldCode, newCode, nil, meta{}); err != nil || len(bad) != 2 {
 		t.Fatalf("someone else's codes: bad %v err %v", bad, err)
 	}
 	var attempts int
@@ -34,7 +34,7 @@ func TestEmailChange(t *testing.T) {
 		t.Fatalf("attempts %d %v", attempts, err)
 	}
 
-	from, got, bad, err := m.changeEmail(ctx, ann, oldCode, newCode, nil)
+	from, got, bad, err := m.changeEmail(ctx, ann, oldCode, newCode, nil, meta{})
 	if err != nil || len(bad) != 0 || got != to || from == to {
 		t.Fatalf("change: %q -> %q bad %v err %v", from, got, bad, err)
 	}
@@ -42,7 +42,7 @@ func TestEmailChange(t *testing.T) {
 	if err := pool.QueryRow(ctx, `select email from users where id = $1`, ann).Scan(&email); err != nil || email != to {
 		t.Fatalf("email now %q %v", email, err)
 	}
-	if _, _, bad, err := m.changeEmail(ctx, ann, oldCode, newCode, nil); err != nil || len(bad) != 2 {
+	if _, _, bad, err := m.changeEmail(ctx, ann, oldCode, newCode, nil, meta{}); err != nil || len(bad) != 2 {
 		t.Fatalf("codes reused: bad %v err %v", bad, err)
 	}
 
@@ -50,7 +50,7 @@ func TestEmailChange(t *testing.T) {
 	if err := m.startEmailChange(ctx, bob, to, oldCode, newCode, 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := m.changeEmail(ctx, bob, oldCode, newCode, nil); !errors.Is(err, errEmailTaken) {
+	if _, _, _, err := m.changeEmail(ctx, bob, oldCode, newCode, nil, meta{}); !errors.Is(err, errEmailTaken) {
 		t.Fatalf("taken address: %v", err)
 	}
 }

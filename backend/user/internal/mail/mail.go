@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	_ "embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"mime/multipart"
@@ -54,10 +57,14 @@ type Execer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-// Enqueue queues a plain-text message to one recipient through q (pass a transaction to queue it only if that
-// commits) and wakes the worker.
+// Enqueue queues a message to one recipient through q (pass a transaction to queue it only if that commits) and wakes
+// the worker. body is sent as written, with an HTML part that shows it in the branded layout under subject.
 func (m *Mailer) Enqueue(ctx context.Context, q Execer, to, subject, body string) error {
-	return m.EnqueueHTML(ctx, q, to, subject, body, "")
+	html, err := Render(Email{Heading: subject, Text: strings.TrimSpace(body)})
+	if err != nil {
+		return err
+	}
+	return m.EnqueueHTML(ctx, q, to, subject, body, html)
 }
 
 // EnqueueHTML is Enqueue with an HTML part (see Render); body is the plain-text part for clients that don't show
@@ -219,16 +226,24 @@ func (m *Mailer) send(ctx context.Context, s smtpConfig, to, subject, body, html
 	return nil
 }
 
-// compose is the message as sent: plain text, or multipart/alternative with the HTML part last (the one clients
+// logoPNG is the Taskwell mark (frontend/user/public/favicon.svg at 96px), shown at 32px in every HTML email.
+//
+//go:embed logo.png
+var logoPNG []byte
+
+// compose is the message as sent: plain text, or multipart/alternative with the HTML part (and the logo it embeds) last (the one clients
 // prefer). Parts are quoted-printable so no line passes SMTP's 998-byte limit.
 func compose(from, to, subject, body, html string) []byte {
 	var b bytes.Buffer
 	b.WriteString("From: " + from + "\r\nTo: " + to + "\r\nSubject: " + mime.QEncoding.Encode("UTF-8", subject) +
 		"\r\nMIME-Version: 1.0\r\n")
-	part := func(w *bytes.Buffer, text string) {
+	part := func(w io.Writer, text string) {
 		q := quotedprintable.NewWriter(w)
-		q.Write([]byte(strings.ReplaceAll(text, "\n", "\r\n"))) // a bytes.Buffer doesn't fail
+		q.Write([]byte(strings.ReplaceAll(text, "\n", "\r\n"))) // every writer here ends in a bytes.Buffer, which doesn't fail
 		q.Close()
+	}
+	text := func(typ string) textproto.MIMEHeader {
+		return textproto.MIMEHeader{"Content-Type": {typ + "; charset=UTF-8"}, "Content-Transfer-Encoding": {"quoted-printable"}}
 	}
 	if html == "" {
 		b.WriteString("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
@@ -237,13 +252,24 @@ func compose(from, to, subject, body, html string) []byte {
 	}
 	var parts bytes.Buffer
 	mw := multipart.NewWriter(&parts)
-	for _, p := range []struct{ typ, text string }{{"text/plain", body}, {"text/html", html}} {
-		w, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {p.typ + "; charset=UTF-8"},
-			"Content-Transfer-Encoding": {"quoted-printable"}})
-		var e bytes.Buffer
-		part(&e, p.text)
-		w.Write(e.Bytes())
+	w, _ := mw.CreatePart(text("text/plain"))
+	part(w, body)
+	// The HTML and the logo it shows as cid:logo travel together in multipart/related.
+	var rel bytes.Buffer
+	rw := multipart.NewWriter(&rel)
+	hw, _ := rw.CreatePart(text("text/html"))
+	part(hw, html)
+	lw, _ := rw.CreatePart(textproto.MIMEHeader{"Content-Type": {"image/png"}, "Content-Transfer-Encoding": {"base64"},
+		"Content-Id": {"<logo>"}, "Content-Disposition": {`inline; filename="taskwell.png"`}})
+	enc := base64.StdEncoding.EncodeToString(logoPNG)
+	for len(enc) > 76 {
+		lw.Write([]byte(enc[:76] + "\r\n"))
+		enc = enc[76:]
 	}
+	lw.Write([]byte(enc + "\r\n"))
+	rw.Close()
+	w, _ = mw.CreatePart(textproto.MIMEHeader{"Content-Type": {"multipart/related; boundary=" + rw.Boundary()}})
+	w.Write(rel.Bytes())
 	mw.Close()
 	b.WriteString("Content-Type: multipart/alternative; boundary=" + mw.Boundary() + "\r\n\r\n")
 	b.Write(parts.Bytes())

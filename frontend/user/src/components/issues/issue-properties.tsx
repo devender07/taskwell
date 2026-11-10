@@ -1,5 +1,5 @@
 import { Link, useRouteContext, useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
+import { startTransition, useActionState, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { DatePicker } from '@taskwell/shared/date-picker'
 import { filterOptions } from '@taskwell/shared/match'
@@ -14,22 +14,28 @@ import '@/components/analytics/analytics.css'
 import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
-type Patch = { form: FormData; next: Partial<Issue> }
 
 // Each property saves on change with a partial update; read-only text without edit rights.
 export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
-  const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
+  // The change shows until the reloaded issue replaces it; useOptimistic dropped it a render before that, flashing the old value.
+  const [pending, setPending] = useState<Partial<Issue> | null>(null)
+  const [prevSaved, setPrevSaved] = useState(saved)
+  if (saved !== prevSaved) {
+    setPrevSaved(saved)
+    setPending(null)
+  }
+  const issue = pending ? { ...saved, ...pending } : saved
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const found = useRef(new Map<string, IssueRef>())
   const foundCycles = useRef(new Map<string, CycleRef>())
 
-  const [error, save] = useActionState(async (_prev: string | null, { form, next }: Patch) => {
-    apply(next)
+  const [error, save] = useActionState(async (_prev: string | null, form: FormData) => {
     try {
       await api<Issue>(issuePath(workspace, saved.identifier), form)
     } catch (e) {
+      setPending(null)
       const { errors, error } = toFormErrors(e)
       return Object.values(errors).find(Boolean) ?? error
     }
@@ -41,7 +47,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
     const form = new FormData()
     if (values.length === 0) form.set(field, '')
     for (const v of values) form.append(field, v)
-    startTransition(() => save({ form, next }))
+    setPending((p) => ({ ...p, ...next }))
+    startTransition(() => save(form))
   }
 
   const late = overdue(issue.due_date, issue.status.category)

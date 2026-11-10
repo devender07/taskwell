@@ -219,21 +219,23 @@ func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug s
 
 // delete removes the workspace, by the actor; members, roles and invites go with it (on delete cascade).
 func (m *model) delete(ctx context.Context, ws *Workspace, actorID string) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `delete from workspaces where id = $1`, ws.ID); err != nil {
-			return err
-		}
-		e := event(ws, actorID, "workspace.removed", "/workspaces")
-		e.WorkspaceID = ws.ID
-		if err := realtime.Publish(ctx, tx, e); err != nil {
-			return err
-		}
-		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
-	})
-	if err != nil {
+	if err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return Delete(ctx, tx, ws, actorID) }); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
 	}
 	return nil
+}
+
+// Delete is delete in tx; deleting an account uses it for the workspaces where the account is the only member.
+func Delete(ctx context.Context, tx pgx.Tx, ws *Workspace, actorID string) error {
+	if _, err := tx.Exec(ctx, `delete from workspaces where id = $1`, ws.ID); err != nil {
+		return err
+	}
+	e := event(ws, actorID, "workspace.removed", "/workspaces")
+	e.WorkspaceID = ws.ID
+	if err := realtime.Publish(ctx, tx, e); err != nil {
+		return err
+	}
+	return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
 }
 
 // --- members and invites ---

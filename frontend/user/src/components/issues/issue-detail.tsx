@@ -99,11 +99,27 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           <IssueFeedback key={`feedback-${issue.id}`} workspace={workspace} identifier={issue.identifier} />
           <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} people={people} />
         </article>
-        <aside className="issue-aside grid gap-4">
+        <aside ref={stickToFit} className="issue-aside grid gap-4">
           <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} people={people} />
           {issue.can_delete ? <DeleteIssue workspace={workspace} issue={issue} /> : null}
         </aside>
       </div>
     </div>
   )
+}
+
+// The aside sticks 80px down, under the navbar. Taller than the window, it sticks by its bottom edge instead, so the
+// page scroll (never an inner one) reaches all of it.
+function stickToFit(el: HTMLElement | null) {
+  if (!el) return
+  const fit = () => {
+    el.style.top = `${Math.min(80, innerHeight - el.offsetHeight - 24)}px`
+  }
+  const ro = new ResizeObserver(fit)
+  ro.observe(el)
+  addEventListener('resize', fit)
+  return () => {
+    ro.disconnect()
+    removeEventListener('resize', fit)
+  }
 }

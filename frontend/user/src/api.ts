@@ -5,7 +5,7 @@ import { apiUrl } from '@taskwell/shared/api-url'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
-export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
+export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean; terms_accepted_at: string | null }
 export type RoleRef = { id: string; name: string }
 // guest: the caller is a guest here (sees only the projects they're added to). Optional: only the single-workspace GET promises it.
 export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean }
@@ -193,6 +193,7 @@ export type NotificationSettings = {
   chat: boolean
   weekly: boolean
   due_dates: boolean
+  projects: boolean
   timezone: string | null // null until chosen
 }
 
@@ -640,6 +641,17 @@ export async function signOut() {
   authChannel?.postMessage('signout')
 }
 
+// Clears the session like signOut once the API has deleted the account and its cookies.
+export async function deleteAccount(form: FormData) {
+  await api('/me/delete', form)
+  signedIn = false
+  authChannel?.postMessage('signout')
+}
+
+export type AccountEvent = { id: string; action: string; detail: string; ip: string | null; user_agent: string; at: string }
+export type AccountEventPage = { events: AccountEvent[]; has_more: boolean }
+export const accountEventsPath = '/me/account-events'
+
 export async function getMe(): Promise<User | null> {
   try {
     const user = await api<User>('/me')
@@ -724,10 +736,10 @@ export type AuditEntry = {
 export type AuditPage = { entries: AuditEntry[]; more: boolean }
 
 export const workspacePath = (workspace: Workspace | string) => `/workspaces/${encodeURIComponent(typeof workspace === 'string' ? workspace : workspace.slug)}`
-export const auditPath = (slug: string, category?: AuditCategory, before?: string) => {
+export const auditPath = (slug: string, category?: AuditCategory, page?: number) => {
   const q = new URLSearchParams()
   if (category) q.set('category', category)
-  if (before) q.set('before', before)
+  if (page && page > 1) q.set('page', String(page))
   return `${workspacePath(slug)}/audit${q.size ? `?${q}` : ''}`
 }
 export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`

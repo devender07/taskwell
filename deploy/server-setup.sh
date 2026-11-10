@@ -64,6 +64,8 @@ echo "postgres ok, password matches user.env"
 
 echo "== backups"
 echo "0 3 * * * root $DB/backup.sh >>/var/log/taskwell-backup.log 2>&1" >/etc/cron.d/taskwell-backup
+grep -qs '^RCLONE_REMOTE=.' /etc/taskwell-backup.env ||
+  echo "warning: backups stay on this server; set RCLONE_REMOTE in /etc/taskwell-backup.env (deploy/README.md)"
 
 echo "server ready${SUDO_USER:+ (log in again for the docker group)}"
 [ -f /var/run/reboot-required ] && echo "a reboot is pending: sudo reboot" || true

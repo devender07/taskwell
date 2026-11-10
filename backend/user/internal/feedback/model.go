@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 // pageSize caps a page of the inbox.
@@ -240,14 +241,35 @@ func (m *model) formToken(ctx context.Context, wsID string) (*string, error) {
 
 // setForm turns the form on or off (enabled nil keeps it as it is) and, when it's on, sets token if it had none or
 // rotate is set. It returns the form's token, nil when it's off.
-func (m *model) setForm(ctx context.Context, wsID string, enabled *bool, rotate bool, token string) (*string, error) {
+func (m *model) setForm(ctx context.Context, wsID, actorID string, enabled *bool, rotate bool, token string) (*string, error) {
 	var out *string
-	err := m.db.QueryRow(ctx,
-		`update workspaces set feedback_token = case
+	var was bool
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `select feedback_token is not null from workspaces where id = $1 for update`, wsID).Scan(&was); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx,
+			`update workspaces set feedback_token = case
 		   when not coalesce($2::bool, feedback_token is not null) then null
 		   when $3 or feedback_token is null then $4
 		   else feedback_token end
-		 where id = $1 returning feedback_token`, wsID, enabled, rotate, token).Scan(&out)
+		 where id = $1 returning feedback_token`, wsID, enabled, rotate, token).Scan(&out); err != nil {
+			return err
+		}
+		action := ""
+		switch {
+		case out != nil && !was:
+			action = "feedback_form.enabled"
+		case out == nil && was:
+			action = "feedback_form.disabled"
+		case out != nil && rotate:
+			action = "feedback_form.link_reset"
+		}
+		if action == "" {
+			return nil
+		}
+		return wsaudit.Record(ctx, tx, wsID, actorID, action, "", nil)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("set feedback form: %w", err)
 	}

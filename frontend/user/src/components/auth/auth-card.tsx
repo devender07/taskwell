@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { LogoMark } from '@taskwell/shared/logo'
@@ -31,6 +32,15 @@ export function OrDivider() {
       or
       <span style={line} />
     </div>
+  )
+}
+
+export function LegalCaption() {
+  return (
+    <p className="text-caption text-secondary text-center">
+      By continuing, you agree to the <Link to="/terms" className="auth-link">terms</Link> and the{' '}
+      <Link to="/privacy" className="auth-link">privacy notice</Link>.
+    </p>
   )
 }
 

@@ -207,6 +207,9 @@ h3 { margin: 0; font: 590 16px/24px var(--font); }
 .cta .container { position: relative; }
 
 .site-footer { padding: 32px 0; border-top: 1px solid var(--border); }
+.footer-nav { display: flex; flex-wrap: wrap; gap: 0 24px; }
+.footer-nav a { display: inline-flex; align-items: center; min-height: 44px; font: 400 13px/19.5px var(--font); color: var(--text-2); text-decoration: none; }
+.footer-nav a:hover { color: var(--text); }
 
 /* Reveal on scroll (only when JS runs, so the page never stays hidden) */
 .js .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.6s, transform 0.6s; }

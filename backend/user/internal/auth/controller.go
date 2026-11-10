@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/devender07/taskwell/backend/shared/totp"
 	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
@@ -68,8 +71,12 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	name, email, pw := r.FormValue("name"), r.FormValue("email"), r.FormValue("password")
 	wsName := strings.TrimSpace(r.FormValue("workspace_name")) // optional: an invited sign-up leaves it out
+	terms := ""
+	if r.FormValue("accept_terms") != "true" {
+		terms = "Confirm you're 18 or older and accept the terms."
+	}
 	if errs := fieldErrors("name", checkName(name), "email", web.CheckEmail(email), "password", checkPassword(pw),
-		"workspace_name", checkWorkspaceName(wsName)); errs != nil {
+		"workspace_name", checkWorkspaceName(wsName), "accept_terms", terms); errs != nil {
 		web.Fields(w, http.StatusBadRequest, errs)
 		return nil
 	}
@@ -173,13 +180,13 @@ func (h *Handler) signupVerify(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	http.SetCookie(w, &http.Cookie{Name: signupCookie, Path: "/api/auth/signup", MaxAge: -1, HttpOnly: true})
-	return h.afterFirstStep(w, r, *u, true)
+	return h.afterFirstStep(w, r, *u, true, "code")
 }
 
 // afterFirstStep finishes a first-step sign-in (password, email code, sign-up): it answers the user, or
 // {"mfa_required": true} when two-factor is on and POST /api/auth/mfa comes next.
-func (h *Handler) afterFirstStep(w http.ResponseWriter, r *http.Request, u User, remember bool) error {
-	mfa, err := h.begin(r.Context(), w, u.ID, remember)
+func (h *Handler) afterFirstStep(w http.ResponseWriter, r *http.Request, u User, remember bool, method string) error {
+	mfa, err := h.begin(w, r, u.ID, remember, method)
 	if errors.Is(err, errSuspended) {
 		web.Err(w, http.StatusForbidden, errSuspendedMsg)
 		return nil
@@ -230,10 +237,13 @@ func (h *Handler) signin(w http.ResponseWriter, r *http.Request) error {
 		if err := h.model.fail(r.Context(), "pw:"+email); err != nil {
 			return err
 		}
+		if u.ID != "" {
+			h.record(r, u.ID, "sign_in_failed", "password")
+		}
 		web.Err(w, http.StatusUnauthorized, errBadLogin)
 		return nil
 	}
-	return h.afterFirstStep(w, r, u, remember(r))
+	return h.afterFirstStep(w, r, u, remember(r), "password")
 }
 
 func (h *Handler) otpSend(w http.ResponseWriter, r *http.Request) error {
@@ -337,10 +347,15 @@ func (h *Handler) otpVerify(w http.ResponseWriter, r *http.Request) error {
 		if err := h.model.fail(r.Context(), "code:"+email); err != nil {
 			return err
 		}
+		if id, err := h.model.userIDByEmail(r.Context(), email); err != nil {
+			return err
+		} else if id != "" {
+			h.record(r, id, "sign_in_failed", "code")
+		}
 		web.Err(w, http.StatusUnauthorized, errBadCode)
 		return nil
 	}
-	return h.afterFirstStep(w, r, *u, remember(r))
+	return h.afterFirstStep(w, r, *u, remember(r), "code")
 }
 
 func (h *Handler) reset(w http.ResponseWriter, r *http.Request) error {
@@ -353,7 +368,7 @@ func (h *Handler) reset(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	email, err := h.model.resetPassword(r.Context(), secret.Hash(token), string(ph))
+	email, err := h.model.resetPassword(r.Context(), secret.Hash(token), string(ph), reqMeta(r))
 	if err != nil {
 		return err
 	}
@@ -467,7 +482,11 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if c, err := r.Cookie(refreshCookie); err == nil {
 		keep = secret.Hash(c.Value)
 	}
-	if err := h.model.setPassword(ctx, userID, string(ph), keep); err != nil {
+	action := "password_changed"
+	if old == nil {
+		action = "password_added"
+	}
+	if err := h.model.setPassword(ctx, userID, string(ph), keep, action, reqMeta(r)); err != nil {
 		return err
 	}
 	if err := h.passwordChangedMail(ctx, p.Email, old == nil); err != nil {
@@ -574,7 +593,7 @@ func (h *Handler) changeEmail(w http.ResponseWriter, r *http.Request) error {
 	if c, err := r.Cookie(refreshCookie); err == nil {
 		keep = secret.Hash(c.Value)
 	}
-	from, to, bad, err := h.model.changeEmail(ctx, p.ID, secret.Hash(oldCode), secret.Hash(newCodeV), keep)
+	from, to, bad, err := h.model.changeEmail(ctx, p.ID, secret.Hash(oldCode), secret.Hash(newCodeV), keep, reqMeta(r))
 	if errors.Is(err, errEmailTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"email": errEmailInUse})
 		return nil
@@ -662,7 +681,7 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) error {
 
 func (h *Handler) signout(w http.ResponseWriter, r *http.Request) error {
 	if c, err := r.Cookie(refreshCookie); err == nil {
-		if err := h.model.revokeFamily(r.Context(), secret.Hash(c.Value)); err != nil {
+		if err := h.model.revokeFamily(r.Context(), secret.Hash(c.Value), reqMeta(r)); err != nil {
 			return err
 		}
 	}
@@ -767,7 +786,7 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	mfa, err := h.begin(ctx, w, u.ID, parts[2] == "1")
+	mfa, err := h.begin(w, r, u.ID, parts[2] == "1", "google")
 	if errors.Is(err, errSuspended) {
 		http.Redirect(w, r, base+"/signin?error=suspended", http.StatusFound)
 		return nil
@@ -874,13 +893,16 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	tok := apiTokenPrefix + secret.NewToken()
-	t, err := h.model.insertAPIToken(r.Context(), userID, strings.TrimSpace(name), secret.Hash(tok))
+	t, err := h.model.insertAPIToken(r.Context(), userID, strings.TrimSpace(name), secret.Hash(tok), reqMeta(r))
 	if errors.Is(err, ErrTooManyTokens) {
 		web.Err(w, http.StatusConflict, fmt.Sprintf("You have %d tokens. Revoke one first.", maxAPITokens))
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if err := h.tokenMail(r.Context(), userID, t.Name); err != nil {
+		slog.ErrorContext(r.Context(), "token created email failed", "user_id", userID, "err", err) // the secret still goes back
 	}
 	web.JSON(w, http.StatusCreated, map[string]any{"token": t, "secret": tok})
 	return nil
@@ -895,7 +917,7 @@ func (h *Handler) deleteToken(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	ok := web.IsUUID(id)
 	if ok {
-		if ok, err = h.model.deleteAPIToken(r.Context(), userID, id); err != nil {
+		if ok, err = h.model.deleteAPIToken(r.Context(), userID, id, reqMeta(r)); err != nil {
 			return err
 		}
 	}
@@ -984,6 +1006,7 @@ func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
+		h.record(r, c.Subject, "sign_in_failed", "two-factor")
 		if n, err := h.model.failures(ctx, "mfa:"+c.ID); err != nil {
 			return err
 		} else if n >= mfaMaxFails {
@@ -1002,7 +1025,7 @@ func (h *Handler) mfaVerify(w http.ResponseWriter, r *http.Request) error {
 	if p == nil {
 		return timedOut()
 	}
-	if err := h.startSession(ctx, w, p.ID, c.Remember); errors.Is(err, errSuspended) {
+	if err := h.startSession(w, r, p.ID, c.Remember, "two-factor"); errors.Is(err, errSuspended) {
 		web.Err(w, http.StatusForbidden, errSuspendedMsg)
 		return nil
 	} else if err != nil {
@@ -1129,7 +1152,7 @@ func (h *Handler) mfaEnable(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	codes, hashes := totp.NewRecoveryCodes()
-	ok, err := h.model.enableMFA(ctx, h.MFAKey, p.ID, code, hashes, time.Now())
+	ok, err := h.model.enableMFA(ctx, h.MFAKey, p.ID, code, hashes, time.Now(), reqMeta(r))
 	switch {
 	case errors.Is(err, errMFAOn):
 		web.Err(w, http.StatusConflict, errMFAIsOn)
@@ -1174,7 +1197,7 @@ func (h *Handler) mfaDisable(w http.ResponseWriter, r *http.Request) error {
 	} else if c != nil {
 		keep = c.SID
 	}
-	ok, err = h.model.disableMFA(ctx, h.MFAKey, p.ID, code, recovery, keep)
+	ok, err = h.model.disableMFA(ctx, h.MFAKey, p.ID, code, recovery, keep, reqMeta(r))
 	if errors.Is(err, errMFAOff) {
 		web.Err(w, http.StatusConflict, errMFAIsOff)
 		return nil
@@ -1244,4 +1267,158 @@ func (h *Handler) mfaMail(ctx context.Context, email string, on bool) error {
 	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
 		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",
 		what, strings.TrimRight(base, "/")))
+}
+
+// --- account events, export and deletion ---
+
+// reqMeta is the request's client IP (when it is one) and browser, for an account event.
+func reqMeta(r *http.Request) meta {
+	ip := web.ClientIP(r)
+	if _, err := netip.ParseAddr(ip); err != nil {
+		ip = ""
+	}
+	ua := r.UserAgent()
+	if len(ua) > 512 {
+		ua = strings.ToValidUTF8(ua[:512], "")
+	}
+	return meta{ip: ip, ua: ua}
+}
+
+// record adds an account event outside any transaction, best effort: a failure is logged, not answered.
+func (h *Handler) record(r *http.Request, userID, action, detail string) {
+	if err := addEvent(r.Context(), h.model.db, userID, action, detail, reqMeta(r)); err != nil {
+		slog.ErrorContext(r.Context(), "account event failed", "user_id", userID, "action", action, "err", err)
+	}
+}
+
+// tokenMail tells the user a personal API token was created, in case it wasn't them.
+func (h *Handler) tokenMail(ctx context.Context, userID, name string) error {
+	p, err := h.model.profile(ctx, userID)
+	if err != nil || p == nil {
+		return err
+	}
+	return h.mail.Enqueue(ctx, h.model.db, p.Email, "A new API token was created",
+		fmt.Sprintf("A new API token named \"%s\" was just created for your Taskwell account.\n\n"+
+			"If this wasn't you, delete it in Settings → API tokens and reset your password.\n", name))
+}
+
+// accountEvents lists a page of the signed-in user's security activity, newest first (?before= the last id shown).
+func (h *Handler) accountEvents(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	before := r.URL.Query().Get("before")
+	if before != "" && !web.IsUUID(before) {
+		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
+		return nil
+	}
+	es, more, err := h.model.accountEvents(r.Context(), p.ID, before)
+	if err != nil {
+		return err
+	}
+	if es == nil {
+		es = []AccountEvent{}
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"events": es, "has_more": more})
+	return nil
+}
+
+// exportMe downloads the signed-in user's personal data (not their workspaces' content: its admins export that).
+func (h *Handler) exportMe(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	if stop, err := web.Limited(w, r, h.lim.export, p.ID); err != nil || stop {
+		return err
+	}
+	data, err := h.model.exportData(r.Context(), p.ID)
+	if err != nil {
+		return err
+	}
+	s, err := notify.UserSettings(r.Context(), h.model.db, p.ID)
+	if err != nil {
+		return err
+	}
+	if data["notification_settings"], err = json.Marshal(s); err != nil {
+		return fmt.Errorf("export personal data: %w", err)
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="taskwell-my-data.json"`)
+	web.JSON(w, http.StatusOK, data)
+	return nil
+}
+
+// deleteCode emails the signed-in user the code deleteMe needs, so a stolen session alone can't delete the account.
+func (h *Handler) deleteCode(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	if stop, err := web.Limited(w, r, h.lim.send, p.Email); err != nil || stop {
+		return err
+	}
+	code, err := newCode()
+	if err != nil {
+		return err
+	}
+	return h.sendSecret(w, r, p.Email, purposeAccountDelete, "otp_ttl_minutes", code, func(minutes int) (string, string, string, error) {
+		note := fmt.Sprintf("Deleting your account can't be undone. It expires in %d minutes. If you didn't ask for it, "+
+			"don't share it: someone may be signed in to your account, so reset your password to sign them out.", minutes)
+		html, err := mail.Render(mail.Email{Preview: "Your code to delete your account is " + code, Heading: "Confirm account deletion",
+			Intro: "Enter this code to delete your Taskwell account.", Code: code, Note: note})
+		return "Your Taskwell code to delete your account: " + code,
+			fmt.Sprintf("Your code to delete your Taskwell account is %s\n\n%s\n", code, note), html, err
+	})
+}
+
+// deleteMe deletes the signed-in user's account with the code from deleteCode, and signs them out. It refuses (409,
+// naming the workspaces) while they're the only admin of a workspace with other members, or their plan is still
+// billed.
+func (h *Handler) deleteMe(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	if msg := checkCode(code); msg != "" {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": msg})
+		return nil
+	}
+	if locked, err := h.locked(w, r, "code:"+p.Email); err != nil || locked {
+		return err
+	}
+	email, refs, err := h.model.deleteAccount(ctx, p.ID, secret.Hash(code))
+	refused := func(msg string) error {
+		web.JSON(w, http.StatusConflict, map[string]any{"error": msg, "workspaces": refs})
+		return nil
+	}
+	switch {
+	case errors.Is(err, errSharedWorkspaces):
+		return refused("Make someone else an admin of these workspaces, or remove the other members, first.")
+	case errors.Is(err, errPaidPlan):
+		if refs == nil {
+			refs = []WorkspaceRef{}
+		}
+		return refused("Cancel the plan for these workspaces first.")
+	case errors.Is(err, errDeleteCode):
+		if err := h.model.fail(ctx, "code:"+p.Email); err != nil {
+			return err
+		}
+		web.Fields(w, http.StatusBadRequest, map[string]string{"code": "That code is wrong or has expired."})
+		return nil
+	case err != nil:
+		return err
+	}
+	if err := h.mail.Enqueue(ctx, h.model.db, email, "Your Taskwell account was deleted",
+		"Your Taskwell account and the workspaces where you were the only member were deleted, as you asked.\n\n"+
+			"Your issues and comments in shared workspaces stay, shown as \"Deleted user\".\n"); err != nil {
+		slog.ErrorContext(ctx, "account deleted email failed", "err", err) // the account is gone either way
+	}
+	if err := h.clearCookies(ctx, w); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

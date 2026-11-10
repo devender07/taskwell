@@ -159,7 +159,7 @@ func TestDueEmail(t *testing.T) {
 	f := newDueFixture(t)
 	ctx := context.Background()
 	m := &model{db: f.pool}
-	if _, err := m.update(ctx, f.bob, nil, nil, nil, nil, nil, nil, nil, ptr(false), nil); err != nil {
+	if _, err := m.update(ctx, f.bob, nil, nil, nil, nil, nil, nil, nil, ptr(false), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	f.issue(t, f.web, 1, "started", f.bob, "2026-11-12")

@@ -43,8 +43,8 @@ var Categories = map[string][]string{
 	"members":      {"member", "invite"},
 	"roles":        {"role"},
 	"projects":     {"project"},
-	"workspace":    {"workspace"},
-	"integrations": {"webhook", "integration"},
+	"workspace":    {"workspace", "feedback_form"},
+	"integrations": {"webhook", "integration", "test_site", "test_account"},
 	"trash":        {"trash", "issue"},
 	"billing":      {"billing"},
 }
@@ -69,21 +69,21 @@ type Entry struct {
 // PageSize is how many entries List returns at most.
 const PageSize = 50
 
-// List returns the workspace's newest PageSize entries viewerID may see with ids below before ("" from the newest)
-// whose action starts with one of prefixes (nil: any), and whether there are more. A project's entries show only to
+// List returns page (from 1) of the workspace's entries viewerID may see, PageSize to a page, newest first, whose
+// action starts with one of prefixes (nil: any), and whether there are more. A project's entries show only to
 // who can see the project; a deleted project's only to admins.
-func List(ctx context.Context, db *pgxpool.Pool, workspaceID, viewerID, before string, prefixes []string) ([]Entry, bool, error) {
+func List(ctx context.Context, db *pgxpool.Pool, workspaceID, viewerID string, page int, prefixes []string) ([]Entry, bool, error) {
 	if prefixes == nil {
 		prefixes = []string{}
 	}
 	rows, err := db.Query(ctx,
 		`select id::text, at, actor_id::text, actor_name, actor_email, action, target, detail, ip from workspace_audit
-		  where workspace_id = $1 and ($2::uuid is null or id < $2::uuid)
+		  where workspace_id = $1
 		    and (cardinality($3::text[]) = 0 or split_part(action, '.', 1) = any($3))
 		    and (project_id is null or coalesce(can_see_project(project_id, $5), exists (
 		          select 1 from workspace_members m join workspace_roles r on r.id = m.role_id
 		           where m.workspace_id = $1 and m.user_id = $5 and r.builtin = 'admin')))
-		  order by id desc limit $4`, workspaceID, nullable(before), prefixes, PageSize+1, viewerID)
+		  order by id desc limit $4 offset $2`, workspaceID, (page-1)*PageSize, prefixes, PageSize+1, viewerID)
 	if err != nil {
 		return nil, false, fmt.Errorf("list audit: %w", err)
 	}
@@ -104,11 +104,4 @@ func List(ctx context.Context, db *pgxpool.Pool, workspaceID, viewerID, before s
 		return es[:PageSize], true, nil
 	}
 	return es, false, nil
-}
-
-func nullable(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }

@@ -10,7 +10,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/notificati
   component: NotificationSettingsPage,
 })
 
-type Kind = 'mentions' | 'assignments' | 'status' | 'comments' | 'chat' | 'due_dates'
+type Kind = 'mentions' | 'assignments' | 'status' | 'comments' | 'chat' | 'due_dates' | 'projects'
 
 const modes: { value: NotificationSettings['email']; label: string }[] = [
   { value: 'instant', label: 'Right away' },
@@ -19,7 +19,8 @@ const modes: { value: NotificationSettings['email']; label: string }[] = [
 ]
 const kinds: { value: Kind; label: string; caption?: string }[] = [
   { value: 'mentions', label: 'Mentions' },
-  { value: 'assignments', label: 'Assigned to me or added to a project' },
+  { value: 'assignments', label: 'Assigned to me' },
+  { value: 'projects', label: 'Added to a project' },
   { value: 'status', label: 'Status changes on issues I watch' },
   { value: 'comments', label: 'Comments on issues I watch' },
   { value: 'chat', label: 'Direct messages and chat mentions' },

@@ -121,7 +121,9 @@ const errSuspendedMsg = "This account is suspended."
 
 // startSession begins a new sign-in that lasts refresh_ttl_hours with "Remember me", short_refresh_ttl_hours without.
 // Every sign-in method goes through here, so it is where suspended accounts are turned away.
-func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userID string, remember bool) error {
+// method ("password", "code", "google", "two-factor") goes in the sign_in event.
+func (h *Handler) startSession(w http.ResponseWriter, r *http.Request, userID string, remember bool, method string) error {
+	ctx := r.Context()
 	if suspended, err := h.model.suspended(ctx, userID); err != nil {
 		return err
 	} else if suspended {
@@ -135,18 +137,23 @@ func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userI
 	if err != nil {
 		return err
 	}
-	return h.setTokens(ctx, w, userID, family{remember: remember, expiresAt: time.Now().Add(time.Duration(hours) * time.Hour)})
+	if err := h.setTokens(ctx, w, userID, family{remember: remember, expiresAt: time.Now().Add(time.Duration(hours) * time.Hour)}); err != nil {
+		return err
+	}
+	h.record(r, userID, "sign_in", method)
+	return nil
 }
 
 // begin signs the user in, or when they have two-factor on, starts a sign-in waiting for its second step (mfa is then
 // true and there is no session yet: mfaVerify starts it). Every first-step sign-in goes through here.
-func (h *Handler) begin(ctx context.Context, w http.ResponseWriter, userID string, remember bool) (mfa bool, err error) {
+func (h *Handler) begin(w http.ResponseWriter, r *http.Request, userID string, remember bool, method string) (mfa bool, err error) {
+	ctx := r.Context()
 	on, _, err := h.model.mfaStatus(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if !on {
-		return false, h.startSession(ctx, w, userID, remember)
+		return false, h.startSession(w, r, userID, remember, method)
 	}
 	if suspended, err := h.model.suspended(ctx, userID); err != nil {
 		return false, err

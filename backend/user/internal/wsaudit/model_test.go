@@ -30,13 +30,13 @@ func TestRecordRollsBack(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatal(err)
 	}
-	if es, _, err := List(ctx, pool, wsID, ann, "", nil); err != nil || len(es) != 0 {
+	if es, _, err := List(ctx, pool, wsID, ann, 1, nil); err != nil || len(es) != 0 {
 		t.Fatalf("after rollback: %+v %v", es, err)
 	}
 	if err := Record(ctx, pool, wsID, ann, "role.deleted", "Triage", nil); err != nil {
 		t.Fatal(err)
 	}
-	if es, _, err := List(ctx, pool, wsID, ann, "", nil); err != nil || len(es) != 1 || es[0].Actor.Name != "Ann" {
+	if es, _, err := List(ctx, pool, wsID, ann, 1, nil); err != nil || len(es) != 1 || es[0].Actor.Name != "Ann" {
 		t.Fatalf("after commit: %+v %v", es, err)
 	}
 }
@@ -69,7 +69,7 @@ func TestProjectVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := func(viewer string) int {
-		es, _, err := List(ctx, pool, wsID, viewer, "", nil)
+		es, _, err := List(ctx, pool, wsID, viewer, 1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,5 +89,48 @@ func TestProjectVisibility(t *testing.T) {
 	}
 	if a, b := seen(ann), seen(bob); a != 3 || b != 1 {
 		t.Fatalf("deleted project: admin sees %d, member sees %d; want 3 and 1", a, b)
+	}
+}
+
+// TestAppendOnly: entries can't be changed or deleted, except the actor nulled when the user is deleted, entries over a
+// year old (the sweep), and every entry when the workspace is deleted.
+func TestAppendOnly(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, bob := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Bob")
+	var wsID string
+	if err := pool.QueryRow(ctx, `insert into workspaces (name, slug, created_by) values ('Audit', $1, $2) returning id::text`,
+		dbtest.Name("audit-"), ann).Scan(&wsID); err != nil {
+		t.Fatal(err)
+	}
+	if err := Record(ctx, pool, wsID, bob, "role.deleted", "Triage", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into workspace_audit (workspace_id, action, at) values ($1, 'old', now() - interval '13 months')`, wsID); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`update workspace_audit set target = 'x' where workspace_id = $1`,
+		`update workspace_audit set actor_id = null, target = 'x' where workspace_id = $1 and actor_id is not null`,
+		`delete from workspace_audit where workspace_id = $1 and action <> 'old'`,
+	} {
+		if _, err := pool.Exec(ctx, sql, wsID); err == nil {
+			t.Errorf("%s: allowed", sql)
+		}
+	}
+	if _, err := pool.Exec(ctx, `delete from workspace_audit where workspace_id = $1 and action = 'old'`, wsID); err != nil {
+		t.Fatalf("sweeping a year-old entry: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `delete from users where id = $1`, bob); err != nil {
+		t.Fatalf("deleting the actor: %v", err)
+	}
+	var actor *string
+	var name string
+	if err := pool.QueryRow(ctx, `select actor_id::text, actor_name from workspace_audit where workspace_id = $1`, wsID).Scan(&actor, &name); err != nil ||
+		actor != nil || name != "Bob" {
+		t.Fatalf("after deleting the actor: %v %q %v", actor, name, err)
+	}
+	if _, err := pool.Exec(ctx, `delete from workspaces where id = $1`, wsID); err != nil {
+		t.Fatalf("deleting the workspace: %v", err)
 	}
 }

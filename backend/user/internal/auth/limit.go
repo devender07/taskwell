@@ -16,13 +16,15 @@ const (
 
 // limits are the auth endpoints' rate limits.
 type limits struct {
-	ip   web.Limiter // every rate-limited auth request, per client IP
-	send web.Limiter // emails sent (codes, reset links, verification codes), per address
+	ip     web.Limiter // every rate-limited auth request, per client IP
+	send   web.Limiter // emails sent (codes, reset links, verification codes), per address
+	export web.Limiter // personal data downloads, per user: 10 an hour
 }
 
 func newLimits(db *pgxpool.Pool) limits {
 	return limits{ip: web.Limiter{DB: db, Name: "ip", Burst: 20, Per: 3 * time.Second},
-		send: web.Limiter{DB: db, Name: "send", Burst: 3, Per: 5 * time.Minute}}
+		send:   web.Limiter{DB: db, Name: "send", Burst: 3, Per: 5 * time.Minute},
+		export: web.Limiter{DB: db, Name: "me_export", Burst: 10, Per: 6 * time.Minute}}
 }
 
 // limitIP rate-limits fn per client IP.

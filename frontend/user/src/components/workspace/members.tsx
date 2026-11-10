@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useOptimistic, useState } from 'react'
+import { startTransition, useActionState, useState } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
 import { Checkbox } from '@taskwell/shared/checkbox'
@@ -121,14 +121,21 @@ function MemberRow({ workspace, roles, projects, member, self }: { workspace: Wo
   const manage = can(workspace, 'members.manage') && (self || (current !== undefined && grantable(workspace, current)))
   const path = `${workspacePath(workspace.slug)}/members/${encodeURIComponent(member.id)}`
   const options = roleOptions(workspace, roles)
-  const [roleId, setRoleId] = useOptimistic(member.role.id)
+  // Held until the reloaded member replaces it; useOptimistic dropped it a render early, flashing the old role.
+  const [pendingRole, setPendingRole] = useState<string | null>(null)
+  const [prevMember, setPrevMember] = useState(member)
+  if (member !== prevMember) {
+    setPrevMember(member)
+    setPendingRole(null)
+  }
+  const roleId = pendingRole ?? member.role.id
   const [confirming, setConfirming] = useState(false)
 
   const [roleError, saveRole] = useActionState(async (_prev: string | null, form: FormData) => {
-    setRoleId(String(form.get('role_id')))
     try {
       await api<Member>(path, form)
     } catch (e) {
+      setPendingRole(null)
       const { errors, error } = toFormErrors(e)
       return errors.role_id ?? error
     }
@@ -176,6 +183,7 @@ function MemberRow({ workspace, roles, projects, member, self }: { workspace: Wo
                 if (!o || o.value === roleId) return
                 const form = new FormData()
                 form.set('role_id', o.value)
+                setPendingRole(o.value)
                 startTransition(() => saveRole(form))
               }}
             />
