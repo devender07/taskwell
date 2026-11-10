@@ -9,7 +9,7 @@ import { LeaveIcon, UserMinusIcon } from '@taskwell/shared/icons'
 import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import { email as checkEmail } from '@taskwell/shared/validate'
-import { addProjectMembers, api, avatarSrc, removeProjectMember, can, homePath, toFormErrors, type FieldErrors, type Invite, type Member, type Project, type Role, type Workspace, workspacePath } from '@/api'
+import { addProjectMembers, api, avatarSrc, removeProjectMember, can, homePath, toFormErrors, useFeature, type FieldErrors, type Invite, type Member, type Project, type Role, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { type MemberPage, useMemberPages } from './member-pages'
 import '@/components/analytics/analytics.css'
@@ -116,6 +116,7 @@ export function MemberList({ workspace, roles, projects, page, userId, query, on
 
 function MemberRow({ workspace, roles, projects, member, self }: { workspace: Workspace; roles: Role[]; projects: Project[]; member: Member; self: boolean }) {
   const router = useRouter()
+  const team = useFeature('team')
   const navigate = useNavigate()
   const current = byId(roles, member.role.id)
   const manage = can(workspace, 'members.manage') && (self || (current !== undefined && grantable(workspace, current)))
@@ -161,7 +162,7 @@ function MemberRow({ workspace, roles, projects, member, self }: { workspace: Wo
         <Avatar name={member.name} src={avatarSrc(member.id)} />
         <div className="grid flex-grow" style={{ minWidth: 0, flexBasis: 160 }}>
           <span className="text-label text-primary ellipsis">
-            {self || can(workspace, 'analytics.view') ? (
+            {team && (self || can(workspace, 'analytics.view')) ? (
               <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: member.id }} className="member-link">
                 {member.name}
               </Link>

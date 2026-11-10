@@ -22,6 +22,7 @@ type Handler struct {
 	model        *model
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	Plans        func(ctx context.Context) []string // when set, the plans the templates feature is on for: others' recurring templates wait
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.

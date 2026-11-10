@@ -4,7 +4,7 @@ import type { ActivityPage, Issue, NotificationPage, Project, ProjectStats, Stat
 import { clearNotice, loaderApi, readNotice } from '@/realtime'
 import { Activity, AssignedToMe, ConnectClaude, Inbox, NeedsAttention, Projects, RecentlyViewed } from '@/components/home/blocks'
 import { greeting, splitMine } from '@/components/home/home'
-import { workspacePath } from '@/api'
+import { useFeature, workspacePath } from '@/api'
 
 export const Route = createFileRoute('/_app/$workspace/_main/')({
   loader: async (ctx) => {
@@ -29,6 +29,7 @@ function WorkspaceHome() {
   const [notice] = useState(readNotice)
   useEffect(clearNotice, [])
   const [now] = useState(() => new Date())
+  const mcp = useFeature('api')
   const { attention, rest } = splitMine(issues, now)
 
   return (
@@ -49,7 +50,7 @@ function WorkspaceHome() {
         <div className="grid gap-6" style={{ minWidth: 0 }}>
           <Inbox workspace={workspace.slug} page={notifications} />
           <RecentlyViewed workspace={workspace.slug} issues={issues} />
-          <ConnectClaude />
+          {mcp ? <ConnectClaude /> : null}
           <Projects workspace={workspace} projects={projects} stats={stats} />
         </div>
       </div>

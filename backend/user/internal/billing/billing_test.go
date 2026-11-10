@@ -514,7 +514,7 @@ func TestEndpoints(t *testing.T) {
 	}
 	v := x.do(t, bob, "GET", wsBase, nil, 200)
 	if v["plan"] != "free" || v["is_owner"] != false || fmt.Sprint(v["owner"]) != "map[id:"+ann+" name:Ann]" ||
-		fmt.Sprint(v["projects"]) != "map[limit:1 used:1]" || fmt.Sprint(v["members"]) != "map[limit:5 used:2]" ||
+		fmt.Sprint(v["projects"]) != "map[limit:1 used:1]" || fmt.Sprint(v["members"]) != "map[limit:1 used:2]" ||
 		fmt.Sprint(v["storage"]) != "map[limit_bytes:2.147483648e+09 used_bytes:0]" {
 		t.Fatalf("Bob's view of the workspace %v", v)
 	}

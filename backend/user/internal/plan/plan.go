@@ -25,7 +25,7 @@ const Free = "free"
 
 // Plans is every plan in display order. The paid ones match the taskwell_plan in the custom_data of their Paddle prices.
 var Plans = []Plan{
-	{ID: Free, Name: "Free", Workspaces: 1, Projects: 1, Members: 5, StorageBytes: 2 << 30},
+	{ID: Free, Name: "Free", Workspaces: 1, Projects: 1, Members: 1, StorageBytes: 2 << 30},
 	{ID: "starter", Name: "Starter", Workspaces: 1, Projects: 5, Members: 10, StorageBytes: 20 << 30},
 	{ID: "pro", Name: "Pro", Workspaces: 3, Members: 25, StorageBytes: 100 << 30},
 	{ID: "advanced", Name: "Advanced"},
@@ -70,6 +70,11 @@ func ForWorkspace(ctx context.Context, q Querier, workspaceID string) (Plan, err
 	err := q.QueryRow(ctx, `select coalesce(u.plan, 'free') from workspaces w left join users u on u.id = w.created_by
 		where w.id = $1`, workspaceID).Scan(&id)
 	return get(id, err)
+}
+
+// SQL is ForWorkspace as an SQL expression on the workspace id column col, for queries that pick workspaces by plan.
+func SQL(col string) string {
+	return `coalesce((select pu.plan from workspaces pw join users pu on pu.id = pw.created_by where pw.id = ` + col + `), 'free')`
 }
 
 // GB formats a storage limit for messages: "2 GB".

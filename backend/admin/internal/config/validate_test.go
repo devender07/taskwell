@@ -36,6 +36,16 @@ func TestCheckValue(t *testing.T) {
 		{"smtp_from", "Taskwell", false},
 		{"smtp_host", "", true},
 		{"google_client_id", "anything", true},
+		{"feature_chat_plans", "free,starter,pro,advanced", true},
+		{"feature_chat_plans", "pro", true},
+		{"feature_chat_plans", "advanced, pro", true},
+		{"feature_chat_plans", "", true},
+		{"feature_chat_plans", "true", false},
+		{"feature_chat_plans", "pro,enterprise", false},
+		{"feature_chat_plans", "pro,", false},
+		{"feature_chat", "true", true},
+		{"feature_chat", "false", true},
+		{"feature_chat", "pro", false},
 	}
 	for _, c := range cases {
 		if got := checkValue(c.key, c.value); (got == "") != c.ok {

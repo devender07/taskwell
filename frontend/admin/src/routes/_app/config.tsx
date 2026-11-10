@@ -32,7 +32,7 @@ function Config() {
   const { q = '' } = Route.useSearch()
   const navigate = Route.useNavigate()
   const needle = q.trim().toLowerCase().replace(/\s+/g, '_')
-  const shown = settings.filter((s) => !needle || s.key.includes(needle) || group(s.key).toLowerCase().includes(q.trim().toLowerCase()))
+  const shown = settings.filter((s) => !s.key.startsWith('feature_') && (!needle || s.key.includes(needle) || group(s.key).toLowerCase().includes(q.trim().toLowerCase())))
 
   return (
     <main className="grid gap-8 w-full px-6 py-10" style={{ maxWidth: 1040 }}>

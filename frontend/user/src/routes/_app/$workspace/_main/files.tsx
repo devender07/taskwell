@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { FolderIcon } from '@taskwell/shared/icons'
-import { storagePath, workspacePath, type Project, type StorageUsage } from '@/api'
+import { storagePath, workspacePath, type Project, type StorageUsage, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { formatBytes } from '@/components/files/bytes'
 import '@/components/files/files.css'
@@ -8,6 +8,7 @@ import '@/components/home/home.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/files')({
+  beforeLoad: requireFeature('files'),
   loader: async (ctx) => {
     const [projects, storage] = await Promise.all([
       loaderApi<Project[]>(ctx, `${workspacePath(ctx.params.workspace)}/projects`),

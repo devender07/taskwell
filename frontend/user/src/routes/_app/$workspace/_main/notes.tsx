@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute, useRouteContext } from '@tanstack/react-router'
 import { Input } from '@taskwell/shared/input'
 import type { Doc } from '@taskwell/shared/rich-editor'
-import { notesPath, type Note } from '@/api'
+import { notesPath, type Note, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { NewNoteDialog, NoteComposer } from '@/components/notes/composer'
 import { NoteCard, NoteDialog } from '@/components/notes/note-card'
@@ -14,6 +14,7 @@ import { byId, extractDataFromArray } from '@taskwell/shared/list'
 type Search = { label?: string; archived?: true; q?: string; note?: string }
 
 export const Route = createFileRoute('/_app/$workspace/_main/notes')({
+  beforeLoad: requireFeature('notes'),
   // Filters run on the loaded notes: the API returns all of the caller's, archived too.
   validateSearch: (search): Search => ({
     ...(typeof search.label === 'string' && search.label && { label: search.label }),

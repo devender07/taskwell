@@ -11,9 +11,10 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 )
 
-// TestPlanLimits: limits are the owner's plan. On Free (5) members plus pending invites to other emails fill the
+// TestPlanLimits: limits are the owner's plan. On Starter (10) members plus pending invites to other emails fill the
 // plan, so a new invite is a 402 while re-inviting a pending email isn't counted twice; joining is refused only once
-// members alone fill it. Starter and Pro raise the limit and Advanced has none; a workspace without an owner is on Free.
+// members alone fill it. Free allows only the owner, Pro raises the limit and Advanced has none; a workspace without an
+// owner is on Free.
 func TestPlanLimits(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -23,7 +24,8 @@ func TestPlanLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for range 3 {
+	dbtest.SetPlan(t, pool, ann, "starter")
+	for range 8 {
 		dbtest.Join(t, pool, ws.ID, dbtest.User(t, pool, "Mem"), "member")
 	}
 	email := func(id string) string {
@@ -44,12 +46,12 @@ func TestPlanLimits(t *testing.T) {
 		}
 		return inv.ID
 	}
-	bobInv := invite(email(bob)) // 4 members + 1 invite: full
+	bobInv := invite(email(bob)) // 9 members + 1 invite: full
 
 	mux := http.NewServeMux()
 	New(pool, dbtest.Auth, nil, nil).Register(mux)
 	code, body := dbtest.Do(t, mux, ann, "POST", "/api/workspaces/"+ws.Slug+"/invites", url.Values{"email": {"new@dbtest.test"}})
-	if code != 402 || !strings.Contains(body, "This workspace's plan allows 5 members. Its owner can upgrade for more.") {
+	if code != 402 || !strings.Contains(body, "This workspace's plan allows 10 members. Its owner can upgrade for more.") {
 		t.Fatalf("invite over the limit: %d %s", code, body)
 	}
 	if full, _, err := m.seatsFull(ctx, ws.ID, email(bob)); err != nil || full {
@@ -57,7 +59,7 @@ func TestPlanLimits(t *testing.T) {
 	}
 
 	if code, body := dbtest.Do(t, mux, bob, "POST", "/api/me/invites/"+bobInv+"/accept", nil); code != 200 {
-		t.Fatalf("Bob joins as the 5th: %d %s", code, body)
+		t.Fatalf("Bob joins as the 10th: %d %s", code, body)
 	}
 	caraInv := invite(email(cara))
 	code, body = dbtest.Do(t, mux, cara, "POST", "/api/me/invites/"+caraInv+"/accept", nil)
@@ -65,10 +67,14 @@ func TestPlanLimits(t *testing.T) {
 		t.Fatalf("Cara joins a full workspace: %d %s", code, body)
 	}
 
-	for p, want := range map[string]int{"starter": 10, "pro": 25, "advanced": 0} {
-		dbtest.SetPlan(t, pool, ann, p)
-		if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || full || limit != want {
-			t.Fatalf("%s: full %v limit %d %v", p, full, limit, err)
+	for _, c := range []struct {
+		plan  string
+		full  bool
+		limit int
+	}{{"free", true, 1}, {"pro", false, 25}, {"advanced", false, 0}} {
+		dbtest.SetPlan(t, pool, ann, c.plan)
+		if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || full != c.full || limit != c.limit {
+			t.Fatalf("%s: full %v limit %d %v", c.plan, full, limit, err)
 		}
 	}
 	if code, body := dbtest.Do(t, mux, cara, "POST", "/api/me/invites/"+caraInv+"/accept", nil); code != 200 {
@@ -79,7 +85,7 @@ func TestPlanLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `delete from workspaces where id = $1`, ws.ID) })
-	if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || !full || limit != 5 {
+	if full, limit, err := m.seatsFull(ctx, ws.ID, "new@dbtest.test"); err != nil || !full || limit != 1 {
 		t.Fatalf("owner-less: full %v limit %d %v", full, limit, err)
 	}
 }

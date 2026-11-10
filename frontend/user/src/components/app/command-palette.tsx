@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { createPortal } from 'react-dom'
 import { filterOptions, type Option } from '@taskwell/shared/match'
 import { CheckIcon } from '@taskwell/shared/icons'
-import { api, can, listCycles, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
+import { api, can, featureOn, listCycles, useFeatures, type Feature, toFormErrors, type Chat, type Cycle, type Issue, type Label, type Member, type SearchResult, type Status, type Workspace, workspacePath } from '@/api'
 import { LabelDot, StatusIcon, assigneeOptions, priorityOptions, statusOptions } from '@/components/issues/fields'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
@@ -36,6 +36,22 @@ const MODE_ACTION: Record<Exclude<Mode, 'root'>, [string, string]> = {
 const SETTINGS = ['Profile', 'Notifications', 'API tokens', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels']
 // Actions for pages a guest can't use.
 const GUEST_HIDDEN = new Set(['roadmap', 'inbox', 'notes', 'feedback', 'add-feedback', 'new-message', 'new-group', 'Workspace', 'Members', 'Roles', 'Workflow', 'Labels', 'Integrations', 'Feedback form'])
+// Actions for features staff turned off; `chat-<id>` actions belong to chat.
+const FEATURE_OF: Partial<Record<string, Feature>> = {
+  roadmap: 'roadmap',
+  'current-cycle': 'cycles',
+  files: 'files',
+  'all-files': 'files',
+  inbox: 'chat',
+  'new-message': 'chat',
+  'new-group': 'chat',
+  notes: 'notes',
+  feedback: 'feedback',
+  'add-feedback': 'feedback',
+  'Feedback form': 'feedback',
+  'API tokens': 'api',
+  Integrations: 'integrations',
+}
 
 export function CommandPalette({ mode, onClose, ...rest }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -71,6 +87,9 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   const navigate = useNavigate()
   const router = useRouter()
   const undo = useUndoDelete(workspace.slug)
+  const features = useFeatures()
+  const chatOn = featureOn(features, 'chat')
+  const cyclesOn = featureOn(features, 'cycles')
   const [mode, setMode] = useState<Mode>(initial)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -120,18 +139,18 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
   }, [mode, q, slug, ctx])
 
   useEffect(() => {
-    if (mode !== 'root') return
+    if (mode !== 'root' || !chatOn) return
     const ctrl = new AbortController()
     api<Chat[]>(`${workspacePath(slug)}/chats`, undefined, 'GET', ctrl.signal).then(setChats, () => {})
     return () => ctrl.abort()
-  }, [mode, slug])
+  }, [mode, slug, chatOn])
 
   useEffect(() => {
-    if (mode !== 'root' || !projectKey) return
+    if (mode !== 'root' || !projectKey || !cyclesOn) return
     const ctrl = new AbortController()
     listCycles(slug, projectKey, ctrl.signal).then((list) => setCycles({ key: projectKey, list }), () => {})
     return () => ctrl.abort()
-  }, [mode, slug, projectKey])
+  }, [mode, slug, projectKey, cyclesOn])
 
   async function save(field: string, values: string[], stay = false) {
     if (!ctx) return
@@ -272,7 +291,11 @@ function PaletteBody({ workspace, initial, issue: ctx, projectKey, copyBranch, o
         })
       }
     }
-    const matched = filterOptions(workspace.guest ? actions.filter((a) => !GUEST_HIDDEN.has(a.value)) : actions, q) as typeof actions
+    const shown = actions.filter((a) => {
+      const feature = a.value.startsWith('chat-') ? 'chat' : FEATURE_OF[a.value]
+      return (!feature || featureOn(features, feature)) && !(workspace.guest && GUEST_HIDDEN.has(a.value))
+    })
+    const matched = filterOptions(shown, q) as typeof actions
     if (matched.length) {
       groups.push({
         label: 'Actions',

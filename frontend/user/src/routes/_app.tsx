@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute, redirect, useParams } from '@tanstack/react-router'
 import { ToastProvider } from '@taskwell/shared/toast'
-import { api, getMe, safeRedirect, type User, type Workspace } from '@/api'
+import { api, getMe, safeRedirect, useFeature, type User, type Workspace } from '@/api'
 import { useChatAlerts } from '@/components/app/chat-alert'
 import { MenuProvider, Navbar } from '@/components/app/navbar'
 import { UnreadProvider } from '@/components/app/unread'
@@ -27,7 +27,7 @@ function AppLayout() {
   const { user, workspaces } = Route.useRouteContext()
   const workspace = useParams({ strict: false }).workspace
   useRealtime(workspace)
-  useChatAlerts(workspace, user.id)
+  useChatAlerts(useFeature('chat') ? workspace : undefined, user.id)
   return (
     <ToastProvider>
       <UnreadProvider>

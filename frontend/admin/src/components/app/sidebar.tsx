@@ -24,6 +24,7 @@ export function Sidebar({ email }: { email: string }) {
       <Link to="/workspaces">Workspaces</Link>
       <Link to="/admins">Admins</Link>
       <Link to="/config">Config</Link>
+      <Link to="/features">Features</Link>
       <Link to="/audit">Audit log</Link>
       <div className="sidebar-foot">
         <span className="text-caption text-secondary ellipsis" title={email}>{email}</span>

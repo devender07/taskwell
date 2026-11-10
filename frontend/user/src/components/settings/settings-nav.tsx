@@ -2,11 +2,22 @@ import { Link, useLoaderData, useLocation } from '@tanstack/react-router'
 import { Fragment, useState } from 'react'
 import { Dialog } from '@taskwell/shared/dialog'
 import { BellIcon, ChevronDownIcon, CreditCardIcon, FileIcon, FeedbackIcon, FlaskIcon, GridIcon, HistoryIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
-import { can } from '@/api'
+import { can, featureOn, useFeatures, type Feature } from '@/api'
 import './settings.css'
+
+const FEATURE_OF: Partial<Record<string, Feature>> = {
+  '/$workspace/settings/api-tokens': 'api',
+  '/$workspace/settings/templates': 'templates',
+  '/$workspace/settings/ai-testing': 'ai_testing',
+  '/$workspace/settings/integrations': 'integrations',
+  '/$workspace/settings/webhooks': 'webhooks',
+  '/$workspace/settings/feedback': 'feedback',
+}
 
 function useSections() {
   const ws = useLoaderData({ from: '/_app/$workspace' })
+  const features = useFeatures()
+  const on = (to: string) => !FEATURE_OF[to] || featureOn(features, FEATURE_OF[to])
   const integrations = can(ws, 'integrations.manage')
   const account = [
     { to: '/$workspace/settings/profile', label: 'Profile', Icon: UserIcon },
@@ -34,8 +45,8 @@ function useSections() {
         ...(can(ws, 'audit.view') ? [{ to: '/$workspace/settings/audit', label: 'Audit log', Icon: HistoryIcon }] : []),
       ]
   return [
-    { label: 'Account', items: account },
-    { label: 'Workspace', items: workspace },
+    { label: 'Account', items: account.filter((i) => on(i.to)) },
+    { label: 'Workspace', items: workspace.filter((i) => on(i.to)) },
   ].filter((s) => s.items.length)
 }
 

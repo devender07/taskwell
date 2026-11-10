@@ -8,7 +8,7 @@ import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import { Tabs } from '@taskwell/shared/tabs'
 import { filled } from '@taskwell/shared/validate'
-import { api, toFormErrors, workspacePath, type FieldErrors, type ImportSource, type ImportSummary, type Project, type Workspace } from '@/api'
+import { api, toFormErrors, useFeature, workspacePath, type FieldErrors, type ImportSource, type ImportSummary, type Project, type Workspace } from '@/api'
 import { reloadPage } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 
@@ -28,6 +28,7 @@ const SKIPPED_SHOWN = 20
 // "Import issues" button and its dialog, on the projects list and a project page (which passes only itself).
 export function ImportButton({ workspace, projects, project, variant = 'secondary' }: { workspace: Workspace; projects: Project[]; project?: string; variant?: 'primary' | 'secondary' | 'ghost' }) {
   const [open, setOpen] = useState(false)
+  if (!useFeature('imports')) return null
   return (
     <>
       <Button variant={variant} onClick={() => setOpen(true)}>

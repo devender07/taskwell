@@ -112,7 +112,11 @@ func (h *Handler) listenOnce(ctx context.Context) error {
 
 // sendNext claims a due delivery, posts it and records the outcome; false when nothing is due.
 func (h *Handler) sendNext(ctx context.Context) (bool, error) {
-	j, err := h.model.claim(ctx)
+	var plans []string // nil: every plan
+	if h.Plans != nil {
+		plans = h.Plans(ctx)
+	}
+	j, err := h.model.claim(ctx, plans)
 	if err != nil || j == nil {
 		return false, err
 	}

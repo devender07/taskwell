@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 )
@@ -102,7 +103,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if full, limit, err := h.model.seatsFull(ctx, ws.ID, email); err != nil {
 		return err
 	} else if full {
-		web.Err(w, http.StatusPaymentRequired, fmt.Sprintf("This workspace's plan allows %d members. Its owner can upgrade for more.", limit))
+		web.Err(w, http.StatusPaymentRequired, fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.", plan.Count(limit, "member")))
 		return nil
 	}
 	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {

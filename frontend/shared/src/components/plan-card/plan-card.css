@@ -1,5 +1,9 @@
 /* Pricing cards: the pricing page and billing settings. */
-.plan-grid { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.plan-grid { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Columns follow the space the grid gets (the billing page is narrower than /pricing): 4, then 2, then 1. */
+.plan-wrap { container-type: inline-size; }
+@container (max-width: 959px) { .plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 519px) { .plan-grid { grid-template-columns: minmax(0, 1fr); } }
 .plan-card { display: grid; grid-template-rows: subgrid; grid-row: span 6; gap: 16px; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .plan-card[data-featured] { border-color: var(--accent); }
 .plan-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
@@ -21,6 +25,3 @@
 .plan-includes li { display: flex; align-items: center; gap: 8px; }
 .plan-includes svg { flex-shrink: 0; color: var(--success); }
 .plan-includes p { margin: 0; font: 400 13px/19.5px var(--font); color: var(--text-2); }
-@media (max-width: 1023px) {
-  .plan-grid { grid-template-columns: minmax(0, 1fr); max-width: 480px; }
-}

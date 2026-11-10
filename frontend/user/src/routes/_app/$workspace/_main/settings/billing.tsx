@@ -1,7 +1,6 @@
 import { useTransition, useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { Button } from '@taskwell/shared/button'
-import { PlanIncludes } from '@taskwell/shared/plan-card'
 import { shortDate } from '@taskwell/shared/time'
 import { api, billingPath, openBillingPortal, storagePath, toFormErrors, workspaceBillingPath, type Billing, type WorkspaceBilling } from '@/api'
 import { trackPath } from '@/realtime'
@@ -99,7 +98,6 @@ function BillingSettings() {
         billing={account}
         onChanged={() => router.invalidate()}
       />
-      <PlanIncludes />
     </main>
   )
 }

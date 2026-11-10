@@ -3,13 +3,14 @@ import { BackLink } from '@taskwell/shared/back-link'
 import { useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
-import { ApiError, can, cyclesPath, type Cycle, type Project, workspacePath } from '@/api'
+import { ApiError, can, cyclesPath, type Cycle, type Project, workspacePath, requireFeature } from '@/api'
 import { loaderApi, trackPath } from '@/realtime'
 import { CycleForm, CycleProgress, Velocity } from '@/components/cycles/cycles'
 import { formatRange } from '@/components/issues/fields'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/')({
+  beforeLoad: requireFeature('cycles'),
   loader: async (ctx) => {
     const { params } = ctx
     const projectPath = `${workspacePath(params.workspace)}/projects/${encodeURIComponent(params.key)}`

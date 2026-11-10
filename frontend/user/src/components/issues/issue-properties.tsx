@@ -4,7 +4,7 @@ import { Avatar } from '@taskwell/shared/avatar'
 import { DatePicker } from '@taskwell/shared/date-picker'
 import { filterOptions } from '@taskwell/shared/match'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
-import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
+import { api, canViewMember, cyclesPath, featureOn, useFeatures, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -19,6 +19,8 @@ type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: L
 export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
+  const features = useFeatures()
+  const cycles = featureOn(features, 'cycles')
   // The change shows until the reloaded issue replaces it; useOptimistic dropped it a render before that, flashing the old value.
   const [pending, setPending] = useState<Partial<Issue> | null>(null)
   const [prevSaved, setPrevSaved] = useState(saved)
@@ -129,18 +131,20 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
               }}
             />
           ) : null}
-          <SmartAutocomplete
-            label="Cycle"
-            placeholder="No cycle"
-            loadOptions={loadCycles}
-            subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
-            value={issue.cycle ? cycleOption(issue.cycle) : null}
-            onChange={(o) => {
-              const id = extractDataFromArray(o, 'value', '')
-              if (id === (extractDataFromArray(issue.cycle, 'id', ''))) return
-              update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
-            }}
-          />
+          {cycles ? (
+            <SmartAutocomplete
+              label="Cycle"
+              placeholder="No cycle"
+              loadOptions={loadCycles}
+              subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
+              value={issue.cycle ? cycleOption(issue.cycle) : null}
+              onChange={(o) => {
+                const id = extractDataFromArray(o, 'value', '')
+                if (id === (extractDataFromArray(issue.cycle, 'id', ''))) return
+                update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
+              }}
+            />
+          ) : null}
           <div className="grid gap-2">
             <span className="text-label text-secondary">Labels</span>
             <LabelsPicker
@@ -180,7 +184,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             {issue.assignee ? (
               <span className="flex items-center gap-2">
                 <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
-                {canViewMember(workspace, issue.assignee.id, user.id) ? (
+                {featureOn(features, 'team') && canViewMember(workspace, issue.assignee.id, user.id) ? (
                   <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: issue.assignee.id }} className="member-link">
                     {issue.assignee.name}
                   </Link>
@@ -207,18 +211,20 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
               )}
             </Property>
           ) : null}
-          <Property label="Cycle">
-            {issue.cycle ? (
-              <Link
-                to="/$workspace/projects/$key/cycles/$number"
-                params={{ workspace: workspace.slug, key: issue.project.key, number: String(issue.cycle.number) }}
-              >
-                {issue.cycle.name}
-              </Link>
-            ) : (
-              <span className="text-secondary">No cycle</span>
-            )}
-          </Property>
+          {cycles ? (
+            <Property label="Cycle">
+              {issue.cycle ? (
+                <Link
+                  to="/$workspace/projects/$key/cycles/$number"
+                  params={{ workspace: workspace.slug, key: issue.project.key, number: String(issue.cycle.number) }}
+                >
+                  {issue.cycle.name}
+                </Link>
+              ) : (
+                <span className="text-secondary">No cycle</span>
+              )}
+            </Property>
+          ) : null}
           <Property label="Labels">
             {issue.labels.length ? <LabelChips labels={issue.labels} /> : <span className="text-secondary">No labels</span>}
           </Property>

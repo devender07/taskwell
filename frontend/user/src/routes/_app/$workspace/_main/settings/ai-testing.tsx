@@ -1,9 +1,10 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, type AiUsage, type TestAccount, type TestSite, workspacePath } from '@/api'
+import { can, type AiUsage, type TestAccount, type TestSite, workspacePath, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { Accounts, Sites, Usage } from '@/components/settings/ai-testing'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/ai-testing')({
+  beforeLoad: requireFeature('ai_testing'),
   loader: async (ctx) => {
     const path = `${workspacePath(ctx.params.workspace)}`
     const [usage, sites, accounts] = await Promise.all([

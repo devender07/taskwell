@@ -70,7 +70,7 @@ func TestClaim(t *testing.T) {
 	claimAll := func() int {
 		n := 0
 		for {
-			id, err := m.claim(ctx, 2, "")
+			id, err := m.claim(ctx, 2, "", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -192,7 +192,7 @@ func TestRecordedRuns(t *testing.T) {
 		t.Errorf("second run: %s", body)
 	}
 	for {
-		id, err := m.claim(ctx, 2, "")
+		id, err := m.claim(ctx, 2, "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -334,7 +334,7 @@ func TestRunner(t *testing.T) {
 	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, Files: storage.New(sysconfig.New(pool)), ChromeURL: chromeURL,
 		ProxyURL: proxyURL, Browsers: 1, Proxy: proxy})
 	for {
-		id, err := m.claim(ctx, 2, "")
+		id, err := m.claim(ctx, 2, "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -408,7 +408,7 @@ func TestRunner(t *testing.T) {
 		values ($1, $2, 'ai', $3, 'tok2', $4) returning id::text`, wsID, issueID, ann, cs[0].ID).Scan(&replayID); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := m.claim(ctx, 2, ""); err != nil || id != replayID {
+	if id, err := m.claim(ctx, 2, "", nil); err != nil || id != replayID {
 		t.Fatalf("claim replay run: %q %v", id, err)
 	}
 	r.execute(ctx, replayID)
@@ -442,7 +442,7 @@ func TestRunner(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, err := m.claim(ctx, 2, ""); err != nil || got != id {
+		if got, err := m.claim(ctx, 2, "", nil); err != nil || got != id {
 			t.Fatalf("claim replay run: %q %v", got, err)
 		}
 		r.execute(ctx, id)

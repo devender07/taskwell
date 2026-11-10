@@ -2,12 +2,12 @@ import { useEffect, useState, useTransition } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
-import { PlanCard } from '@taskwell/shared/plan-card'
+import { PlanCard, PlanIncludes } from '@taskwell/shared/plan-card'
 import { Tabs } from '@taskwell/shared/tabs'
-import { ApiError, changePlan, startCheckout, toFormErrors, type Billing } from '@/api'
+import { ApiError, changePlan, getFeaturePlans, startCheckout, toFormErrors, type Billing, type Feature } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { openCheckout, previewPrices } from '@/paddle'
-import { PRICE_IDS, TIERS, type Interval, type Tier } from '@/pricing/tiers'
+import { FREE, PRICE_IDS, TIERS, type Interval, type Tier } from '@/pricing/tiers'
 
 const INTERVALS: { value: Interval; label: string }[] = [
   { value: 'month', label: 'Monthly' },
@@ -17,6 +17,34 @@ const INTERVALS: { value: Interval; label: string }[] = [
 export const SUBSCRIBED = ['active', 'trialing', 'past_due']
 
 export const validateInterval = (v: unknown): Interval => (v === 'year' ? 'year' : 'month')
+
+const CORE = ['Projects and issues', 'List and board views', 'Comments and mentions', 'Notifications']
+const FEATURES: [Feature, string][] = [
+  ['cycles', 'Cycles'],
+  ['roadmap', 'Roadmap and milestones'],
+  ['notes', 'Notes'],
+  ['chat', 'Chat'],
+  ['files', 'Project files'],
+  ['feedback', 'Customer feedback'],
+  ['team', 'Team analytics'],
+  ['templates', 'Templates'],
+  ['imports', 'CSV and GitHub import'],
+  ['ai_testing', 'AI testing'],
+  ['api', 'MCP and API'],
+  ['webhooks', 'Webhooks'],
+  ['integrations', 'GitHub and GitLab'],
+]
+
+// Features every plan has go under "Every plan includes"; a card lists the ones only some plans have.
+// Before the flags load (or if they can't), every feature counts as on everywhere.
+function split(plans: Partial<Record<Feature, string[]>> | null) {
+  const on = (f: Feature, tier: string) => !plans?.[f] || plans[f]!.includes(tier)
+  const everywhere = FEATURES.filter(([f]) => [FREE, ...TIERS].every((t) => on(f, t.id)))
+  return {
+    includes: [...CORE, ...everywhere.map(([, label]) => label)],
+    extras: (tier: string) => FEATURES.filter(([f]) => on(f, tier) && !everywhere.some(([e]) => e === f)).map(([, label]) => label),
+  }
+}
 
 type Props = {
   interval: Interval
@@ -31,9 +59,11 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [switchTo, setSwitchTo] = useState<Tier | null>(null)
+  const [featurePlans, setFeaturePlans] = useState<Partial<Record<Feature, string[]>> | null>(null)
 
   useEffect(() => {
     let live = true
+    getFeaturePlans().then((f) => live && setFeaturePlans(f))
     previewPrices(PRICE_IDS).then(
       (p) => live && setPrices(p),
       (e) => {
@@ -74,6 +104,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   const actions = billing ? billing.enabled && !billing.comped : true
   const period = interval === 'month' ? '/ month' : '/ year'
   const trial = !billing?.trial_used
+  const { includes, extras } = split(featurePlans)
 
   const cta = (t: Tier) => {
     const priceId = (trial ? t.priceId : t.noTrial)[interval]
@@ -95,13 +126,22 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="plan-wrap grid gap-6">
       <div className="flex">
         <Tabs items={INTERVALS} value={interval} onChange={onInterval} aria-label="Billing interval" />
       </div>
       {billing && !billing.enabled ? <p className="text-body-sm text-secondary m-0">Billing isn't set up yet.</p> : null}
       {priceError ? <p className="text-body-sm text-secondary m-0">Prices couldn't load. Refresh the page to try again.</p> : null}
       <ul className="plan-grid">
+        <PlanCard name={FREE.name} tagline={FREE.description} price="Free" period="" checks={[...FREE.limits, ...extras(FREE.id)]}>
+          {!billing ? (
+            <Link to="/signup" className="button button-primary">
+              Get started
+            </Link>
+          ) : !subscribed && billing.plan === FREE.id ? (
+            <p className="plan-current">Current plan</p>
+          ) : null}
+        </PlanCard>
         {TIERS.map((t) => (
           <PlanCard
             key={t.id}
@@ -111,13 +151,14 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
             period={period}
             note={trial ? '7-day free trial' : undefined}
             featured={t.featured}
-            checks={t.features}
+            checks={[...t.limits, ...extras(t.id)]}
           >
             {cta(t)}
           </PlanCard>
         ))}
       </ul>
       {switchTo ? null : <FormError>{error}</FormError>}
+      <PlanIncludes items={includes} />
       <Dialog
         open={switchTo !== null}
         onClose={() => {

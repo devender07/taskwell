@@ -2,7 +2,7 @@ import { Link, createFileRoute, useLoaderData, useNavigate } from '@tanstack/rea
 import { useRef } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Tabs } from '@taskwell/shared/tabs'
-import { can, roadmapPath, type RoadmapProject } from '@/api'
+import { can, roadmapPath, type RoadmapProject, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { Roadmap, scrollToToday } from '@/components/roadmap/roadmap'
 import type { Zoom } from '@/components/roadmap/timeline'
@@ -14,6 +14,7 @@ const zooms: { value: Zoom; label: string }[] = [
 ]
 
 export const Route = createFileRoute('/_app/$workspace/_main/roadmap')({
+  beforeLoad: requireFeature('roadmap'),
   // quarter, the default, stays out of the URL.
   validateSearch: (search): { zoom?: 'month' | 'year' } => (search.zoom === 'month' || search.zoom === 'year' ? { zoom: search.zoom } : {}),
   loader: (ctx) => loaderApi<RoadmapProject[]>(ctx, roadmapPath(ctx.params.workspace)),

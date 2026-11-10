@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
@@ -242,7 +243,7 @@ type job struct {
 
 // claim takes the oldest due delivery of an active webhook, counting the attempt and pushing next_at past the send
 // (so a crashed send is retried), and commits before the send; nil when nothing is due.
-func (m *model) claim(ctx context.Context) (*job, error) {
+func (m *model) claim(ctx context.Context, plans []string) (*job, error) {
 	var j job
 	err := m.db.QueryRow(ctx,
 		`update webhook_deliveries d set attempts = d.attempts + 1, next_at = now() + interval '1 minute'
@@ -250,8 +251,9 @@ func (m *model) claim(ctx context.Context) (*job, error) {
 		 where w.id = d.webhook_id and d.id = (
 		   select d2.id from webhook_deliveries d2 join webhooks w2 on w2.id = d2.webhook_id
 		   where d2.status = 'pending' and d2.next_at <= now() and w2.active
+		     and ($1::text[] is null or `+plan.SQL("w2.workspace_id")+` = any($1))
 		   order by d2.next_at limit 1 for update of d2 skip locked)
-		 returning d.id::text, w.id::text, w.workspace_id::text, s.slug, d.event, w.url, w.secret, d.payload::text, d.attempts`).
+		 returning d.id::text, w.id::text, w.workspace_id::text, s.slug, d.event, w.url, w.secret, d.payload::text, d.attempts`, plans).
 		Scan(&j.id, &j.webhookID, &j.wsID, &j.slug, &j.event, &j.url, &j.sealed, &j.payload, &j.attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

@@ -1,9 +1,10 @@
 import { createFileRoute, useLoaderData } from '@tanstack/react-router'
-import { can, templatesPath, type Label, type Project, type Status, type Template, workspacePath } from '@/api'
+import { can, templatesPath, type Label, type Project, type Status, type Template, workspacePath, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { Templates } from '@/components/templates/templates'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/templates')({
+  beforeLoad: requireFeature('templates'),
   loader: async (ctx) => {
     const path = workspacePath(ctx.params.workspace)
     const [templates, projects, statuses, labels] = await Promise.all([

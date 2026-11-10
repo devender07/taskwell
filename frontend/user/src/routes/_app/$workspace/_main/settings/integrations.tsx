@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ApiError, integrationsPath, type Integration, type Status, workspacePath } from '@/api'
+import { ApiError, integrationsPath, type Integration, type Status, workspacePath, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { IntegrationCard } from '@/components/settings/integrations'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/integrations')({
+  beforeLoad: requireFeature('integrations'),
   loader: async (ctx) => {
     const { workspace } = ctx.params
     const [integrations, statuses] = await Promise.all([

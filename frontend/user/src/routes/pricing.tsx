@@ -1,6 +1,5 @@
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { Logo } from '@taskwell/shared/logo'
-import { PlanIncludes } from '@taskwell/shared/plan-card'
 import { api, billingPath, getMe, type Billing } from '@/api'
 import { PricingTable, validateInterval } from '@/pricing/pricing-table'
 import type { Interval } from '@/pricing/tiers'
@@ -28,7 +27,7 @@ const FAQ = [
     "The person who creates workspaces. One plan covers every workspace you create and everyone in them, up to its limits. Members you invite don't need a plan.",
   ],
   ['How does the free trial work?', 'Your first subscription starts with 7 days free, once per account. Add a card at checkout; you are charged when the trial ends unless you cancel first.'],
-  ['What do we get without a plan?', 'Free gives you 1 workspace with 1 project, up to 5 members and 2 GB of storage.'],
+  ['What do we get without a plan?', 'Free gives you 1 workspace with 1 project and 2 GB of storage, for you alone. To invite your team, choose a paid plan.'],
   [
     'What happens if we go over a limit?',
     "Nothing is deleted. You can't create more workspaces or projects, invite more members or upload more files until you upgrade or make room.",
@@ -72,7 +71,6 @@ function Pricing() {
           billing={billing}
           onChanged={() => router.invalidate()}
         />
-        <PlanIncludes />
         <section className="faq" aria-labelledby="faq">
           <h2 id="faq" className="text-h2">
             Questions

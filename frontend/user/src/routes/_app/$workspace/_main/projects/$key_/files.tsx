@@ -8,7 +8,7 @@ import { ProgressRing } from '@taskwell/shared/progress-ring'
 import { ChevronRightIcon, FileIcon, FolderIcon, MoreIcon, UploadIcon, XIcon } from '@taskwell/shared/icons'
 import { Input } from '@taskwell/shared/input'
 import { Popover } from '@taskwell/shared/popover'
-import { ApiError, MEDIA_TYPES, can, filesListPath, uploadProjectFile, workspacePath, type FilesPage, type Project } from '@/api'
+import { ApiError, MEDIA_TYPES, can, filesListPath, uploadProjectFile, workspacePath, type FilesPage, type Project, requireFeature } from '@/api'
 import { loaderApi, reloadPage } from '@/realtime'
 import { formatBytes } from '@/components/files/bytes'
 import { FileDialog, type Action, type Item } from '@/components/files/files'
@@ -22,6 +22,7 @@ type Upload = { id: number; name: string; sent?: number; error: string | null }
 let uploadId = 0
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/files')({
+  beforeLoad: requireFeature('files'),
   // folder: a folder's id, or "attachments" for the issue attachments; q searches names across the project.
   validateSearch: (search): Search => ({
     ...(typeof search.folder === 'string' && search.folder && { folder: search.folder }),

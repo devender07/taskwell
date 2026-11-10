@@ -30,6 +30,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/cycle"
 	"github.com/devender07/taskwell/backend/user/internal/db"
 	"github.com/devender07/taskwell/backend/user/internal/export"
+	"github.com/devender07/taskwell/backend/user/internal/feature"
 	"github.com/devender07/taskwell/backend/user/internal/feedback"
 	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/gitlink"
@@ -109,6 +110,7 @@ func main() {
 	logConfig(prod, addr, dbURL, base, secret != nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	features := feature.New(cfg, pool)
 	maxAttempts, err := strconv.Atoi(env.Get("MAIL_MAX_ATTEMPTS", "8"))
 	if err != nil || maxAttempts < 1 {
 		obs.Fatal("MAIL_MAX_ATTEMPTS must be a number of at least 1")
@@ -139,6 +141,7 @@ func main() {
 	noteH := note.New(pool, authenticate, wsH.Member)
 	noteH.Register(mux)
 	templateH := template.New(pool, authenticate, wsH.Member)
+	features.Register(mux, authenticate, wsH.Member)
 	templateH.Register(mux)
 	jwtSecret := string(secret)
 	if jwtSecret == "" {
@@ -174,6 +177,8 @@ func main() {
 	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: allowPrivate},
 		authenticate, wsH.Member).Register(mux)
 	webhookH := webhook.New(pool, webhook.Options{Key: gitKey, AllowHTTP: !prod, AllowPrivate: allowPrivate}, authenticate, wsH.Member)
+	webhookH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Webhooks) }
+	templateH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Templates) }
 	webhookH.Register(mux)
 	// Background work stops after the server has drained (see shutdown), so it's on its own context.
 	work, stopWork := context.WithCancel(context.Background())
@@ -200,6 +205,9 @@ func main() {
 			return s, "", nil
 		})
 	rtH.JoinNote = func(ctx context.Context, c *realtime.Conn, userID, slug, id string) (realtime.Collab, string, error) {
+		if !features.InWorkspace(ctx, feature.Notes, slug) {
+			return nil, feature.Off, nil
+		}
 		s, msg, err := noteH.Join(ctx, c, userID, slug, id)
 		if s == nil {
 			return nil, msg, err
@@ -214,7 +222,13 @@ func main() {
 	rtH.AppOrigin = authH.AppOrigin
 	chatH := chat.New(pool, authenticate, wsH.Member)
 	chatH.Register(mux)
-	rtH.ChatAudience = chatH.Audience
+	rtH.ChatAudience = func(ctx context.Context, userID, chatID string) ([]string, error) {
+		aud, err := chatH.Audience(ctx, userID, chatID) // checks chatID is a UUID
+		if err != nil || len(aud) == 0 || !features.InChat(ctx, feature.Chat, chatID) {
+			return nil, err // nobody: typing is dropped
+		}
+		return aud, nil
+	}
 	rtH.Register(mux)
 	wg.Go(func() { rtH.Listen(work) })
 	wg.Go(func() { rtH.Presence(work) })
@@ -262,7 +276,7 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(features.Middleware(mux)))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }

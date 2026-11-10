@@ -8,7 +8,7 @@ import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { groupName } from '@taskwell/shared/validate'
 import { ArrowLeftIcon, XIcon } from '@taskwell/shared/icons'
-import { api, avatarSrc, canViewMember, toFormErrors, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
+import { api, avatarSrc, canViewMember, toFormErrors, useFeature, type Chat, type FieldErrors, type PersonRef, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { searchMembers, useMemberPages } from '@/components/workspace/member-pages'
 import { reloadRoutes } from '@/realtime'
@@ -274,6 +274,7 @@ const NO_PAGE = { members: [], invites: [], total: 0, has_more: false }
 export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: Chat; me: string; onClose: () => void }) {
   const router = useRouter()
   const ws = useLoaderData({ from: '/_app/$workspace' })
+  const team = useFeature('team')
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -326,7 +327,7 @@ export function PeoplePanel({ slug, chat, me, onClose }: { slug: string; chat: C
               <Avatar name={p.name} size={32} src={avatarSrc(p.id)} />
               <span className="grid flex-grow" style={{ minWidth: 0 }}>
                 <span className="text-body-sm ellipsis">
-                  {canViewMember(ws, p.id, me) ? (
+                  {team && canViewMember(ws, p.id, me) ? (
                     <Link to="/$workspace/members/$id" params={{ workspace: slug, id: p.id }} className="member-link">
                       {p.name}
                     </Link>

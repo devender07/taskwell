@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { ChevronDownIcon, ChevronUpIcon } from '@taskwell/shared/icons'
-import { ApiError, teamAnalyticsPath, type TeamMember } from '@/api'
+import { ApiError, teamAnalyticsPath, type TeamMember, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { days, sortTeam, validateTeamSearch, type TeamSort } from '@/components/analytics/analytics'
 import { useRefetchEvery } from '@/components/analytics/member-analytics'
@@ -14,6 +14,7 @@ const COLUMNS: { key: TeamSort; label: string }[] = [
 ]
 
 export const Route = createFileRoute('/_app/$workspace/_main/team')({
+  beforeLoad: requireFeature('team'),
   validateSearch: validateTeamSearch,
   loader: (ctx) =>
     loaderApi<{ members: TeamMember[] }>(ctx, teamAnalyticsPath(ctx.params.workspace)).catch((e) => {

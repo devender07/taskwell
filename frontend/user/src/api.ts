@@ -1,4 +1,4 @@
-import { redirect } from '@tanstack/react-router'
+import { notFound, redirect, useMatch } from '@tanstack/react-router'
 import type { Doc } from '@taskwell/shared/rich-editor'
 import { ApiError, FALLBACK } from '@taskwell/shared/api-errors'
 import { apiUrl } from '@taskwell/shared/api-url'
@@ -310,6 +310,22 @@ export type ImportSummary = {
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
+
+// Staff turn features on per plan in the admin app; a missing key counts as on.
+export type Feature = 'chat' | 'notes' | 'files' | 'roadmap' | 'feedback' | 'team' | 'cycles' | 'ai_testing' | 'integrations' | 'webhooks' | 'templates' | 'api' | 'imports'
+export type Features = Partial<Record<Feature, boolean>>
+const ALL_ON: Features = {}
+export const getFeatures = (slug: string) => api<Features>(`${workspacePath(slug)}/features`).catch(() => ALL_ON)
+// Public: each feature's plan ids, for the pricing page; null when they can't load.
+export const getFeaturePlans = () => api<Partial<Record<Feature, string[]>>>('/features').catch(() => null)
+export const featureOn = (features: Features, name: Feature) => features[name] !== false
+// The open workspace's flags (fetched by the $workspace route); outside a workspace everything is on.
+export const useFeatures = () => useMatch({ from: '/_app/$workspace', shouldThrow: false, select: (m) => m.context.features }) ?? ALL_ON
+export const useFeature = (name: Feature) => featureOn(useFeatures(), name)
+// A feature-owned route's beforeLoad: its URLs show not found while the feature is off.
+export const requireFeature = (name: Feature) => ({ context }: { context: { features: Features } }) => {
+  if (!featureOn(context.features, name)) throw notFound()
+}
 
 export type AnalyticsWeek = { week: string; completed: number; created: number; comments: number }
 export type MemberAnalytics = {

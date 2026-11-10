@@ -4,7 +4,7 @@ export interface Tier {
   id: 'starter' | 'pro' | 'advanced'
   name: 'Starter' | 'Pro' | 'Advanced'
   description: string
-  features: string[]
+  limits: string[]
   priceId: { month: string; year: string }
   // The same prices without the trial, for an account that has had a subscription (one trial per account).
   noTrial: { month: string; year: string }
@@ -18,7 +18,7 @@ export const TIERS: Tier[] = [
     id: 'starter',
     name: 'Starter',
     description: 'For small teams getting started',
-    features: ['1 workspace', '5 projects per workspace', 'Up to 10 members per workspace', '20 GB storage per workspace', 'Every Taskwell feature'],
+    limits: ['1 workspace', '5 projects per workspace', 'Up to 10 members per workspace', '20 GB storage per workspace'],
     priceId: {
       month: 'pri_01m6wk3cmqzf6zhwrsdhq79xhx',
       year: 'pri_01m6wk3cxd0b6mdhphsj67m1hk',
@@ -32,7 +32,7 @@ export const TIERS: Tier[] = [
     id: 'pro',
     name: 'Pro',
     description: 'For growing teams',
-    features: ['3 workspaces', 'Unlimited projects', 'Up to 25 members per workspace', '100 GB storage per workspace', 'Every Taskwell feature'],
+    limits: ['3 workspaces', 'Unlimited projects', 'Up to 25 members per workspace', '100 GB storage per workspace'],
     priceId: {
       month: 'pri_01m6wk3df6zkt76e4zsz6q1x8a',
       year: 'pri_01m6wk3dqt1m882m8a68khw5fk',
@@ -47,7 +47,7 @@ export const TIERS: Tier[] = [
     id: 'advanced',
     name: 'Advanced',
     description: 'For larger teams and lots of files',
-    features: ['Unlimited workspaces', 'Unlimited projects', 'Unlimited members', 'Unlimited storage', 'Every Taskwell feature'],
+    limits: ['Unlimited workspaces', 'Unlimited projects', 'Unlimited members', 'Unlimited storage'],
     priceId: {
       month: 'pri_01m6wk3eavpqzpc1gjs4ace2p9',
       year: 'pri_01m6wk3ekevk50xcfe07vjxbnk',
@@ -58,6 +58,14 @@ export const TIERS: Tier[] = [
     },
   },
 ]
+
+// The free plan: no price, no checkout. Its limits match backend/user/internal/plan.
+export const FREE = {
+  id: 'free',
+  name: 'Free',
+  description: 'For trying Taskwell',
+  limits: ['1 workspace', '1 project', 'Just you, no other members', '2 GB storage'],
+} as const
 
 export const PRICE_IDS = TIERS.flatMap((t) => [t.priceId.month, t.priceId.year])
 

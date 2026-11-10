@@ -28,7 +28,11 @@ func (h *Handler) Run(ctx context.Context, every time.Duration) {
 // RunDue creates an issue for each template due on or before today and returns how many it created. A template that
 // fails is logged and the rest still run.
 func (h *Handler) RunDue(ctx context.Context, today time.Time) (int, error) {
-	ids, err := h.model.due(ctx, today)
+	var plans []string // nil: every plan
+	if h.Plans != nil {
+		plans = h.Plans(ctx)
+	}
+	ids, err := h.model.due(ctx, today, plans)
 	if err != nil {
 		return 0, err
 	}

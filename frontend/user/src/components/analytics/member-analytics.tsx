@@ -1,7 +1,7 @@
 import { Link, useRouter } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { CategoryGlyph } from '@taskwell/shared/icons'
-import type { AnalyticsWeek, MemberAnalytics } from '@/api'
+import { useFeature, type AnalyticsWeek, type MemberAnalytics } from '@/api'
 import { reloadRoutes } from '@/realtime'
 import { Card, Empty } from '@/components/home/blocks'
 import { categoryLabel } from '@/components/issues/fields'
@@ -170,6 +170,7 @@ function Cycles({ workspace, cycles }: { workspace: string; cycles: MemberAnalyt
 }
 
 export function MemberCards({ workspace, data }: { workspace: string; data: MemberAnalytics }) {
+  const cycles = useFeature('cycles')
   return (
     <>
       <Stats data={data} />
@@ -177,7 +178,7 @@ export function MemberCards({ workspace, data }: { workspace: string; data: Memb
         <Completed data={data} />
         <Activity weeks={data.weeks} />
         <Workload open={data.open} />
-        <Cycles workspace={workspace} cycles={data.current_cycles} />
+        {cycles ? <Cycles workspace={workspace} cycles={data.current_cycles} /> : null}
       </div>
     </>
   )

@@ -1,7 +1,7 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
 import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
-import { can } from '@/api'
+import { can, featureOn, useFeatures, type Feature } from '@/api'
 import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
@@ -11,7 +11,9 @@ import './sidebar.css'
 export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
   const ws = useLoaderData({ from: '/_app/$workspace' })
-  const team = can(ws, 'analytics.view')
+  const features = useFeatures()
+  const on = (name: Feature) => featureOn(features, name)
+  const team = can(ws, 'analytics.view') && on('team')
   const guest = ws.guest
   const unread = useUnread()
   const views = useLoaderData({ from: '/_app/$workspace/_main' })
@@ -50,7 +52,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
-      {guest ? null : (
+      {guest || !on('chat') ? null : (
         <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
           <InboxIcon />
           Inbox
@@ -65,25 +67,33 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <FolderIcon />
         Projects
       </Link>
-      <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
-        <FileIcon />
-        Files
-      </Link>
+      {on('files') ? (
+        <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
+          <FileIcon />
+          Files
+        </Link>
+      ) : null}
       {guest ? null : (
         <>
-          <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
-            <NoteIcon />
-            Notes
-          </Link>
-          <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
-            <RoadmapIcon />
-            Roadmap
-          </Link>
-          <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
-            <FeedbackIcon />
-            Feedback
-            {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
-          </Link>
+          {on('notes') ? (
+            <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
+              <NoteIcon />
+              Notes
+            </Link>
+          ) : null}
+          {on('roadmap') ? (
+            <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
+              <RoadmapIcon />
+              Roadmap
+            </Link>
+          ) : null}
+          {on('feedback') ? (
+            <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
+              <FeedbackIcon />
+              Feedback
+              {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
+            </Link>
+          ) : null}
         </>
       )}
       {team && !guest ? (

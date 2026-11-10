@@ -351,6 +351,13 @@ func TestWorker(t *testing.T) {
 	}
 
 	f.do(t, f.ann, "POST", "/"+wh.ID+"/test", nil, 202, nil)
+	// Webhooks on for Pro only, the owner is on Free: the delivery waits, no attempt used.
+	f.h.Plans = func(context.Context) []string { return []string{"pro"} }
+	send(false)
+	if ds := list(); len(ds) != 1 || ds[0].Status != "pending" || ds[0].Attempts != 0 {
+		t.Fatalf("paused %+v", ds)
+	}
+	f.h.Plans = nil
 	send(true)
 	h := <-hits
 	ds := list()

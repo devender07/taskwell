@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { CheckIcon } from '../icons/icons'
 import './plan-card.css'
 
-const INCLUDES = ['Projects and issues', 'List and board views', 'Cycles and roadmap', 'Notes', 'Chat', 'AI testing', 'MCP and API', 'Webhooks', 'GitHub and GitLab']
 
 type PlanCardProps = {
   name: string
@@ -45,12 +44,12 @@ export function PlanCard({ name, tagline, price, period, note, featured, checks,
   )
 }
 
-export function PlanIncludes() {
+export function PlanIncludes({ items }: { items: string[] }) {
   return (
     <section className="plan-includes" aria-labelledby="plan-includes">
       <h3 id="plan-includes">Every plan includes</h3>
       <ul>
-        {INCLUDES.map((i) => (
+        {items.map((i) => (
           <li key={i}>
             <CheckIcon size={16} />
             {i}
