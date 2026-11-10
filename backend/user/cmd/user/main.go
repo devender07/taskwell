@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,6 +40,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/note"
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/oauth"
+	"github.com/devender07/taskwell/backend/user/internal/onboarding"
 	"github.com/devender07/taskwell/backend/user/internal/project"
 	"github.com/devender07/taskwell/backend/user/internal/projectfile"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
@@ -54,6 +56,7 @@ import (
 func main() {
 	migrateOnly := flag.Bool("migrate", false, "apply the database migrations, then exit")
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
+	backfill := flag.Bool("paddle-backfill", false, "copy Paddle's transactions, adjustments and subscription prices into the database, then exit")
 	flag.Parse()
 	prod := os.Getenv("APP_ENV") == "production"
 	obs.Setup(prod)
@@ -131,6 +134,7 @@ func main() {
 		return id, err
 	}
 	wsH := workspace.New(pool, authenticate, mailer, cfg)
+	wsH.Reauthed = authH.Reauthed
 	wsH.Register(mux)
 	project.New(pool, authenticate, wsH.Member).Register(mux)
 	issueH := issue.New(pool, authenticate, wsH.Member)
@@ -149,6 +153,16 @@ func main() {
 			obs.Fatal("startup", "err", err)
 		}
 	}
+	billingH := billing.New(pool, cfg, mailer, jwtSecret, authenticate, wsH.Member)
+	if *backfill {
+		n, err := billingH.Backfill(context.Background())
+		if err != nil {
+			obs.Fatal("paddle-backfill", "err", err)
+		}
+		fmt.Printf("Stored %d transactions and %d adjustments; set the price of %d subscriptions.\n",
+			n.Transactions, n.Adjustments, n.Subscriptions)
+		return
+	}
 	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY") // the admin app reads the same variable
 	if prod && len(mfaSecret) < 32 {
 		obs.Fatal("APP_ENV=production requires MFA_ENCRYPTION_KEY of at least 32 bytes")
@@ -166,6 +180,9 @@ func main() {
 		authenticate, wsH.Member).Register(mux)
 	feedback.New(pool, authenticate, wsH.Member).Register(mux)
 	analytics.New(pool, authenticate, wsH.Member).Register(mux)
+	onboarding.New(pool, authenticate, wsH.Member, func(ctx context.Context, planID string) bool {
+		return features.Enabled(ctx, feature.Integrations, planID)
+	}).Register(mux)
 	oauthH := oauth.New(pool, cfg, authenticate)
 	oauthH.APIURL = apiURL
 	oauthH.Register(mux)
@@ -246,11 +263,12 @@ func main() {
 	fileH.Register(mux)
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
-	billing.New(pool, cfg, jwtSecret, authenticate, wsH.Member).Register(mux)
+	billingH.Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
 	wg.Go(func() { cycleH.Run(work, duration("CYCLE_POINTS_INTERVAL", time.Hour)) })
+	wg.Go(func() { billingH.Run(work, duration("PLAN_GRACE_INTERVAL", time.Minute)) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +294,7 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(features.Middleware(mux)))))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(features.Middleware(features.RequireMFA(authenticate, mux))))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }

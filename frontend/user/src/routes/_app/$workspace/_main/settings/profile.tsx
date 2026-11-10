@@ -40,7 +40,7 @@ function ProfileSettings() {
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">
         <PasswordForm key={user.id} user={user} />
       </section>
-      <section className="grid gap-4 p-6 bg-surface border rounded-lg">
+      <section id="two-factor" className="grid gap-4 p-6 bg-surface border rounded-lg" style={{ scrollMarginTop: 160 }}>
         <TwoFactor key={user.id} user={user} status={mfa} />
       </section>
       <section className="grid gap-4 p-6 bg-surface border rounded-lg">

@@ -14,7 +14,7 @@ run      = $(ENV) $(2) 2>&1 | sed -u 's/^/[$(1)] /'
 # Test sites on localhost or the LAN are allowed in dev (the user API and the tester both read it).
 export AI_TEST_ALLOW_PRIVATE ?= true
 
-.PHONY: dev up down migrate user tester admin mcp build vet test admin-account admin-reset-mfa mfa-code
+.PHONY: dev up down migrate user tester admin mcp build vet test admin-account admin-reset-mfa mfa-code paddle-backfill
 
 dev: up migrate
 	@$(MAKE) --no-print-directory -j4 user tester admin mcp
@@ -59,6 +59,10 @@ mfa-code:
 	@if [ -n "$(EMAIL)" ]; then $(ENV) go run ./admin/cmd/admin -mfa-code "$(EMAIL)" 2>&1 | grep -v ' level=WARN '; \
 	elif [ -n "$(KEY)" ]; then ../deploy/mfa-code.sh "$(KEY)"; \
 	else echo "usage: make mfa-code EMAIL=you@example.com (or KEY=SETUP_KEY)"; exit 1; fi
+
+# Copies Paddle's past payments, refunds and subscription prices into the database (docs/revenue-plan.md); safe to rerun.
+paddle-backfill:
+	@$(ENV) go run ./user/cmd/user -paddle-backfill
 
 build:
 	go build $(PKGS)

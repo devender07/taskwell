@@ -47,10 +47,13 @@ type Workspace struct {
 	Role        RoleRef  `json:"role"`
 	Permissions []string `json:"permissions"`
 	Guest       bool     `json:"guest"`
+	RequireMFA  bool     `json:"require_mfa"`
+	MFABlocked  bool     `json:"mfa_blocked"` // the workspace requires two-factor and the member has none
 }
 
 // wsCols selects a Workspace from workspaces w and workspace_roles r; scan it with scanWorkspace.
-const wsCols = `w.id::text, w.name, w.slug, r.id::text, r.name, coalesce(r.builtin, ''), r.permissions`
+const wsCols = `w.id::text, w.name, w.slug, r.id::text, r.name, coalesce(r.builtin, ''), r.permissions, w.require_mfa,
+	w.require_mfa and not exists (select 1 from user_mfa where user_id = m.user_id and enabled_at is not null)`
 
 // wsFrom joins a member m to their workspace w and role r.
 const wsFrom = `workspace_members m join workspaces w on w.id = m.workspace_id join workspace_roles r on r.id = m.role_id`
@@ -58,7 +61,7 @@ const wsFrom = `workspace_members m join workspaces w on w.id = m.workspace_id j
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var ws Workspace
 	var builtin string
-	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions)
+	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions, &ws.RequireMFA, &ws.MFABlocked)
 	ws.Permissions, ws.Guest = Effective(builtin, ws.Permissions), builtin == roleGuest
 	return ws, err
 }
@@ -182,12 +185,28 @@ func event(ws *Workspace, actorID, kind string, paths ...string) realtime.Event 
 	return realtime.Event{Kind: kind, Workspace: ws.Slug, Actor: actorID, Audience: realtime.ToWorkspace(ws.ID), Paths: paths}
 }
 
-// update renames the workspace and changes its slug, by the actor. Returns errTaken when the new slug belongs to
-// another workspace.
-func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug string) error {
+// hasMFA reports whether the user has two-factor sign-in on.
+func (m *model) hasMFA(ctx context.Context, userID string) (bool, error) {
+	var on bool
+	if err := m.db.QueryRow(ctx, `select exists (select 1 from user_mfa where user_id = $1 and enabled_at is not null)`,
+		userID).Scan(&on); err != nil {
+		return false, fmt.Errorf("read two-factor: %w", err)
+	}
+	return on, nil
+}
+
+// update renames the workspace, changes its slug and whether it requires two-factor sign-in, by the actor. Returns
+// errTaken when the new slug belongs to another workspace.
+func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug string, requireMFA bool) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, ws.ID, name, slug); err != nil {
+		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3, require_mfa = $4 where id = $1`,
+			ws.ID, name, slug, requireMFA); err != nil {
 			return err
+		}
+		if requireMFA != ws.RequireMFA {
+			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.require_mfa_changed", ws.Name, map[string]any{"to": requireMFA}); err != nil {
+				return err
+			}
 		}
 		if name != ws.Name {
 			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.renamed", name, map[string]any{"from": ws.Name, "to": name}); err != nil {

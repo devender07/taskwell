@@ -15,7 +15,7 @@ var slugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // reserved are top-level app paths and likely future ones.
 var reserved = []string{"api", "admin", "app", "signin", "signup", "signout", "forgot-password", "reset-password",
 	"new-workspace", "settings", "account", "invite", "invites", "join", "help", "support", "docs", "status", "about",
-	"pricing", "blog", "www", "mail", "static", "assets"}
+	"pricing", "billing", "welcome", "blog", "www", "mail", "static", "assets"}
 
 func checkName(s string) string {
 	if s == "" {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/dbtest"
+	"github.com/devender07/taskwell/backend/user/internal/mail"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -82,12 +84,12 @@ func TestGrantsAccess(t *testing.T) {
 
 // prices are the catalog's shape: product_id, custom_data.taskwell_plan and billing_cycle.
 var prices = map[string]string{
-	"pri_starter_m": `{"id":"pri_starter_m","product_id":"pro_starter","status":"active","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1}}`,
-	"pri_pro_m":     `{"id":"pri_pro_m","product_id":"pro_pro","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"month","frequency":1}}`,
-	"pri_pro_y":     `{"id":"pri_pro_y","product_id":"pro_pro","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"year","frequency":1}}`,
-	"pri_adv_y":     `{"id":"pri_adv_y","product_id":"pro_adv","status":"active","custom_data":{"taskwell_plan":"advanced"},"billing_cycle":{"interval":"year","frequency":1}}`,
-	"pri_nope":      `{"id":"pri_nope","product_id":"pro_x","status":"active","custom_data":null,"billing_cycle":{"interval":"month","frequency":1}}`,
-	"pri_old":       `{"id":"pri_old","product_id":"pro_starter","status":"archived","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1}}`,
+	"pri_starter_m": `{"id":"pri_starter_m","product_id":"pro_starter","status":"active","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1},"unit_price":{"amount":"90000","currency_code":"INR"}}`,
+	"pri_pro_m":     `{"id":"pri_pro_m","product_id":"pro_pro","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"month","frequency":1},"unit_price":{"amount":"150000","currency_code":"INR"}}`,
+	"pri_pro_y":     `{"id":"pri_pro_y","product_id":"pro_pro","status":"active","custom_data":{"taskwell_plan":"pro"},"billing_cycle":{"interval":"year","frequency":1},"unit_price":{"amount":"1500000","currency_code":"INR"}}`,
+	"pri_adv_y":     `{"id":"pri_adv_y","product_id":"pro_adv","status":"active","custom_data":{"taskwell_plan":"advanced"},"billing_cycle":{"interval":"year","frequency":1},"unit_price":{"amount":"3000000","currency_code":"INR"}}`,
+	"pri_nope":      `{"id":"pri_nope","product_id":"pro_x","status":"active","custom_data":null,"billing_cycle":{"interval":"month","frequency":1},"unit_price":{"amount":"100","currency_code":"INR"}}`,
+	"pri_old":       `{"id":"pri_old","product_id":"pro_starter","status":"archived","custom_data":{"taskwell_plan":"starter"},"billing_cycle":{"interval":"month","frequency":1},"unit_price":{"amount":"80000","currency_code":"INR"}}`,
 }
 
 // sub is a Paddle subscription entity; cd is its custom_data JSON ("" for null).
@@ -115,9 +117,10 @@ func (s sub) json() string {
 // fakePaddle answers the Paddle calls billing makes (price reads, subscription patches, portal sessions) and records
 // each request.
 type fakePaddle struct {
-	mu   sync.Mutex
-	subs map[string]sub
-	reqs []paddleReq
+	mu         sync.Mutex
+	subs       map[string]sub
+	reqs       []paddleReq
+	txns, adjs []string // what GET /transactions and /adjustments list, two a page
 }
 
 type paddleReq struct {
@@ -140,7 +143,18 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := func(data string) { fmt.Fprintf(w, `{"data":%s,"meta":{"request_id":"r1"}}`, data) }
 	id, isSub := strings.CutPrefix(r.URL.Path, "/subscriptions/")
 	s, known := f.subs[id]
+	page := func(all []string) {
+		i, _ := strconv.Atoi(r.URL.Query().Get("after"))
+		j := min(i+2, len(all))
+		next := fmt.Sprintf("https://api.paddle.test%s?after=%d", r.URL.Path, j)
+		fmt.Fprintf(w, `{"data":[%s],"meta":{"request_id":"r1","pagination":{"per_page":2,"next":%q,"has_more":%v}}}`,
+			strings.Join(all[i:j], ","), next, j < len(all))
+	}
 	switch p := r.URL.Path; {
+	case p == "/transactions" && r.Method == http.MethodGet:
+		page(f.txns)
+	case p == "/adjustments" && r.Method == http.MethodGet:
+		page(f.adjs)
 	case strings.HasPrefix(p, "/prices/") && prices[strings.TrimPrefix(p, "/prices/")] != "":
 		reply(prices[strings.TrimPrefix(p, "/prices/")])
 	case strings.HasPrefix(p, "/customers/") && strings.HasSuffix(p, "/portal-sessions"):
@@ -192,6 +206,7 @@ type fixture struct {
 	pool                 *pgxpool.Pool
 	mux                  *http.ServeMux
 	f                    *fakePaddle
+	h                    *Handler
 	cfg                  map[string]string
 	wsID, slug, ann, bob string
 	tag                  string // in every Paddle id the test makes
@@ -205,6 +220,8 @@ func setup(t *testing.T) *fixture {
 	ctx := context.Background()
 	x.ann, x.bob = dbtest.User(t, x.pool, "Ann"), dbtest.User(t, x.pool, "Bob")
 	t.Cleanup(func() {
+		_, _ = x.pool.Exec(context.Background(), `delete from paddle_transactions where transaction_id like '%'||$1||'%'`, x.tag)
+		_, _ = x.pool.Exec(context.Background(), `delete from paddle_adjustments where adjustment_id like '%'||$1||'%'`, x.tag)
 		_, _ = x.pool.Exec(context.Background(), `delete from paddle_subscriptions where subscription_id like '%'||$1||'%'`, x.tag)
 		_, _ = x.pool.Exec(context.Background(), `delete from paddle_customers where customer_id like '%'||$1||'%'`, x.tag)
 	})
@@ -221,7 +238,10 @@ func setup(t *testing.T) *fixture {
 	srv := httptest.NewServer(x.f)
 	t.Cleanup(srv.Close)
 	x.cfg = map[string]string{"paddle_environment": "sandbox", "paddle_api_key": "pdl_key", "paddle_webhook_secret": testSecret}
-	h := New(x.pool, sysconfig.New(x.pool), testJWT, dbtest.Auth, workspace.New(x.pool, dbtest.Auth, nil, sysconfig.New(x.pool)).Member)
+	cfg := sysconfig.New(x.pool)
+	h := New(x.pool, cfg, mail.New(x.pool, cfg, time.Second, time.Second, 1), testJWT, dbtest.Auth,
+		workspace.New(x.pool, dbtest.Auth, nil, cfg).Member)
+	x.h = h
 	h.paddle.base = srv.URL
 	h.config = func(_ context.Context, key string) (string, error) { return x.cfg[key], nil }
 	x.mux = http.NewServeMux()
@@ -355,6 +375,11 @@ func TestWebhook(t *testing.T) {
 	if u, email := x.customer(t, sub1.customer); !is(u, ann) || email != "" {
 		t.Fatalf("placeholder customer: %v %q", u, email)
 	}
+	var unit *int64
+	if err := x.pool.QueryRow(ctx, `select unit_amount from paddle_subscriptions where subscription_id = $1`, sub1.id).Scan(&unit); err != nil ||
+		!is64(unit, 150000) {
+		t.Fatalf("unit_amount %v %v", unit, err)
+	}
 	if p := x.plan(t, ann); p != "pro" {
 		t.Fatalf("trialing plan %s", p)
 	}
@@ -451,21 +476,89 @@ func TestWebhook(t *testing.T) {
 		t.Fatalf("comped: %+v %s", rw, x.plan(t, ann))
 	}
 
-	// transaction.completed makes and links the customer when its custom_data is signed, and only then.
-	txn := func(customer, cd string) string {
-		return fmt.Sprintf(`{"id":"txn_1","status":"completed","customer_id":%q,"subscription_id":null,"currency_code":"USD","custom_data":%s}`, customer, cd)
+	// transaction.completed makes and links the customer when its custom_data is signed, and only then, and stores
+	// the payment for the account.
+	txn := func(id, customer, cd string) string {
+		return txnJSON(id, customer, cd, "completed", "1200", "2030-01-02T00:00:00Z")
 	}
-	x.send(t, "transaction.completed", txn("ctm_bob_"+x.tag, signedCD(bob, checkoutSig(bob))), 200)
+	x.send(t, "transaction.completed", txn("txn_1_"+x.tag, "ctm_bob_"+x.tag, signedCD(bob, checkoutSig(bob))), 200)
 	if u, email := x.customer(t, "ctm_bob_"+x.tag); !is(u, bob) || email != "" {
 		t.Fatalf("transaction customer: %v %q", u, email)
 	}
-	x.send(t, "transaction.completed", txn("ctm_eve_"+x.tag, signedCD(bob, "00ff")), 200)
+	if tr := x.txn(t, "txn_1_"+x.tag); !is(tr.user, bob) || tr.currency != "usd" || tr.subtotal != 1000 || tr.tax != 200 ||
+		tr.total != 1200 || !is64(tr.earnings, 1100) || tr.status != "completed" || tr.billed.UTC().Format(time.RFC3339) != "2030-01-02T00:00:00Z" {
+		t.Fatalf("stored transaction: %+v", tr)
+	}
+	x.send(t, "transaction.completed", txn("txn_2_"+x.tag, "ctm_eve_"+x.tag, signedCD(bob, "00ff")), 200)
 	if u, _ := x.customer(t, "ctm_eve_"+x.tag); u != nil {
 		t.Fatalf("forged transaction linked %v", *u)
 	}
-	x.send(t, "adjustment.created", `{"id":"adj_1","action":"refund","subscription_id":"sub_1","currency_code":"USD",
-		"reason":"duplicate","totals":{"total":"1200"}}`, 200)
+	if tr := x.txn(t, "txn_2_"+x.tag); tr.user != nil {
+		t.Fatalf("forged transaction's user %v", *tr.user)
+	}
+	// A paid transaction is stored; one still billed isn't.
+	x.send(t, "transaction.paid", txnJSON("txn_3_"+x.tag, "ctm_bob_"+x.tag, "null", "paid", "500", "2030-01-03T00:00:00Z"), 200)
+	if tr := x.txn(t, "txn_3_"+x.tag); !is(tr.user, bob) || tr.status != "paid" || tr.total != 500 {
+		t.Fatalf("paid transaction (user from its customer): %+v", tr)
+	}
+	x.send(t, "transaction.updated", txnJSON("txn_4_"+x.tag, "ctm_bob_"+x.tag, "null", "billed", "500", "2030-01-03T00:00:00Z"), 200)
+	var n int
+	if err := x.pool.QueryRow(ctx, `select count(*) from paddle_transactions where transaction_id = $1`, "txn_4_"+x.tag).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("billed transaction stored: %d %v", n, err)
+	}
+
+	// An adjustment is stored with its transaction's account; a later update moves its status, an older one doesn't.
+	adj := func(status, updated string) string {
+		return fmt.Sprintf(`{"id":%q,"action":"refund","transaction_id":%q,"customer_id":%q,"subscription_id":null,
+			"currency_code":"USD","status":%q,"reason":"duplicate","created_at":"2030-01-04T00:00:00Z","updated_at":%q,
+			"totals":{"subtotal":"1000","tax":"200","total":"1200","fee":"60","earnings":"940","currency_code":"USD"}}`,
+			"adj_1_"+x.tag, "txn_1_"+x.tag, "ctm_bob_"+x.tag, status, updated)
+	}
+	x.send(t, "adjustment.created", adj("pending_approval", "2030-01-04T00:00:00Z"), 200)
+	x.send(t, "adjustment.updated", adj("approved", "2030-01-05T00:00:00Z"), 200)
+	x.send(t, "adjustment.updated", adj("rejected", "2030-01-04T12:00:00Z"), 200)
+	var au *string
+	var action, status, cur string
+	var total int64
+	if err := x.pool.QueryRow(ctx, `select user_id::text, action, status, currency_code, total from paddle_adjustments where adjustment_id = $1`,
+		"adj_1_"+x.tag).Scan(&au, &action, &status, &cur, &total); err != nil || !is(au, bob) || action != "refund" ||
+		status != "approved" || cur != "usd" || total != 1200 {
+		t.Fatalf("adjustment: %v %s %s %s %d %v", au, action, status, cur, total, err)
+	}
 }
+
+// txnJSON is a Paddle transaction entity with details.totals in USD: total split 5/6 subtotal, 1/6 tax; earnings
+// total minus 100.
+func txnJSON(id, customer, cd, status, total, billed string) string {
+	n, _ := amount(total)
+	return fmt.Sprintf(`{"id":%q,"status":%q,"customer_id":%q,"subscription_id":null,"currency_code":"USD","custom_data":%s,
+		"origin":"web","billed_at":%q,"created_at":"2030-01-01T00:00:00Z","updated_at":%q,
+		"details":{"totals":{"subtotal":"%d","discount":"0","tax":"%d","total":%q,"credit":"0","balance":"0",
+		"grand_total":%q,"fee":"100","earnings":"%d","currency_code":"USD"}}}`,
+		id, status, customer, cd, billed, billed, n*5/6, n/6, total, total, n-100)
+}
+
+// storedTxn is a mirrored transaction.
+type storedTxn struct {
+	user                 *string
+	status, currency     string
+	subtotal, tax, total int64
+	earnings             *int64
+	billed               time.Time
+}
+
+func (x *fixture) txn(t *testing.T, id string) storedTxn {
+	t.Helper()
+	var r storedTxn
+	if err := x.pool.QueryRow(context.Background(), `select user_id::text, status, currency_code, subtotal, tax, total, earnings,
+		billed_at from paddle_transactions where transaction_id = $1`, id).
+		Scan(&r.user, &r.status, &r.currency, &r.subtotal, &r.tax, &r.total, &r.earnings, &r.billed); err != nil {
+		t.Fatalf("transaction %s: %v", id, err)
+	}
+	return r
+}
+
+func is64(p *int64, want int64) bool { return p != nil && *p == want }
 
 // TestEndpoints: checkout answers the account's signed custom_data and email (no Paddle call) while billing is on and
 // it has no subscription granting access and isn't comped; the billing state and the portal and change read the
@@ -639,5 +732,234 @@ func TestChangeInTrial(t *testing.T) {
 	x.do(t, x.ann, "POST", "/api/billing/change", url.Values{"price_id": {"pri_starter_m"}}, 200)
 	if patch, n := x.f.last("PATCH", "/subscriptions/"+s.id); n != 3 || patch.body["proration_billing_mode"] != "prorated_immediately" {
 		t.Fatalf("change after the trial: %d patches, last %v", n, patch.body)
+	}
+}
+
+// TestCompEnds: a comp that's over goes back to Free, or to the plan of the subscription granting access, with an
+// audit entry in the owner's workspace and an email; one that isn't over is left alone.
+func TestCompEnds(t *testing.T) {
+	x := setup(t)
+	ctx := context.Background()
+	x.cfg["app_base_url"] = "https://app.test/"
+	var ann string
+	if err := x.pool.QueryRow(ctx, `select email from users where id = $1`, x.ann).Scan(&ann); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = x.pool.Exec(context.Background(), `delete from outbound_mail where recipient = $1`, ann)
+	})
+	comp := func(user, p, ends string) {
+		t.Helper()
+		if _, err := x.pool.Exec(ctx, `update users set plan = $2, plan_comped = true, plan_comped_until = now() + $3::interval
+			where id = $1`, user, p, ends); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func() {
+		t.Helper()
+		for {
+			ended, err := x.h.endComp(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !ended {
+				return
+			}
+		}
+	}
+	state := func(user string) (p string, comped bool, until *time.Time) {
+		t.Helper()
+		if err := x.pool.QueryRow(ctx, `select plan, plan_comped, plan_comped_until from users where id = $1`, user).
+			Scan(&p, &comped, &until); err != nil {
+			t.Fatal(err)
+		}
+		return p, comped, until
+	}
+	mailed := func(subject, want string) {
+		t.Helper()
+		var body string
+		if err := x.pool.QueryRow(ctx, `select body from outbound_mail where recipient = $1 and subject = $2 and html is not null`,
+			ann, subject).Scan(&body); err != nil || !strings.Contains(body, want) || !strings.Contains(body, "https://app.test/pricing") {
+			t.Fatalf("email %q: %q %v", subject, body, err)
+		}
+	}
+
+	comp(x.ann, "advanced", "-1 minute")
+	comp(x.bob, "pro", "1 day")
+	run()
+	if p, comped, until := state(x.ann); p != "free" || comped || until != nil {
+		t.Fatalf("ended comp: %s %v %v", p, comped, until)
+	}
+	if p, comped, until := state(x.bob); p != "pro" || !comped || until == nil {
+		t.Fatalf("comp not over: %s %v %v", p, comped, until)
+	}
+	if n := x.audits(t, x.wsID); n != 1 {
+		t.Fatalf("audits %d", n)
+	}
+	mailed("Your Taskwell Advanced access has ended", "You're on Free now.")
+
+	cus := "ctm_" + x.tag
+	if _, err := x.pool.Exec(ctx, `insert into paddle_customers (customer_id, user_id) values ($1, $2)`, cus, x.ann); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.pool.Exec(ctx, `insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id, product_id, plan, paddle_updated_at)
+		values ($1, $2, $3, 'active', 'pri_1', 'pro_1', 'starter', now())`, "sub_"+x.tag, cus, x.ann); err != nil {
+		t.Fatal(err)
+	}
+	comp(x.ann, "pro", "-1 second")
+	run()
+	if p, comped, _ := state(x.ann); p != "starter" || comped {
+		t.Fatalf("ended with a subscription: %s %v", p, comped)
+	}
+	mailed("Your Taskwell Pro access has ended", "You're on Starter now.")
+	if b := x.do(t, x.bob, "GET", "/api/billing", nil, 200); b["comped_until"] == nil {
+		t.Fatalf("billing answered %v", b)
+	}
+}
+
+// TestReminders: each kind of billing reminder (trial ending, payment failed, comp ending) queues one email once; a
+// trial set to cancel gets none; the payment failed marker resets once the subscription is no longer past due.
+func TestReminders(t *testing.T) {
+	x := setup(t)
+	ctx := context.Background()
+	x.cfg["app_base_url"] = "https://app.test/"
+	var ann, bob string
+	if err := x.pool.QueryRow(ctx, `select (select email from users where id = $1), (select email from users where id = $2)`,
+		x.ann, x.bob).Scan(&ann, &bob); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = x.pool.Exec(context.Background(), `delete from outbound_mail where recipient in ($1, $2)`, ann, bob)
+	})
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := x.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cus := "ctm_" + x.tag
+	exec(`insert into paddle_customers (customer_id, user_id) values ($1, $2)`, cus, x.ann)
+	subscribe := func(id, user, status, p, cancel string) {
+		t.Helper()
+		exec(`insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id, product_id, plan,
+			next_billed_at, scheduled_change_action, paddle_updated_at)
+			values ($1, $2, $3, $4, 'pri_1', 'pro_1', $5, now() + interval '2 days', nullif($6, ''), now())`, id, cus, user, status, p, cancel)
+	}
+	subscribe("sub_trial_"+x.tag, x.ann, "trialing", "pro", "")
+	subscribe("sub_cancel_"+x.tag, x.bob, "trialing", "starter", "cancel")
+	subscribe("sub_due_"+x.tag, x.ann, "past_due", "starter", "")
+	exec(`update users set plan = 'advanced', plan_comped = true, plan_comped_until = now() + interval '1 day' where id = $1`, x.bob)
+	var trialDay, compDay string
+	if err := x.pool.QueryRow(ctx, `select to_char((now() + interval '2 days') at time zone 'UTC', 'Mon FMDD'),
+		to_char((select plan_comped_until from users where id = $1) at time zone 'UTC', 'Mon FMDD')`, x.bob).
+		Scan(&trialDay, &compDay); err != nil {
+		t.Fatal(err)
+	}
+	run := func() {
+		t.Helper()
+		if err := x.h.resetPastDue(ctx); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			sent, err := x.h.remind(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sent {
+				return
+			}
+		}
+	}
+	count := func(to, subject string) int {
+		t.Helper()
+		var n int
+		if err := x.pool.QueryRow(ctx, `select count(*) from outbound_mail where recipient = $1 and subject = $2`, to, subject).
+			Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	emails := []struct{ to, subject, body, link string }{
+		{ann, "Your Taskwell Pro trial ends on " + trialDay, "You'll be charged for Pro on " + trialDay + " unless you cancel.", "https://app.test/billing"},
+		{ann, "Your Taskwell payment failed", "We couldn't take your payment for Starter.", "https://app.test/billing"},
+		{bob, "Your Taskwell Advanced access ends on " + compDay, "Choose a plan to keep its features.", "https://app.test/pricing"},
+	}
+	check := func(want int) {
+		t.Helper()
+		for _, e := range emails {
+			var body string
+			var n int
+			if err := x.pool.QueryRow(ctx, `select count(*), coalesce(min(body), '') from outbound_mail
+				where recipient = $1 and subject = $2 and html is not null`, e.to, e.subject).Scan(&n, &body); err != nil {
+				t.Fatal(err)
+			}
+			if n != want || want > 0 && (!strings.Contains(body, e.body) || !strings.Contains(body, e.link)) {
+				t.Fatalf("%q to %s: %d emails, want %d: %q", e.subject, e.to, n, want, body)
+			}
+		}
+	}
+	run()
+	check(1)
+	run()
+	check(1)
+	if n := count(bob, "Your Taskwell Starter trial ends on "+trialDay); n != 0 {
+		t.Fatalf("a trial set to cancel got %d reminders", n)
+	}
+
+	exec(`update paddle_subscriptions set status = 'active' where subscription_id = $1`, "sub_due_"+x.tag)
+	run()
+	var marker *time.Time
+	if err := x.pool.QueryRow(ctx, `select past_due_emailed_at from paddle_subscriptions where subscription_id = $1`,
+		"sub_due_"+x.tag).Scan(&marker); err != nil || marker != nil {
+		t.Fatalf("past_due marker kept: %v %v", marker, err)
+	}
+	exec(`update paddle_subscriptions set status = 'past_due' where subscription_id = $1`, "sub_due_"+x.tag)
+	run()
+	if n := count(ann, "Your Taskwell payment failed"); n != 2 {
+		t.Fatalf("a second past due episode: %d emails, want 2", n)
+	}
+}
+
+// TestBackfill: -paddle-backfill pages through Paddle's transactions and adjustments and fills in the unit amount of
+// mirrored subscriptions without one; a second run changes nothing.
+func TestBackfill(t *testing.T) {
+	x := setup(t)
+	ctx := context.Background()
+	cus := "ctm_bf_" + x.tag
+	if _, err := x.pool.Exec(ctx, `insert into paddle_customers (customer_id, user_id) values ($1, $2)`, cus, x.bob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.pool.Exec(ctx, `insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id,
+		product_id, plan, billing_interval, paddle_updated_at) values ($1, $2, $3, 'active', 'pri_pro_y', 'pro_pro', 'pro', 'year', now())`,
+		"sub_bf_"+x.tag, cus, x.bob); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		x.f.txns = append(x.f.txns, txnJSON(fmt.Sprintf("txn_bf%d_%s", i, x.tag), cus, "null", "completed", "900", "2030-02-01T00:00:00Z"))
+	}
+	x.f.adjs = []string{fmt.Sprintf(`{"id":"adj_bf_%s","action":"chargeback","transaction_id":"txn_bf0_%s","customer_id":%q,
+		"currency_code":"USD","status":"approved","created_at":"2030-02-02T00:00:00Z","updated_at":"2030-02-02T00:00:00Z",
+		"totals":{"total":"900","currency_code":"USD"}}`, x.tag, x.tag, cus)}
+
+	// The test database may hold other subscriptions without an amount: the first run sets at least ours.
+	for run, want := range []BackfillCounts{{3, 1, 1}, {3, 1, 0}} {
+		got, err := x.h.Backfill(ctx)
+		if err != nil || got.Transactions != want.Transactions || got.Adjustments != want.Adjustments ||
+			(want.Subscriptions == 0) != (got.Subscriptions == 0) {
+			t.Fatalf("run %d: %+v %v, want %+v", run, got, err, want)
+		}
+	}
+	if _, n := x.f.last("GET", "/transactions"); n != 4 { // two pages, twice
+		t.Fatalf("%d transaction pages", n)
+	}
+	var txns int
+	var sum, unit int64
+	var adjUser *string
+	if err := x.pool.QueryRow(ctx, `select (select count(*) from paddle_transactions where transaction_id like 'txn_bf%'||$1),
+		(select sum(total) from paddle_transactions where transaction_id like 'txn_bf%'||$1 and user_id = $2),
+		(select unit_amount from paddle_subscriptions where subscription_id = 'sub_bf_'||$1),
+		(select user_id::text from paddle_adjustments where adjustment_id = 'adj_bf_'||$1)`, x.tag, x.bob).
+		Scan(&txns, &sum, &unit, &adjUser); err != nil || txns != 3 || sum != 2700 || unit != 1500000 || !is(adjUser, x.bob) {
+		t.Fatalf("after backfill: %d txns, %d, unit %d, adjustment user %v, %v", txns, sum, unit, adjUser, err)
 	}
 }

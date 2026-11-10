@@ -1,8 +1,9 @@
-import { Link, useLoaderData, useLocation } from '@tanstack/react-router'
+import { Link, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
 import { Fragment, useState } from 'react'
 import { Dialog } from '@taskwell/shared/dialog'
 import { BellIcon, ChevronDownIcon, CreditCardIcon, FileIcon, FeedbackIcon, FlaskIcon, GridIcon, HistoryIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
 import { can, featureOn, useFeatures, type Feature } from '@/api'
+import { LockedLink } from '@/components/app/locked-link'
 import './settings.css'
 
 const FEATURE_OF: Partial<Record<string, Feature>> = {
@@ -17,7 +18,13 @@ const FEATURE_OF: Partial<Record<string, Feature>> = {
 function useSections() {
   const ws = useLoaderData({ from: '/_app/$workspace' })
   const features = useFeatures()
-  const on = (to: string) => !FEATURE_OF[to] || featureOn(features, FEATURE_OF[to])
+  const upgrades = useRouteContext({ from: '/_app/$workspace', select: (c) => c.upgrades })
+  const on = (to: string) => !FEATURE_OF[to] || featureOn(features, FEATURE_OF[to]) || Boolean(upgrades[FEATURE_OF[to]])
+  const withPlan = <T extends { to: string }>(i: T) => {
+    const feature = FEATURE_OF[i.to]
+    const plan = feature && !featureOn(features, feature) ? upgrades[feature] : undefined
+    return { ...i, feature, plan }
+  }
   const integrations = can(ws, 'integrations.manage')
   const account = [
     { to: '/$workspace/settings/profile', label: 'Profile', Icon: UserIcon },
@@ -45,8 +52,8 @@ function useSections() {
         ...(can(ws, 'audit.view') ? [{ to: '/$workspace/settings/audit', label: 'Audit log', Icon: HistoryIcon }] : []),
       ]
   return [
-    { label: 'Account', items: account.filter((i) => on(i.to)) },
-    { label: 'Workspace', items: workspace.filter((i) => on(i.to)) },
+    { label: 'Account', items: account.filter((i) => on(i.to)).map(withPlan) },
+    { label: 'Workspace', items: workspace.filter((i) => on(i.to)).map(withPlan) },
   ].filter((s) => s.items.length)
 }
 
@@ -57,12 +64,18 @@ export function SettingsNav({ workspace, onNavigate }: { workspace: string; onNa
       {useSections().map((s) => (
         <Fragment key={s.label}>
           <h3 className="settings-nav-group">{s.label}</h3>
-          {s.items.map(({ to, label, Icon }) => (
-            <Link key={to} to={to} params={{ workspace }} onClick={onNavigate}>
-              <Icon />
-              {label}
-            </Link>
-          ))}
+          {s.items.map(({ to, label, Icon, feature, plan }) =>
+            feature && plan ? (
+              <LockedLink key={to} workspace={workspace} feature={feature} plan={plan} Icon={Icon} onClick={onNavigate}>
+                {label}
+              </LockedLink>
+            ) : (
+              <Link key={to} to={to} params={{ workspace }} onClick={onNavigate}>
+                <Icon />
+                {label}
+              </Link>
+            ),
+          )}
         </Fragment>
       ))}
     </nav>

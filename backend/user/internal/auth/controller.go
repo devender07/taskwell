@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
@@ -887,6 +888,12 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) error {
 	if err != nil || userID == "" {
 		return h.unauthorized(w, err)
 	}
+	if ok, err := h.Reauthed(r, userID); err != nil || !ok {
+		if err == nil {
+			web.Reauth(w)
+		}
+		return err
+	}
 	name := r.FormValue("name")
 	if msg := checkTokenName(name); msg != "" {
 		web.Fields(w, http.StatusBadRequest, map[string]string{"name": msg})
@@ -1188,6 +1195,14 @@ func (h *Handler) mfaDisable(w http.ResponseWriter, r *http.Request) error {
 		web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
 		return nil
 	}
+	// ponytail: checked before the change, not in its transaction; a workspace that starts requiring it meanwhile
+	// just blocks the user, as for any member without two-factor.
+	if name, err := h.model.mfaRequiredBy(ctx, p.ID); err != nil || name != "" {
+		if err == nil {
+			web.Err(w, http.StatusConflict, name+" requires two-factor sign-in. Leave it or ask an admin to change that first.")
+		}
+		return err
+	}
 	if locked, err := h.locked(w, r, "mfa-user:"+p.ID); err != nil || locked {
 		return err
 	}
@@ -1267,6 +1282,132 @@ func (h *Handler) mfaMail(ctx context.Context, email string, on bool) error {
 	return h.mail.Enqueue(ctx, h.model.db, email, subject, fmt.Sprintf("%s\n\nIf this was you, there's nothing to do.\n\n"+
 		"If it wasn't, reset your password now to sign everyone else out:\n\n%s/forgot-password\n",
 		what, strings.TrimRight(base, "/")))
+}
+
+// --- confirm it's you ---
+
+const (
+	errReauthPassword = "That password is incorrect."
+	errReauthCode     = "That code is incorrect."
+)
+
+// reauthMethods answers the ways this account can confirm it's them: password (when it has one), totp (when
+// two-factor is on) and email (always).
+func (h *Handler) reauthMethods(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	on, _, err := h.model.mfaStatus(r.Context(), p.ID)
+	if err != nil {
+		return err
+	}
+	methods := []string{}
+	if p.HasPassword {
+		methods = append(methods, "password")
+	}
+	if on {
+		methods = append(methods, "totp")
+	}
+	web.JSON(w, http.StatusOK, map[string][]string{"methods": append(methods, "email")})
+	return nil
+}
+
+// reauthCode emails the signed-in user a code for reauth's email_code.
+func (h *Handler) reauthCode(w http.ResponseWriter, r *http.Request) error {
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	if stop, err := web.Limited(w, r, h.lim.send, p.Email); err != nil || stop {
+		return err
+	}
+	code, err := newCode()
+	if err != nil {
+		return err
+	}
+	return h.sendSecret(w, r, p.Email, purposeReauth, "otp_ttl_minutes", code, func(minutes int) (string, string, string, error) {
+		note := fmt.Sprintf("It expires in %d minutes. If you didn't ask for it, don't share it: someone may be signed in "+
+			"to your account, so reset your password to sign them out.", minutes)
+		html, err := mail.Render(mail.Email{Preview: "Your code to confirm it's you is " + code, Heading: "Confirm it's you",
+			Intro: "Enter this code in Taskwell to continue.", Code: code, Note: note})
+		return "Your Taskwell code to confirm it's you: " + code,
+			fmt.Sprintf("Your code to confirm it's you in Taskwell is %s\n\n%s\n", code, note), html, err
+	})
+}
+
+// reauth confirms it's the signed-in user with their password, a code from the authenticator app or an emailed code
+// (reauthCode), and sets the taskwell_reauth proof that creating an API token or deleting a workspace needs. Wrong
+// values count toward the usual lockout.
+func (h *Handler) reauth(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	p, err := h.signedIn(w, r)
+	if p == nil || err != nil {
+		return err
+	}
+	pw, code, emailCode := r.FormValue("password"), strings.TrimSpace(r.FormValue("code")), strings.TrimSpace(r.FormValue("email_code"))
+	var field, method, lockKey string
+	switch {
+	case pw != "":
+		field, method, lockKey = "password", "password", "pw:"+p.Email
+	case code != "":
+		field, method, lockKey = "code", "two-factor", "mfa-user:"+p.ID
+	case emailCode != "":
+		field, method, lockKey = "email_code", "email", "code:"+p.Email
+	default:
+		web.Fields(w, http.StatusBadRequest, map[string]string{"password": "Password is required."})
+		return nil
+	}
+	if field != "password" {
+		if msg := checkCode(cmp.Or(code, emailCode)); msg != "" {
+			web.Fields(w, http.StatusBadRequest, map[string]string{field: msg})
+			return nil
+		}
+	}
+	if locked, err := h.locked(w, r, lockKey); err != nil || locked {
+		return err
+	}
+	var ok bool
+	switch field {
+	case "password":
+		hash, err := h.model.passwordHash(ctx, p.ID)
+		if err != nil {
+			return err
+		}
+		stored := dummyHash
+		if hash != nil {
+			stored = []byte(*hash)
+		}
+		ok = bcrypt.CompareHashAndPassword(stored, []byte(pw)) == nil && hash != nil
+	case "code":
+		res, err := h.model.mfa(ctx, h.MFAKey, p.ID, code, "", nil)
+		if err != nil && !errors.Is(err, errMFAOff) {
+			return err
+		}
+		ok = res.ok
+	default:
+		if ok, err = h.model.useUserCode(ctx, p.ID, purposeReauth, secret.Hash(emailCode)); err != nil {
+			return err
+		}
+	}
+	if !ok {
+		if err := h.model.fail(ctx, lockKey); err != nil {
+			return err
+		}
+		h.record(r, p.ID, "reauth_failed", method)
+		msg := errReauthCode
+		if field == "password" {
+			msg = errReauthPassword
+		}
+		web.Fields(w, http.StatusUnauthorized, map[string]string{field: msg})
+		return nil
+	}
+	if err := h.setReauthCookie(ctx, w, p.ID); err != nil {
+		return err
+	}
+	h.record(r, p.ID, "reauth", method)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 // --- account events, export and deletion ---

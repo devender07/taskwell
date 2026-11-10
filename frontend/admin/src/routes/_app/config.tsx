@@ -35,7 +35,7 @@ function Config() {
   const shown = settings.filter((s) => !s.key.startsWith('feature_') && (!needle || s.key.includes(needle) || group(s.key).toLowerCase().includes(q.trim().toLowerCase())))
 
   return (
-    <main className="grid gap-8 w-full px-6 py-10" style={{ maxWidth: 1040 }}>
+    <main className="grid gap-8 w-full px-6 py-10">
       <header className="grid gap-2">
         <h1 className="text-h2">Config</h1>
         <p className="text-body-sm text-secondary">System settings, shared by every service. Changes apply on the next read.</p>

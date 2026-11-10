@@ -17,9 +17,11 @@ const (
 	googleCookie  = "taskwell_google" // state, PKCE verifier and remember flag for one Google round trip
 	signupCookie  = "taskwell_signup" // the nonce that binds a sign-up's code to the browser that signed up
 	mfaCookie     = "taskwell_mfa"    // a sign-in waiting for its second step (mfaClaims)
+	reauthCookie  = "taskwell_reauth" // proof of a recent re-authentication (signReauth)
 
 	mfaTTL      = 5 * time.Minute // to enter the second step
 	mfaMaxFails = 5               // wrong codes per pending sign-in before it ends
+	reauthTTL   = 10 * time.Minute
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.
@@ -182,6 +184,41 @@ func (h *Handler) setMFACookie(ctx context.Context, w http.ResponseWriter, tok s
 	return nil
 }
 
+// Reauthed reports whether the request carries a fresh re-authentication proof for userID. A Bearer (API token)
+// request never does.
+func (h *Handler) Reauthed(r *http.Request, userID string) (bool, error) {
+	c, err := r.Cookie(reauthCookie)
+	if _, tok := bearer(r); tok || err != nil || userID == "" {
+		return false, nil
+	}
+	key, err := h.jwtSecret(r.Context())
+	if err != nil {
+		return false, err
+	}
+	sub, err := parseReauth(key, c.Value)
+	return err == nil && sub == userID, nil
+}
+
+// setReauthCookie sets a proof that userID re-authenticated just now, for reauthTTL. Path /api: the endpoints that
+// need it are under /api/me and /api/workspaces.
+func (h *Handler) setReauthCookie(ctx context.Context, w http.ResponseWriter, userID string) error {
+	key, err := h.jwtSecret(ctx)
+	if err != nil {
+		return err
+	}
+	secure, err := h.secure(ctx)
+	if err != nil {
+		return err
+	}
+	tok, err := signReauth(key, userID, reauthTTL)
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{Name: reauthCookie, Value: tok, Path: "/api", MaxAge: int(reauthTTL.Seconds()),
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	return nil
+}
+
 // setTokens sets an access token and a new refresh token for family f as cookies. Without "Remember me" both are
 // browser-session cookies. The refresh cookie is scoped to /api/auth so it only travels to refresh and sign-out.
 func (h *Handler) setTokens(ctx context.Context, w http.ResponseWriter, userID string, f family) error {
@@ -223,7 +260,7 @@ func (h *Handler) clearCookies(ctx context.Context, w http.ResponseWriter) error
 	if err != nil {
 		return err
 	}
-	for name, path := range map[string]string{accessCookie: "/api", refreshCookie: "/api/auth"} {
+	for name, path := range map[string]string{accessCookie: "/api", refreshCookie: "/api/auth", reauthCookie: "/api"} {
 		http.SetCookie(w, &http.Cookie{Name: name, Path: path, MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	}
 	return nil

@@ -19,20 +19,20 @@ export const SUBSCRIBED = ['active', 'trialing', 'past_due']
 export const validateInterval = (v: unknown): Interval => (v === 'year' ? 'year' : 'month')
 
 const CORE = ['Projects and issues', 'List and board views', 'Comments and mentions', 'Notifications']
-const FEATURES: [Feature, string][] = [
-  ['cycles', 'Cycles'],
-  ['roadmap', 'Roadmap and milestones'],
-  ['notes', 'Notes'],
-  ['chat', 'Chat'],
-  ['files', 'Project files'],
-  ['feedback', 'Customer feedback'],
-  ['team', 'Team analytics'],
-  ['templates', 'Templates'],
-  ['imports', 'CSV and GitHub import'],
-  ['ai_testing', 'AI testing'],
-  ['api', 'MCP and API'],
-  ['webhooks', 'Webhooks'],
-  ['integrations', 'GitHub and GitLab'],
+export const FEATURES: [Feature, string, string][] = [
+  ['cycles', 'Cycles', 'Plan work in time-boxed cycles and track each one with a burndown.'],
+  ['roadmap', 'Roadmap and milestones', 'See every project on a timeline with its milestones and health.'],
+  ['notes', 'Notes', 'Write and share docs alongside your issues, edited live together.'],
+  ['chat', 'Chat', 'Message your team in channels and direct messages, with an inbox for mentions.'],
+  ['files', 'Project files', 'Keep files and folders with each project and attach them to issues.'],
+  ['feedback', 'Customer feedback', 'Collect feedback from customers with a public form and turn it into issues.'],
+  ['team', 'Team analytics', "See each member's workload, throughput and cycle time."],
+  ['templates', 'Templates', 'Start issues from reusable templates with fields filled in.'],
+  ['imports', 'CSV and GitHub import', 'Bring issues in from a CSV file or a GitHub repository.'],
+  ['ai_testing', 'AI testing', 'Let an AI agent run your test cases in a real browser.'],
+  ['api', 'MCP and API', 'Connect Claude and other tools through MCP and the REST API.'],
+  ['webhooks', 'Webhooks', 'Send workspace events to your own services as they happen.'],
+  ['integrations', 'GitHub and GitLab', 'Link pull requests and merge requests to their issues.'],
 ]
 
 // Features every plan has go under "Every plan includes"; a card lists the ones only some plans have.

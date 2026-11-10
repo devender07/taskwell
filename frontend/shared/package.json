@@ -14,6 +14,7 @@
     "./validate": "./src/validate/validate.ts",
     "./time": "./src/time/relative.ts",
     "./list": "./src/list/list.ts",
+    "./account-events": "./src/account-events/account-events.ts",
     "./api-url": "./src/api-url/api-url.ts",
     "./logo": "./src/components/logo/logo.tsx",
     "./icons": "./src/components/icons/icons.tsx",

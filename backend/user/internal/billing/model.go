@@ -19,6 +19,7 @@ import (
 type account struct {
 	Plan              string
 	Comped            bool
+	CompedUntil       *time.Time // when the comp ends, nil for no end
 	SubscriptionID    *string
 	PriceID           *string
 	Status            *string
@@ -40,11 +41,11 @@ type model struct{ db *pgxpool.Pool }
 func (m *model) account(ctx context.Context, userID string) (account, error) {
 	var a account
 	err := m.db.QueryRow(ctx,
-		`select u.plan, u.plan_comped, s.subscription_id, s.price_id, s.status, s.currency_code, s.billing_interval, s.next_billed_at,
+		`select u.plan, u.plan_comped, u.plan_comped_until, s.subscription_id, s.price_id, s.status, s.currency_code, s.billing_interval, s.next_billed_at,
 		        coalesce(s.scheduled_change_action = 'cancel', false), (select count(*) from workspaces where created_by = u.id),
 		        exists (select 1 from paddle_subscriptions where user_id = u.id)
 		   from users u left join lateral (`+current+`) s on true where u.id = $1`, userID, granting).
-		Scan(&a.Plan, &a.Comped, &a.SubscriptionID, &a.PriceID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt,
+		Scan(&a.Plan, &a.Comped, &a.CompedUntil, &a.SubscriptionID, &a.PriceID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt,
 			&a.CancelAtPeriodEnd, &a.Owned, &a.TrialUsed)
 	if err != nil {
 		return a, fmt.Errorf("read billing: %w", err)
@@ -118,6 +119,7 @@ func (m *model) email(ctx context.Context, userID string) (string, error) {
 type subscriptionRow struct {
 	ID, CustomerID, Status, PriceID, ProductID, Plan string
 	Interval, Currency, ScheduledAction              *string
+	UnitAmount                                       *int64
 	NextBilledAt, ScheduledAt                        *time.Time
 	UpdatedAt                                        time.Time
 }
@@ -149,19 +151,19 @@ func (m *model) saveSubscription(ctx context.Context, s subscriptionRow, link st
 		}
 		err := tx.QueryRow(ctx, `insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id,
 			  product_id, plan, billing_interval, currency_code, next_billed_at, scheduled_change_action,
-			  scheduled_change_at, paddle_updated_at)
-			values ($1, $2, `+existingUser("$3")+`, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			  scheduled_change_at, paddle_updated_at, unit_amount)
+			values ($1, $2, `+existingUser("$3")+`, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			on conflict (subscription_id) do update set customer_id = excluded.customer_id,
 			  user_id = coalesce(paddle_subscriptions.user_id, excluded.user_id), status = excluded.status,
 			  price_id = excluded.price_id, product_id = excluded.product_id, plan = excluded.plan,
 			  billing_interval = excluded.billing_interval, currency_code = excluded.currency_code,
 			  next_billed_at = excluded.next_billed_at, scheduled_change_action = excluded.scheduled_change_action,
 			  scheduled_change_at = excluded.scheduled_change_at, paddle_updated_at = excluded.paddle_updated_at,
-			  updated_at = now()
+			  unit_amount = coalesce(excluded.unit_amount, paddle_subscriptions.unit_amount), updated_at = now()
 			where excluded.paddle_updated_at >= paddle_subscriptions.paddle_updated_at
 			returning user_id::text`,
 			s.ID, s.CustomerID, link, s.Status, s.PriceID, s.ProductID, s.Plan, s.Interval, s.Currency, s.NextBilledAt,
-			s.ScheduledAction, s.ScheduledAt, s.UpdatedAt).Scan(&user)
+			s.ScheduledAction, s.ScheduledAt, s.UpdatedAt, s.UnitAmount).Scan(&user)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // an older event than the row
 		}
@@ -269,4 +271,77 @@ func planChanged(ctx context.Context, tx pgx.Tx, userID, from, to string) error 
 		}
 	}
 	return nil
+}
+
+// transactionRow is a completed or paid transaction as it's mirrored; amounts are minor units of Currency.
+type transactionRow struct {
+	ID, CustomerID, SubscriptionID, Status, Currency string
+	Subtotal, Tax, Total                             int64
+	Earnings                                         *int64
+	BilledAt, UpdatedAt                              time.Time
+}
+
+// saveTransaction mirrors t unless the row is newer. Its account is link (a user id its signed custom_data names,
+// "" for none) when that exists, else its customer's; a row keeps the account it has.
+func (m *model) saveTransaction(ctx context.Context, t transactionRow, link string) error {
+	if _, err := m.db.Exec(ctx, `insert into paddle_transactions (transaction_id, user_id, subscription_id, customer_id,
+		  status, currency_code, subtotal, tax, total, earnings, billed_at, paddle_updated_at)
+		values ($1, coalesce(`+existingUser("$2")+`, (select user_id from paddle_customers where customer_id = $4)),
+		  nullif($3, ''), nullif($4, ''), $5, $6, $7, $8, $9, $10, $11, $12)
+		on conflict (transaction_id) do update set user_id = coalesce(paddle_transactions.user_id, excluded.user_id),
+		  subscription_id = excluded.subscription_id, customer_id = excluded.customer_id, status = excluded.status,
+		  currency_code = excluded.currency_code, subtotal = excluded.subtotal, tax = excluded.tax, total = excluded.total,
+		  earnings = coalesce(excluded.earnings, paddle_transactions.earnings), billed_at = excluded.billed_at,
+		  paddle_updated_at = excluded.paddle_updated_at
+		where excluded.paddle_updated_at >= paddle_transactions.paddle_updated_at`,
+		t.ID, link, t.SubscriptionID, t.CustomerID, t.Status, t.Currency, t.Subtotal, t.Tax, t.Total, t.Earnings,
+		t.BilledAt, t.UpdatedAt); err != nil {
+		return fmt.Errorf("save transaction %s: %w", t.ID, err)
+	}
+	return nil
+}
+
+// adjustmentRow is an adjustment as it's mirrored; Total is minor units of Currency.
+type adjustmentRow struct {
+	ID, TransactionID, CustomerID, Action, Status, Currency string
+	Total                                                   int64
+	CreatedAt, UpdatedAt                                    time.Time
+}
+
+// saveAdjustment mirrors a unless the row is newer; its account is its transaction's, else its customer's.
+func (m *model) saveAdjustment(ctx context.Context, a adjustmentRow) error {
+	if _, err := m.db.Exec(ctx, `insert into paddle_adjustments (adjustment_id, transaction_id, user_id, action, status,
+		  currency_code, total, created_at, paddle_updated_at)
+		values ($1, nullif($2, ''), coalesce((select user_id from paddle_transactions where transaction_id = $2),
+		  (select user_id from paddle_customers where customer_id = $3)), $4, $5, $6, $7, $8, $9)
+		on conflict (adjustment_id) do update set user_id = coalesce(paddle_adjustments.user_id, excluded.user_id),
+		  status = excluded.status, total = excluded.total, paddle_updated_at = excluded.paddle_updated_at
+		where excluded.paddle_updated_at >= paddle_adjustments.paddle_updated_at`,
+		a.ID, a.TransactionID, a.CustomerID, a.Action, a.Status, a.Currency, a.Total, a.CreatedAt, a.UpdatedAt); err != nil {
+		return fmt.Errorf("save adjustment %s: %w", a.ID, err)
+	}
+	return nil
+}
+
+// pricesWithoutAmount are the prices of mirrored subscriptions that have no unit_amount yet.
+func (m *model) pricesWithoutAmount(ctx context.Context) ([]string, error) {
+	rows, err := m.db.Query(ctx, `select distinct price_id from paddle_subscriptions where unit_amount is null`)
+	if err != nil {
+		return nil, fmt.Errorf("read prices without amount: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("read prices without amount: %w", err)
+	}
+	return ids, nil
+}
+
+// setUnitAmount fills in unit_amount on the price's subscriptions that have none, answering how many.
+func (m *model) setUnitAmount(ctx context.Context, priceID string, amount int64) (int64, error) {
+	tag, err := m.db.Exec(ctx, `update paddle_subscriptions set unit_amount = $2 where price_id = $1 and unit_amount is null`,
+		priceID, amount)
+	if err != nil {
+		return 0, fmt.Errorf("set unit amount of %s: %w", priceID, err)
+	}
+	return tag.RowsAffected(), nil
 }

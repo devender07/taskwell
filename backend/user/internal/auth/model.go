@@ -37,6 +37,8 @@ const (
 	purposeEmailNew = "email_change_new"
 	// purposeAccountDelete is the emailed code that confirms deleting the account.
 	purposeAccountDelete = "account_delete"
+	// purposeReauth is the emailed code that confirms it's the user, for POST /api/auth/reauth.
+	purposeReauth = "reauth"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -904,6 +906,18 @@ func (m *model) disableMFA(ctx context.Context, key []byte, userID, code, recove
 		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
 	})
 	return res.ok, err
+}
+
+// mfaRequiredBy returns the name of a workspace the user is a member of that requires two-factor sign-in; "" when none
+// does.
+func (m *model) mfaRequiredBy(ctx context.Context, userID string) (string, error) {
+	var name string
+	err := m.db.QueryRow(ctx, `select w.name from workspace_members m join workspaces w on w.id = m.workspace_id
+		where m.user_id = $1 and w.require_mfa order by w.name limit 1`, userID).Scan(&name)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("find workspace requiring two-factor: %w", err)
+	}
+	return name, nil
 }
 
 // replaceRecovery swaps the user's recovery codes for hashes when code (from the app) matches.

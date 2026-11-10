@@ -14,6 +14,8 @@ import (
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces", web.Private(h.auth, h.workspaces))
 	mux.HandleFunc("GET /api/users", web.Private(h.auth, h.users))
+	mux.HandleFunc("GET /api/users.csv", web.Private(h.auth, h.usersCSV))
+	mux.HandleFunc("GET /api/users/{id}", web.Private(h.auth, h.user))
 	mux.HandleFunc("POST /api/users/{id}/suspend", web.Private(h.auth, h.suspend))
 	mux.HandleFunc("POST /api/users/{id}/unsuspend", web.Private(h.auth, h.unsuspend))
 	mux.HandleFunc("POST /api/users/{id}/plan", web.Private(h.auth, h.setPlan))

@@ -27,6 +27,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Under /api/auth so the refresh cookie comes along: changing the email keeps this session and ends the others.
 	mux.HandleFunc("POST /api/auth/email/code", h.wrap(h.limitIP(h.emailCode)))
 	mux.HandleFunc("POST /api/auth/email/change", h.wrap(h.limitIP(h.changeEmail)))
+	mux.HandleFunc("POST /api/auth/reauth", h.wrap(h.limitIP(h.reauth)))
+	mux.HandleFunc("POST /api/auth/reauth/code", h.wrap(h.limitIP(h.reauthCode)))
 	mux.HandleFunc("POST /api/auth/refresh", h.wrap(h.refresh))
 	mux.HandleFunc("POST /api/auth/signout", h.wrap(h.signout))
 	mux.HandleFunc("GET /api/auth/google", h.wrap(h.googleStart))
@@ -39,6 +41,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/me/mfa/enable", h.wrap(h.limitIP(h.mfaEnable)))
 	mux.HandleFunc("POST /api/me/mfa/disable", h.wrap(h.limitIP(h.mfaDisable)))
 	mux.HandleFunc("POST /api/me/mfa/recovery", h.wrap(h.limitIP(h.mfaRecovery)))
+	mux.HandleFunc("GET /api/me/reauth", h.wrap(h.reauthMethods))
 	mux.HandleFunc("GET /api/me/tokens", h.wrap(h.listTokens))
 	mux.HandleFunc("POST /api/me/tokens", h.wrap(h.createToken))
 	mux.HandleFunc("DELETE /api/me/tokens/{id}", h.wrap(h.deleteToken))
@@ -52,7 +55,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // change the password or two-factor, read the security log, download the account's data or delete it.
 func cookieOnly(path string) bool {
 	for _, p := range []string{"/api/auth/", "/api/me/password", "/api/me/tokens", "/api/me/mfa", "/api/me/account-events",
-		"/api/me/export", "/api/me/delete"} {
+		"/api/me/export", "/api/me/delete", "/api/me/reauth"} {
 		if strings.HasPrefix(path, p) {
 			return true
 		}

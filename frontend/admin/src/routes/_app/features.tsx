@@ -15,7 +15,7 @@ function Features() {
     return plans ? [{ feature, plans }] : []
   })
   return (
-    <main className="grid gap-8 w-full px-6 py-10" style={{ maxWidth: 1040 }}>
+    <main className="grid gap-8 w-full px-6 py-10">
       <header className="grid gap-2">
         <h1 className="text-h2">Features</h1>
         <p className="text-body-sm text-secondary">

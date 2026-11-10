@@ -2,6 +2,7 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   'workspace.renamed': 'Renamed the workspace',
   'workspace.url_changed': "Changed the workspace's URL",
   'workspace.exported': 'Exported the workspace',
+  'workspace.onboarding_dismissed': 'Dismissed the getting started checklist',
   'member.invited': 'Invited a member',
   'invite.resent': 'Resent an invite',
   'invite.canceled': 'Canceled an invite',
@@ -41,6 +42,11 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   'billing.disputed': 'Payment disputed',
   'billing.refunded': 'Payment refunded',
 }
+
+export const auditAction = (action: string, d: Record<string, unknown>) =>
+  action === 'workspace.require_mfa_changed'
+    ? d.to ? 'Required two-factor sign-in' : 'Stopped requiring two-factor sign-in'
+    : (AUDIT_ACTIONS[action] ?? action)
 
 const text = (v: unknown) => (typeof v === 'string' ? v : '')
 const count = (v: unknown) => (Array.isArray(v) ? v.length : typeof v === 'number' ? v : 0)

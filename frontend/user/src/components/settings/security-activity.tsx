@@ -1,21 +1,9 @@
 import { useActionState, useState } from 'react'
 import { Button } from '@taskwell/shared/button'
+import { ACCOUNT_EVENTS } from '@taskwell/shared/account-events'
 import { fullTime, relativeTime } from '@taskwell/shared/time'
 import { accountEventsPath, api, toFormErrors, type AccountEventPage } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
-
-const ACTIONS: Record<string, string> = {
-  sign_in: 'Signed in',
-  sign_in_failed: 'Failed sign-in',
-  sign_out: 'Signed out',
-  password_changed: 'Password changed',
-  password_added: 'Password added',
-  email_changed: 'Email changed',
-  mfa_enabled: 'Two-factor turned on',
-  mfa_disabled: 'Two-factor turned off',
-  token_created: 'API token created',
-  token_deleted: 'API token deleted',
-}
 
 export function SecurityActivity({ first }: { first: AccountEventPage | null }) {
   const [page, setPage] = useState(first)
@@ -46,7 +34,7 @@ export function SecurityActivity({ first }: { first: AccountEventPage | null }) 
             <li key={e.id} className="grid gap-1">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-body-sm text-primary">
-                  {ACTIONS[e.action] ?? e.action}
+                  {ACCOUNT_EVENTS[e.action] ?? e.action}
                   {e.detail ? <span className="text-secondary"> · {e.detail}</span> : null}
                 </span>
                 <time dateTime={e.at} title={fullTime(e.at)} className="text-caption text-secondary flex-noshrink">

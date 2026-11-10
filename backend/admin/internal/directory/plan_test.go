@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -26,7 +27,7 @@ func TestSetPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 	email := "plan-" + strings.ToLower(rand.Text()[:8]) + "@dbtest.test"
 	var id, ws1, ws2 string
 	if err := pool.QueryRow(ctx, `insert into users (name, email) values ('Plan', $1) returning id::text`, email).Scan(&id); err != nil {
@@ -108,4 +109,40 @@ func TestSetPlan(t *testing.T) {
 		t.Fatalf("audit: admin %d, workspaces %d %d, %v", admin, a1, a2, err)
 	}
 	set(url.Values{"comped": {"false"}}, 200) // no change: admin_audit only
+
+	for _, d := range []string{"0", "366", "x", "-1"} {
+		set(url.Values{"plan": {"pro"}, "comped": {"true"}, "days": {d}}, 400)
+	}
+	until := func() *time.Time {
+		t.Helper()
+		var u *time.Time
+		if err := pool.QueryRow(ctx, `select plan_comped_until from users where id = $1`, id).Scan(&u); err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	set(url.Values{"plan": {"pro"}, "comped": {"true"}, "days": {"14"}}, 200)
+	if u := until(); u == nil || time.Until(*u) < 14*24*time.Hour-time.Minute || time.Until(*u) > 14*24*time.Hour {
+		t.Fatalf("14 days ends %v", u)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `select count(*) from admin_audit where target = $1`,
+		email+": pro (comped until "+until().UTC().Format(time.DateOnly)+")").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("audit with the end: %d %v", n, err)
+	}
+	set(url.Values{"plan": {"pro"}, "comped": {"true"}, "days": {""}}, 200)
+	if u := until(); u != nil {
+		t.Fatalf("no end date kept %v", u)
+	}
+	if _, err := pool.Exec(ctx, `update users set plan_comp_reminded_at = now() where id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	set(url.Values{"plan": {"pro"}, "comped": {"true"}, "days": {"7"}}, 200)
+	var reminded *time.Time
+	if err := pool.QueryRow(ctx, `select plan_comp_reminded_at from users where id = $1`, id).Scan(&reminded); err != nil || reminded != nil {
+		t.Fatalf("comp reminder marker kept: %v %v", reminded, err)
+	}
+	if body := set(url.Values{"comped": {"false"}, "days": {"7"}}, 200); !strings.Contains(body, `"comped_until":null`) || until() != nil {
+		t.Fatalf("clearing kept the end: %s", body)
+	}
 }

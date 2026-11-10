@@ -80,3 +80,9 @@
   .setting { grid-template-columns: minmax(0, 1fr) auto; }
   .setting > :first-child { grid-column: 1 / -1; }
 }
+
+.overview-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 20px; color: inherit; text-decoration: none; border-top: 1px solid var(--border); }
+.overview-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (hover: hover) { .overview-row:hover { background: rgba(var(--ink), 0.05); } }
+.plan-track { height: 8px; background: rgba(var(--ink), 0.08); border-radius: 9999px; overflow: hidden; }
+.plan-track > div { height: 100%; background: var(--text-2); border-radius: 9999px; }

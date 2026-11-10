@@ -2,6 +2,7 @@ import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext }
 import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
 import { can, featureOn, useFeatures, type Feature } from '@/api'
+import { LockedLink } from './locked-link'
 import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
@@ -13,6 +14,11 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const ws = useLoaderData({ from: '/_app/$workspace' })
   const features = useFeatures()
   const on = (name: Feature) => featureOn(features, name)
+  const upgrades = useRouteContext({ from: '/_app/$workspace', select: (c) => c.upgrades })
+  const locked = (name: Feature, label: string, Icon: typeof HomeIcon) => {
+    const plan = upgrades[name]
+    return plan ? <LockedLink workspace={workspace} feature={name} plan={plan} Icon={Icon}>{label}</LockedLink> : null
+  }
   const team = can(ws, 'analytics.view') && on('team')
   const guest = ws.guest
   const unread = useUnread()
@@ -52,7 +58,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
-      {guest || !on('chat') ? null : (
+      {guest ? null : !on('chat') ? locked('chat', 'Inbox', InboxIcon) : (
         <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
           <InboxIcon />
           Inbox
@@ -72,7 +78,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <FileIcon />
           Files
         </Link>
-      ) : null}
+      ) : locked('files', 'Files', FileIcon)}
       {guest ? null : (
         <>
           {on('notes') ? (
@@ -80,20 +86,20 @@ export function AppSidebar({ workspace }: { workspace: string }) {
               <NoteIcon />
               Notes
             </Link>
-          ) : null}
+          ) : locked('notes', 'Notes', NoteIcon)}
           {on('roadmap') ? (
             <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
               <RoadmapIcon />
               Roadmap
             </Link>
-          ) : null}
+          ) : locked('roadmap', 'Roadmap', RoadmapIcon)}
           {on('feedback') ? (
             <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
               <FeedbackIcon />
               Feedback
               {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
             </Link>
-          ) : null}
+          ) : locked('feedback', 'Feedback', FeedbackIcon)}
         </>
       )}
       {team && !guest ? (
@@ -101,7 +107,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <UsersIcon />
           Team
         </Link>
-      ) : null}
+      ) : !guest && can(ws, 'analytics.view') ? locked('team', 'Team', UsersIcon) : null}
       <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
         <TrashIcon />
         Trash

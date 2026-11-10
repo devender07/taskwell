@@ -20,6 +20,7 @@ import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-pas
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
+import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppNewWorkspaceRouteImport } from './routes/_app/new-workspace'
 import { Route as AppWelcomeRouteImport } from './routes/_app/welcome'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
@@ -38,6 +39,7 @@ import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$work
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
 import { Route as AppWorkspaceMainTrashRouteImport } from './routes/_app/$workspace/_main/trash'
+import { Route as AppWorkspaceMainUpgradeRouteImport } from './routes/_app/$workspace/_main/upgrade'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
 import { Route as AppWorkspaceMainInboxTaskwellRouteImport } from './routes/_app/$workspace/_main/inbox/taskwell'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
@@ -120,6 +122,11 @@ const authSignupRoute = authSignupRouteImport.update({
 const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
   id: '/$workspace',
   path: '/$workspace',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNewWorkspaceRoute = AppNewWorkspaceRouteImport.update({
@@ -212,6 +219,11 @@ const AppWorkspaceMainTeamRoute = AppWorkspaceMainTeamRouteImport.update({
 const AppWorkspaceMainTrashRoute = AppWorkspaceMainTrashRouteImport.update({
   id: '/trash',
   path: '/trash',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
+const AppWorkspaceMainUpgradeRoute = AppWorkspaceMainUpgradeRouteImport.update({
+  id: '/upgrade',
+  path: '/upgrade',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
 const AppWorkspaceMainInboxIndexRoute =
@@ -401,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/billing': typeof AppBillingRoute
   '/new-workspace': typeof AppNewWorkspaceRoute
   '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
@@ -417,6 +430,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
+  '/$workspace/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -460,6 +474,7 @@ export interface FileRoutesByTo {
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
+  '/billing': typeof AppBillingRoute
   '/new-workspace': typeof AppNewWorkspaceRoute
   '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
@@ -474,6 +489,7 @@ export interface FileRoutesByTo {
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
+  '/$workspace/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
@@ -517,6 +533,7 @@ export interface FileRoutesById {
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/_app/billing': typeof AppBillingRoute
   '/_app/new-workspace': typeof AppNewWorkspaceRoute
   '/_app/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
@@ -534,6 +551,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
   '/_app/$workspace/_main/trash': typeof AppWorkspaceMainTrashRoute
+  '/_app/$workspace/_main/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
   '/_app/$workspace/_main/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -579,6 +597,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/billing'
     | '/new-workspace'
     | '/welcome'
     | '/docs/api'
@@ -595,6 +614,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings'
     | '/$workspace/team'
     | '/$workspace/trash'
+    | '/$workspace/upgrade'
     | '/$workspace/'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
@@ -638,6 +658,7 @@ export interface FileRouteTypes {
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/billing'
     | '/new-workspace'
     | '/welcome'
     | '/docs/api'
@@ -652,6 +673,7 @@ export interface FileRouteTypes {
     | '/$workspace/roadmap'
     | '/$workspace/team'
     | '/$workspace/trash'
+    | '/$workspace/upgrade'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
     | '/$workspace/members/$id'
@@ -694,6 +716,7 @@ export interface FileRouteTypes {
     | '/(auth)/signin'
     | '/(auth)/signup'
     | '/_app/$workspace'
+    | '/_app/billing'
     | '/_app/new-workspace'
     | '/_app/welcome'
     | '/docs/api'
@@ -711,6 +734,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/team'
     | '/_app/$workspace/_main/trash'
+    | '/_app/$workspace/_main/upgrade'
     | '/_app/$workspace/_main/'
     | '/_app/$workspace/_main/inbox/taskwell'
     | '/_app/$workspace/_main/issue/$identifier'
@@ -840,6 +864,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/billing': {
+      id: '/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/new-workspace': {
       id: '/_app/new-workspace'
       path: '/new-workspace'
@@ -964,6 +995,13 @@ declare module '@tanstack/react-router' {
       path: '/trash'
       fullPath: '/$workspace/trash'
       preLoaderRoute: typeof AppWorkspaceMainTrashRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
+    '/_app/$workspace/_main/upgrade': {
+      id: '/_app/$workspace/_main/upgrade'
+      path: '/upgrade'
+      fullPath: '/$workspace/upgrade'
+      preLoaderRoute: typeof AppWorkspaceMainUpgradeRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
     '/_app/$workspace/_main/inbox/': {
@@ -1262,6 +1300,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainSettingsRoute: typeof AppWorkspaceMainSettingsRouteWithChildren
   AppWorkspaceMainTeamRoute: typeof AppWorkspaceMainTeamRoute
   AppWorkspaceMainTrashRoute: typeof AppWorkspaceMainTrashRoute
+  AppWorkspaceMainUpgradeRoute: typeof AppWorkspaceMainUpgradeRoute
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainMembersIdRoute: typeof AppWorkspaceMainMembersIdRoute
@@ -1282,6 +1321,7 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainSettingsRoute: AppWorkspaceMainSettingsRouteWithChildren,
   AppWorkspaceMainTeamRoute: AppWorkspaceMainTeamRoute,
   AppWorkspaceMainTrashRoute: AppWorkspaceMainTrashRoute,
+  AppWorkspaceMainUpgradeRoute: AppWorkspaceMainUpgradeRoute,
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
   AppWorkspaceMainIssueIdentifierRoute: AppWorkspaceMainIssueIdentifierRoute,
   AppWorkspaceMainMembersIdRoute: AppWorkspaceMainMembersIdRoute,
@@ -1311,12 +1351,14 @@ const AppWorkspaceRouteWithChildren = AppWorkspaceRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppWorkspaceRoute: typeof AppWorkspaceRouteWithChildren
+  AppBillingRoute: typeof AppBillingRoute
   AppNewWorkspaceRoute: typeof AppNewWorkspaceRoute
   AppWelcomeRoute: typeof AppWelcomeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceRoute: AppWorkspaceRouteWithChildren,
+  AppBillingRoute: AppBillingRoute,
   AppNewWorkspaceRoute: AppNewWorkspaceRoute,
   AppWelcomeRoute: AppWelcomeRoute,
 }

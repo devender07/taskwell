@@ -32,6 +32,10 @@ type Handler struct {
 	authenticate func(*http.Request) (string, error)
 	mail         *mail.Mailer
 	cfg          *sysconfig.Store
+
+	// Reauthed reports whether the request carries the user's fresh re-authentication proof (auth.Handler.Reauthed);
+	// deleting a workspace needs one.
+	Reauthed func(r *http.Request, userID string) (bool, error)
 }
 
 // New takes the auth handler's Authenticate, which returns the signed-in user ID or "".
@@ -95,7 +99,26 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	err = h.model.update(r.Context(), ws, userID, name, slug)
+	require := ws.RequireMFA
+	switch r.FormValue("require_mfa") {
+	case "true":
+		require = true
+	case "false":
+		require = false
+	case "":
+	default:
+		web.Fields(w, http.StatusBadRequest, map[string]string{"require_mfa": "Choose whether two-factor sign-in is required."})
+		return nil
+	}
+	if require && !ws.RequireMFA {
+		if on, err := h.model.hasMFA(r.Context(), userID); err != nil || !on {
+			if err == nil {
+				web.Fields(w, http.StatusBadRequest, map[string]string{"require_mfa": "Turn on two-factor sign-in for your account first."})
+			}
+			return err
+		}
+	}
+	err = h.model.update(r.Context(), ws, userID, name, slug, require)
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
@@ -103,7 +126,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return err
 	}
-	ws.Name, ws.Slug = name, slug
+	ws.Name, ws.Slug, ws.RequireMFA = name, slug, require
 	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
@@ -163,6 +186,12 @@ func normSlug(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, permWorkspaceDelete)
 	if !ok || err != nil {
+		return err
+	}
+	if ok, err := h.Reauthed(r, userID); err != nil || !ok {
+		if err == nil {
+			web.Reauth(w)
+		}
 		return err
 	}
 	if err := h.model.delete(r.Context(), ws, userID); err != nil {

@@ -5,10 +5,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/admin/internal/audit"
 	"github.com/devender07/taskwell/backend/admin/internal/web"
 )
 
@@ -90,8 +92,8 @@ var paidPlans = []string{"starter", "pro", "advanced"}
 
 const freePlan = "free"
 
-// setPlan comps the user's account with the form's plan (comped=true), or clears its comp (comped=false): back to
-// the plan of its mirrored Paddle subscription granting access, else Free.
+// setPlan comps the user's account with the form's plan (comped=true), for the form's days (none: no end), or clears
+// its comp (comped=false): back to the plan of its mirrored Paddle subscription granting access, else Free.
 func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string) error {
 	ctx := r.Context()
 	var id pgtype.UUID
@@ -100,6 +102,14 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 		return nil
 	}
 	plan, comped := r.FormValue("plan"), r.FormValue("comped")
+	days := 0
+	if d := r.FormValue("days"); comped == "true" && d != "" {
+		var err error
+		if days, err = strconv.Atoi(d); err != nil || days < 1 || days > 365 {
+			web.WriteErr(w, http.StatusBadRequest, "Choose 1 to 365 days.")
+			return nil
+		}
+	}
 	switch {
 	case comped != "true" && comped != "false":
 		web.WriteErr(w, http.StatusBadRequest, "Choose whether the plan is comped.")
@@ -108,7 +118,7 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 		web.WriteErr(w, http.StatusBadRequest, "Choose a plan.")
 		return nil
 	}
-	u, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true")
+	u, err := h.model.setPlan(ctx, adminID, web.ClientIP(r), r.PathValue("id"), plan, comped == "true", days)
 	if err != nil {
 		return err
 	}
@@ -117,5 +127,49 @@ func (h *Handler) setPlan(w http.ResponseWriter, r *http.Request, adminID string
 		return nil
 	}
 	web.WriteJSON(w, http.StatusOK, u)
+	return nil
+}
+
+// user answers the user's detail page.
+func (h *Handler) user(w http.ResponseWriter, r *http.Request, _ string) error {
+	var id pgtype.UUID
+	var d *UserDetail
+	if id.Scan(r.PathValue("id")) == nil {
+		var err error
+		if d, err = h.model.user(r.Context(), r.PathValue("id")); err != nil {
+			return err
+		}
+	}
+	if d == nil {
+		web.WriteErr(w, http.StatusNotFound, "User not found.")
+		return nil
+	}
+	web.WriteJSON(w, http.StatusOK, d)
+	return nil
+}
+
+// usersCSV downloads every user matching ?q=, recorded in admin_audit.
+func (h *Handler) usersCSV(w http.ResponseWriter, r *http.Request, adminID string) error {
+	q, _ := search(r)
+	us, err := h.model.allUsers(r.Context(), q)
+	if err != nil {
+		return err
+	}
+	if err := audit.Record(r.Context(), h.model.db, adminID, audit.UsersExported, q, web.ClientIP(r)); err != nil {
+		return err
+	}
+	at := func(t *time.Time) string {
+		if t == nil {
+			return ""
+		}
+		return t.UTC().Format(time.RFC3339)
+	}
+	rows := make([][]string, len(us))
+	for i, u := range us {
+		rows[i] = []string{u.ID, u.Name, u.Email, u.Plan, strconv.FormatBool(u.Comped), at(u.CompedUntil),
+			strconv.FormatBool(u.Suspended), strconv.FormatBool(u.MFA), strconv.Itoa(u.Workspaces), at(&u.CreatedAt), at(u.LastActiveAt)}
+	}
+	web.WriteCSV(w, "users.csv", []string{"id", "name", "email", "plan", "comped", "comped_until", "suspended", "mfa",
+		"workspaces", "created_at", "last_active_at"}, rows)
 	return nil
 }

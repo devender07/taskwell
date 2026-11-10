@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/mail"
 	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
@@ -49,16 +50,17 @@ type Handler struct {
 	key          []byte                                                // signs checkout custom_data
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	mail         *mail.Mailer
 	now          func() time.Time
 }
 
 // New takes the JWT secret (the checkout signature's key is derived from it), the auth handler's Authenticate and
-// the workspace handler's Member.
-func New(db *pgxpool.Pool, cfg *sysconfig.Store, jwtSecret string, authenticate func(*http.Request) (string, error),
+// the workspace handler's Member; mailer sends the email when a comp ends (see Run).
+func New(db *pgxpool.Pool, cfg *sysconfig.Store, mailer *mail.Mailer, jwtSecret string, authenticate func(*http.Request) (string, error),
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
 	return &Handler{model: &model{db: db}, paddle: &paddleAPI{client: &http.Client{Timeout: 10 * time.Second}},
 		config: cfg.Get, key: secret.Key("taskwell checkout", "jwt_secret:"+jwtSecret), authenticate: authenticate,
-		member: member, now: time.Now}
+		member: member, mail: mailer, now: time.Now}
 }
 
 // settings is billing's paddle_ config.
@@ -109,6 +111,14 @@ func (h *Handler) signed(c customData) bool {
 	return err == nil && web.IsUUID(c.UserID) && hmac.Equal(got, h.mac(c.UserID))
 }
 
+// link is the user id c names when it's signed, else "".
+func (h *Handler) link(c customData) string {
+	if h.signed(c) {
+		return c.UserID
+	}
+	return ""
+}
+
 // limit is n, or nil for 0 (unlimited).
 func limit[T int | int64](n T) *T {
 	if n == 0 {
@@ -130,7 +140,7 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) e
 	}
 	p, _ := plan.Get(a.Plan)
 	web.JSON(w, http.StatusOK, map[string]any{
-		"plan": a.Plan, "comped": a.Comped, "status": a.Status, "currency": a.Currency, "interval": a.Interval,
+		"plan": a.Plan, "comped": a.Comped, "comped_until": a.CompedUntil, "status": a.Status, "currency": a.Currency, "interval": a.Interval,
 		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd, "trial_used": a.TrialUsed,
 		"workspaces": map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
 		"enabled":    err == nil,
@@ -319,8 +329,9 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// handle applies one event, from its payload only (docs/billing-plan.md): subscriptions and customers are mirrored,
-// a completed transaction links its customer, adjustments are logged, anything else is ignored.
+// handle applies one event, from its payload only (docs/billing-plan.md): subscriptions, customers, completed or paid
+// transactions and adjustments are mirrored (docs/revenue-plan.md), a completed transaction links its customer,
+// anything else is ignored.
 func (h *Handler) handle(ctx context.Context, e event) error {
 	switch e.Type {
 	case "subscription.created", "subscription.updated", "subscription.canceled", "subscription.activated",
@@ -339,37 +350,29 @@ func (h *Handler) handle(ctx context.Context, e event) error {
 			return fmt.Errorf("customer %q: no id or updated_at", o.ID)
 		}
 		return h.model.saveCustomer(ctx, o)
-	case "transaction.completed":
+	case "transaction.completed", "transaction.paid", "transaction.updated":
 		var o transaction
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode transaction: %w", err)
 		}
-		user := ""
-		if h.signed(o.CustomData) {
-			user = o.CustomData.UserID
+		if e.Type == "transaction.completed" {
+			slog.InfoContext(ctx, "paddle transaction completed", "event", e.ID, "transaction", o.ID, "customer", o.CustomerID,
+				"subscription", o.SubscriptionID)
+			if o.CustomerID != "" {
+				if err := h.model.linkCustomer(ctx, o.CustomerID, h.link(o.CustomData)); err != nil {
+					return err
+				}
+			}
 		}
-		slog.InfoContext(ctx, "paddle transaction completed", "event", e.ID, "transaction", o.ID, "customer", o.CustomerID,
-			"subscription", o.SubscriptionID, "user", user)
-		if o.CustomerID == "" {
-			return nil
-		}
-		return h.model.linkCustomer(ctx, o.CustomerID, user)
-	case "adjustment.created":
-		var o struct {
-			ID             string `json:"id"`
-			Action         string `json:"action"`
-			SubscriptionID string `json:"subscription_id"`
-			CurrencyCode   string `json:"currency_code"`
-			Reason         string `json:"reason"`
-			Totals         struct {
-				Total string `json:"total"`
-			} `json:"totals"`
-		}
+		return h.saveTransaction(ctx, o)
+	case "adjustment.created", "adjustment.updated":
+		var o adjustment
 		if err := json.Unmarshal(e.Data, &o); err != nil {
 			return fmt.Errorf("decode adjustment: %w", err)
 		}
-		slog.WarnContext(ctx, "paddle adjustment "+o.Action, "event", e.ID, "adjustment", o.ID, "subscription", o.SubscriptionID,
-			"amount", o.Totals.Total, "currency", o.CurrencyCode, "reason", o.Reason)
+		slog.WarnContext(ctx, "paddle adjustment "+o.Action, "event", e.ID, "adjustment", o.ID, "transaction", o.TransactionID,
+			"status", o.Status, "amount", o.Totals.Total, "currency", o.Totals.CurrencyCode, "reason", o.Reason)
+		return h.saveAdjustment(ctx, o)
 	}
 	return nil
 }
@@ -393,13 +396,17 @@ func (h *Handler) saveSubscription(ctx context.Context, sub subscription) error 
 	if c := strings.ToLower(sub.CurrencyCode); c != "" {
 		row.Currency = &c
 	}
+	if a := pr.UnitPrice.Amount; a != "" {
+		n, err := amount(a)
+		if err != nil {
+			return fmt.Errorf("subscription %s: price %s unit_price: %w", sub.ID, pr.ID, err)
+		}
+		row.UnitAmount = &n
+	}
 	if sc := sub.ScheduledChange; sc != nil && sc.Action != "" {
 		row.ScheduledAction, row.ScheduledAt = &sc.Action, sc.EffectiveAt
 	}
-	link := ""
-	if h.signed(sub.CustomData) {
-		link = sub.CustomData.UserID
-	}
+	link := h.link(sub.CustomData)
 	applied, user, err := h.model.saveSubscription(ctx, row, link)
 	if err != nil || !applied {
 		return err

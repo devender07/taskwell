@@ -8,7 +8,8 @@ export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwel
 export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean; terms_accepted_at: string | null }
 export type RoleRef = { id: string; name: string }
 // guest: the caller is a guest here (sees only the projects they're added to). Optional: only the single-workspace GET promises it.
-export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean }
+// require_mfa, mfa_blocked (it requires two-factor and the caller has none): also only on the single GET.
+export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean; require_mfa?: boolean; mfa_blocked?: boolean }
 export type Member = { id: string; name: string; email: string; role: RoleRef; guest: boolean }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | 'guest' | null; permissions: string[]; member_count: number }
@@ -317,15 +318,40 @@ export type Features = Partial<Record<Feature, boolean>>
 const ALL_ON: Features = {}
 export const getFeatures = (slug: string) => api<Features>(`${workspacePath(slug)}/features`).catch(() => ALL_ON)
 // Public: each feature's plan ids, for the pricing page; null when they can't load.
-export const getFeaturePlans = () => api<Partial<Record<Feature, string[]>>>('/features').catch(() => null)
+export const getFeaturePlans = () => api<FeaturePlans>('/features').catch(() => null)
 export const featureOn = (features: Features, name: Feature) => features[name] !== false
 // The open workspace's flags (fetched by the $workspace route); outside a workspace everything is on.
 export const useFeatures = () => useMatch({ from: '/_app/$workspace', shouldThrow: false, select: (m) => m.context.features }) ?? ALL_ON
 export const useFeature = (name: Feature) => featureOn(useFeatures(), name)
-// A feature-owned route's beforeLoad: its URLs show not found while the feature is off.
-export const requireFeature = (name: Feature) => ({ context }: { context: { features: Features } }) => {
-  if (!featureOn(context.features, name)) throw notFound()
+export type FeaturePlans = Partial<Record<Feature, string[]>>
+export type Upgrades = Partial<Record<Feature, PlanId>>
+const PLAN_RANK: PlanId[] = ['free', 'starter', 'pro', 'advanced']
+// Features that are off here but on for a higher plan, each with the lowest such plan.
+export function upgradesFor(features: Features, plans: FeaturePlans | null, plan: PlanId | undefined): Upgrades {
+  const out: Upgrades = {}
+  if (!plans || !plan) return out
+  const higher = PLAN_RANK.slice(PLAN_RANK.indexOf(plan) + 1)
+  for (const [name, ids] of Object.entries(plans) as [Feature, string[]][]) {
+    const next = !featureOn(features, name) && higher.find((p) => ids.includes(p))
+    if (next) out[name] = next
+  }
+  return out
 }
+// The plan that unlocks `name` in the open workspace, or undefined when it isn't locked (on, hidden, or a guest).
+export const useUpgrade = (name: Feature) =>
+  useMatch({ from: '/_app/$workspace', shouldThrow: false, select: (m) => m.context.upgrades[name] })
+// A feature-owned route's beforeLoad: its URLs show the upgrade page while the feature is locked, else not found while it's off.
+export const requireFeature =
+  (name: Feature) =>
+  ({ context }: { context: { slug: string; features: Features; upgrades: Upgrades } }) => {
+    if (context.upgrades[name]) throw redirect({ to: '/$workspace/upgrade', params: { workspace: context.slug }, search: { feature: name } })
+    if (!featureOn(context.features, name)) throw notFound()
+  }
+
+export type OnboardingStep = { id: 'project' | 'invite' | 'issue' | 'github'; done: boolean }
+export type Onboarding = { dismissed: boolean; steps: OnboardingStep[] }
+export const onboardingPath = (workspace: string) => `${workspacePath(workspace)}/onboarding`
+export const dismissOnboarding = (workspace: string) => api(`${onboardingPath(workspace)}/dismiss`, new FormData())
 
 export type AnalyticsWeek = { week: string; completed: number; created: number; comments: number }
 export type MemberAnalytics = {
@@ -470,10 +496,23 @@ export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURICompone
 // The /auth/ calls that need a session (they sit under /auth/ for the refresh cookie), so a 401 refreshes like any other.
 const SIGNED_IN_AUTH = ['/auth/password/change', '/auth/email/code', '/auth/email/change']
 
+export type ReauthMethod = 'password' | 'totp' | 'email'
+export const getReauthMethods = () => api<{ methods: ReauthMethod[] }>('/me/reauth')
+export const reauth = (form: FormData) => api('/auth/reauth', form)
+export const sendReauthCode = () => api('/auth/reauth/code', new FormData())
+
+// The mounted ReauthDialog answers a 403 {reauth}: true once the user confirmed it's them (the call is retried).
+let confirmIdentity: (() => Promise<boolean>) | null = null
+export const setConfirmIdentity = (fn: typeof confirmIdentity) => void (confirmIdentity = fn)
+// Runs on a 403 {mfa_required}: the workspace now requires two-factor and this user has none.
+let mfaRequired = () => {}
+export const onMfaRequired = (fn: () => void) => void (mfaRequired = fn)
+
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
 // A 401 outside /auth/* (except SIGNED_IN_AUTH) refreshes the access token once and retries.
 // A failed refresh in a signed-in tab means the session ended: it goes to sign-in and the call never settles.
+// A 403 {reauth} asks the user to confirm it's them and retries; cancelling rejects with that 403.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
   let res = await send(path, body, method, signal)
   if (res.status === 401 && (!path.startsWith('/auth/') || SIGNED_IN_AUTH.includes(path))) {
@@ -484,6 +523,8 @@ export async function api<T = void>(path: string, body?: FormData, method = body
     res = await send(path, body, method, signal)
   }
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined)
+  if (res.status === 403 && data?.reauth && confirmIdentity && (await confirmIdentity())) return api<T>(path, body, method, signal)
+  if (res.status === 403 && data?.mfa_required) mfaRequired()
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }
@@ -593,6 +634,7 @@ export type Usage = { used: number; limit: number | null }
 export type Billing = {
   plan: PlanId
   comped: boolean
+  comped_until: string | null
   status: string | null
   currency: string | null
   interval: 'month' | 'year' | null

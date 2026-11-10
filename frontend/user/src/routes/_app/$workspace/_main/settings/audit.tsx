@@ -4,7 +4,7 @@ import { Tabs } from '@taskwell/shared/tabs'
 import { fullTime } from '@taskwell/shared/time'
 import { ApiError, auditPath, type AuditCategory, type AuditPage } from '@/api'
 import { loaderApi } from '@/realtime'
-import { AUDIT_ACTIONS, auditDetail } from '@/components/settings/audit'
+import { auditAction, auditDetail } from '@/components/settings/audit'
 
 const CATEGORIES: { value: AuditCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -65,7 +65,7 @@ function AuditSettings() {
                   <tr key={e.id}>
                     <td className="text-secondary">{fullTime(e.at)}</td>
                     <td title={e.actor?.email}>{e.actor?.name || e.actor?.email || 'Deleted user'}</td>
-                    <td>{AUDIT_ACTIONS[e.action] ?? e.action}</td>
+                    <td>{auditAction(e.action, e.detail)}</td>
                     <td className="text-secondary">{e.target}</td>
                     <td className="text-secondary">{auditDetail(e.action, e.detail)}</td>
                     <td className="text-secondary">{e.ip}</td>

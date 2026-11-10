@@ -1,7 +1,7 @@
 import { useTransition, useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { Button } from '@taskwell/shared/button'
-import { shortDate } from '@taskwell/shared/time'
+import { longDate, shortDate } from '@taskwell/shared/time'
 import { api, billingPath, openBillingPortal, storagePath, toFormErrors, workspaceBillingPath, type Billing, type WorkspaceBilling } from '@/api'
 import { trackPath } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -26,7 +26,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/billing')(
 })
 
 function statusLine(b: Billing) {
-  if (b.comped) return 'Comped by Taskwell'
+  if (b.comped) return b.comped_until ? `Comped by Taskwell until ${longDate(b.comped_until)}` : 'Comped by Taskwell'
   if (b.status === 'past_due') return 'Payment failed. Update your payment method.'
   const parts = [b.interval === 'year' ? 'Yearly' : b.interval === 'month' ? 'Monthly' : '', b.status === 'trialing' ? 'Free trial' : '']
   if (b.renews_at) parts.push(b.cancel_at_period_end ? `Cancels on ${shortDate(b.renews_at)}` : `Renews on ${shortDate(b.renews_at)}`)
