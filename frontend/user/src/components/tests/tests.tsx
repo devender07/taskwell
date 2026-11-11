@@ -12,6 +12,8 @@ import { ChevronDownIcon, GripIcon, ResultGlyph } from '@taskwell/shared/icons'
 import {
   api,
   can,
+  serverRuns,
+  workspacePath,
   deleteTestCase,
   orderTestCases,
   saveTestCase,
@@ -20,6 +22,7 @@ import {
   testRunsPath,
   testSitesPath,
   toFormErrors,
+  type AiUsage,
   type FieldErrors,
   type Issue,
   type RunKind,
@@ -35,6 +38,7 @@ import { usePageEnd } from '@/components/issues/issue-pages'
 import { FormError } from '@/components/auth/auth-card'
 import type { Prefill } from '@/components/issues/issue-form'
 import { refetchPaths, subscribePaths } from '@/realtime'
+import { LocalRunDialog } from './local-run'
 import './tests.css'
 import { extractDataFromArray, idSet } from '@taskwell/shared/list'
 
@@ -162,12 +166,16 @@ type Start = { kind: RunKind; regenerate?: boolean; caseId?: string }
 export function TestsSection({ workspace, issue }: { workspace: Workspace; issue: Issue }) {
   const navigate = useNavigate()
   const manage = can(workspace, 'tests.manage') && !issue.project.archived
-  const runAi = can(workspace, 'ai_tests.run') && !issue.project.archived
+  const usage = useLive<AiUsage>(`${workspacePath(workspace)}/ai-usage`)
+  const server = serverRuns(usage.data)
+  const runAi = server && can(workspace, 'ai_tests.run') && !issue.project.archived
+  const runLocal = manage && !server && (usage.data !== null || usage.error !== null)
   const cases = useLive<TestCase[]>(testCasesPath(workspace, issue.identifier))
   const runs = useLive<RunPage>(testRunsPath(workspace, issue.identifier))
   const sites = useLive<TestSite[]>(runAi ? testSitesPath(workspace) : null)
   const [adding, setAdding] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [localOpen, setLocalOpen] = useState(false)
   const list = cases.data ?? []
   const noSite = sites.data?.length === 0
   const recorded = list.some((c) => c.recorded)
@@ -222,7 +230,12 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
               ) : null}
             </span>
           ) : null}
-          {manage ? (
+          {runLocal ? (
+            <Button variant="secondary" onClick={() => setLocalOpen(true)}>
+              Run with your Claude
+            </Button>
+          ) : null}
+          {manage && server ? (
             <span title={recorded ? undefined : 'Record a test case first.'}>
               <Button variant="ghost" disabled={starting || !recorded} onClick={() => run({ kind: 'replay' })}>
                 Run recorded tests
@@ -237,7 +250,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
         </div>
       </div>
       {runAi && noSite ? <p className="text-caption text-secondary m-0">Add a test site in Settings → AI testing to run AI tests.</p> : null}
-      {manage && list.length > 0 && !recorded ? (
+      {manage && server && list.length > 0 && !recorded ? (
         <p className="text-caption text-secondary m-0">
           No test case is recorded yet. Ask Claude Code to record them with the Taskwell MCP server, or pass one AI run, to run them without AI.
         </p>
@@ -247,7 +260,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
       {cases.data === null && !cases.error ? (
         <p className="text-body-sm text-secondary m-0">Loading…</p>
       ) : list.length === 0 && cases.data ? (
-        <p className="text-body-sm text-secondary m-0">No test cases yet. Run an AI test to write them, or add one.</p>
+        <p className="text-body-sm text-secondary m-0">{server ? 'No test cases yet. Run an AI test to write them, or add one.' : 'No test cases yet. Add one to test this issue.'}</p>
       ) : (
         <CaseList workspace={workspace} issue={issue} cases={list} manage={manage} onChange={cases.set} onRun={runAi && !noSite && !starting ? (id) => run({ kind: 'ai', caseId: id }) : undefined} />
       )}
@@ -270,6 +283,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
         )
       ) : null}
       <History workspace={workspace} issue={issue} page={runs.data} error={runs.error} />
+      {runLocal ? <LocalRunDialog open={localOpen} onClose={() => setLocalOpen(false)} slug={workspace.slug} identifier={issue.identifier} hasCases={list.length > 0} /> : null}
       {runAi ? (
         <Dialog open={regenerating} onClose={() => setRegenerating(false)} title="Regenerate cases and run?" description="This replaces the current test cases.">
           <form action={() => start({ kind: 'ai', regenerate: true })} className="grid gap-4">
@@ -530,7 +544,7 @@ function counts(r: TestRunSummary) {
     .join(', ')
 }
 
-const RUN_KINDS: Record<RunKind, string> = { ai: 'AI test', manual: 'Manual run', replay: 'Recorded' }
+const RUN_KINDS: Record<RunKind, string> = { ai: 'AI test', manual: 'Manual run', replay: 'Recorded', local: 'Local run' }
 
 type RunPage = { runs: TestRunSummary[]; has_more: boolean }
 
@@ -570,7 +584,7 @@ function History({ workspace, issue, page, error }: { workspace: Workspace; issu
               className="issue-row flex-wrap"
             >
               <RunStatusPill status={r.status} />
-              <span className="text-label text-primary flex-noshrink">{RUN_KINDS[r.kind]}</span>
+              <span className="text-label text-primary flex-noshrink">{RUN_KINDS[r.kind]}{r.kind === 'local' && r.client ? ` · ${r.client}` : ''}</span>
               <span className="text-caption text-secondary ellipsis flex-grow">{counts(r)}</span>
               {r.kind === 'ai' && r.cost_usd != null ? <span className="text-caption text-secondary flex-noshrink">{formatCost(r.cost_usd)}</span> : null}
               {r.started_by ? <span className="issue-row-wide text-caption text-secondary flex-noshrink">{r.started_by.name}</span> : null}

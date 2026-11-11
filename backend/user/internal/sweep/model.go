@@ -101,7 +101,7 @@ const referenced = `
 	select m[1]::uuid from issue_doc_updates u, regexp_matches(encode(u.data, 'escape'), '` + fileRef + `', 'g') m`
 
 // deleteUnreferencedFiles deletes up to 1000 rows at a time of files older than grace that no document references
-// and that aren't an avatar, an AI test step's screenshot, a project's listed file or an issue's file, and returns their ids.
+// and that aren't an avatar, a test step's screenshot, a test result's video, a project's listed file or an issue's file, and returns their ids.
 // ponytail: a document saved with a file between this statement's snapshot and its delete loses that file; it
 // needs a >24h-old upload re-added at that instant. Lock against saves if it ever happens.
 func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration) ([]string, error) {
@@ -114,6 +114,7 @@ func (m model) deleteUnreferencedFiles(ctx context.Context, grace time.Duration)
 			  where f.created_at < now() - make_interval(secs => $1) and not f.listed and f.issue_id is null
 			    and not exists (select 1 from users u where u.avatar_file_id = f.id)
 			    and not exists (select 1 from test_steps s where s.screenshot_id = f.id)
+			    and not exists (select 1 from test_results x where x.video_id = f.id)
 			    and not exists (select 1 from refs r where r.id = f.id)
 			  limit 1000)
 			returning id::text`, grace.Seconds())

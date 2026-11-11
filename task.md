@@ -97,6 +97,7 @@ Plan: `docs/ai-testing-plan.md`.
 
 - [x] Phase A: test cases saved on issues (add, edit, reorder, delete), manual test runs (pass / fail / skip with a note), test history, "Create bug" from a failed result
 - [x] Phase B: AI test runs: Claude writes cases and drives a sandboxed Chrome against registered test sites, live screenshots, monthly spend limit, sealed test-account passwords
+- [x] Local test runs (`docs/local-test-runner-plan.md`): `taskwell-tester` (`runner/`, Node, run with `npx`) is an MCP server the user adds to their own coding agent; the agent drives Chrome on their machine and the runner sends each step, screenshot and a video of each case to the issue ("Run with your Claude"). Server-side AI runs, recorded replays and hosted browser sessions are off unless `ai_tests_server_runs` is on (admin → Config). Not done: publishing the package to npm; API tokens are gated by the `api` feature, so a plan without it can't use the runner yet
 
 ## Cycles
 

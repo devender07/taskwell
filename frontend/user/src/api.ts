@@ -752,7 +752,7 @@ export async function homePath() {
   return last ? `/${encodeURIComponent(last.slug)}` : '/new-workspace'
 }
 
-export type RunKind = 'ai' | 'manual' | 'replay'
+export type RunKind = 'ai' | 'manual' | 'replay' | 'local'
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error'
 export type RunStatus = 'queued' | 'generating' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled' | 'limit_reached'
 export type TestCase = {
@@ -779,10 +779,12 @@ export type TestResult = {
   marked_by: PersonRef | null
   marked_at: string | null
   log: TestStep[] | null
+  video_url?: string | null
 }
 export type TestRun = {
   id: string
   kind: RunKind
+  client?: string | null
   issue: { identifier: string; title: string }
   status: RunStatus
   error: string | null
@@ -797,7 +799,9 @@ export type TestRun = {
 export type TestRunSummary = Omit<TestRun, 'results' | 'latest_screenshot_url'> & { counts?: Partial<Record<TestStatus, number>> }
 export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
-export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
+// server_runs: Taskwell's own tester is on. Off (or absent, from an older API) means tests run on the user's machine.
+export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string; server_runs?: boolean }
+export const serverRuns = (usage: AiUsage | null | undefined) => usage?.server_runs === true
 
 export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash' | 'billing'
 // actor: null when the user is gone and no name was copied; id null when only the copies are left.

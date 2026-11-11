@@ -14,14 +14,20 @@ import (
 
 // Lengths count UTF-16 units to match JS String.length.
 
-var ()
-
 const (
 	maxTitleLen    = 200
 	maxSteps       = 30
 	maxStepLen     = 1000
 	maxExpectedLen = 2000
 	maxNoteLen     = 2000
+
+	// Local runs.
+	maxClientLen  = 40
+	maxActionLen  = 300
+	maxReproLines = 30
+	maxReproLen   = 300
+	maxLocalSteps = 60 // a case
+	maxVideo      = 10 << 20
 )
 
 // cleanCase trims the fields and drops blank steps.

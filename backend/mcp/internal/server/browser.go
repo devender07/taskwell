@@ -19,7 +19,7 @@ const browserGuide = "Open Taskwell's sandboxed test browser on an issue to reco
 	"most edge cases: a draft must not show in the other inbox), then browser_save to the case from list_test_cases and " +
 	"run_recorded_tests to prove it passes. For a known bug, record the expected result with failing: true, so the case fails " +
 	"until the bug is fixed. A failed action records nothing. The session ends after 10 idle minutes, 30 in all, " +
-	"on browser_save or browser_close. When playwright-cli is available you can record with it and save_test_script instead."
+	"on browser_save or browser_close. When playwright-cli is available you can record with it and save_test_script instead." + serverRunsOff
 
 // browserTools registers the browser session tools.
 func (t *tools) browserTools(s *mcp.Server) {

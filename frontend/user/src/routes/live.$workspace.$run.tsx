@@ -19,7 +19,8 @@ function LiveView() {
   const { data: run, error } = useLive<TestRun>(path)
   const [attempt, setAttempt] = useState(0)
   const [broken, setBroken] = useState(false)
-  const streaming = run?.kind !== 'manual' && run?.status === 'running'
+  const hosted = run?.kind === 'ai' || run?.kind === 'replay'
+  const streaming = hosted && run?.status === 'running'
   const current = extractDataFromArray(run, 'results', []).find((r) => r.status === 'running')
   const done = extractDataFromArray(run, 'results', []).filter((r) => !['pending', 'running'].includes(r.status)).length
 
@@ -39,8 +40,10 @@ function LiveView() {
     ? error
     : !run
       ? 'Loading…'
-      : run.kind === 'manual'
-        ? 'Manual runs have no live browser.'
+      : !hosted
+        ? run.kind === 'local'
+          ? 'Local runs show in the browser on your own machine.'
+          : 'Manual runs have no live browser.'
         : run.status === 'queued'
           ? 'Waiting for a test runner…'
           : run.status === 'generating'

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -301,6 +302,33 @@ func (h *Handler) finishLocked(ctx context.Context, tx pgx.Tx, id string, worksp
 		return nil, errChooseImage, nil
 	}
 	return nil, errChooseMedia, nil
+}
+
+// FinishVideo saves the user's direct upload to the workspace as a file in no project when it's an MP4 or WebM of at
+// most limit bytes. Otherwise msg says why not, and bytes that aren't such a video are deleted.
+func (h *Handler) FinishVideo(ctx context.Context, workspaceID, userID, uploadID string, limit int64) (f *File, msg string, err error) {
+	f, msg, err = h.finish(ctx, uploadID, &workspaceID, userID, false)
+	if err != nil || msg != "" {
+		return nil, msg, err
+	}
+	if !slices.Contains(videoTypes, f.ContentType) || f.Size > limit {
+		if err := h.files.Delete(ctx, f.ID); err != nil {
+			return nil, "", err
+		}
+		if err := h.model.dropUpload(ctx, h.model.db, f.ID); err != nil {
+			return nil, "", err
+		}
+		return nil, fmt.Sprintf("Upload an MP4 or WebM video of %d MB or less.", limit>>20), nil
+	}
+	err = h.model.create(ctx, f, nil)
+	if errors.Is(err, errUploadGone) {
+		return nil, errNoUpload, nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	f.URL = URL(f.ID, f.Name)
+	return f, "", nil
 }
 
 // storage answers the workspace's storage use against its plan's quota (null: unlimited).

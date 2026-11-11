@@ -1,7 +1,8 @@
 // Package aitest implements testing on issues: test cases saved on an issue, manual test runs marked by a person,
 // AI test runs, where the tester binary (cmd/tester) has Claude write the cases and drive a sandboxed Chrome
-// against the workspace's registered test sites, and replay runs, where the tester replays recorded cases without
-// Claude.
+// against the workspace's registered test sites, replay runs, where the tester replays recorded cases without
+// Claude, and local runs, where the user's own agent drives Chrome on their machine through taskwell-tester and
+// posts the steps, screenshots and videos here (docs/local-test-runner-plan.md).
 //
 // routes.go mounts the endpoints, controller.go handles HTTP (parse, validate, respond) and model.go owns every SQL
 // query. validate.go checks input, seal.go seals test account passwords, playwright.go exports recorded cases as a
@@ -19,6 +20,9 @@ import (
 
 const maxBody = 1 << 20
 
+// maxStepBody caps a local run's step: a line of text and a screenshot.
+const maxStepBody = 2 << 20
+
 // Register mounts the API routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/test-cases", h.wrap(h.listCases))
@@ -33,6 +37,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/workspaces/{slug}/issues/{identifier}/playwright", h.wrap(h.playwright))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-runs/{id}", h.wrap(h.getRun))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/results/{result_id}", h.wrap(h.markResult))
+	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/results/{result_id}/steps", web.Wrap(h.authenticate, maxStepBody, h.addStep))
+	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/results/{result_id}/video", h.wrap(h.addVideo))
 	mux.HandleFunc("GET /api/workspaces/{slug}/test-runs/{id}/live", h.wrap(h.live))
 	mux.HandleFunc("POST /api/workspaces/{slug}/test-runs/{id}/cancel", h.wrap(h.cancelRun))
 	mux.HandleFunc("POST /api/workspaces/{slug}/issues/{identifier}/browser-sessions", h.wrap(h.createSession))

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
@@ -28,6 +29,9 @@ var (
 	errAIRun     = errors.New("ai run")
 	errNotFound  = errors.New("not found")
 	errRunActive = errors.New("a run is active on the issue")
+	errNotLocal  = errors.New("not a local run")
+	errMarked    = errors.New("result already marked")
+	errStepLimit = errors.New("too many steps")
 )
 
 const maxCases = 50
@@ -361,6 +365,7 @@ type Result struct {
 	MarkedBy     *Person     `json:"marked_by"`
 	MarkedAt     *time.Time  `json:"marked_at"`
 	Log          []ResultLog `json:"log"`
+	VideoURL     *string     `json:"video_url"` // a local run's recording of the case
 }
 
 type Counts struct {
@@ -380,6 +385,7 @@ type IssueRef struct {
 type Run struct {
 	ID         string     `json:"id"`
 	Kind       string     `json:"kind"`
+	Client     *string    `json:"client"` // a local run's agent, "Claude Code"
 	Issue      IssueRef   `json:"issue"`
 	Status     string     `json:"status"`
 	Error      *string    `json:"error"`
@@ -398,7 +404,7 @@ type RunDetail struct {
 	LatestScreenshotURL *string  `json:"latest_screenshot_url"`
 }
 
-const runCols = `r.id::text, r.kind, p.key || '-' || i.number, i.title, r.status, r.error,
+const runCols = `r.id::text, r.kind, r.client, p.key || '-' || i.number, i.title, r.status, r.error,
 	(select json_build_object('id', u.id, 'name', u.name) from users u where u.id = r.started_by),
 	r.created_at, r.finished_at, r.cost_micros, r.issue_id::text,
 	count(x.id) filter (where x.status = 'passed'), count(x.id) filter (where x.status = 'failed'),
@@ -410,7 +416,7 @@ const runCols = `r.id::text, r.kind, p.key || '-' || i.number, i.title, r.status
 func scanRun(row pgx.Row) (Run, error) {
 	var r Run
 	var micros int64
-	err := row.Scan(&r.ID, &r.Kind, &r.Issue.Identifier, &r.Issue.Title, &r.Status, &r.Error, &r.StartedBy, &r.CreatedAt,
+	err := row.Scan(&r.ID, &r.Kind, &r.Client, &r.Issue.Identifier, &r.Issue.Title, &r.Status, &r.Error, &r.StartedBy, &r.CreatedAt,
 		&r.FinishedAt, &micros, &r.issueID, &r.Counts.Passed, &r.Counts.Failed, &r.Counts.Skipped, &r.Counts.Error, &r.Counts.Pending)
 	if r.Kind == "ai" {
 		usd := float64(micros) / 1e6
@@ -453,14 +459,21 @@ func (m *model) run(ctx context.Context, workspaceID, id, viewerID string) (*Run
 	d := &RunDetail{Run: &r}
 	rows, err := m.db.Query(ctx, `select x.id::text, x.case_id::text, x.title, x.steps, x.expected, x.status, x.summary,
 		coalesce(x.reproduction, '{}'), (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = x.marked_by),
-		x.marked_at from test_results x where x.run_id = $1 order by x.position, x.id`, id)
+		x.marked_at, v.id::text, v.name from test_results x left join files v on v.id = x.video_id
+		where x.run_id = $1 order by x.position, x.id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("get test results: %w", err)
 	}
 	d.Results, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Result, error) {
 		x := Result{Log: []ResultLog{}}
-		err := row.Scan(&x.ID, &x.CaseID, &x.Title, &x.Steps, &x.Expected, &x.Status, &x.Summary, &x.Reproduction, &x.MarkedBy, &x.MarkedAt)
+		var videoID, videoName *string
+		err := row.Scan(&x.ID, &x.CaseID, &x.Title, &x.Steps, &x.Expected, &x.Status, &x.Summary, &x.Reproduction, &x.MarkedBy, &x.MarkedAt,
+			&videoID, &videoName)
 		x.MarkedAt = utc(x.MarkedAt)
+		if videoID != nil {
+			u := file.URL(*videoID, *videoName)
+			x.VideoURL = &u
+		}
 		return x, err
 	})
 	if err != nil {
@@ -474,7 +487,7 @@ func (m *model) run(ctx context.Context, workspaceID, id, viewerID string) (*Run
 	return d, nil
 }
 
-// addLogs fills the AI or replay run's step logs and latest screenshot.
+// addLogs fills the AI, replay or local run's step logs and latest screenshot.
 func (m *model) addLogs(ctx context.Context, d *RunDetail) error {
 	rows, err := m.db.Query(ctx, `select s.result_id::text, s.position, s.action, s.url,
 		  case when f.id is not null then '/api/files/' || f.id || '/' || f.name end
@@ -556,6 +569,125 @@ func snapshotCases(ctx context.Context, tx pgx.Tx, runID, issueID, caseID string
 	return tag.RowsAffected(), nil
 }
 
+// activeRun is a test_runs row that's an AI, replay or local run under way: an issue has one at a time.
+const activeRun = `kind in ('ai', 'replay', 'local') and status in ('queued', 'generating', 'running')`
+
+// createLocal starts a local run, driven by client, with a pending result per saved case (only caseID's when set) and
+// returns its id: errNotFound for a case that isn't the issue's, errNoCases without any, or errRunActive.
+// claimed_at on a local run is when its runner was last heard from (a step or a mark): see failStale.
+func (m *model) createLocal(ctx context.Context, workspaceID, issueID, userID, client, caseID string) (string, error) {
+	var id string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := lockIssue(ctx, tx, issueID); err != nil {
+			return err
+		}
+		var active bool
+		if err := tx.QueryRow(ctx, `select exists (select 1 from test_runs where issue_id = $1 and `+activeRun+`)`, issueID).Scan(&active); err != nil {
+			return err
+		}
+		if active {
+			return errRunActive
+		}
+		if err := tx.QueryRow(ctx, `insert into test_runs (workspace_id, issue_id, kind, client, started_by, status, claimed_at)
+			values ($1, $2, 'local', $3, $4, 'running', now()) returning id::text`, workspaceID, issueID, client, userID).Scan(&id); err != nil {
+			return err
+		}
+		n, err := snapshotCases(ctx, tx, id, issueID, caseID, maxCases)
+		switch {
+		case err != nil:
+			return err
+		case n == 0 && caseID != "":
+			return errNotFound
+		case n == 0:
+			return errNoCases
+		}
+		return publishRun(ctx, tx, issueID, id, userID, false)
+	})
+	if err != nil && !errors.Is(err, errNotFound) && !errors.Is(err, errNoCases) && !errors.Is(err, errRunActive) {
+		return "", fmt.Errorf("start local run: %w", err)
+	}
+	return id, err
+}
+
+// lockLocal locks the workspace's running local run for a write to its result, which must not have its outcome
+// yet, and returns the run's issue: errNotFound, errNotLocal, errFinished or errMarked.
+func lockLocal(ctx context.Context, tx pgx.Tx, workspaceID, runID, resultID, viewerID string) (string, error) {
+	kind, status, issueID, err := lockRun(ctx, tx, workspaceID, runID, viewerID)
+	switch {
+	case err != nil:
+		return "", err
+	case kind != "local":
+		return "", errNotLocal
+	case status != "running":
+		return "", errFinished
+	}
+	err = tx.QueryRow(ctx, `select status from test_results where id = $2 and run_id = $1`, runID, resultID).Scan(&status)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", errNotFound
+	case err != nil:
+		return "", err
+	case status != "pending" && status != "running":
+		return "", errMarked
+	}
+	return issueID, nil
+}
+
+// localRefusal reports whether err is one of lockLocal's answers.
+func localRefusal(err error) bool {
+	return errors.Is(err, errNotFound) || errors.Is(err, errNotLocal) || errors.Is(err, errFinished) || errors.Is(err, errMarked)
+}
+
+// addLocalStep logs the next step of a local run's case, with its screenshot (image bytes of contentType, or nil),
+// sets the case running and returns the step's position (from 0): lockLocal's errors, or errStepLimit at maxLocalSteps.
+func (m *model) addLocalStep(ctx context.Context, files *storage.Store, workspaceID, runID, resultID, userID, action, pageURL, contentType string, img []byte) (int, error) {
+	var position int
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		issueID, err := lockLocal(ctx, tx, workspaceID, runID, resultID, userID)
+		if err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `select count(*) from test_steps where result_id = $1`, resultID).Scan(&position); err != nil {
+			return err
+		}
+		if position >= maxLocalSteps {
+			return errStepLimit
+		}
+		if _, err := tx.Exec(ctx, `update test_results set status = 'running' where id = $1`, resultID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update test_runs set claimed_at = now() where id = $1`, runID); err != nil {
+			return err
+		}
+		if err := insertStep(ctx, tx, files, workspaceID, resultID, position, action, pageURL, contentType, img); err != nil {
+			return err
+		}
+		return publishRun(ctx, tx, issueID, runID, userID, false)
+	})
+	if err != nil && !localRefusal(err) && !errors.Is(err, errStepLimit) {
+		return 0, fmt.Errorf("add local step: %w", err)
+	}
+	return position, err
+}
+
+// setVideo makes the file the recording of a local run's case: lockLocal's errors.
+func (m *model) setVideo(ctx context.Context, workspaceID, runID, resultID, userID, fileID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		issueID, err := lockLocal(ctx, tx, workspaceID, runID, resultID, userID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update test_results set video_id = $2 where id = $1`, resultID, fileID); err != nil {
+			return err
+		}
+		return publishRun(ctx, tx, issueID, runID, userID, false)
+	})
+	if err != nil && !localRefusal(err) {
+		return fmt.Errorf("set test video: %w", err)
+	}
+	return err
+}
+
 // runSeen is whether the viewer ($3) can see the issue of the run in test_runs.
 const runSeen = `can_see_project((select project_id from issues where id = test_runs.issue_id), $3)`
 
@@ -570,21 +702,25 @@ func lockRun(ctx context.Context, tx pgx.Tx, workspaceID, runID, viewerID string
 	return kind, status, issueID, err
 }
 
-// mark records a manual result; when it was the last unmarked one the run finishes, failed if any case failed.
+// mark records a manual or local run's result (repro, the steps to reproduce a failure, is kept for local runs only);
+// when it was the last unmarked one the run finishes, failed if any case failed.
 // errNotFound for a missing run or result, errAIRun or errFinished when it can't be marked.
-func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, status string, note *string) error {
+func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, status string, note *string, repro []string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		kind, runStatus, issueID, err := lockRun(ctx, tx, workspaceID, runID, userID)
 		switch {
 		case err != nil:
 			return err
-		case kind != "manual":
+		case kind != "manual" && kind != "local":
 			return errAIRun
 		case runStatus != "running":
 			return errFinished
 		}
-		tag, err := tx.Exec(ctx, `update test_results set status = $3, summary = $4, marked_by = $5, marked_at = now()
-			where id = $2 and run_id = $1`, runID, resultID, status, note, userID)
+		if kind != "local" || len(repro) == 0 {
+			repro = nil
+		}
+		tag, err := tx.Exec(ctx, `update test_results set status = $3, summary = $4, reproduction = $6, marked_by = $5, marked_at = now()
+			where id = $2 and run_id = $1`, runID, resultID, status, note, userID, repro)
 		if err != nil {
 			return err
 		}
@@ -592,11 +728,14 @@ func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, 
 			return errNotFound
 		}
 		var done, failed bool
-		if err := tx.QueryRow(ctx, `select not bool_or(status = 'pending'), bool_or(status = 'failed') from test_results where run_id = $1`,
+		if err := tx.QueryRow(ctx, `select not bool_or(status in ('pending', 'running')), bool_or(status = 'failed') from test_results where run_id = $1`,
 			runID).Scan(&done, &failed); err != nil {
 			return err
 		}
 		if !done {
+			if _, err := tx.Exec(ctx, `update test_runs set claimed_at = now() where id = $1 and kind = 'local'`, runID); err != nil {
+				return err
+			}
 			return publishRun(ctx, tx, issueID, runID, userID, false)
 		}
 		end := "passed"
@@ -642,7 +781,8 @@ func finishRun(ctx context.Context, tx pgx.Tx, runID, actorID, status string, ms
 	return publishRun(ctx, tx, issueID, runID, actorID, logged)
 }
 
-// cancel ends a manual or queued run, or asks the tester to stop an AI run in progress; errNotFound or errFinished.
+// cancel ends a manual, local or queued run (a local run's unfinished cases are skipped), or asks the tester to stop
+// an AI run in progress; errNotFound or errFinished.
 func (m *model) cancel(ctx context.Context, workspaceID, runID, userID string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		kind, status, issueID, err := lockRun(ctx, tx, workspaceID, runID, userID)
@@ -651,6 +791,11 @@ func (m *model) cancel(ctx context.Context, workspaceID, runID, userID string) e
 			return err
 		case isFinished(status):
 			return errFinished
+		case kind == "local":
+			if err := skipUnfinished(ctx, tx, runID); err != nil {
+				return err
+			}
+			return finishRun(ctx, tx, runID, userID, "cancelled", nil)
 		case kind == "manual" || status == "queued":
 			return finishRun(ctx, tx, runID, userID, "cancelled", nil)
 		}
@@ -909,7 +1054,7 @@ func (m *model) testerURL(ctx context.Context) (string, error) {
 }
 
 // createAI queues an AI run and returns its id: errNoSites, errLimit (spend >= limitMicros) or errRunActive when
-// one is already queued or running on the issue.
+// an AI, replay or local run is already under way on the issue.
 func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID string, regenerate bool, limitMicros int64) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -919,7 +1064,7 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID stri
 		var sites int
 		var active bool
 		if err := tx.QueryRow(ctx, `select (select count(*) from test_sites where workspace_id = $1),
-			exists (select 1 from test_runs where issue_id = $2 and kind in ('ai', 'replay') and status in ('queued', 'generating', 'running'))`,
+			exists (select 1 from test_runs where issue_id = $2 and `+activeRun+`)`,
 			wsID, issueID).Scan(&sites, &active); err != nil {
 			return err
 		}
@@ -959,7 +1104,7 @@ func (m *model) createAI(ctx context.Context, wsID, issueID, userID, caseID stri
 }
 
 // createReplay queues a replay run and returns its id: errNoSites, errNoScript when no case is recorded, or
-// errRunActive when an AI or replay run is already queued or running on the issue. It never checks the spend limit.
+// errRunActive when an AI, replay or local run is already under way on the issue. It never checks the spend limit.
 func (m *model) createReplay(ctx context.Context, wsID, issueID, userID string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
@@ -970,7 +1115,7 @@ func (m *model) createReplay(ctx context.Context, wsID, issueID, userID string) 
 		var recorded, active bool
 		if err := tx.QueryRow(ctx, `select (select count(*) from test_sites where workspace_id = $1),
 			exists (select 1 from test_cases where issue_id = $2 and deleted_at is null and script is not null),
-			exists (select 1 from test_runs where issue_id = $2 and kind in ('ai', 'replay') and status in ('queued', 'generating', 'running'))`,
+			exists (select 1 from test_runs where issue_id = $2 and `+activeRun+`)`,
 			wsID, issueID).Scan(&sites, &recorded, &active); err != nil {
 			return err
 		}
@@ -1008,24 +1153,38 @@ func (m *model) heartbeat(ctx context.Context, testerURL string) error {
 }
 
 const (
-	staleAfter = 15 * time.Minute
-	msgStale   = "The test runner stopped. Run it again."
+	staleAfter    = 15 * time.Minute
+	msgStale      = "The test runner stopped. Run it again."
+	msgStaleLocal = "The local runner stopped. Run it again."
 )
 
-// failStale ends AI and replay runs a crashed tester left generating or running, claimed over staleAfter ago.
+// failStale ends AI and replay runs a crashed tester left generating or running, claimed over staleAfter ago, and
+// local runs whose runner sent no step or mark for as long.
 func (m *model) failStale(ctx context.Context) error {
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `select id::text from test_runs where kind in ('ai', 'replay') and status in ('generating', 'running')
+		rows, err := tx.Query(ctx, `select id::text, kind = 'local' from test_runs
+			where kind in ('ai', 'replay', 'local') and status in ('generating', 'running')
 			and claimed_at < now() - make_interval(secs => $1) for update skip locked`, staleAfter.Seconds())
 		if err != nil {
 			return fmt.Errorf("find stale runs: %w", err)
 		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		type stale struct {
+			id    string
+			local bool
+		}
+		runs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (stale, error) {
+			var s stale
+			return s, row.Scan(&s.id, &s.local)
+		})
 		if err != nil {
 			return fmt.Errorf("find stale runs: %w", err)
 		}
-		for _, id := range ids {
-			if err := endAI(ctx, tx, id, "error", msgStale); err != nil {
+		for _, s := range runs {
+			msg := msgStale
+			if s.local {
+				msg = msgStaleLocal
+			}
+			if err := endAI(ctx, tx, s.id, "error", msg); err != nil {
 				return err
 			}
 		}
@@ -1256,20 +1415,7 @@ func (m *model) setResult(ctx context.Context, j *job, resultID, status string, 
 // run's event commit together.
 func (m *model) addStep(ctx context.Context, j *job, files *storage.Store, resultID string, position int, action, pageURL string, jpeg []byte) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var fileID *string
-		if jpeg != nil {
-			var id string
-			if err := tx.QueryRow(ctx, `insert into files (workspace_id, name, content_type, size) values ($1, $2, 'image/jpeg', $3)
-				returning id::text`, j.wsID, fmt.Sprintf("step-%d.jpg", position+1), len(jpeg)).Scan(&id); err != nil {
-				return err
-			}
-			if err := files.Put(ctx, id, "image/jpeg", "inline", bytes.NewReader(jpeg)); err != nil {
-				return err
-			}
-			fileID = &id
-		}
-		if _, err := tx.Exec(ctx, `insert into test_steps (result_id, position, action, url, screenshot_id) values ($1, $2, $3, $4, $5)`,
-			resultID, position, action, nullable(pageURL), fileID); err != nil {
+		if err := insertStep(ctx, tx, files, j.wsID, resultID, position, action, pageURL, "image/jpeg", jpeg); err != nil {
 			return err
 		}
 		return publishRun(ctx, tx, j.issueID, j.runID, "", false)
@@ -1278,6 +1424,29 @@ func (m *model) addStep(ctx context.Context, j *job, files *storage.Store, resul
 		return fmt.Errorf("add test step: %w", err)
 	}
 	return nil
+}
+
+// insertStep stores the step and its screenshot (image/jpeg or image/png bytes, or nil) as a file of the workspace.
+func insertStep(ctx context.Context, tx pgx.Tx, files *storage.Store, wsID, resultID string, position int, action, pageURL, contentType string, img []byte) error {
+	var fileID *string
+	if img != nil {
+		name := fmt.Sprintf("step-%d.jpg", position+1)
+		if contentType == "image/png" {
+			name = fmt.Sprintf("step-%d.png", position+1)
+		}
+		var id string
+		if err := tx.QueryRow(ctx, `insert into files (workspace_id, name, content_type, size) values ($1, $2, $3, $4)
+			returning id::text`, wsID, name, contentType, len(img)).Scan(&id); err != nil {
+			return err
+		}
+		if err := files.Put(ctx, id, contentType, "inline", bytes.NewReader(img)); err != nil {
+			return err
+		}
+		fileID = &id
+	}
+	_, err := tx.Exec(ctx, `insert into test_steps (result_id, position, action, url, screenshot_id) values ($1, $2, $3, $4, $5)`,
+		resultID, position, action, nullable(pageURL), fileID)
+	return err
 }
 
 // addUsage adds a Claude call's tokens and cost to the run and the workspace's spend.
@@ -1327,11 +1496,19 @@ func (m *model) finishAI(ctx context.Context, runID, status, msg string) error {
 }
 
 func endAI(ctx context.Context, tx pgx.Tx, runID, status, msg string) error {
-	if _, err := tx.Exec(ctx, `update test_results set status = 'skipped', marked_at = now(), summary = coalesce(summary, 'Not run')
-		where run_id = $1 and status in ('pending', 'running')`, runID); err != nil {
+	if err := skipUnfinished(ctx, tx, runID); err != nil {
 		return err
 	}
 	return finishRun(ctx, tx, runID, "", status, nullable(msg))
+}
+
+// skipUnfinished marks the run's cases that didn't get an outcome as skipped.
+func skipUnfinished(ctx context.Context, tx pgx.Tx, runID string) error {
+	if _, err := tx.Exec(ctx, `update test_results set status = 'skipped', marked_at = now(), summary = coalesce(summary, 'Not run')
+		where run_id = $1 and status in ('pending', 'running')`, runID); err != nil {
+		return fmt.Errorf("skip unfinished cases: %w", err)
+	}
+	return nil
 }
 
 // aiOutcome is how a run whose cases all ran ends: failed if any failed, error if any couldn't finish, else passed.

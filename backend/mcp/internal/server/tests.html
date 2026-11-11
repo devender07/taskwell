@@ -99,7 +99,7 @@
     } }, "Refresh");
     show(
       el("header", {},
-        el("h1", {}, `${run.issue} · ${run.kind === "ai" ? "AI test run" : run.kind === "replay" ? "Recorded test run" : "Manual test run"}`), pill(run.status),
+        el("h1", {}, `${run.issue} · ${run.kind === "ai" ? "AI test run" : run.kind === "replay" ? "Recorded test run" : run.kind === "local" ? `Local test run${run.client ? ` · ${run.client}` : ""}` : "Manual test run"}`), pill(run.status),
         el("span", { className: "spacer" }), refresh, openButton(run.url)),
       el("div", { className: "counts" },
         el("span", { className: "passed" }, `${c.passed ?? 0} passed`),
@@ -115,6 +115,7 @@
           el("summary", {}, "Steps to reproduce"), list(r.reproduction)) : null,
         el("details", {}, el("summary", {}, "Test case"), list(r.steps ?? []),
           el("p", { className: "muted" }, `Expected: ${r.expected ?? ""}`)),
+        r.video ? el("button", { onclick: () => app.openLink({ url: r.video }) }, "Watch the video") : null,
         screenshots(r.screenshots))),
     );
   }

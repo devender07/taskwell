@@ -166,6 +166,7 @@ func TestRecordedRuns(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `update system_config set value = $1 where key = 'ai_test_monthly_limit_usd'`, limit)
 	})
+	setServerRuns(t, pool, true)
 	if err := m.heartbeat(ctx, "http://tester.test"); err != nil {
 		t.Fatal(err)
 	}
