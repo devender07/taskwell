@@ -25,11 +25,33 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && setMenu(false)
 
 // Reveal sections, and play the AI test run once it scrolls into view
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const replay = document.querySelector<HTMLButtonElement>('.replay')!
 const playRun = (terminal: Element) => {
-  terminal.querySelectorAll('[data-step]').forEach((step, i) => {
-    setTimeout(() => step.classList.add('is-shown'), reduced ? 0 : 500 + i * 600)
+  const steps = terminal.querySelectorAll('[data-step]')
+  replay.hidden = true
+  steps.forEach((step) => step.classList.remove('is-shown'))
+  steps.forEach((step, i) => {
+    setTimeout(() => {
+      step.classList.add('is-shown')
+      if (i === steps.length - 1) replay.hidden = false
+    }, reduced ? 0 : 500 + i * 600)
   })
 }
+replay.addEventListener('click', () => playRun(replay.closest('.terminal')!))
+
+// Highlight the nav link of the section in view
+const links = new Map([...nav.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')].map((a) => [a.hash.slice(1), a]))
+const spy = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      for (const a of links.values()) a.removeAttribute('aria-current')
+      links.get(entry.target.id)?.setAttribute('aria-current', 'true')
+    }
+  },
+  { rootMargin: '-50% 0px -50% 0px' },
+)
+document.querySelectorAll('main > section[id]').forEach((s) => spy.observe(s))
 const observer = new IntersectionObserver(
   (entries) => {
     for (const entry of entries) {
@@ -62,22 +84,133 @@ tabs.forEach((tab, i) => {
   })
 })
 
-// The board card in progress moves to Done every few seconds, like a teammate finishing work
-const live = document.querySelector('.card-live')
-if (live && !reduced) {
-  const cols = document.querySelectorAll('.board-col')
-  const progress = cols[1]!
-  const done = cols[2]!
-  const typing = live.querySelector('.typing')!
-  setInterval(() => {
-    const finished = live.parentElement === done
-    const target = finished ? progress : done
-    live.classList.toggle('is-done', !finished)
-    typing.textContent = finished ? 'Asha is editing…' : 'Completed just now'
-    target.insertBefore(live, target.children[1] ?? null)
-    for (const col of cols) col.querySelector('.count')!.textContent = String(col.querySelectorAll('.card-mock').length)
-  }, 4000)
+// The hero board is playable: drag cards between columns (arrow keys too), press C or "New issue" to add one.
+// Until the visitor touches it, the card in progress moves to Done every few seconds, like a teammate finishing work.
+const frame = document.querySelector<HTMLElement>('.app-frame')!
+const board = frame.querySelector<HTMLElement>('.board')!
+const cols = [...board.querySelectorAll<HTMLElement>('.board-col')]
+const colName = (col: Element) => col.querySelector('.board-col-title')!.textContent!.replace(/\d+$/, '').trim()
+const statusLine = document.getElementById('board-status')!
+const cards = () => board.querySelectorAll<HTMLElement>('.card-mock:not(.card-new)')
+const counts = () => cols.forEach((c) => (c.querySelector('.count')!.textContent = String(c.querySelectorAll('.card-mock:not(.card-new)').length)))
+const live = board.querySelector<HTMLElement>('.card-live')!
+
+const ready = (card: HTMLElement) => {
+  card.draggable = true
+  card.tabIndex = 0
+  card.setAttribute('aria-label', `${card.querySelector('.issue-key')!.textContent}: ${card.querySelector('p')!.textContent}`)
 }
+cards().forEach(ready)
+
+const autoplay = reduced
+  ? 0
+  : setInterval(() => {
+      const target = live.parentElement === cols[2] ? cols[1]! : cols[2]!
+      live.querySelector('.typing')!.textContent = target === cols[2] ? 'Completed just now' : 'Asha is editing…'
+      place(live, target, target.querySelector('.card-mock'), false)
+    }, 4000)
+let touched = false
+const touch = () => {
+  if (touched) return
+  touched = true
+  clearInterval(autoplay)
+  live.querySelector('.typing')?.remove()
+  live.classList.remove('card-live')
+}
+
+function place(card: HTMLElement, col: HTMLElement, before: Element | null, say = true) {
+  col.insertBefore(card, before)
+  card.classList.toggle('is-done', col === cols[2])
+  counts()
+  if (say) statusLine.textContent = `${card.querySelector('.issue-key')!.textContent} moved to ${colName(col)}`
+}
+
+let dragged: HTMLElement | null = null
+board.addEventListener('dragstart', (e) => {
+  dragged = (e.target as Element).closest<HTMLElement>('.card-mock')
+  if (!dragged || !e.dataTransfer) return
+  touch()
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', dragged.getAttribute('aria-label')!)
+  requestAnimationFrame(() => dragged?.classList.add('is-dragging'))
+})
+board.addEventListener('dragend', () => {
+  dragged?.classList.remove('is-dragging')
+  dragged = null
+  cols.forEach((c) => c.classList.remove('is-over'))
+})
+for (const col of cols) {
+  col.addEventListener('dragover', (e) => {
+    if (!dragged) return
+    e.preventDefault()
+    cols.forEach((c) => c.classList.toggle('is-over', c === col))
+  })
+  col.addEventListener('drop', (e) => {
+    e.preventDefault()
+    if (!dragged) return
+    const below = [...col.querySelectorAll<HTMLElement>('.card-mock:not(.is-dragging)')].find((c) => {
+      const r = c.getBoundingClientRect()
+      return e.clientY < r.top + r.height / 2
+    })
+    place(dragged, col, below ?? null)
+  })
+}
+board.addEventListener('keydown', (e) => {
+  const card = (e.target as Element).closest<HTMLElement>('.card-mock:not(.card-new)')
+  const step = ({ ArrowRight: 1, ArrowLeft: -1 } as Record<string, number>)[e.key]
+  if (!card || !step) return
+  const to = cols[cols.indexOf(card.parentElement as HTMLElement) + step]
+  if (!to) return
+  e.preventDefault()
+  touch()
+  place(card, to, to.querySelector('.card-mock'))
+  card.focus()
+})
+
+let next = 143
+const newButton = frame.querySelector<HTMLButtonElement>('.frame-new')!
+function quickCreate() {
+  touch()
+  const open = board.querySelector<HTMLInputElement>('.card-new input')
+  if (open) return open.focus()
+  const todo = cols[0]!
+  const form = document.createElement('form')
+  form.className = 'card-mock card-new'
+  form.innerHTML = '<span class="issue-key"></span><input aria-label="Issue title" placeholder="Issue title" maxlength="80" autocomplete="off" /><span class="text-caption text-secondary">Enter to create, Esc to cancel</span>'
+  form.querySelector('.issue-key')!.textContent = `ENG-${next}`
+  const input = form.querySelector('input')!
+  const close = () => {
+    form.remove()
+    newButton.focus()
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const title = input.value.trim()
+    if (!title) return close()
+    const card = document.createElement('div')
+    card.className = 'card-mock is-new'
+    card.innerHTML = '<span class="issue-key"></span><p></p><span class="tags"><i class="tag">New</i></span>'
+    card.querySelector('.issue-key')!.textContent = `ENG-${next++}`
+    card.querySelector('p')!.textContent = title
+    ready(card)
+    form.replaceWith(card)
+    counts()
+    statusLine.textContent = `${card.getAttribute('aria-label')} created in Todo`
+    card.focus()
+  })
+  input.addEventListener('keydown', (e) => e.key === 'Escape' && (e.stopPropagation(), close()))
+  input.addEventListener('blur', () => setTimeout(() => form.isConnected && !input.value.trim() && form.remove()))
+  todo.insertBefore(form, todo.querySelector('.card-mock'))
+  if (frame.getBoundingClientRect().top > innerHeight || frame.getBoundingClientRect().bottom < 0) frame.scrollIntoView({ block: 'center' })
+  input.focus({ preventScroll: true })
+}
+newButton.addEventListener('click', quickCreate)
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 'c' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+  if ((e.target as Element).closest('input, textarea, [contenteditable]')) return
+  e.preventDefault()
+  quickCreate()
+})
 
 // Copy the MCP command
 document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => {
