@@ -55,3 +55,21 @@
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+.workflow-group[data-dragging] { opacity: 0.4; }
+.workflow-group[data-over] { box-shadow: inset 0 2px 0 var(--link); }
+.workflow-handle {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 44px;
+  margin-left: -16px;
+  margin-right: -4px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: grab;
+}
+.workflow-handle:hover { color: var(--text); }
+.workflow-handle:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
