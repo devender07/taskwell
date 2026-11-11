@@ -266,7 +266,7 @@ func main() {
 	fileH := file.New(pool, files, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	fileH.Register(mux)
-	testH.Files, testH.FinishVideo = files, fileH.FinishVideo
+	testH.Files, testH.FinishVideo, testH.Room = files, fileH.FinishVideo, fileH.Room
 	testH.Register(mux)
 	wg.Go(func() { testH.Run(work, time.Minute) })
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)

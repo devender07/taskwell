@@ -124,6 +124,11 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request, workspaceID, us
 // ponytail: concurrent uploads each see the same room, so the quota can be overshot by a few files; lock the
 // workspace row while checking and recording if that matters.
 func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, error) {
+	return h.Room(ctx, workspaceID)
+}
+
+// Room is room for other packages that store workspace files (aitest's step screenshots).
+func (h *Handler) Room(ctx context.Context, workspaceID string) (int64, string, error) {
 	mb, err := h.cfg.GetInt(ctx, "upload_max_mb")
 	if err != nil {
 		return 0, "", err

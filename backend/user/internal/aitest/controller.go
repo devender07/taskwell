@@ -49,8 +49,10 @@ type Handler struct {
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
 	tester       *http.Client // browser sessions
 
-	// Local runs: where step screenshots go, and the file handler's FinishVideo. Set before Register.
+	// Local runs: where step screenshots go, and the file handler's FinishVideo and Room (the bytes the workspace's
+	// storage quota still allows, with the message past it). Set before Register.
 	Files       *storage.Store
+	Room        func(ctx context.Context, workspaceID string) (int64, string, error)
 	FinishVideo func(ctx context.Context, workspaceID, userID, uploadID string, limit int64) (*file.File, string, error)
 }
 
@@ -474,6 +476,16 @@ func (h *Handler) addStep(w http.ResponseWriter, r *http.Request, userID string)
 	}
 	if !web.Check(w, errs) {
 		return nil
+	}
+	if img != nil {
+		room, full, err := h.Room(r.Context(), ws.ID)
+		if err != nil {
+			return err
+		}
+		if int64(len(img)) > room {
+			web.Err(w, http.StatusRequestEntityTooLarge, full)
+			return nil
+		}
 	}
 	err = errNotFound
 	position := 0

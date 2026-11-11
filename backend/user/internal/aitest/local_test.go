@@ -59,7 +59,7 @@ func TestLocalRun(t *testing.T) {
 	member := workspace.New(pool, dbtest.Auth, nil, nil).Member
 	fileH := file.New(pool, files, dbtest.Auth, member, cfg, nil)
 	h := New(pool, cfg, Options{}, dbtest.Auth, member)
-	h.Files, h.FinishVideo = files, fileH.FinishVideo
+	h.Files, h.FinishVideo, h.Room = files, fileH.FinishVideo, fileH.Room
 	mux := http.NewServeMux()
 	h.Register(mux)
 	fileH.Register(mux)
@@ -187,6 +187,14 @@ func TestLocalRun(t *testing.T) {
 	has(do(ann, "POST", first+"/steps", url.Values{"action": {strings.Repeat("a", 301)}}, 400, nil), `"action"`)
 	has(post(first+"/steps", map[string]string{"action": "Clicked"}, "screenshot", []byte("GIF89a..."), 400, nil), `"screenshot"`)
 	post(first+"/steps", map[string]string{"action": "Clicked"}, "screenshot", append(png, make([]byte, maxStepBody)...), 413, nil)
+	// A workspace out of storage takes no more screenshots.
+	if _, err := pool.Exec(ctx, `insert into files (workspace_id, name, content_type, size) values ($1, 'full', 'x', $2)`, wsID, int64(500)<<30); err != nil {
+		t.Fatal(err)
+	}
+	has(post(first+"/steps", map[string]string{"action": "Clicked"}, "screenshot", png, 413, nil), "out of storage")
+	if _, err := pool.Exec(ctx, `delete from files where workspace_id = $1 and name = 'full'`, wsID); err != nil {
+		t.Fatal(err)
+	}
 	do(bob, "POST", first+"/steps", url.Values{"action": {"Clicked"}}, 403, nil)
 	do(ann, "POST", rp+run.ID+"/steps", url.Values{"action": {"Clicked"}}, 404, nil)
 	do(ann, "GET", "/test-runs/"+run.ID, nil, 200, &run)
