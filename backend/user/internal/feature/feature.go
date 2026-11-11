@@ -176,9 +176,13 @@ func (f *Flags) on(ctx context.Context, name, planID string, ok bool) bool {
 	return f.Enabled(ctx, name, planID)
 }
 
+// normSlug is a path's workspace slug as the workspace handlers read it (trimmed, lower case), so a padded or
+// upper-case slug finds the same workspace here as there and can't slip past a gate.
+func normSlug(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
 // InWorkspace reports whether the feature is on for the workspace with the slug.
 func (f *Flags) InWorkspace(ctx context.Context, name, slug string) bool {
-	id, ok := f.planOf(ctx, `w.slug = lower($1)`, slug)
+	id, ok := f.planOf(ctx, `w.slug = $1`, normSlug(slug))
 	return f.on(ctx, name, id, ok)
 }
 
@@ -222,7 +226,7 @@ func (f *Flags) requestPlan(ctx context.Context, path string) (string, bool) {
 	}
 	switch {
 	case seg[2] == "workspaces":
-		return f.planOf(ctx, `w.slug = lower($1)`, seg[3])
+		return f.planOf(ctx, `w.slug = $1`, normSlug(seg[3]))
 	case seg[2] == "feedback-forms":
 		return f.planOf(ctx, `w.feedback_token = $1`, seg[3])
 	case seg[2] == "hooks" && len(seg) > 4:

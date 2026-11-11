@@ -21,6 +21,10 @@ func checkValue(key, v string) string {
 		return ""
 	}
 	switch {
+	case strings.HasPrefix(key, "plan_") && strings.HasSuffix(key, "_ai_usd"):
+		if n, err := strconv.ParseFloat(v, 64); err != nil || n < 0 || n > 10_000 {
+			return "Enter an amount in USD from 0 to 10000, like 3 or 2.5."
+		}
 	case strings.HasPrefix(key, "feature_") && strings.HasSuffix(key, "_plans"):
 		if !planList(v) {
 			return "Use plan ids: free, starter, pro, advanced."
@@ -60,6 +64,8 @@ func intRange(key string) (lo, hi int, ok bool) {
 		return 1, 65535, true
 	case key == "digest_hour_utc":
 		return 0, 23, true
+	case strings.HasPrefix(key, "plan_") && !strings.HasSuffix(key, "_ai_usd"):
+		return 0, 1_000_000, true // 0 is unlimited
 	case key == "upload_max_mb", strings.HasPrefix(key, "invite_daily_"), strings.Contains(key, "_ttl_"),
 		strings.HasSuffix(key, "_minutes"), strings.HasSuffix(key, "_hours"), strings.HasSuffix(key, "_days"):
 		return 1, 1_000_000, true // the cap keeps durations far from int32 overflow in make_interval

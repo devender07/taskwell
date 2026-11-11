@@ -230,8 +230,7 @@ quantity: 1}], customer: {email}, customData, settings: {displayMode: 'overlay',
   The mode comes from Paddle's own status of the subscription (`GET /subscriptions/{id}`): `trialing` →
   `do_not_bill` (the only mode a trial takes, for a plan or an interval change), `past_due` → `409` "Your last
   payment failed. Update your payment method before switching plans.", else `prorated_immediately`. Paddle refusing
-  the update (400/409) → `409` "This plan change can't be made right now. Try again in a while, or use Manage
-  billing."
+  the update (400/409) → `409` "This can't be changed right now. Try again in a while, or use Manage billing."
 - `POST /api/billing/change/preview` (FormData `price_id`): the same checks and errors, then `PATCH
   /subscriptions/{id}/preview`; nothing changes. `200` `{"trialing": bool, "today": {"action": "charge"|"credit",
   "amount": "<minor units>"}|null, "recurring": "<minor units>", "currency": "USD", "next_billed_at": "<RFC 3339>"|null}`.
@@ -328,3 +327,42 @@ create index on paddle_subscriptions (user_id);
   (never from the client); `POST /customers/{customer_id}/portal-sessions` with `subscription_ids`. `409` without one.
 - **Change**: the session user's subscription granting access, as before.
 - **Admin clear comp**: the plan comes from the mirrored rows (no Paddle call).
+
+## Pricing fixes, 10 Nov 2026: plan AI budgets, Advanced storage cap, 14-day trial without a card
+
+Prices stay ($5 / $9.99 / $49.99, flat per account). What changed:
+
+- **AI testing budget is the plan's, per account.** `plan.Plan.AIUSD`: Free 0, Starter 1, Pro 3, Advanced 15 (USD a
+  month). The limit of a run is `min(ai_test_monthly_limit_usd, plan AIUSD)`, and spend is summed over every
+  workspace the owner created. A plan with no budget answers `402` "Your plan doesn't include AI test runs. Upgrade
+  to use them." Migration 040 takes Free out of `feature_ai_testing_plans` when it still has the default.
+- **Advanced storage** is 500 GB per workspace (was unlimited).
+- **Limits are admin settings.** Migration 041 seeds `system_config` keys `plan_<id>_workspaces`, `_projects`,
+  `_members`, `_storage_gb` and `_ai_usd` for free, starter, pro and advanced (0 is unlimited; for `_ai_usd`, none)
+  with the defaults in `plan.Plans`. `plan.Watch` reloads them every 10 seconds in the user API and the tester; a
+  missing or broken value keeps the default. The admin app's Config page lists them under "Plan limits" (whole
+  numbers from 0; `_ai_usd` takes decimals). Public `GET /api/plans` answers `[{"id", "workspaces", "projects",
+  "members", "storage_gb", "ai_usd"}]`, and the pricing cards build their limit lines from it, so a change shows
+  without a deploy. Prices, the trial length and the price ids stay in Paddle and `frontend/user/src/pricing/tiers.ts`.
+- **Trial: 14 days, no payment method.** New Paddle prices with `trial_period {day, 14, requires_payment_method:
+  false}` (Paddle recommends new prices over editing; the 7-day ones stay active for subscriptions on them):
+
+  | Plan | Monthly | Yearly |
+  | --- | --- | --- |
+  | Starter | `pri_01m72yye2dvs5yqvx6x22p88cy` | `pri_01m72yyegrsqg7tnre3zhw4qac` |
+  | Pro | `pri_01m72yyfg8g5dvvhqp5nak1jrw` | `pri_01m72yygh7tmxfy26hyaddky1k` |
+  | Advanced | `pri_01m72yyh5crybbt6kmd2xny3p8` | `pri_01m72yyhk6r1wds1tb2tk1tbwm` |
+
+  Paddle's rules for such a trial: the subscription is `trialing` with `next_billed_at: null` until a payment
+  method is added; at the trial's end without one Paddle cancels it (`subscription.canceled`, the account goes to
+  Free); its customer portal can't add the payment method, and Paddle sends no reminder emails.
+  - `paddle_subscriptions.trial_ends_at` (migration 040) mirrors `items[0].trial_dates.ends_at` while trialing.
+  - `GET /api/billing` gains `"trial_ends_at"` and `"needs_payment_method"` (trialing with no next billing).
+  - `POST /api/billing/payment-method`: `200` `{"transaction_id": "txn_..."}` from `GET
+    /subscriptions/{id}/update-payment-method-transaction`; the frontend opens it with
+    `Paddle.Checkout.open({transactionId})`. `409` without a subscription.
+  - Reminder email three days before the end: "Add a payment method to keep <Plan> after <date>…".
+  - A repeat trial (the account had a subscription before) without a payment method is canceled at once instead of
+    activated, since there is nothing to bill.
+  - Frontend: a banner in every workspace and an "Add payment method" button on Settings → Billing while
+    `needs_payment_method`; "14-day free trial, no card needed" on the pricing table, FAQ and landing page.

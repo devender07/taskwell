@@ -97,6 +97,7 @@ type sub struct {
 	id, customer, cd, status, price string
 	updated                         time.Time
 	cancel                          bool
+	cardless                        bool // a trial without a payment method: no next_billed_at, trial_dates on the item
 }
 
 func (s sub) json() string {
@@ -107,11 +108,15 @@ func (s sub) json() string {
 	if s.cd != "" {
 		cd = s.cd
 	}
+	next, trial := `"2030-03-17T17:46:40Z"`, "null"
+	if s.cardless {
+		next, trial = "null", `{"starts_at":"2030-03-03T17:46:40Z","ends_at":"2030-03-17T17:46:40Z"}`
+	}
 	return fmt.Sprintf(`{"id":%q,"status":%q,"customer_id":%q,"address_id":"add_1","currency_code":"INR",
-		"created_at":"2026-01-01T00:00:00Z","updated_at":%q,"next_billed_at":"2030-03-17T17:46:40Z",
+		"created_at":"2026-01-01T00:00:00Z","updated_at":%q,"next_billed_at":%s,
 		"billing_cycle":{"interval":"month","frequency":1},"scheduled_change":%s,"custom_data":%s,
-		"items":[{"status":"active","quantity":1,"price":%s}]}`,
-		s.id, s.status, s.customer, s.updated.Format(time.RFC3339Nano), sc, cd, prices[s.price])
+		"items":[{"status":"active","quantity":1,"trial_dates":%s,"price":%s}]}`,
+		s.id, s.status, s.customer, s.updated.Format(time.RFC3339Nano), next, sc, cd, trial, prices[s.price])
 }
 
 // fakePaddle answers the Paddle calls billing makes (price reads, subscription patches, portal sessions) and records
@@ -171,6 +176,14 @@ func (f *fakePaddle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.subs[id] = s
 		reply(s.json())
 	case isSub && known && r.Method == http.MethodGet:
+		reply(s.json())
+	case isSub && r.Method == http.MethodGet && strings.HasSuffix(id, "/update-payment-method-transaction"):
+		reply(`{"id":"txn_pm_1","status":"ready","origin":"subscription_payment_method_change"}`)
+	case strings.HasSuffix(p, "/cancel") && r.Method == http.MethodPost:
+		id := strings.TrimSuffix(id, "/cancel")
+		s := f.subs[id]
+		s.status, s.updated = "canceled", s.updated.Add(time.Minute)
+		f.subs[id] = s
 		reply(s.json())
 	case isSub && r.Method == http.MethodPatch && strings.HasSuffix(id, "/preview"):
 		// As Paddle answers: no update_summary in a trial, a prorated charge otherwise.
@@ -610,6 +623,10 @@ func TestEndpoints(t *testing.T) {
 	}
 	f.mu.Unlock()
 	x.do(t, "", "GET", base+"/plans", nil, 404)
+	if code, body := dbtest.Do(t, x.mux, "", "GET", "/api/plans", nil); code != 200 ||
+		!strings.Contains(body, `{"ai_usd":3,"id":"pro","members":25,"projects":0,"storage_gb":100,"workspaces":3}`) {
+		t.Fatalf("plans %d %s", code, body)
+	}
 
 	if b := x.do(t, bob, "GET", base, nil, 200); b["plan"] != "free" || b["currency"] != nil || b["interval"] != nil || b["enabled"] != true ||
 		b["status"] != nil || b["renews_at"] != nil || b["cancel_at_period_end"] != false || fmt.Sprint(b["workspaces"]) != "map[limit:1 used:0]" {
@@ -774,6 +791,51 @@ func TestChangeInTrial(t *testing.T) {
 	x.do(t, x.ann, "POST", "/api/billing/change", price("pri_pro_m"), 409)
 	if x.row(t, s.id).price != "pri_starter_m" {
 		t.Fatal("a refused change moved the mirror")
+	}
+}
+
+// TestCardlessTrial: a trial started without a payment method has no next billing, so the state carries its end and
+// says a payment method is needed; POST payment-method answers Paddle's transaction for adding one; a repeat trial
+// without one is canceled, not activated.
+func TestCardlessTrial(t *testing.T) {
+	x := setup(t)
+	ann, f := x.ann, x.f
+	cd := signedCD(ann, checkoutSig(ann))
+	x.do(t, ann, "POST", "/api/billing/payment-method", nil, 409) // no subscription
+	first := sub{id: "sub_cl_" + x.tag, customer: "ctm_" + x.tag, cd: cd, status: "trialing", price: "pri_pro_m", cardless: true,
+		updated: time.Now().Add(-time.Hour)}
+	x.send(t, "subscription.created", first.json(), 200)
+	b := x.do(t, ann, "GET", "/api/billing", nil, 200)
+	if ends, _ := time.Parse(time.RFC3339, fmt.Sprint(b["trial_ends_at"])); b["plan"] != "pro" || b["needs_payment_method"] != true ||
+		!ends.Equal(time.Date(2030, 3, 17, 17, 46, 40, 0, time.UTC)) || b["renews_at"] != nil {
+		t.Fatalf("cardless trial: %v", b)
+	}
+	if b := x.do(t, ann, "POST", "/api/billing/payment-method", nil, 200); b["transaction_id"] != "txn_pm_1" {
+		t.Fatalf("payment method: %v", b)
+	}
+	// The card is added: Paddle sets the next billing.
+	first.cardless, first.updated = false, first.updated.Add(time.Minute)
+	x.send(t, "subscription.updated", first.json(), 200)
+	if b := x.do(t, ann, "GET", "/api/billing", nil, 200); b["needs_payment_method"] != false || b["renews_at"] == nil {
+		t.Fatalf("after adding a card: %v", b)
+	}
+	first.status, first.updated = "canceled", first.updated.Add(time.Minute)
+	x.send(t, "subscription.canceled", first.json(), 200)
+	if b := x.do(t, ann, "GET", "/api/billing", nil, 200); b["plan"] != "free" || b["needs_payment_method"] != false || b["trial_ends_at"] != nil {
+		t.Fatalf("after the trial was canceled: %v", b)
+	}
+
+	again := sub{id: "sub_cl2_" + x.tag, customer: first.customer, cd: cd, status: "trialing", price: "pri_adv_y", cardless: true, updated: time.Now()}
+	f.mu.Lock()
+	f.subs[again.id] = again
+	f.mu.Unlock()
+	x.send(t, "subscription.created", again.json(), 200)
+	_, activated := f.last("POST", "/subscriptions/"+again.id+"/activate")
+	if cancel, n := f.last("POST", "/subscriptions/"+again.id+"/cancel"); n != 1 || activated != 0 || cancel.body["effective_from"] != "immediately" {
+		t.Fatalf("repeat cardless trial: %d cancels %v, %d activations", n, cancel.body, activated)
+	}
+	if rw := x.row(t, again.id); rw.status != "canceled" || x.plan(t, ann) != "free" {
+		t.Fatalf("repeat cardless trial: %+v %s", rw, x.plan(t, ann))
 	}
 }
 
@@ -946,6 +1008,19 @@ func TestReminders(t *testing.T) {
 	check(1)
 	if n := count(bob, "Your Taskwell Starter trial ends on "+trialDay); n != 0 {
 		t.Fatalf("a trial set to cancel got %d reminders", n)
+	}
+	// A trial without a payment method has no next billing: its own reminder goes by the trial's end, once.
+	exec(`update paddle_subscriptions set scheduled_change_action = null, next_billed_at = null, trial_ends_at = now() + interval '2 days'
+		where subscription_id = $1`, "sub_cancel_"+x.tag)
+	run()
+	run()
+	var cardless string
+	if err := x.pool.QueryRow(ctx, `select coalesce(min(body), '') from outbound_mail where recipient = $1 and subject = $2`,
+		bob, "Your Taskwell Starter trial ends on "+trialDay).Scan(&cardless); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(bob, "Your Taskwell Starter trial ends on "+trialDay); n != 1 || !strings.Contains(cardless, "Add a payment method to keep Starter") {
+		t.Fatalf("cardless trial reminder: %d emails %q", n, cardless)
 	}
 
 	exec(`update paddle_subscriptions set status = 'active' where subscription_id = $1`, "sub_due_"+x.tag)

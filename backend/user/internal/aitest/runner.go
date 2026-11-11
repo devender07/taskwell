@@ -296,7 +296,7 @@ func (r *Runner) call(ctx, stop context.Context, j *job, p anthropic.BetaMessage
 	if cancelled {
 		return nil, errCancelled
 	}
-	limit, err := limitUSD(db, r.cfg)
+	limit, err := limitUSD(db, r.cfg, r.model.db, j.wsID)
 	if err != nil {
 		return nil, err
 	}

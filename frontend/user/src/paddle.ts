@@ -42,3 +42,9 @@ export async function openCheckout(priceId: string, email: string, customData: R
     settings: { displayMode: 'overlay', variant: 'one-page', successUrl },
   })
 }
+
+// The checkout that adds a payment method to a subscription (a transaction from POST /billing/payment-method).
+export async function openPaymentMethod(transactionId: string, successUrl: string) {
+  const p = await getPaddle()
+  p.Checkout.open({ transactionId, settings: { displayMode: 'overlay', variant: 'one-page', successUrl } })
+}

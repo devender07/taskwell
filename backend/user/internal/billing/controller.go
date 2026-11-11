@@ -33,7 +33,7 @@ const (
 	errSubscribed     = "You already have a subscription. Manage it to change plans."
 	errNoSubscription = "You don't have a subscription yet."
 	errPastDue        = "Your last payment failed. Update your payment method before switching plans."
-	errCantSwitch     = "This plan change can't be made right now. Try again in a while, or use Manage billing."
+	errCantSwitch     = "This can't be changed right now. Try again in a while, or use Manage billing."
 )
 
 var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
@@ -129,6 +129,17 @@ func limit[T int | int64](n T) *T {
 	return &n
 }
 
+// plans answers every plan's limits in force, for the pricing page (public): 0 is unlimited, and for ai_usd none.
+func (h *Handler) plans(w http.ResponseWriter, _ *http.Request) error {
+	out := []map[string]any{}
+	for _, p := range plan.All() {
+		out = append(out, map[string]any{"id": p.ID, "workspaces": p.Workspaces, "projects": p.Projects, "members": p.Members,
+			"storage_gb": p.StorageBytes >> 30, "ai_usd": p.AIUSD})
+	}
+	web.JSON(w, http.StatusOK, out)
+	return nil
+}
+
 // state answers the caller's account billing state.
 func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
@@ -141,9 +152,12 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request, userID string) e
 		return err
 	}
 	p, _ := plan.Get(a.Plan)
+	trialing := a.Status != nil && *a.Status == "trialing"
 	web.JSON(w, http.StatusOK, map[string]any{
 		"plan": a.Plan, "comped": a.Comped, "comped_until": a.CompedUntil, "status": a.Status, "currency": a.Currency, "interval": a.Interval,
 		"renews_at": a.RenewsAt, "cancel_at_period_end": a.CancelAtPeriodEnd, "trial_used": a.TrialUsed,
+		// A trial started without a payment method has no next billing until one is added; Paddle cancels it at its end.
+		"trial_ends_at": a.TrialEndsAt, "needs_payment_method": trialing && a.RenewsAt == nil,
 		"workspaces": map[string]any{"used": a.Owned, "limit": limit(p.Workspaces)},
 		"enabled":    err == nil,
 	})
@@ -343,6 +357,34 @@ func (h *Handler) change(w http.ResponseWriter, r *http.Request, userID string) 
 	return h.state(w, r, userID)
 }
 
+// paymentMethod answers the Paddle transaction whose checkout adds or replaces the payment method of the account's
+// subscription (Paddle.Checkout.open({transactionId})); nothing is charged. A trial started without one needs it
+// before the trial ends, and Paddle's customer portal can't add it.
+func (h *Handler) paymentMethod(w http.ResponseWriter, r *http.Request, userID string) error {
+	ctx := r.Context()
+	s, ok, err := h.on(ctx, w)
+	if !ok {
+		return err
+	}
+	a, err := h.model.account(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if a.SubscriptionID == nil {
+		web.Err(w, http.StatusConflict, errNoSubscription)
+		return nil
+	}
+	var txn struct {
+		ID string `json:"id"`
+	}
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodGet,
+		"/subscriptions/"+url.PathEscape(*a.SubscriptionID)+"/update-payment-method-transaction", nil, &txn); err != nil {
+		return refused(ctx, w, err)
+	}
+	web.JSON(w, http.StatusOK, map[string]string{"transaction_id": txn.ID})
+	return nil
+}
+
 // portal answers a Paddle customer portal link for the account's subscription.
 func (h *Handler) portal(w http.ResponseWriter, r *http.Request, userID string) error {
 	ctx := r.Context()
@@ -475,6 +517,9 @@ func (h *Handler) saveSubscription(ctx context.Context, sub subscription) error 
 	if sc := sub.ScheduledChange; sc != nil && sc.Action != "" {
 		row.ScheduledAction, row.ScheduledAt = &sc.Action, sc.EffectiveAt
 	}
+	if td := sub.Items[0].TrialDates; td != nil && sub.Status == "trialing" {
+		row.TrialEndsAt = td.EndsAt
+	}
 	link := h.link(sub.CustomData)
 	applied, user, err := h.model.saveSubscription(ctx, row, link)
 	if err != nil || !applied {
@@ -488,13 +533,14 @@ func (h *Handler) saveSubscription(ctx context.Context, sub subscription) error 
 	if sub.Status != "trialing" {
 		return nil
 	}
-	return h.endRepeatTrial(ctx, sub.ID, *user)
+	return h.endRepeatTrial(ctx, sub.ID, *user, sub.NextBilledAt != nil)
 }
 
-// endRepeatTrial ends a trial on an account that had a subscription before (one trial per account): Paddle bills it
-// now and it's active. The pricing page offers such an account the no-trial prices, so this only catches a checkout
-// opened on a trial price some other way. An error makes Paddle retry the event.
-func (h *Handler) endRepeatTrial(ctx context.Context, subID, userID string) error {
+// endRepeatTrial ends a trial on an account that had a subscription before (one trial per account): with a payment
+// method on file (billable) Paddle bills it now and it's active; without one there's nothing to bill, so it's canceled
+// and the account subscribes on a no-trial price. The pricing page offers such an account the no-trial prices, so this
+// only catches a checkout opened on a trial price some other way. An error makes Paddle retry the event.
+func (h *Handler) endRepeatTrial(ctx context.Context, subID, userID string, billable bool) error {
 	had, err := h.model.hadEarlier(ctx, userID, subID)
 	if err != nil || !had {
 		return err
@@ -503,8 +549,12 @@ func (h *Handler) endRepeatTrial(ctx context.Context, subID, userID string) erro
 	if err != nil {
 		return fmt.Errorf("end repeat trial %s: %w", subID, err)
 	}
+	path, body := "/subscriptions/"+url.PathEscape(subID)+"/activate", any(nil)
+	if !billable {
+		path, body = "/subscriptions/"+url.PathEscape(subID)+"/cancel", map[string]string{"effective_from": "immediately"}
+	}
 	var active subscription
-	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, "/subscriptions/"+url.PathEscape(subID)+"/activate", nil, &active); err != nil {
+	if err := h.paddle.call(ctx, s.key, s.env, http.MethodPost, path, body, &active); err != nil {
 		return fmt.Errorf("end repeat trial %s: %w", subID, err)
 	}
 	slog.InfoContext(ctx, "paddle repeat trial ended", "subscription", subID, "user", userID)

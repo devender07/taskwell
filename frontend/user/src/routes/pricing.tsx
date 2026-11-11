@@ -26,11 +26,18 @@ const FAQ = [
     'Who pays?',
     "The person who creates workspaces. One plan covers every workspace you create and everyone in them, up to its limits. Members you invite don't need a plan.",
   ],
-  ['How does the free trial work?', 'Your first subscription starts with 7 days free, once per account. Add a card at checkout; you are charged when the trial ends unless you cancel first.'],
-  ['What do we get without a plan?', 'Free gives you 1 workspace with 1 project and 2 GB of storage, for you alone. To invite your team, choose a paid plan.'],
+  [
+    'How does the free trial work?',
+    'Your first subscription starts with 14 days free, once per account, and no card is needed. Add a payment method any time before the trial ends to keep your plan; without one, your account moves to Free and nothing is charged.',
+  ],
+  ['What do we get without a plan?', 'Free is for trying Taskwell on your own, within the limits on its card above. To invite your team or run AI tests, choose a paid plan.'],
+  [
+    'How much AI testing is included?',
+    'Each paid plan includes a monthly allowance of AI test runs, measured by what the runs cost and shared by all your workspaces. The amounts are on the plan cards above. It resets at the start of each month.',
+  ],
   [
     'What happens if we go over a limit?',
-    "Nothing is deleted. You can't create more workspaces or projects, invite more members or upload more files until you upgrade or make room.",
+    "Nothing is deleted. You can't create more workspaces or projects, invite more members or upload more files until you upgrade or make room by deleting some. Archived projects and pending invites count toward the limits.",
   ],
   ['Can we cancel any time?', 'Yes. Cancel from billing settings and keep your plan until the end of the period you paid for, then you move to Free.'],
   ['How can we pay?', 'Cards, PayPal and more, depending on your country.'],
@@ -38,8 +45,8 @@ const FAQ = [
 ]
 
 function Pricing() {
-  const { interval = 'month' } = Route.useSearch()
   const { billing } = Route.useLoaderData()
+  const interval = Route.useSearch().interval ?? billing?.interval ?? 'month'
   const navigate = Route.useNavigate()
   const router = useRouter()
 
@@ -57,7 +64,7 @@ function Pricing() {
         <header className="pricing-head grid gap-4">
           <h1>Plans for every team</h1>
           <p className="text-secondary m-0" style={{ maxWidth: 640 }}>
-            One price for your account covers every workspace you create. Your first subscription starts with a 7-day free trial.
+            One price for your account covers every workspace you create. Your first subscription starts with a 14-day free trial, no card needed.
           </p>
         </header>
         <PricingTable

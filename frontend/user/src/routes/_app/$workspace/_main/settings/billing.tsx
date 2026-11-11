@@ -6,6 +6,7 @@ import { api, billingPath, openBillingPortal, storagePath, toFormErrors, workspa
 import { trackPath } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
 import { formatBytes } from '@/components/files/bytes'
+import { AddPaymentMethod } from '@/components/app/trial-banner'
 import { PricingTable, SUBSCRIBED, validateInterval } from '@/pricing/pricing-table'
 import { planName, type Interval } from '@/pricing/tiers'
 import '@/components/home/home.css'
@@ -29,7 +30,8 @@ function statusLine(b: Billing) {
   if (b.comped) return b.comped_until ? `Comped by Taskwell until ${longDate(b.comped_until)}` : 'Comped by Taskwell'
   if (b.status === 'past_due') return 'Payment failed. Update your payment method.'
   const parts = [b.interval === 'year' ? 'Yearly' : b.interval === 'month' ? 'Monthly' : '', b.status === 'trialing' ? 'Free trial' : '']
-  if (b.renews_at) parts.push(b.cancel_at_period_end ? `Cancels on ${shortDate(b.renews_at)}` : `Renews on ${shortDate(b.renews_at)}`)
+  if (b.needs_payment_method && b.trial_ends_at) parts.push(`Ends on ${shortDate(b.trial_ends_at)} unless you add a payment method`)
+  else if (b.renews_at) parts.push(b.cancel_at_period_end ? `Cancels on ${shortDate(b.renews_at)}` : `Renews on ${shortDate(b.renews_at)}`)
   return parts.filter(Boolean).join(' · ')
 }
 
@@ -39,8 +41,8 @@ function ownerLine(w: WorkspaceBilling, name: string) {
 }
 
 function BillingSettings() {
-  const { interval = 'month' } = Route.useSearch()
   const { workspace, account } = Route.useLoaderData()
+  const interval = Route.useSearch().interval ?? account.interval ?? 'month'
   const navigate = Route.useNavigate()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -85,10 +87,13 @@ function BillingSettings() {
           </p>
         </div>
         <Meter label="Workspaces you own" used={account.workspaces.used} limit={account.workspaces.limit} format={String} />
-        {account.enabled && !account.comped && SUBSCRIBED.includes(account.status ?? '') ? (
-          <Button variant="primary" style={{ justifySelf: 'start' }} disabled={pending} onClick={manage}>
-            Manage billing
-          </Button>
+        {account.enabled && (SUBSCRIBED.includes(account.status ?? '') || account.trial_used) ? (
+          <div className="flex flex-wrap gap-3">
+            {account.needs_payment_method ? <AddPaymentMethod onError={setError} /> : null}
+            <Button variant={account.needs_payment_method ? 'secondary' : 'primary'} disabled={pending} onClick={manage}>
+              Manage billing
+            </Button>
+          </div>
         ) : null}
         <FormError>{error}</FormError>
       </section>

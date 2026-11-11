@@ -641,6 +641,9 @@ export type Billing = {
   renews_at: string | null
   cancel_at_period_end: boolean
   trial_used: boolean
+  // While trialing. needs_payment_method: the trial was started without one, and Paddle cancels it at its end unless one is added.
+  trial_ends_at: string | null
+  needs_payment_method: boolean
   workspaces: Usage
   enabled: boolean
 }
@@ -653,6 +656,10 @@ export type WorkspaceBilling = {
   members: Usage
   storage: { used_bytes: number; limit_bytes: number | null }
 }
+// A plan's limits in force (the admin app can change them). 0 is unlimited; for ai_usd, none.
+export type PlanLimits = { id: PlanId; workspaces: number; projects: number; members: number; storage_gb: number; ai_usd: number }
+// Public, for the pricing page; null when they can't load.
+export const getPlans = () => api<PlanLimits[]>('/plans').catch(() => null)
 export const billingPath = '/billing'
 export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
 const priceForm = (priceId: string) => {
@@ -674,6 +681,8 @@ export type ChangePreview = {
   next_billed_at: string | null
 }
 export const previewPlanChange = (priceId: string) => api<ChangePreview>(`${billingPath}/change/preview`, priceForm(priceId))
+// The Paddle transaction whose checkout adds or replaces the subscription's payment method; nothing is charged.
+export const startPaymentMethod = () => api<{ transaction_id: string }>(`${billingPath}/payment-method`, new FormData())
 export const openBillingPortal = () => api<{ url: string }>(`${billingPath}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.

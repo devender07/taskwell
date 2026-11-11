@@ -687,6 +687,7 @@ const (
 	heartbeatKey   = "ai_tester_heartbeat"
 	heartbeatFresh = 90 * time.Second
 	msgLimit       = "This month's AI test limit is reached."
+	msgNoAI        = "Your plan doesn't include AI test runs. Upgrade to use them."
 )
 
 type Site struct {
@@ -884,10 +885,12 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// spent is the workspace's Claude spend this UTC month in micro-dollars.
+// spent is the Claude spend this UTC month, in micro-dollars, of the workspace's account: the workspace and every
+// other one its owner created, since the plan's AI budget is the account's.
 func spent(ctx context.Context, q querier, wsID string) (int64, error) {
 	var n int64
-	if err := q.QueryRow(ctx, `select coalesce(sum(cost_micros), 0)::bigint from ai_usage where workspace_id = $1 and created_at >= $2`,
+	if err := q.QueryRow(ctx, `select coalesce(sum(cost_micros), 0)::bigint from ai_usage where created_at >= $2 and (workspace_id = $1
+		or workspace_id in (select id from workspaces where created_by = (select created_by from workspaces where id = $1)))`,
 		wsID, monthStart(time.Now())).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sum ai usage: %w", err)
 	}

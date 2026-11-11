@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, notFound, useRouteContext } from '@tanstack/re
 import { ApiError, api, getFeaturePlans, getFeatures, upgradesFor, type Features, type PersonRef, type Upgrades, type Workspace, type WorkspaceBilling, workspaceBillingPath, workspacePath } from '@/api'
 import { keepSession, loaderApi } from '@/realtime'
 import { PastDueBanner } from '@/components/app/past-due-banner'
+import { TrialBanner } from '@/components/app/trial-banner'
 import { Shortcuts } from '@/components/app/shortcuts'
 import { InvitePrompt } from '@/components/invite/invite-prompt'
 import { ReviewTokensPrompt } from '@/components/settings/review-tokens'
@@ -40,6 +41,7 @@ function WorkspaceLayout() {
   return (
     <Shortcuts>
       {billing?.status === 'past_due' ? <PastDueBanner plan={billing.plan} /> : null}
+      {billing?.needs_payment_method ? <TrialBanner billing={billing} /> : null}
       <Outlet />
       <InvitePrompt slug={workspace} />
       <ReviewTokensPrompt slug={workspace} />

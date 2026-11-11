@@ -141,8 +141,10 @@ Plain JavaScript module, no dependencies, deployed with `npx wrangler deploy` fr
   else `attachment; filename*=UTF-8''{escapedName}`), `Cache-Control: private, max-age={exp - now}`,
   `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
   `Cross-Origin-Resource-Policy: cross-origin`.
-- ponytail: a deleted file stays in the edge cache, reachable only through links issued before the delete, until they
-  expire (at most 2 days). Purge from the API on delete if that ever matters.
+- A deleted file is purged from the edge cache: `storage.Delete` calls Cloudflare's single-file purge (`POST
+  /zones/{files_cdn_zone_id}/purge_cache` `{"files": ["{files_cdn_url}/{id}"]}`, token `files_cdn_api_token` with the
+  Cache Purge permission; migration 042 adds both keys, empty skips it). A failed purge is logged, not fatal: the
+  file is then reachable only through links issued before the delete, until they expire (at most 2 days).
 - `cdn/worker.check.mjs` (`node cdn/worker.check.mjs`): the signing test vector; a changed path, exp, secret or an
   expired link rejected; the Worker against an in-memory bucket and edge cache (headers, edge fill and hit, ranges,
   downloads, 403/404/405).

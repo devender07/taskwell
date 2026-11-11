@@ -20,6 +20,7 @@ import (
 
 	"github.com/devender07/taskwell/backend/user/internal/doc"
 	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -537,9 +538,17 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		web.Err(w, http.StatusServiceUnavailable, "AI testing isn't set up on this server.")
 		return nil
 	}
-	limit, err := limitUSD(r.Context(), h.cfg)
+	limit, err := limitUSD(r.Context(), h.cfg, h.model.db, ws.ID)
 	if err != nil {
 		return err
+	}
+	if limit == 0 {
+		if p, err := plan.ForWorkspace(r.Context(), h.model.db, ws.ID); err != nil {
+			return err
+		} else if p.AIUSD == 0 {
+			web.Err(w, http.StatusPaymentRequired, msgNoAI)
+			return nil
+		}
 	}
 	caseID := r.PostForm.Get("case_id")
 	if caseID != "" && !web.IsUUID(caseID) {
@@ -594,8 +603,9 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 	return nil
 }
 
-// limitUSD is ai_test_monthly_limit_usd; a missing or broken value means no AI spend.
-func limitUSD(ctx context.Context, cfg *sysconfig.Store) (float64, error) {
+// limitUSD is what the workspace's account may spend on AI tests a month: its plan's AIUSD, and never more than
+// ai_test_monthly_limit_usd (the ceiling for any account); a missing or broken value means no AI spend.
+func limitUSD(ctx context.Context, cfg *sysconfig.Store, db plan.Querier, wsID string) (float64, error) {
 	v, err := cfg.Get(ctx, "ai_test_monthly_limit_usd")
 	if err != nil {
 		return 0, err
@@ -604,7 +614,11 @@ func limitUSD(ctx context.Context, cfg *sysconfig.Store) (float64, error) {
 	if err != nil || f < 0 {
 		return 0, nil
 	}
-	return f, nil
+	p, err := plan.ForWorkspace(ctx, db, wsID)
+	if err != nil {
+		return 0, err
+	}
+	return min(f, p.AIUSD), nil
 }
 
 func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -619,7 +633,7 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
-	limit, err := limitUSD(r.Context(), h.cfg)
+	limit, err := limitUSD(r.Context(), h.cfg, h.model.db, ws.ID)
 	if err != nil {
 		return err
 	}

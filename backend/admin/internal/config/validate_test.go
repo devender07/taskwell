@@ -46,6 +46,15 @@ func TestCheckValue(t *testing.T) {
 		{"feature_chat", "true", true},
 		{"feature_chat", "false", true},
 		{"feature_chat", "pro", false},
+		{"plan_pro_members", "25", true},
+		{"plan_advanced_members", "0", true},
+		{"plan_pro_members", "-1", false},
+		{"plan_pro_members", "2.5", false},
+		{"plan_pro_storage_gb", "lots", false},
+		{"plan_pro_ai_usd", "2.5", true},
+		{"plan_free_ai_usd", "0", true},
+		{"plan_pro_ai_usd", "-3", false},
+		{"plan_pro_ai_usd", "", false},
 	}
 	for _, c := range cases {
 		if got := checkValue(c.key, c.value); (got == "") != c.ok {

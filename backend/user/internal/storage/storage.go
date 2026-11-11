@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,7 +120,7 @@ func (s *Store) SetHeaders(ctx context.Context, id, contentType, disposition str
 	return s.Put(ctx, id, contentType, disposition, tmp)
 }
 
-// Delete removes the object id; a missing one is not an error.
+// Delete removes the object id, and its copy in Cloudflare's edge cache (see purge); a missing one is not an error.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	c, bucket, err := s.bucket(ctx)
 	if err != nil {
@@ -127,6 +128,9 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	}
 	if _, err := c.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: &id}); err != nil {
 		return fmt.Errorf("delete object: %w", err)
+	}
+	if !strings.HasPrefix(id, StagePrefix) { // a staged upload is never served, so never cached
+		s.purge(ctx, id)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { shortDate } from '@taskwell/shared/time'
 import { api, billingPath, type Billing } from '@/api'
@@ -14,29 +14,45 @@ function Welcome() {
   const billing = Route.useLoaderData()
   const router = useRouter()
   const ready = billing.plan !== 'free'
+  const [waiting, setWaiting] = useState(true)
 
   useEffect(() => {
     if (ready) return
     let n = 0
     const id = setInterval(() => {
       router.invalidate()
-      if (++n === 10) clearInterval(id)
+      if (++n === 10) {
+        clearInterval(id)
+        setWaiting(false)
+      }
     }, 3000)
     return () => clearInterval(id)
   }, [ready, router])
 
-  const trial = billing.status === 'trialing' && billing.renews_at
+  const ends = billing.status === 'trialing' ? (billing.trial_ends_at ?? billing.renews_at) : null
+  const trial = !ends
+    ? ''
+    : billing.needs_payment_method
+      ? ` Your free trial ends on ${shortDate(ends)}. Add a payment method in billing settings before then to keep it.`
+      : ` Your free trial ends on ${shortDate(ends)}.`
   return (
     <main className="grid gap-4 w-full px-8 py-10" style={{ maxWidth: 640, alignContent: 'start' }}>
-      <h1 className="text-h2">{ready ? "You're subscribed" : 'Setting up your plan'}</h1>
+      <h1 className="text-h2">{ready ? (ends ? 'Your trial has started' : "You're subscribed") : waiting ? 'Setting up your plan' : 'This is taking longer than usual'}</h1>
       <p role="status" className="text-body-sm text-secondary m-0">
         {ready
-          ? `You're on ${planName(billing.plan)}.${trial ? ` Your free trial ends on ${shortDate(billing.renews_at!)}.` : ''}`
-          : 'Thanks for subscribing. Your plan shows here in a few seconds.'}
+          ? `You're on ${planName(billing.plan)}.${trial}`
+          : waiting
+            ? 'Thanks for subscribing. Your plan shows here in a few seconds.'
+            : "Your plan hasn't shown up yet. Refresh this page in a minute; if it still isn't there, contact us and we'll sort it out."}
       </p>
-      <Link to="/signin" className="button button-primary" style={{ justifySelf: 'start' }}>
-        Go to dashboard
-      </Link>
+      <div className="flex flex-wrap gap-3">
+        <Link to="/signin" className="button button-primary">
+          Go to dashboard
+        </Link>
+        <Link to="/billing" className="button button-secondary">
+          Billing settings
+        </Link>
+      </div>
     </main>
   )
 }

@@ -53,7 +53,7 @@ func TestPlanStorage(t *testing.T) {
 	if limit, _, err := h.room(ctx, wsID); err != nil || limit != int64(mb)<<20 {
 		t.Fatalf("advanced room %d %v, want %d MB", limit, err, mb)
 	}
-	if code, body := dbtest.Do(t, mux, ann, "GET", "/api/workspaces/"+slug+"/storage", nil); code != 200 || !strings.Contains(body, `"quota_bytes":null`) {
+	if code, body := dbtest.Do(t, mux, ann, "GET", "/api/workspaces/"+slug+"/storage", nil); code != 200 || !strings.Contains(body, `"quota_bytes":536870912000`) {
 		t.Fatalf("advanced storage %d %s", code, body)
 	}
 }

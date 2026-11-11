@@ -152,7 +152,10 @@ type subscription struct {
 	} `json:"scheduled_change"`
 	CustomData customData `json:"custom_data"`
 	Items      []struct {
-		Price price `json:"price"`
+		Price      price `json:"price"`
+		TrialDates *struct {
+			EndsAt *time.Time `json:"ends_at"`
+		} `json:"trial_dates"`
 	} `json:"items"`
 }
 

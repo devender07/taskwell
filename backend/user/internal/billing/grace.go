@@ -119,6 +119,16 @@ var reminders = []reminder{{
 	intro:   "You'll be charged for <Plan> on <date> unless you cancel.",
 	button:  "Manage billing", path: "/billing",
 }, {
+	// A trial started without a payment method: Paddle cancels it at its end unless one is added.
+	claim: `select s.subscription_id, u.email, s.plan, s.trial_ends_at from paddle_subscriptions s join users u on u.id = s.user_id
+		where s.status = 'trialing' and s.next_billed_at is null and s.trial_ends_at between now() and now() + interval '3 days'
+		  and s.trial_reminded_at is null
+		order by s.trial_ends_at limit 1 for update of s skip locked`,
+	mark:    `update paddle_subscriptions set trial_reminded_at = now() where subscription_id = $1`,
+	subject: "Your Taskwell <Plan> trial ends on <date>",
+	intro:   "Add a payment method to keep <Plan> after <date>. Without one, your account moves to the Free plan and nothing is charged.",
+	button:  "Add payment method", path: "/billing",
+}, {
 	claim: `select s.subscription_id, u.email, s.plan, now() from paddle_subscriptions s join users u on u.id = s.user_id
 		where s.status = 'past_due' and s.past_due_emailed_at is null
 		order by s.paddle_updated_at limit 1 for update of s skip locked`,

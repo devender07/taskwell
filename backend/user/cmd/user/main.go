@@ -41,6 +41,7 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/oauth"
 	"github.com/devender07/taskwell/backend/user/internal/onboarding"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/project"
 	"github.com/devender07/taskwell/backend/user/internal/projectfile"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
@@ -102,6 +103,10 @@ func main() {
 		}
 	}
 
+	// The limits an admin set, before anything is served; Watch (below) keeps them fresh.
+	if err := plan.Load(context.Background(), pool); err != nil {
+		obs.Fatal("startup", "err", err)
+	}
 	cfg := sysconfig.New(pool)
 	base, err := cfg.Get(context.Background(), "app_base_url")
 	if err != nil {
@@ -269,6 +274,7 @@ func main() {
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
 	wg.Go(func() { cycleH.Run(work, duration("CYCLE_POINTS_INTERVAL", time.Hour)) })
 	wg.Go(func() { billingH.Run(work, duration("PLAN_GRACE_INTERVAL", time.Minute)) })
+	wg.Go(func() { plan.Watch(work, pool, 10*time.Second) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

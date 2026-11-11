@@ -25,7 +25,8 @@ type account struct {
 	Status            *string
 	Currency          *string
 	Interval          *string
-	RenewsAt          *time.Time
+	RenewsAt          *time.Time // nil in a trial started without a payment method until one is added
+	TrialEndsAt       *time.Time // while trialing
 	CancelAtPeriodEnd bool
 	TrialUsed         bool // the account has had a subscription, so its next checkout gets no trial
 	Owned             int  // workspaces the user created
@@ -41,11 +42,11 @@ type model struct{ db *pgxpool.Pool }
 func (m *model) account(ctx context.Context, userID string) (account, error) {
 	var a account
 	err := m.db.QueryRow(ctx,
-		`select u.plan, u.plan_comped, u.plan_comped_until, s.subscription_id, s.price_id, s.status, s.currency_code, s.billing_interval, s.next_billed_at,
+		`select u.plan, u.plan_comped, u.plan_comped_until, s.subscription_id, s.price_id, s.status, s.currency_code, s.billing_interval, s.next_billed_at, s.trial_ends_at,
 		        coalesce(s.scheduled_change_action = 'cancel', false), (select count(*) from workspaces where created_by = u.id),
 		        exists (select 1 from paddle_subscriptions where user_id = u.id)
 		   from users u left join lateral (`+current+`) s on true where u.id = $1`, userID, granting).
-		Scan(&a.Plan, &a.Comped, &a.CompedUntil, &a.SubscriptionID, &a.PriceID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt,
+		Scan(&a.Plan, &a.Comped, &a.CompedUntil, &a.SubscriptionID, &a.PriceID, &a.Status, &a.Currency, &a.Interval, &a.RenewsAt, &a.TrialEndsAt,
 			&a.CancelAtPeriodEnd, &a.Owned, &a.TrialUsed)
 	if err != nil {
 		return a, fmt.Errorf("read billing: %w", err)
@@ -120,7 +121,7 @@ type subscriptionRow struct {
 	ID, CustomerID, Status, PriceID, ProductID, Plan string
 	Interval, Currency, ScheduledAction              *string
 	UnitAmount                                       *int64
-	NextBilledAt, ScheduledAt                        *time.Time
+	NextBilledAt, ScheduledAt, TrialEndsAt           *time.Time
 	UpdatedAt                                        time.Time
 }
 
@@ -151,19 +152,20 @@ func (m *model) saveSubscription(ctx context.Context, s subscriptionRow, link st
 		}
 		err := tx.QueryRow(ctx, `insert into paddle_subscriptions (subscription_id, customer_id, user_id, status, price_id,
 			  product_id, plan, billing_interval, currency_code, next_billed_at, scheduled_change_action,
-			  scheduled_change_at, paddle_updated_at, unit_amount)
-			values ($1, $2, `+existingUser("$3")+`, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			  scheduled_change_at, paddle_updated_at, unit_amount, trial_ends_at)
+			values ($1, $2, `+existingUser("$3")+`, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			on conflict (subscription_id) do update set customer_id = excluded.customer_id,
 			  user_id = coalesce(paddle_subscriptions.user_id, excluded.user_id), status = excluded.status,
 			  price_id = excluded.price_id, product_id = excluded.product_id, plan = excluded.plan,
 			  billing_interval = excluded.billing_interval, currency_code = excluded.currency_code,
 			  next_billed_at = excluded.next_billed_at, scheduled_change_action = excluded.scheduled_change_action,
 			  scheduled_change_at = excluded.scheduled_change_at, paddle_updated_at = excluded.paddle_updated_at,
-			  unit_amount = coalesce(excluded.unit_amount, paddle_subscriptions.unit_amount), updated_at = now()
+			  unit_amount = coalesce(excluded.unit_amount, paddle_subscriptions.unit_amount),
+			  trial_ends_at = excluded.trial_ends_at, updated_at = now()
 			where excluded.paddle_updated_at >= paddle_subscriptions.paddle_updated_at
 			returning user_id::text`,
 			s.ID, s.CustomerID, link, s.Status, s.PriceID, s.ProductID, s.Plan, s.Interval, s.Currency, s.NextBilledAt,
-			s.ScheduledAction, s.ScheduledAt, s.UpdatedAt, s.UnitAmount).Scan(&user)
+			s.ScheduledAction, s.ScheduledAt, s.UpdatedAt, s.UnitAmount, s.TrialEndsAt).Scan(&user)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // an older event than the row
 		}

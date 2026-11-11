@@ -75,6 +75,11 @@ Browsers upload straight to the R2 bucket with presigned PUTs, and files are ser
    ```
 4. **System config** (admin app → Config): `files_cdn_url` = `https://files.taskwell.dev`, `files_cdn_secret` = the
    same secret. Until both are set, files are served by presigned R2 links as before.
+5. **Purge on delete** (admin app → Config): `files_cdn_zone_id` = the taskwell.dev zone id (Cloudflare dashboard →
+   the domain's Overview page, right column) and `files_cdn_api_token` = an API token (My Profile → API Tokens →
+   Create Token → Custom) with the permission Zone → Cache Purge → Purge on that zone. Deleting a file then also
+   removes it from the edge cache; without them it stays reachable through links issued before the delete, for up
+   to 2 days.
 
 Check: open an image in the app; in the browser's network panel it should redirect from `api.taskwell.dev/api/files/…`
 to `files.taskwell.dev/…` and load with `200`.

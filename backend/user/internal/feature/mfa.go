@@ -37,8 +37,8 @@ func (f *Flags) RequireMFA(authenticate func(*http.Request) (string, error), nex
 		var blocked bool
 		err = f.db.QueryRow(r.Context(), `select true from workspaces w
 			join workspace_members m on m.workspace_id = w.id and m.user_id = $2
-			where w.slug = lower($1) and w.require_mfa
-			  and not exists (select 1 from user_mfa where user_id = $2 and enabled_at is not null)`, seg[3], userID).Scan(&blocked)
+			where w.slug = $1 and w.require_mfa
+			  and not exists (select 1 from user_mfa where user_id = $2 and enabled_at is not null)`, normSlug(seg[3]), userID).Scan(&blocked)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			web.Fail(w, r, err)
 			return

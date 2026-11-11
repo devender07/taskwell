@@ -5,11 +5,11 @@ import { Dialog } from '@taskwell/shared/dialog'
 import { PlanCard, PlanIncludes } from '@taskwell/shared/plan-card'
 import { Tabs } from '@taskwell/shared/tabs'
 import { useToast } from '@taskwell/shared/toast'
-import { ApiError, changePlan, getFeaturePlans, previewPlanChange, startCheckout, toFormErrors, type Billing, type ChangePreview, type Feature } from '@/api'
+import { ApiError, changePlan, getFeaturePlans, getPlans, previewPlanChange, startCheckout, toFormErrors, type Billing, type ChangePreview, type Feature, type PlanLimits } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { openCheckout, previewPrices } from '@/paddle'
 import { switchLabel, switchSummary } from '@/pricing/switch'
-import { FREE, PRICE_IDS, TIERS, type Interval, type Tier } from '@/pricing/tiers'
+import { FREE, limitLines, PRICE_IDS, TIERS, TRIAL, type Interval, type Tier } from '@/pricing/tiers'
 
 const INTERVALS: { value: Interval; label: string }[] = [
   { value: 'month', label: 'Monthly' },
@@ -18,7 +18,8 @@ const INTERVALS: { value: Interval; label: string }[] = [
 
 export const SUBSCRIBED = ['active', 'trialing', 'past_due']
 
-export const validateInterval = (v: unknown): Interval => (v === 'year' ? 'year' : 'month')
+// undefined when the URL doesn't say: the page then opens on the subscription's own interval, else monthly.
+export const validateInterval = (v: unknown): Interval | undefined => (v === 'year' || v === 'month' ? v : undefined)
 
 const CORE = ['Projects and issues', 'List and board views', 'Comments and mentions', 'Notifications']
 export const FEATURES: [Feature, string, string][] = [
@@ -38,9 +39,10 @@ export const FEATURES: [Feature, string, string][] = [
 ]
 
 // Features every plan has go under "Every plan includes"; a card lists the ones only some plans have.
-// Before the flags load (or if they can't), every feature counts as on everywhere.
+// Before the flags load (or if they can't), only the core is listed: nothing is promised that a plan may not have.
 function split(plans: Partial<Record<Feature, string[]>> | null) {
-  const on = (f: Feature, tier: string) => !plans?.[f] || plans[f]!.includes(tier)
+  if (!plans) return { includes: CORE, extras: () => [] as string[] }
+  const on = (f: Feature, tier: string) => !plans[f] || plans[f]!.includes(tier)
   const everywhere = FEATURES.filter(([f]) => [FREE, ...TIERS].every((t) => on(f, t.id)))
   return {
     includes: [...CORE, ...everywhere.map(([, label]) => label)],
@@ -64,10 +66,12 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
   const [preview, setPreview] = useState<ChangePreview | null>(null)
   const toast = useToast()
   const [featurePlans, setFeaturePlans] = useState<Partial<Record<Feature, string[]>> | null>(null)
+  const [plans, setPlans] = useState<PlanLimits[] | null>(null)
 
   useEffect(() => {
     let live = true
     getFeaturePlans().then((f) => live && setFeaturePlans(f))
+    getPlans().then((p) => live && setPlans(p))
     previewPrices(PRICE_IDS).then(
       (p) => live && setPrices(p),
       (e) => {
@@ -112,10 +116,16 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
     })
 
   const subscribed = SUBSCRIBED.includes(billing?.status ?? '')
-  const actions = billing ? billing.enabled && !billing.comped : true
+  // A past-due subscription can't be switched (Paddle refuses) until its payment method is updated.
+  const actions = billing ? billing.enabled && !billing.comped && billing.status !== 'past_due' : true
   const period = interval === 'month' ? '/ month' : '/ year'
-  const trial = !billing?.trial_used
+  const trial = !billing?.trial_used && actions
   const { includes, extras } = split(featurePlans)
+  // The limits come from the API (an admin can change them); a card lists none until they load.
+  const limits = (id: string) => {
+    const p = plans?.find((p) => p.id === id)
+    return p ? limitLines(p) : []
+  }
 
   const cta = (t: Tier) => {
     const priceId = (trial ? t.priceId : t.noTrial)[interval]
@@ -128,6 +138,7 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
       )
     }
     if (subscribed && billing.plan === t.id && billing.interval === interval) return <p className="plan-current">Current plan</p>
+    if (billing.comped && billing.plan === t.id) return <p className="plan-current">Current plan</p>
     if (!actions) return null
     return (
       <Button variant={variant} disabled={pending} onClick={() => (subscribed ? openSwitch(t) : subscribe(priceId))}>
@@ -142,9 +153,13 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
         <Tabs items={INTERVALS} value={interval} onChange={onInterval} aria-label="Billing interval" />
       </div>
       {billing && !billing.enabled ? <p className="text-body-sm text-secondary m-0">Billing isn't set up yet.</p> : null}
+      {billing?.enabled && billing.comped ? <p className="text-body-sm text-secondary m-0">Your plan is provided by Taskwell. Contact us to change it.</p> : null}
+      {billing?.enabled && !billing.comped && billing.status === 'past_due' ? (
+        <p className="text-body-sm text-secondary m-0">Your last payment failed. Update your payment method before changing plans.</p>
+      ) : null}
       {priceError ? <p className="text-body-sm text-secondary m-0">Prices couldn't load. Refresh the page to try again.</p> : null}
       <ul className="plan-grid">
-        <PlanCard name={FREE.name} tagline={FREE.description} price="Free" period="" checks={[...FREE.limits, ...extras(FREE.id)]}>
+        <PlanCard name={FREE.name} tagline={FREE.description} price="Free" period="" checks={[...limits(FREE.id), ...extras(FREE.id)]}>
           {!billing ? (
             <Link to="/signup" className="button button-primary">
               Get started
@@ -160,9 +175,9 @@ export function PricingTable({ interval, onInterval, billing, onChanged }: Props
             tagline={t.description}
             price={prices?.[t.priceId[interval]]}
             period={period}
-            note={trial ? '7-day free trial' : undefined}
+            note={trial ? TRIAL : undefined}
             featured={t.featured}
-            checks={[...t.limits, ...extras(t.id)]}
+            checks={[...limits(t.id), ...extras(t.id)]}
           >
             {cta(t)}
           </PlanCard>

@@ -49,6 +49,12 @@ func TestRequireMFA(t *testing.T) {
 		t.Fatalf("audit: %q %v", detail, err)
 	}
 
+	// A padded or upper-case slug is the same workspace to the handlers, so it must be to the gate.
+	for _, sl := range []string{slug + "%20", strings.ToUpper(slug)} {
+		if code, body := dbtest.Do(t, h, bob, "GET", "/api/workspaces/"+sl+"/issues", nil); code != 403 {
+			t.Fatalf("slug %q passed the two-factor gate: %d %s", sl, code, body)
+		}
+	}
 	for _, c := range []struct {
 		who, method, path string
 		want              int

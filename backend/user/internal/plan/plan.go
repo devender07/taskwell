@@ -6,11 +6,19 @@ package plan
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
 // Plan is one of the plans; 0 for a limit is unlimited. Projects, Members and StorageBytes are per workspace.
+// AIUSD is the AI testing spend a month across every workspace of the account, and 0 is none: AI calls cost money,
+// so no plan has them unlimited.
 type Plan struct {
 	ID           string
 	Name         string
@@ -18,27 +26,105 @@ type Plan struct {
 	Projects     int
 	Members      int
 	StorageBytes int64
+	AIUSD        float64
 }
 
 // Free is the plan of an account with no subscription in force.
 const Free = "free"
 
-// Plans is every plan in display order. The paid ones match the taskwell_plan in the custom_data of their Paddle prices.
+// Plans is every plan in display order with its default limits. The paid ones match the taskwell_plan in the
+// custom_data of their Paddle prices. The limits in force are system_config's (see Load), read with Get.
 var Plans = []Plan{
 	{ID: Free, Name: "Free", Workspaces: 1, Projects: 1, Members: 1, StorageBytes: 2 << 30},
-	{ID: "starter", Name: "Starter", Workspaces: 1, Projects: 5, Members: 10, StorageBytes: 20 << 30},
-	{ID: "pro", Name: "Pro", Workspaces: 3, Members: 25, StorageBytes: 100 << 30},
-	{ID: "advanced", Name: "Advanced"},
+	{ID: "starter", Name: "Starter", Workspaces: 1, Projects: 5, Members: 10, StorageBytes: 20 << 30, AIUSD: 1},
+	{ID: "pro", Name: "Pro", Workspaces: 3, Members: 25, StorageBytes: 100 << 30, AIUSD: 3},
+	{ID: "advanced", Name: "Advanced", StorageBytes: 500 << 30, AIUSD: 15},
+}
+
+// loaded is Plans with the limits an admin set; nil until Load.
+var loaded atomic.Pointer[[]Plan]
+
+// All returns every plan in display order with the limits in force.
+func All() []Plan {
+	if p := loaded.Load(); p != nil {
+		return *p
+	}
+	return Plans
 }
 
 // Get returns the plan with the id.
 func Get(id string) (Plan, bool) {
-	for _, p := range Plans {
+	for _, p := range All() {
 		if p.ID == id {
 			return p, true
 		}
 	}
 	return Plan{}, false
+}
+
+// Rows is a pool: Load's query.
+type Rows interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// Load reads the limits from system_config, so the admin app's Config page can change them: plan_<id>_workspaces,
+// _projects, _members, _storage_gb and _ai_usd, each a number from 0 (0 is unlimited; for _ai_usd, none). A missing or
+// broken value keeps the plan's default.
+func Load(ctx context.Context, db Rows) error {
+	rows, err := db.Query(ctx, `select key, value from system_config where key like 'plan\_%'`)
+	if err != nil {
+		return fmt.Errorf("load plan limits: %w", err)
+	}
+	vals, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) ([2]string, error) {
+		var kv [2]string
+		return kv, r.Scan(&kv[0], &kv[1])
+	})
+	if err != nil {
+		return fmt.Errorf("load plan limits: %w", err)
+	}
+	next := slices.Clone(Plans)
+	for _, kv := range vals {
+		n, err := strconv.ParseFloat(kv[1], 64)
+		if err != nil || n < 0 {
+			slog.WarnContext(ctx, "plan limit isn't a number from 0, keeping the default", "key", kv[0], "value", kv[1])
+			continue
+		}
+		for i := range next {
+			limit, ok := strings.CutPrefix(kv[0], "plan_"+next[i].ID+"_")
+			if !ok {
+				continue
+			}
+			switch limit {
+			case "workspaces":
+				next[i].Workspaces = int(n)
+			case "projects":
+				next[i].Projects = int(n)
+			case "members":
+				next[i].Members = int(n)
+			case "storage_gb":
+				next[i].StorageBytes = int64(n) << 30
+			case "ai_usd":
+				next[i].AIUSD = n
+			}
+		}
+	}
+	loaded.Store(&next)
+	return nil
+}
+
+// Watch loads the limits now and again every interval until ctx is done, so an admin's change applies without a
+// restart. A failed load keeps the limits it had.
+func Watch(ctx context.Context, db Rows, every time.Duration) {
+	for {
+		if err := Load(ctx, db); err != nil && ctx.Err() == nil {
+			slog.ErrorContext(ctx, "load plan limits", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+	}
 }
 
 // Querier is a pool or a transaction.
