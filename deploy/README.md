@@ -55,8 +55,7 @@ ssh -t devender@<host> 'sudo journalctl -u taskwell-user -n 50 --no-pager'      
 
 ## Updates
 
-The same `build.sh` and `send.sh` pair. Sending the user app runs new migrations before it starts. Change env files or
-the Caddyfile, then run `deploy/config.sh`; it restarts only what changed.
+See [UPDATE.md](UPDATE.md): backup, backend (user first, it runs the migrations), config, frontends, check, rollback.
 
 ## File CDN and direct uploads
 
