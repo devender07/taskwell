@@ -2,8 +2,15 @@ package mail
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
+	"io"
+	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
+	netmail "net/mail"
 	"os"
 	"strings"
 	"sync"
@@ -201,4 +208,75 @@ func TestQueue(t *testing.T) {
 			t.Fatalf("after timeout: %+v", r)
 		}
 	})
+}
+
+// TestCompose: with an HTML part the message is multipart/alternative, plain text first, both parts decode back to
+// what was queued; without one it's plain text. Render escapes what it's given.
+func TestCompose(t *testing.T) {
+	long := strings.Repeat("x", 2000)
+	html, err := Render(Email{Heading: "Ann <script>", Code: "123456", Card: &Card{Label: "ENG-1", Title: `"Fix" & <b>it</b>`},
+		Button: "Open", URL: "javascript:alert(1)", Note: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, "<script>") || strings.Contains(html, "<b>it</b>") || strings.Contains(html, `href="javascript`) || !strings.Contains(html, `href="#ZgotmplZ"`) ||
+		!strings.Contains(html, "123456") || !strings.Contains(html, "&lt;b&gt;it&lt;/b&gt;") {
+		t.Fatalf("render didn't escape: %s", html)
+	}
+
+	raw := compose("Taskwell <no-reply@taskwell.test>", "ann@example.test", "Your code: 123456", "Your code is 123456\n", html)
+	for _, line := range strings.Split(string(raw), "\r\n") {
+		if len(line) > 998 {
+			t.Fatalf("a %d-byte line", len(line))
+		}
+	}
+	msg, err := netmail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	typ, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil || typ != "multipart/alternative" {
+		t.Fatalf("content type %q %v", typ, err)
+	}
+	var got []string
+	var logo []byte
+	var walk func(body io.Reader, boundary string)
+	walk = func(body io.Reader, boundary string) {
+		r := multipart.NewReader(body, boundary)
+		for {
+			p, err := r.NextPart() // decodes quoted-printable
+			if err != nil {
+				return
+			}
+			typ, params, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+			switch typ {
+			case "multipart/related":
+				got = append(got, typ)
+				walk(p, params["boundary"])
+			case "image/png":
+				if p.Header.Get("Content-Id") != "<logo>" {
+					t.Errorf("logo content id %q", p.Header.Get("Content-Id"))
+				}
+				logo, _ = io.ReadAll(base64.NewDecoder(base64.StdEncoding, p))
+			default:
+				b, _ := io.ReadAll(p)
+				got = append(got, p.Header.Get("Content-Type")+"|"+strings.ReplaceAll(string(b), "\r\n", "\n"))
+			}
+		}
+	}
+	walk(msg.Body, params["boundary"])
+	if len(got) != 3 || got[0] != "text/plain; charset=UTF-8|Your code is 123456\n" || got[1] != "multipart/related" ||
+		got[2] != "text/html; charset=UTF-8|"+html || !strings.Contains(html, `src="cid:logo"`) || !bytes.Equal(logo, logoPNG) {
+		t.Fatalf("parts %q, logo %d bytes", got, len(logo))
+	}
+
+	plain := compose("Taskwell <no-reply@taskwell.test>", "ann@example.test", "Hi", "Hello "+long+"\n", "")
+	msg, err = netmail.ReadMessage(bytes.NewReader(plain))
+	if err != nil || !strings.HasPrefix(msg.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("plain: %v %v", msg.Header, err)
+	}
+	b, _ := io.ReadAll(quotedprintable.NewReader(msg.Body))
+	if strings.ReplaceAll(string(b), "\r\n", "\n") != "Hello "+long+"\n" {
+		t.Fatalf("plain body didn't round-trip")
+	}
 }

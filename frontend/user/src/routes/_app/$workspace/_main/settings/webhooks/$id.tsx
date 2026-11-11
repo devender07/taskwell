@@ -1,12 +1,13 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { BackLink } from '@taskwell/shared/back-link'
-import { ApiError, deliveriesPath, webhooksPath, type Webhook, type WebhookDelivery } from '@/api'
+import { ApiError, deliveriesPath, webhooksPath, type Webhook, type WebhookDelivery, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ActiveToggle, EventChips } from '@/components/settings/webhooks'
 import { Deliveries, WebhookActions } from '@/components/settings/webhooks-detail'
 import { byId } from '@taskwell/shared/list'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/webhooks/$id')({
+  beforeLoad: requireFeature('webhooks'),
   loader: async (ctx) => {
     const { workspace, id } = ctx.params
     const [webhooks, deliveries] = await Promise.all([

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/devender07/taskwell/backend/shared/totp"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
 )
 
 const (
@@ -33,6 +35,10 @@ const (
 	// An email change needs both: a code sent to the current address and one sent to the new address.
 	purposeEmailOld = "email_change_old"
 	purposeEmailNew = "email_change_new"
+	// purposeAccountDelete is the emailed code that confirms deleting the account.
+	purposeAccountDelete = "account_delete"
+	// purposeReauth is the emailed code that confirms it's the user, for POST /api/auth/reauth.
+	purposeReauth = "reauth"
 )
 
 var errEmailTaken = errors.New("email already registered")
@@ -117,7 +123,7 @@ func (m *model) verifySignup(ctx context.Context, email string, tokenHash []byte
 		}
 		var got User
 		if err := tx.QueryRow(ctx, `
-			update users set name = $2, password_hash = $3, email_verified_at = now() where id = $1
+			update users set name = $2, password_hash = $3, email_verified_at = now(), terms_accepted_at = now() where id = $1
 			returning id::text, name, email`, userID, name, ph).Scan(&got.ID, &got.Name, &got.Email); err != nil {
 			return fmt.Errorf("verify user: %w", err)
 		}
@@ -233,9 +239,10 @@ func (m *model) suspended(ctx context.Context, id string) (bool, error) {
 // Profile is the signed-in user as GET /api/me returns it.
 type Profile struct {
 	User
-	HasPassword         bool    `json:"has_password"`
-	AvatarURL           *string `json:"avatar_url"`
-	CanCreateWorkspaces bool    `json:"can_create_workspaces"`
+	HasPassword         bool       `json:"has_password"`
+	AvatarURL           *string    `json:"avatar_url"`
+	CanCreateWorkspaces bool       `json:"can_create_workspaces"`
+	TermsAcceptedAt     *time.Time `json:"terms_accepted_at"`
 }
 
 // profile returns nil when there is no such user.
@@ -243,9 +250,9 @@ func (m *model) profile(ctx context.Context, id string) (*Profile, error) {
 	var p Profile
 	err := m.db.QueryRow(ctx,
 		`select id::text, name, email, password_hash is not null, '/api/files/' || avatar_file_id || '/avatar',
-		        can_create_workspace(id)
+		        can_create_workspace(id), terms_accepted_at
 		 from users where id = $1`, id).
-		Scan(&p.ID, &p.Name, &p.Email, &p.HasPassword, &p.AvatarURL, &p.CanCreateWorkspaces)
+		Scan(&p.ID, &p.Name, &p.Email, &p.HasPassword, &p.AvatarURL, &p.CanCreateWorkspaces, &p.TermsAcceptedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -265,12 +272,16 @@ func (m *model) passwordHash(ctx context.Context, id string) (*string, error) {
 	return hash, nil
 }
 
-// setPassword stores a new password hash and signs out every other session: all refresh tokens except the family
-// that keepTokenHash (the caller's refresh token, may be nil) belongs to.
-func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTokenHash []byte) error {
+// setPassword stores a new password hash, records action (password_changed or password_added) and signs out every
+// other session: all refresh tokens except the family that keepTokenHash (the caller's refresh token, may be nil)
+// belongs to.
+func (m *model) setPassword(ctx context.Context, id, passwordHash string, keepTokenHash []byte, action string, md meta) error {
 	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `update users set password_hash = $2 where id = $1`, id, passwordHash); err != nil {
 			return fmt.Errorf("update password: %w", err)
+		}
+		if err := addEvent(ctx, tx, id, action, "", md); err != nil {
+			return err
 		}
 		return revokeOthers(ctx, tx, id, keepTokenHash)
 	})
@@ -300,12 +311,17 @@ func (m *model) userForGoogle(ctx context.Context, sub, email, name string) (u U
 			if first, err := markVerified(ctx, tx, &u, name); err != nil || !first {
 				return err
 			}
+			// Signing up with Google: the button sits under the line that accepts the terms.
+			if _, err := tx.Exec(ctx, `update users set terms_accepted_at = now() where id = $1`, u.ID); err != nil {
+				return err
+			}
 			return m.onCreated(ctx, tx, u.ID, u.Name, "")
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub, email_verified_at) values ($1, $2, $3, now()) returning id::text, name, email`,
+		if err := tx.QueryRow(ctx, `insert into users (name, email, google_sub, email_verified_at, terms_accepted_at)
+			values ($1, $2, $3, now(), now()) returning id::text, name, email`,
 			name, email, sub).Scan(&u.ID, &u.Name, &u.Email); err != nil {
 			return err
 		}
@@ -407,32 +423,37 @@ func (m *model) useCode(ctx context.Context, email string, codeHash []byte) (u *
 // a miss counts an attempt (the code dies after maxAttempts) and returns false.
 func (m *model) useUserCode(ctx context.Context, userID, purpose string, codeHash []byte) (ok bool, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var tokenID string
-		var stored []byte
-		err := tx.QueryRow(ctx, `
-			select id::text, token_hash from auth_tokens
-			where user_id = $1 and purpose = $2 and used_at is null and expires_at > now() and attempts < $3
-			order by created_at desc limit 1
-			for update`, userID, purpose, maxAttempts).Scan(&tokenID, &stored)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("find code: %w", err)
-		}
-		if subtle.ConstantTimeCompare(stored, codeHash) != 1 {
-			if _, err := tx.Exec(ctx, `update auth_tokens set attempts = attempts + 1 where id = $1`, tokenID); err != nil {
-				return fmt.Errorf("count attempt: %w", err)
-			}
-			return nil
-		}
-		if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = $1`, tokenID); err != nil {
-			return fmt.Errorf("use code: %w", err)
-		}
-		ok = true
-		return nil
+		ok, err = useUserCode(ctx, tx, userID, purpose, codeHash)
+		return err
 	})
 	return ok, err
+}
+
+// useUserCode is the method in tx; commit tx either way, so a miss still counts.
+func useUserCode(ctx context.Context, tx pgx.Tx, userID, purpose string, codeHash []byte) (bool, error) {
+	var tokenID string
+	var stored []byte
+	err := tx.QueryRow(ctx, `
+		select id::text, token_hash from auth_tokens
+		where user_id = $1 and purpose = $2 and used_at is null and expires_at > now() and attempts < $3
+		order by created_at desc limit 1
+		for update`, userID, purpose, maxAttempts).Scan(&tokenID, &stored)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("find code: %w", err)
+	}
+	if subtle.ConstantTimeCompare(stored, codeHash) != 1 {
+		if _, err := tx.Exec(ctx, `update auth_tokens set attempts = attempts + 1 where id = $1`, tokenID); err != nil {
+			return false, fmt.Errorf("count attempt: %w", err)
+		}
+		return false, nil
+	}
+	if _, err := tx.Exec(ctx, `update auth_tokens set used_at = now() where id = $1`, tokenID); err != nil {
+		return false, fmt.Errorf("use code: %w", err)
+	}
+	return true, nil
 }
 
 // startEmailChange voids the user's pending email change and stores the codes for their current address (oldHash) and
@@ -456,7 +477,7 @@ func (m *model) startEmailChange(ctx context.Context, userID, newEmail string, o
 // to the new address (verified: the code proves it), signs out every other session (all refresh tokens but the family
 // of keepTokenHash) and returns the old and new addresses. A wrong code counts an attempt on it and is named in bad
 // (old_code, new_code); no pending change makes both bad. errEmailTaken when the address was taken meanwhile.
-func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash, keepTokenHash []byte) (from, to string, bad []string, err error) {
+func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash, keepTokenHash []byte, md meta) (from, to string, bad []string, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		type code struct {
 			field, purpose, id, email string
@@ -494,6 +515,9 @@ func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash
 			userID, codes[1].email).Scan(&from, &to); err != nil {
 			return err
 		}
+		if err := addEvent(ctx, tx, userID, "email_changed", to, md); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx,
 			`delete from refresh_tokens where user_id = $1 and family_id is distinct from
 			   (select family_id from refresh_tokens where token_hash = $2 and user_id = $1)`, userID, keepTokenHash); err != nil {
@@ -516,7 +540,7 @@ func (m *model) changeEmail(ctx context.Context, userID string, oldHash, newHash
 // resetPassword uses a live reset link, sets the new password hash, verifies the email (the link proves it) and
 // revokes all the user's refresh tokens. It returns the account's email, or "" when the link is unknown, used or
 // expired.
-func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHash string) (string, error) {
+func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHash string, md meta) (string, error) {
 	email := ""
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var tokenID, userID, addr string
@@ -535,6 +559,9 @@ func (m *model) resetPassword(ctx context.Context, tokenHash []byte, passwordHas
 		}
 		if _, err := tx.Exec(ctx, `update users set password_hash = $2 where id = $1`, userID, passwordHash); err != nil {
 			return fmt.Errorf("update password: %w", err)
+		}
+		if err := addEvent(ctx, tx, userID, "password_changed", "reset", md); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, `delete from refresh_tokens where user_id = $1`, userID); err != nil {
 			return fmt.Errorf("sign out sessions: %w", err)
@@ -603,9 +630,9 @@ func (m *model) rotateRefresh(ctx context.Context, tokenHash []byte) (userID str
 	return userID, f, ok, err
 }
 
-// revokeFamily deletes every refresh token of the sign-in that tokenHash belongs to, and closes its user's sockets
-// (the others reconnect).
-func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
+// revokeFamily deletes every refresh token of the sign-in that tokenHash belongs to, records the sign-out and closes
+// its user's sockets (the others reconnect).
+func (m *model) revokeFamily(ctx context.Context, tokenHash []byte, md meta) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var userID string
 		err := tx.QueryRow(ctx, `
@@ -616,6 +643,9 @@ func (m *model) revokeFamily(ctx context.Context, tokenHash []byte) error {
 			return nil
 		}
 		if err != nil {
+			return err
+		}
+		if err := addEvent(ctx, tx, userID, "sign_out", "", md); err != nil {
 			return err
 		}
 		return realtime.Publish(ctx, tx, realtime.SessionRevoked(userID))
@@ -683,9 +713,17 @@ func (m *model) apiTokens(ctx context.Context, userID string) ([]APIToken, error
 	return tokens, nil
 }
 
-// insertAPIToken stores a token's hash; ErrTooManyTokens when the user already has maxAPITokens.
-func (m *model) insertAPIToken(ctx context.Context, userID, name string, tokenHash []byte) (*APIToken, error) {
-	return insertAPIToken(ctx, m.db, userID, name, tokenHash)
+// insertAPIToken stores a token's hash and records it; ErrTooManyTokens when the user already has maxAPITokens.
+func (m *model) insertAPIToken(ctx context.Context, userID, name string, tokenHash []byte, md meta) (*APIToken, error) {
+	var t *APIToken
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		if t, err = insertAPIToken(ctx, tx, userID, name, tokenHash); err != nil {
+			return err
+		}
+		return addEvent(ctx, tx, userID, "token_created", name, md)
+	})
+	return t, err
 }
 
 // insertAPIToken is the method on q: the pool, or another package's transaction (see NewAPIToken).
@@ -708,9 +746,12 @@ func insertAPIToken(ctx context.Context, q interface {
 	return &t, nil
 }
 
-// deleteAPIToken revokes the user's token; false when they have no token with the id.
-func (m *model) deleteAPIToken(ctx context.Context, userID, id string) (bool, error) {
-	tag, err := m.db.Exec(ctx, `delete from api_tokens where id = $1 and user_id = $2`, id, userID)
+// deleteAPIToken revokes the user's token and records it; false when they have no token with the id.
+func (m *model) deleteAPIToken(ctx context.Context, userID, id string, md meta) (bool, error) {
+	tag, err := m.db.Exec(ctx, `
+		with d as (delete from api_tokens where id = $1 and user_id = $2 returning user_id, name)
+		insert into account_events (user_id, action, detail, ip, user_agent)
+		select user_id, 'token_deleted', name, nullif($3, '')::inet, $4 from d`, id, userID, md.ip, md.ua)
 	if err != nil {
 		return false, fmt.Errorf("delete api token: %w", err)
 	}
@@ -755,7 +796,7 @@ func (m *model) startMFA(ctx context.Context, userID, sealed string) error {
 
 // enableMFA turns on the setup startMFA began when code matches its secret, storing the recovery code hashes; ok is
 // false for a wrong code. errMFAOn when it's on already, errMFAOff when no setup was started.
-func (m *model) enableMFA(ctx context.Context, key []byte, userID, code string, hashes []string, now time.Time) (ok bool, err error) {
+func (m *model) enableMFA(ctx context.Context, key []byte, userID, code string, hashes []string, now time.Time, md meta) (ok bool, err error) {
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		var sealed string
 		var on bool
@@ -779,9 +820,11 @@ func (m *model) enableMFA(ctx context.Context, key []byte, userID, code string, 
 			return err
 		}
 		ok = true
-		_, err = tx.Exec(ctx, `update user_mfa set enabled_at = now(), last_step = $2, recovery_codes = $3 where user_id = $1`,
-			userID, step, hashes)
-		return err
+		if _, err := tx.Exec(ctx, `update user_mfa set enabled_at = now(), last_step = $2, recovery_codes = $3 where user_id = $1`,
+			userID, step, hashes); err != nil {
+			return err
+		}
+		return addEvent(ctx, tx, userID, "mfa_enabled", "", md)
 	})
 	if err != nil && !errors.Is(err, errMFAOn) && !errors.Is(err, errMFAOff) {
 		err = fmt.Errorf("enable two-factor: %w", err)
@@ -848,9 +891,12 @@ func (m *model) mfa(ctx context.Context, key []byte, userID, code, recovery stri
 
 // disableMFA turns two-factor off when the code or recovery code matches, and signs out every other session (all but
 // the sign-in keepSID; "" keeps none).
-func (m *model) disableMFA(ctx context.Context, key []byte, userID, code, recovery, keepSID string) (bool, error) {
+func (m *model) disableMFA(ctx context.Context, key []byte, userID, code, recovery, keepSID string, md meta) (bool, error) {
 	res, err := m.mfa(ctx, key, userID, code, recovery, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `delete from user_mfa where user_id = $1`, userID); err != nil {
+			return err
+		}
+		if err := addEvent(ctx, tx, userID, "mfa_disabled", "", md); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `delete from refresh_tokens where user_id = $1 and family_id is distinct from $2::uuid`,
@@ -862,6 +908,18 @@ func (m *model) disableMFA(ctx context.Context, key []byte, userID, code, recove
 	return res.ok, err
 }
 
+// mfaRequiredBy returns the name of a workspace the user is a member of that requires two-factor sign-in; "" when none
+// does.
+func (m *model) mfaRequiredBy(ctx context.Context, userID string) (string, error) {
+	var name string
+	err := m.db.QueryRow(ctx, `select w.name from workspace_members m join workspaces w on w.id = m.workspace_id
+		where m.user_id = $1 and w.require_mfa order by w.name limit 1`, userID).Scan(&name)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("find workspace requiring two-factor: %w", err)
+	}
+	return name, nil
+}
+
 // replaceRecovery swaps the user's recovery codes for hashes when code (from the app) matches.
 func (m *model) replaceRecovery(ctx context.Context, key []byte, userID, code string, hashes []string) (bool, error) {
 	res, err := m.mfa(ctx, key, userID, code, "", func(tx pgx.Tx) error {
@@ -869,4 +927,190 @@ func (m *model) replaceRecovery(ctx context.Context, key []byte, userID, code st
 		return err
 	})
 	return res.ok, err
+}
+
+// --- account events, export and deletion ---
+
+// meta is the request an account event records: the client IP ("" when it isn't one) and the browser.
+type meta struct{ ip, ua string }
+
+// addEvent records action on the user's account, on q: the pool, or the change's own transaction.
+func addEvent(ctx context.Context, q interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}, userID, action, detail string, md meta) error {
+	if _, err := q.Exec(ctx, `insert into account_events (user_id, action, detail, ip, user_agent)
+		values ($1, $2, $3, nullif($4, '')::inet, $5)`, userID, action, detail, md.ip, md.ua); err != nil {
+		return fmt.Errorf("record %s: %w", action, err)
+	}
+	return nil
+}
+
+// AccountEvent is one entry of GET /api/me/account-events.
+type AccountEvent struct {
+	ID        string    `json:"id"`
+	Action    string    `json:"action"`
+	Detail    string    `json:"detail"`
+	IP        *string   `json:"ip"`
+	UserAgent string    `json:"user_agent"`
+	At        time.Time `json:"at"`
+}
+
+const eventsPage = 50
+
+// accountEvents returns a page of the user's events, newest first, older than the event before unless it's "", and
+// whether there are more.
+func (m *model) accountEvents(ctx context.Context, userID, before string) ([]AccountEvent, bool, error) {
+	rows, err := m.db.Query(ctx, `
+		select id::text, action, detail, host(ip), user_agent, at from account_events
+		where user_id = $1 and ($2 = '' or id < nullif($2, '')::uuid)
+		order by id desc limit $3`, userID, before, eventsPage+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list account events: %w", err)
+	}
+	es, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AccountEvent, error) {
+		var e AccountEvent
+		err := row.Scan(&e.ID, &e.Action, &e.Detail, &e.IP, &e.UserAgent, &e.At)
+		e.At = e.At.UTC()
+		return e, err
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list account events: %w", err)
+	}
+	if len(es) > eventsPage {
+		return es[:eventsPage], true, nil
+	}
+	return es, false, nil
+}
+
+// exportData is the user's personal data as GET /api/me/export answers it, but notification_settings: never secrets
+// or hashes, and no workspace content. Sessions have no IP or browser: sign-ins don't store them (account_events does).
+func (m *model) exportData(ctx context.Context, userID string) (map[string]json.RawMessage, error) {
+	var b []byte
+	err := m.db.QueryRow(ctx, `
+		select json_build_object(
+		  'exported_at', now(),
+		  'profile', (select json_build_object('id', u.id, 'name', u.name, 'email', u.email, 'created_at', u.created_at,
+		      'terms_accepted_at', u.terms_accepted_at,
+		      'mfa_enabled', exists (select 1 from user_mfa f where f.user_id = u.id and f.enabled_at is not null),
+		      'has_password', u.password_hash is not null, 'google_linked', u.google_sub is not null)
+		    from users u where u.id = $1),
+		  'workspaces', coalesce((select json_agg(json_build_object('slug', w.slug, 'name', w.name, 'role', r.name,
+		      'joined_at', wm.created_at) order by w.name)
+		    from workspace_members wm join workspaces w on w.id = wm.workspace_id join workspace_roles r on r.id = wm.role_id
+		    where wm.user_id = $1), '[]'),
+		  'api_tokens', coalesce((select json_agg(json_build_object('name', name, 'created_at', created_at,
+		      'last_used_at', last_used_at) order by created_at)
+		    from api_tokens where user_id = $1), '[]'),
+		  'sessions', coalesce((select json_agg(json_build_object('created_at', s.created_at, 'last_used_at', s.last_used_at,
+		      'ip', null, 'user_agent', '') order by s.created_at)
+		    from (select min(created_at) created_at, max(created_at) last_used_at from refresh_tokens
+		          where user_id = $1 and expires_at > now() group by family_id) s), '[]'),
+		  'account_events', coalesce((select json_agg(json_build_object('action', action, 'detail', detail,
+		      'ip', host(ip), 'user_agent', user_agent, 'at', at) order by id)
+		    from account_events where user_id = $1), '[]'))`, userID).Scan(&b)
+	if err != nil {
+		return nil, fmt.Errorf("export personal data: %w", err)
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("export personal data: %w", err)
+	}
+	return out, nil
+}
+
+// WorkspaceRef names a workspace that stops an account deletion.
+type WorkspaceRef struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+var (
+	// errSharedWorkspaces: the user is the only admin of workspaces that have other members.
+	errSharedWorkspaces = errors.New("only admin of shared workspaces")
+	// errPaidPlan: the user's plan is still billed.
+	errPaidPlan   = errors.New("paid plan not cancelled")
+	errDeleteCode = errors.New("wrong account deletion code")
+)
+
+// deleteAccount deletes the user with the account deletion code codeHash, in one transaction with the workspaces
+// where they're the only member, and returns their email. It refuses, naming the workspaces, with errSharedWorkspaces
+// or errPaidPlan, and with errDeleteCode for a wrong code (counting the attempt). Shared content stays, its author
+// nulled by the foreign keys.
+func (m *model) deleteAccount(ctx context.Context, userID string, codeHash []byte) (email string, refs []WorkspaceRef, err error) {
+	var refused error
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `select email from users where id = $1 for update`, userID).Scan(&email); err != nil {
+			return err
+		}
+		// Every workspace keeps an admin (keepingAdmin), so this is the user being its only one.
+		rows, err := tx.Query(ctx, `
+			select w.slug, w.name from workspaces w join workspace_members me on me.workspace_id = w.id and me.user_id = $1
+			where exists (select 1 from workspace_members o where o.workspace_id = w.id and o.user_id <> $1)
+			  and not exists (select 1 from workspace_members o join workspace_roles r on r.id = o.role_id
+			                  where o.workspace_id = w.id and o.user_id <> $1 and r.builtin = 'admin')
+			order by w.name`, userID)
+		if err != nil {
+			return err
+		}
+		if refs, err = pgx.CollectRows(rows, pgx.RowToStructByPos[WorkspaceRef]); err != nil {
+			return err
+		}
+		if len(refs) > 0 {
+			refused = errSharedWorkspaces
+			return nil
+		}
+		// The plan is the account's (billing): a subscription that grants access and isn't cancelling is still billed.
+		// Its workspaces are the ones the user made, and those where they're alone.
+		var paid bool
+		if err := tx.QueryRow(ctx, `select exists (select 1 from paddle_subscriptions where user_id = $1
+			and status in ('active', 'trialing', 'past_due') and scheduled_change_action is distinct from 'cancel')`, userID).Scan(&paid); err != nil {
+			return err
+		}
+		if paid {
+			refused = errPaidPlan
+			rows, err := tx.Query(ctx, `
+				select w.slug, w.name from workspaces w join workspace_members me on me.workspace_id = w.id and me.user_id = $1
+				where w.created_by = $1 or not exists (select 1 from workspace_members o where o.workspace_id = w.id and o.user_id <> $1)
+				order by w.name`, userID)
+			if err != nil {
+				return err
+			}
+			refs, err = pgx.CollectRows(rows, pgx.RowToStructByPos[WorkspaceRef])
+			return err
+		}
+		if ok, err := useUserCode(ctx, tx, userID, purposeAccountDelete, codeHash); err != nil || !ok {
+			refused = errDeleteCode
+			return err // commit the counted attempt
+		}
+		rows, err = tx.Query(ctx, `
+			select w.id::text, w.slug from workspaces w join workspace_members me on me.workspace_id = w.id and me.user_id = $1
+			where not exists (select 1 from workspace_members o where o.workspace_id = w.id and o.user_id <> $1)`, userID)
+		if err != nil {
+			return err
+		}
+		alone, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (workspace.Workspace, error) {
+			var ws workspace.Workspace
+			err := row.Scan(&ws.ID, &ws.Slug)
+			return ws, err
+		})
+		if err != nil {
+			return err
+		}
+		for _, ws := range alone {
+			if err := workspace.Delete(ctx, tx, &ws, userID); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, `delete from users where id = $1`, userID); err != nil {
+			return err
+		}
+		if err := realtime.Publish(ctx, tx, realtime.SessionRevoked(userID)); err != nil {
+			return err
+		}
+		return realtime.Publish(ctx, tx, realtime.AdminUsers(userID))
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("delete account: %w", err)
+	}
+	return email, refs, refused
 }

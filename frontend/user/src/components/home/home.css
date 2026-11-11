@@ -6,6 +6,7 @@
 /* Laptop and up: Home fits the viewport under the navbar; long blocks scroll inside their card. */
 @media (min-width: 1024px) and (min-height: 600px) {
   main.home { height: calc(100dvh - 56px); grid-template-rows: auto minmax(0, 1fr); gap: 16px; padding-block: 24px; }
+  main.home:has(> .home-card) { grid-template-rows: auto auto minmax(0, 1fr); }
   .home-grid { min-height: 0; align-items: stretch; gap: 16px; }
   .home-grid > div { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
   .home-grid .home-card { display: flex; flex-direction: column; flex: none; max-height: 40%; }

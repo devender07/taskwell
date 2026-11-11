@@ -137,6 +137,12 @@ func TestTemplates(t *testing.T) {
 	if _, err := pool.Exec(ctx, `update issue_templates set next_on = $2 where id = $1`, tp.ID, utcToday().AddDate(0, 0, -7)); err != nil {
 		t.Fatal(err)
 	}
+	// Templates on for Pro only, the owner is on Free: nothing yet.
+	h.Plans = func(context.Context) []string { return []string{"pro"} }
+	if created, err := h.RunDue(ctx, utcToday()); err != nil || created != 0 {
+		t.Fatalf("plan without templates: created %d, %v", created, err)
+	}
+	h.Plans = nil
 	for range 2 {
 		if _, err := h.RunDue(ctx, utcToday()); err != nil {
 			t.Fatal(err)

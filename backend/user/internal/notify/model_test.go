@@ -127,7 +127,7 @@ func TestDigestTimezone(t *testing.T) {
 	}
 	due, notDue := dbtest.User(t, pool, "Due"), dbtest.User(t, pool, "Later")
 	for user, tz := range map[string]string{due: past, notDue: before} {
-		if _, err := (&model{db: pool}).update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, nil, nil, &tz); err != nil {
+		if _, err := (&model{db: pool}).update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, nil, nil, nil, &tz); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -155,7 +155,7 @@ func TestDigestTimezone(t *testing.T) {
 	if sent(notDue) {
 		t.Errorf("user in %s (before %d:00) got a digest", before, hour)
 	}
-	if _, err := m.update(ctx, due, nil, nil, nil, nil, nil, nil, nil, nil, ptr("Not/AZone")); err != errBadTimezone {
+	if _, err := m.update(ctx, due, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("Not/AZone")); err != errBadTimezone {
 		t.Errorf("unknown timezone: %v, want errBadTimezone", err)
 	}
 }
@@ -182,16 +182,16 @@ func TestTimezoneUnset(t *testing.T) {
 	if got := tz(m.settings(ctx, user)); got != "null" {
 		t.Fatalf("no settings: timezone %s, want null", got)
 	}
-	if got := tz(m.update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, nil, nil, nil)); got != "null" {
+	if got := tz(m.update(ctx, user, ptr("digest"), nil, nil, nil, nil, nil, nil, nil, nil, nil)); got != "null" {
 		t.Fatalf("first update without a zone: %s, want null", got)
 	}
-	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, nil, nil, ptr("Europe/Berlin"))); got != "Europe/Berlin" {
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr("Europe/Berlin"))); got != "Europe/Berlin" {
 		t.Fatalf("set: %s", got)
 	}
-	if got := tz(m.update(ctx, user, nil, ptr(false), nil, nil, nil, nil, nil, nil, nil)); got != "Europe/Berlin" {
+	if got := tz(m.update(ctx, user, nil, ptr(false), nil, nil, nil, nil, nil, nil, nil, nil)); got != "Europe/Berlin" {
 		t.Fatalf("update without a zone changed it to %s", got)
 	}
-	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, nil, nil, ptr(""))); got != "null" {
+	if got := tz(m.update(ctx, user, nil, nil, nil, nil, nil, nil, nil, nil, nil, ptr(""))); got != "null" {
 		t.Fatalf(`"" left %s, want null`, got)
 	}
 	// Hour 0 UTC has always passed today, so a null-zone digest user is due.
@@ -308,7 +308,7 @@ func TestChatEmail(t *testing.T) {
 	if got := queued(); len(got) != 1 || got[0] != "Ann mentioned you in a message" {
 		t.Errorf("chat mention: %v", got)
 	}
-	if _, err := m.update(ctx, bob, nil, nil, nil, nil, nil, ptr(false), nil, nil, nil); err != nil {
+	if _, err := m.update(ctx, bob, nil, nil, nil, nil, nil, ptr(false), nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	send("chat_mention")

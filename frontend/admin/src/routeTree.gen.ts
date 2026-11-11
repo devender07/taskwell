@@ -15,8 +15,10 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminsRouteImport } from './routes/_app/admins'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppFeaturesRouteImport } from './routes/_app/features'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 import { Route as AppWorkspacesRouteImport } from './routes/_app/workspaces'
+import { Route as AppUsersIdRouteImport } from './routes/_app/users_.$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -47,6 +49,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFeaturesRoute = AppFeaturesRouteImport.update({
+  id: '/features',
+  path: '/features',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppUsersRoute = AppUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -57,6 +64,11 @@ const AppWorkspacesRoute = AppWorkspacesRouteImport.update({
   path: '/workspaces',
   getParentRoute: () => AppRoute,
 } as any)
+const AppUsersIdRoute = AppUsersIdRouteImport.update({
+  id: '/users_/$id',
+  path: '/users/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -64,17 +76,21 @@ export interface FileRoutesByFullPath {
   '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
+  '/features': typeof AppFeaturesRoute
   '/users': typeof AppUsersRoute
   '/workspaces': typeof AppWorkspacesRoute
+  '/users/$id': typeof AppUsersIdRoute
 }
 export interface FileRoutesByTo {
   '/signin': typeof authSigninRoute
   '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
+  '/features': typeof AppFeaturesRoute
   '/users': typeof AppUsersRoute
   '/workspaces': typeof AppWorkspacesRoute
   '/': typeof AppIndexRoute
+  '/users/$id': typeof AppUsersIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -83,9 +99,11 @@ export interface FileRoutesById {
   '/_app/admins': typeof AppAdminsRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/config': typeof AppConfigRoute
+  '/_app/features': typeof AppFeaturesRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/workspaces': typeof AppWorkspacesRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/users_/$id': typeof AppUsersIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -95,17 +113,21 @@ export interface FileRouteTypes {
     | '/admins'
     | '/audit'
     | '/config'
+    | '/features'
     | '/users'
     | '/workspaces'
+    | '/users/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/signin'
     | '/admins'
     | '/audit'
     | '/config'
+    | '/features'
     | '/users'
     | '/workspaces'
     | '/'
+    | '/users/$id'
   id:
     | '__root__'
     | '/_app'
@@ -113,9 +135,11 @@ export interface FileRouteTypes {
     | '/_app/admins'
     | '/_app/audit'
     | '/_app/config'
+    | '/_app/features'
     | '/_app/users'
     | '/_app/workspaces'
     | '/_app/'
+    | '/_app/users_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -167,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/features': {
+      id: '/_app/features'
+      path: '/features'
+      fullPath: '/features'
+      preLoaderRoute: typeof AppFeaturesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/users': {
       id: '/_app/users'
       path: '/users'
@@ -181,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspacesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/users_/$id': {
+      id: '/_app/users_/$id'
+      path: '/users/$id'
+      fullPath: '/users/$id'
+      preLoaderRoute: typeof AppUsersIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -188,18 +226,22 @@ interface AppRouteChildren {
   AppAdminsRoute: typeof AppAdminsRoute
   AppAuditRoute: typeof AppAuditRoute
   AppConfigRoute: typeof AppConfigRoute
+  AppFeaturesRoute: typeof AppFeaturesRoute
   AppUsersRoute: typeof AppUsersRoute
   AppWorkspacesRoute: typeof AppWorkspacesRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppUsersIdRoute: typeof AppUsersIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminsRoute: AppAdminsRoute,
   AppAuditRoute: AppAuditRoute,
   AppConfigRoute: AppConfigRoute,
+  AppFeaturesRoute: AppFeaturesRoute,
   AppUsersRoute: AppUsersRoute,
   AppWorkspacesRoute: AppWorkspacesRoute,
   AppIndexRoute: AppIndexRoute,
+  AppUsersIdRoute: AppUsersIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,10 +26,12 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/aitest"
 	"github.com/devender07/taskwell/backend/user/internal/analytics"
 	"github.com/devender07/taskwell/backend/user/internal/auth"
+	"github.com/devender07/taskwell/backend/user/internal/billing"
 	"github.com/devender07/taskwell/backend/user/internal/chat"
 	"github.com/devender07/taskwell/backend/user/internal/cycle"
 	"github.com/devender07/taskwell/backend/user/internal/db"
 	"github.com/devender07/taskwell/backend/user/internal/export"
+	"github.com/devender07/taskwell/backend/user/internal/feature"
 	"github.com/devender07/taskwell/backend/user/internal/feedback"
 	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/gitlink"
@@ -37,6 +40,8 @@ import (
 	"github.com/devender07/taskwell/backend/user/internal/note"
 	"github.com/devender07/taskwell/backend/user/internal/notify"
 	"github.com/devender07/taskwell/backend/user/internal/oauth"
+	"github.com/devender07/taskwell/backend/user/internal/onboarding"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/project"
 	"github.com/devender07/taskwell/backend/user/internal/projectfile"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
@@ -52,6 +57,7 @@ import (
 func main() {
 	migrateOnly := flag.Bool("migrate", false, "apply the database migrations, then exit")
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the running service at METRICS_ADDR is ready, else 1")
+	backfill := flag.Bool("paddle-backfill", false, "copy Paddle's transactions, adjustments and subscription prices into the database, then exit")
 	flag.Parse()
 	prod := os.Getenv("APP_ENV") == "production"
 	obs.Setup(prod)
@@ -97,6 +103,10 @@ func main() {
 		}
 	}
 
+	// The limits an admin set, before anything is served; Watch (below) keeps them fresh.
+	if err := plan.Load(context.Background(), pool); err != nil {
+		obs.Fatal("startup", "err", err)
+	}
 	cfg := sysconfig.New(pool)
 	base, err := cfg.Get(context.Background(), "app_base_url")
 	if err != nil {
@@ -108,6 +118,7 @@ func main() {
 	logConfig(prod, addr, dbURL, base, secret != nil)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	features := feature.New(cfg, pool)
 	maxAttempts, err := strconv.Atoi(env.Get("MAIL_MAX_ATTEMPTS", "8"))
 	if err != nil || maxAttempts < 1 {
 		obs.Fatal("MAIL_MAX_ATTEMPTS must be a number of at least 1")
@@ -128,6 +139,7 @@ func main() {
 		return id, err
 	}
 	wsH := workspace.New(pool, authenticate, mailer, cfg)
+	wsH.Reauthed = authH.Reauthed
 	wsH.Register(mux)
 	project.New(pool, authenticate, wsH.Member).Register(mux)
 	issueH := issue.New(pool, authenticate, wsH.Member)
@@ -138,12 +150,23 @@ func main() {
 	noteH := note.New(pool, authenticate, wsH.Member)
 	noteH.Register(mux)
 	templateH := template.New(pool, authenticate, wsH.Member)
+	features.Register(mux, authenticate, wsH.Member)
 	templateH.Register(mux)
 	jwtSecret := string(secret)
 	if jwtSecret == "" {
 		if jwtSecret, err = cfg.Get(context.Background(), "jwt_secret"); err != nil {
 			obs.Fatal("startup", "err", err)
 		}
+	}
+	billingH := billing.New(pool, cfg, mailer, jwtSecret, authenticate, wsH.Member)
+	if *backfill {
+		n, err := billingH.Backfill(context.Background())
+		if err != nil {
+			obs.Fatal("paddle-backfill", "err", err)
+		}
+		fmt.Printf("Stored %d transactions and %d adjustments; set the price of %d subscriptions.\n",
+			n.Transactions, n.Adjustments, n.Subscriptions)
+		return
 	}
 	mfaSecret := os.Getenv("MFA_ENCRYPTION_KEY") // the admin app reads the same variable
 	if prod && len(mfaSecret) < 32 {
@@ -162,6 +185,9 @@ func main() {
 		authenticate, wsH.Member).Register(mux)
 	feedback.New(pool, authenticate, wsH.Member).Register(mux)
 	analytics.New(pool, authenticate, wsH.Member).Register(mux)
+	onboarding.New(pool, authenticate, wsH.Member, func(ctx context.Context, planID string) bool {
+		return features.Enabled(ctx, feature.Integrations, planID)
+	}).Register(mux)
 	oauthH := oauth.New(pool, cfg, authenticate)
 	oauthH.APIURL = apiURL
 	oauthH.Register(mux)
@@ -173,6 +199,8 @@ func main() {
 	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: allowPrivate},
 		authenticate, wsH.Member).Register(mux)
 	webhookH := webhook.New(pool, webhook.Options{Key: gitKey, AllowHTTP: !prod, AllowPrivate: allowPrivate}, authenticate, wsH.Member)
+	webhookH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Webhooks) }
+	templateH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Templates) }
 	webhookH.Register(mux)
 	// Background work stops after the server has drained (see shutdown), so it's on its own context.
 	work, stopWork := context.WithCancel(context.Background())
@@ -199,6 +227,9 @@ func main() {
 			return s, "", nil
 		})
 	rtH.JoinNote = func(ctx context.Context, c *realtime.Conn, userID, slug, id string) (realtime.Collab, string, error) {
+		if !features.InWorkspace(ctx, feature.Notes, slug) {
+			return nil, feature.Off, nil
+		}
 		s, msg, err := noteH.Join(ctx, c, userID, slug, id)
 		if s == nil {
 			return nil, msg, err
@@ -213,7 +244,13 @@ func main() {
 	rtH.AppOrigin = authH.AppOrigin
 	chatH := chat.New(pool, authenticate, wsH.Member)
 	chatH.Register(mux)
-	rtH.ChatAudience = chatH.Audience
+	rtH.ChatAudience = func(ctx context.Context, userID, chatID string) ([]string, error) {
+		aud, err := chatH.Audience(ctx, userID, chatID) // checks chatID is a UUID
+		if err != nil || len(aud) == 0 || !features.InChat(ctx, feature.Chat, chatID) {
+			return nil, err // nobody: typing is dropped
+		}
+		return aud, nil
+	}
 	rtH.Register(mux)
 	wg.Go(func() { rtH.Listen(work) })
 	wg.Go(func() { rtH.Presence(work) })
@@ -231,10 +268,13 @@ func main() {
 	fileH.Register(mux)
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
+	billingH.Register(mux)
 	sweeper := sweep.New(pool, files)
 	wg.Go(func() { sweeper.Run(work, duration("SWEEP_INTERVAL", 24*time.Hour)) })
 	wg.Go(func() { templateH.Run(work, duration("TEMPLATE_INTERVAL", 5*time.Minute)) })
 	wg.Go(func() { cycleH.Run(work, duration("CYCLE_POINTS_INTERVAL", time.Hour)) })
+	wg.Go(func() { billingH.Run(work, duration("PLAN_GRACE_INTERVAL", time.Minute)) })
+	wg.Go(func() { plan.Watch(work, pool, 10*time.Second) })
 
 	internal := http.NewServeMux()
 	internal.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +300,7 @@ func main() {
 	})
 	metrics := &http.Server{Addr: metricsAddr, Handler: internal, ReadHeaderTimeout: 5 * time.Second}
 
-	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(mux))))),
+	srv := &http.Server{Addr: addr, Handler: obs.Middleware(cors.Allow(authH.AppOrigin, withTimeouts(authH.CheckOrigin(realtime.WithOrigin(features.Middleware(features.RequireMFA(authenticate, mux))))))),
 		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	serve(srv, metrics, func() { stopWork(); wg.Wait() })
 }

@@ -1,10 +1,11 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { Avatar } from '@taskwell/shared/avatar'
-import { ApiError, avatarSrc, memberAnalyticsPath, type MemberAnalytics } from '@/api'
+import { ApiError, avatarSrc, memberAnalyticsPath, type MemberAnalytics, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { MemberCards, useRefetchEvery } from '@/components/analytics/member-analytics'
 
 export const Route = createFileRoute('/_app/$workspace/_main/members/$id')({
+  beforeLoad: requireFeature('team'),
   loader: (ctx) =>
     loaderApi<MemberAnalytics>(ctx, memberAnalyticsPath(ctx.params.workspace, ctx.params.id)).then(
       (data) => ({ data, denied: null }),

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/issue"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 )
 
@@ -249,9 +250,10 @@ func null(s string) *string {
 // --- recurring ---
 
 // due returns the ids of the templates that repeat, aren't paused and are due on or before today.
-func (m *model) due(ctx context.Context, today time.Time) ([]string, error) {
+func (m *model) due(ctx context.Context, today time.Time, plans []string) ([]string, error) {
 	rows, err := m.db.Query(ctx, `select id::text from issue_templates
-		where repeat_every is not null and not paused and next_on <= $1 order by next_on, id`, today)
+		where repeat_every is not null and not paused and next_on <= $1
+		  and ($2::text[] is null or `+plan.SQL("workspace_id")+` = any($2)) order by next_on, id`, today, plans)
 	if err != nil {
 		return nil, fmt.Errorf("due templates: %w", err)
 	}

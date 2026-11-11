@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
@@ -28,6 +29,7 @@ var (
 	errTaken     = errors.New("workspace slug taken")
 	errNoCreate  = errors.New("not allowed to create workspaces")
 	errLastAdmin = errors.New("last admin")
+	errFull      = errors.New("workspace full")
 	errNameTaken = errors.New("role name taken")
 )
 
@@ -45,10 +47,13 @@ type Workspace struct {
 	Role        RoleRef  `json:"role"`
 	Permissions []string `json:"permissions"`
 	Guest       bool     `json:"guest"`
+	RequireMFA  bool     `json:"require_mfa"`
+	MFABlocked  bool     `json:"mfa_blocked"` // the workspace requires two-factor and the member has none
 }
 
 // wsCols selects a Workspace from workspaces w and workspace_roles r; scan it with scanWorkspace.
-const wsCols = `w.id::text, w.name, w.slug, r.id::text, r.name, coalesce(r.builtin, ''), r.permissions`
+const wsCols = `w.id::text, w.name, w.slug, r.id::text, r.name, coalesce(r.builtin, ''), r.permissions, w.require_mfa,
+	w.require_mfa and not exists (select 1 from user_mfa where user_id = m.user_id and enabled_at is not null)`
 
 // wsFrom joins a member m to their workspace w and role r.
 const wsFrom = `workspace_members m join workspaces w on w.id = m.workspace_id join workspace_roles r on r.id = m.role_id`
@@ -56,7 +61,7 @@ const wsFrom = `workspace_members m join workspaces w on w.id = m.workspace_id j
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var ws Workspace
 	var builtin string
-	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions)
+	err := row.Scan(&ws.ID, &ws.Name, &ws.Slug, &ws.Role.ID, &ws.Role.Name, &builtin, &ws.Permissions, &ws.RequireMFA, &ws.MFABlocked)
 	ws.Permissions, ws.Guest = Effective(builtin, ws.Permissions), builtin == roleGuest
 	return ws, err
 }
@@ -80,10 +85,33 @@ func (m *model) list(ctx context.Context, userID string) ([]Workspace, error) {
 	return ws, nil
 }
 
-// create inserts the workspace with its built-in roles and makes the user its admin.
-// Returns errTaken on a duplicate slug.
+// create inserts the workspace with its built-in roles and makes the user its admin. Returns errNoCreate without the
+// permission, plan.Exceeded when the user already owns as many workspaces as their plan allows, errTaken on a
+// duplicate slug.
 func (m *model) create(ctx context.Context, userID, name, slug string) (Workspace, error) {
-	return create(ctx, m.db, userID, name, slug)
+	var ws Workspace
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var can bool
+		var id string
+		var owned int
+		// The user row lock makes concurrent creates count in turn.
+		if err := tx.QueryRow(ctx, `select can_create_workspace(u.id), u.plan,
+			        (select count(*) from workspaces where created_by = u.id)
+			   from users u where u.id = $1 for no key update`, userID).Scan(&can, &id, &owned); err != nil {
+			return fmt.Errorf("check workspace limit: %w", err)
+		}
+		p, _ := plan.Get(id)
+		switch {
+		case !can:
+			return errNoCreate
+		case p.Workspaces > 0 && owned >= p.Workspaces:
+			return plan.Exceeded(fmt.Sprintf("Your plan allows %s. Upgrade to create more.", plan.Count(p.Workspaces, "workspace")))
+		}
+		var err error
+		ws, err = create(ctx, tx, userID, name, slug)
+		return err
+	})
+	return ws, err
 }
 
 // create runs in its own transaction on conn, or a savepoint when conn is a pgx.Tx (so errTaken leaves the caller's tx usable).
@@ -157,12 +185,28 @@ func event(ws *Workspace, actorID, kind string, paths ...string) realtime.Event 
 	return realtime.Event{Kind: kind, Workspace: ws.Slug, Actor: actorID, Audience: realtime.ToWorkspace(ws.ID), Paths: paths}
 }
 
-// update renames the workspace and changes its slug, by the actor. Returns errTaken when the new slug belongs to
-// another workspace.
-func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug string) error {
+// hasMFA reports whether the user has two-factor sign-in on.
+func (m *model) hasMFA(ctx context.Context, userID string) (bool, error) {
+	var on bool
+	if err := m.db.QueryRow(ctx, `select exists (select 1 from user_mfa where user_id = $1 and enabled_at is not null)`,
+		userID).Scan(&on); err != nil {
+		return false, fmt.Errorf("read two-factor: %w", err)
+	}
+	return on, nil
+}
+
+// update renames the workspace, changes its slug and whether it requires two-factor sign-in, by the actor. Returns
+// errTaken when the new slug belongs to another workspace.
+func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug string, requireMFA bool) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3 where id = $1`, ws.ID, name, slug); err != nil {
+		if _, err := tx.Exec(ctx, `update workspaces set name = $2, slug = $3, require_mfa = $4 where id = $1`,
+			ws.ID, name, slug, requireMFA); err != nil {
 			return err
+		}
+		if requireMFA != ws.RequireMFA {
+			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.require_mfa_changed", ws.Name, map[string]any{"to": requireMFA}); err != nil {
+				return err
+			}
 		}
 		if name != ws.Name {
 			if err := wsaudit.Record(ctx, tx, ws.ID, actorID, "workspace.renamed", name, map[string]any{"from": ws.Name, "to": name}); err != nil {
@@ -194,21 +238,23 @@ func (m *model) update(ctx context.Context, ws *Workspace, actorID, name, slug s
 
 // delete removes the workspace, by the actor; members, roles and invites go with it (on delete cascade).
 func (m *model) delete(ctx context.Context, ws *Workspace, actorID string) error {
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `delete from workspaces where id = $1`, ws.ID); err != nil {
-			return err
-		}
-		e := event(ws, actorID, "workspace.removed", "/workspaces")
-		e.WorkspaceID = ws.ID
-		if err := realtime.Publish(ctx, tx, e); err != nil {
-			return err
-		}
-		return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
-	})
-	if err != nil {
+	if err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error { return Delete(ctx, tx, ws, actorID) }); err != nil {
 		return fmt.Errorf("delete workspace: %w", err)
 	}
 	return nil
+}
+
+// Delete is delete in tx; deleting an account uses it for the workspaces where the account is the only member.
+func Delete(ctx context.Context, tx pgx.Tx, ws *Workspace, actorID string) error {
+	if _, err := tx.Exec(ctx, `delete from workspaces where id = $1`, ws.ID); err != nil {
+		return err
+	}
+	e := event(ws, actorID, "workspace.removed", "/workspaces")
+	e.WorkspaceID = ws.ID
+	if err := realtime.Publish(ctx, tx, e); err != nil {
+		return err
+	}
+	return realtime.Publish(ctx, tx, realtime.AdminWorkspaces(actorID))
 }
 
 // --- members and invites ---
@@ -366,6 +412,41 @@ func (m *model) isMember(ctx context.Context, workspaceID, email string) (bool, 
 		return false, fmt.Errorf("check member: %w", err)
 	}
 	return ok, nil
+}
+
+// seatsFull reports whether the workspace's members plus its pending invites to other emails than email fill its
+// plan, and the plan's member limit.
+// ponytail: concurrent invites each see the same count and can overshoot by a few; joining still stops at the limit.
+func (m *model) seatsFull(ctx context.Context, workspaceID, email string) (bool, int, error) {
+	p, err := plan.ForWorkspace(ctx, m.db, workspaceID)
+	if err != nil || p.Members == 0 {
+		return false, 0, err
+	}
+	var n int
+	if err := m.db.QueryRow(ctx,
+		`select (select count(*) from workspace_members where workspace_id = $1)
+		      + (select count(*) from workspace_invites where workspace_id = $1 and email <> $2 and expires_at > now())`,
+		workspaceID, email).Scan(&n); err != nil {
+		return false, 0, fmt.Errorf("count seats: %w", err)
+	}
+	return n >= p.Members, p.Members, nil
+}
+
+// roomFor locks the workspace row in tx (so concurrent joins count in turn) and returns errFull when its members
+// fill its owner's plan and the user isn't one of them.
+func roomFor(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
+	var id string
+	var n int
+	if err := tx.QueryRow(ctx, `select coalesce(u.plan, 'free'),
+		        (select count(*) from workspace_members m where m.workspace_id = w.id and m.user_id <> $2)
+		   from workspaces w left join users u on u.id = w.created_by where w.id = $1 for no key update of w`,
+		workspaceID, userID).Scan(&id, &n); err != nil {
+		return fmt.Errorf("check room: %w", err)
+	}
+	if p, ok := plan.Get(id); ok && p.Members > 0 && n >= p.Members {
+		return errFull
+	}
+	return nil
 }
 
 // invitesChanged is the event for a change to the workspace's invites (the members page lists them).
@@ -567,8 +648,11 @@ func (m *model) accept(ctx context.Context, userID string, tokenHash []byte) (*W
 }
 
 // join adds the user to the invite's workspace with the invite's role (keeping any existing role), and a guest to its
-// projects, and deletes the invite with its invite notifications, in tx. Returns the workspace as the user sees it.
+// projects (errFull when the plan's members are taken), and deletes the invite with its invite notifications, in tx. Returns the workspace as the user sees it.
 func join(ctx context.Context, tx pgx.Tx, userID, inviteID, workspaceID string) (*Workspace, error) {
+	if err := roomFor(ctx, tx, workspaceID, userID); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx,
 		`insert into workspace_members (workspace_id, user_id, role_id)
 		 select i.workspace_id, $2, coalesce(i.role_id, r.id)

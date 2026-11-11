@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
@@ -127,9 +128,30 @@ func (m *model) create(ctx context.Context, e realtime.Event, wsID, id, url stri
 
 // update changes the fields that aren't nil; false when the webhook isn't the workspace's.
 func (m *model) update(ctx context.Context, e realtime.Event, wsID, id string, url *string, events []string, active *bool) (bool, error) {
-	return m.change(ctx, e,
-		`update webhooks set url = coalesce($3, url), events = coalesce($4, events), active = coalesce($5, active)
-		 where workspace_id = $1 and id = $2`, wsID, id, url, events, active)
+	found := false
+	err := publishing(ctx, m.db, e, func(tx pgx.Tx) error {
+		var from, to string
+		err := tx.QueryRow(ctx,
+			`update webhooks w set url = coalesce($3, w.url), events = coalesce($4, w.events), active = coalesce($5, w.active)
+			   from webhooks o where o.id = w.id and w.workspace_id = $1 and w.id = $2 returning o.url, w.url`,
+			wsID, id, url, events, active).Scan(&from, &to)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		detail := map[string]any{}
+		if from != to {
+			detail["from"], detail["to"] = auditHost(from), auditHost(to)
+		}
+		if active != nil {
+			detail["active"] = *active
+		}
+		return wsaudit.Record(ctx, tx, wsID, e.Actor, "webhook.updated", auditHost(to), detail)
+	})
+	return found, err
 }
 
 func (m *model) setSecret(ctx context.Context, e realtime.Event, wsID, id, sealed string) (bool, error) {
@@ -221,7 +243,7 @@ type job struct {
 
 // claim takes the oldest due delivery of an active webhook, counting the attempt and pushing next_at past the send
 // (so a crashed send is retried), and commits before the send; nil when nothing is due.
-func (m *model) claim(ctx context.Context) (*job, error) {
+func (m *model) claim(ctx context.Context, plans []string) (*job, error) {
 	var j job
 	err := m.db.QueryRow(ctx,
 		`update webhook_deliveries d set attempts = d.attempts + 1, next_at = now() + interval '1 minute'
@@ -229,8 +251,9 @@ func (m *model) claim(ctx context.Context) (*job, error) {
 		 where w.id = d.webhook_id and d.id = (
 		   select d2.id from webhook_deliveries d2 join webhooks w2 on w2.id = d2.webhook_id
 		   where d2.status = 'pending' and d2.next_at <= now() and w2.active
+		     and ($1::text[] is null or `+plan.SQL("w2.workspace_id")+` = any($1))
 		   order by d2.next_at limit 1 for update of d2 skip locked)
-		 returning d.id::text, w.id::text, w.workspace_id::text, s.slug, d.event, w.url, w.secret, d.payload::text, d.attempts`).
+		 returning d.id::text, w.id::text, w.workspace_id::text, s.slug, d.event, w.url, w.secret, d.payload::text, d.attempts`, plans).
 		Scan(&j.id, &j.webhookID, &j.wsID, &j.slug, &j.event, &j.url, &j.sealed, &j.payload, &j.attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

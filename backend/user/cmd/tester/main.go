@@ -19,6 +19,7 @@ import (
 	"github.com/devender07/taskwell/backend/shared/obs"
 	"github.com/devender07/taskwell/backend/user/internal/aitest"
 	"github.com/devender07/taskwell/backend/user/internal/db"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
@@ -74,6 +75,7 @@ func main() {
 	slog.Info("tester running", "app_env", map[bool]string{true: "production", false: "development"}[prod], "proxy_addr", proxySrv.Addr,
 		"proxy_url", o.ProxyURL, "chrome_url", o.ChromeURL, "browsers", browsers, "live_url", o.LiveURL,
 		"anthropic_api_key", apiKey != "", "allow_private_sites", allowPrivate)
+	go plan.Watch(context.Background(), pool, 10*time.Second) // the AI budget of each plan
 	cfg := sysconfig.New(pool)
 	o.Files = storage.New(cfg)
 	runner := aitest.NewRunner(pool, cfg, o)

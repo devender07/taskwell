@@ -1,7 +1,7 @@
 import { Link, notFound } from '@tanstack/react-router'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@taskwell/shared/button'
-import { ApiError, can, type Issue, type Label, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
+import { ApiError, can, featureOn, useFeatures, type Issue, type Label, type Project, type Status, type Timeline as TimelineData, type User, type Workspace, workspacePath } from '@/api'
 import { pruneRecent, recordRecent } from '@/components/home/home'
 import { Description, Viewers } from '@/components/issues/description'
 import { IssueFiles, useIssueFiles } from '@/components/issues/issue-files'
@@ -46,6 +46,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
   const [editing, setEditing] = useState(false)
   const [viewers, setViewers] = useState<Viewer[]>([])
   const files = useIssueFiles(workspace.slug, issue)
+  const features = useFeatures()
   const create = can(workspace, 'issues.create') && !project.archived
   useEffect(() => recordRecent(workspace.slug, { identifier: issue.identifier, title: issue.title }), [workspace.slug, issue.identifier, issue.title])
 
@@ -90,20 +91,36 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
           )}
           <Description key={`description-${issue.id}`} workspace={workspace} issue={issue} user={user} people={people} onViewers={setViewers} onFiles={files.upload} />
           <IssueFiles state={files} />
-          <TestsSection key={`tests-${issue.id}`} workspace={workspace} issue={issue} />
+          {featureOn(features, 'ai_testing') ? <TestsSection key={`tests-${issue.id}`} workspace={workspace} issue={issue} /> : null}
           {issue.parent ? null : (
             <SubIssues workspace={workspace} issue={issue} project={project} create={create} statuses={statuses} labels={labels} people={people} />
           )}
           <Relations key={issue.id} workspace={workspace} issue={issue} />
-          <PullRequests issue={issue} />
-          <IssueFeedback key={`feedback-${issue.id}`} workspace={workspace} identifier={issue.identifier} />
+          {featureOn(features, 'integrations') ? <PullRequests issue={issue} /> : null}
+          {featureOn(features, 'feedback') ? <IssueFeedback key={`feedback-${issue.id}`} workspace={workspace} identifier={issue.identifier} /> : null}
           <Timeline key={`timeline-${issue.id}`} workspace={workspace} issue={issue} project={project} timeline={timeline} people={people} />
         </article>
-        <aside className="issue-aside grid gap-4">
+        <aside ref={stickToFit} className="issue-aside grid gap-4">
           <IssueProperties key={issue.id} workspace={workspace} issue={issue} statuses={statuses} labels={labels} people={people} />
           {issue.can_delete ? <DeleteIssue workspace={workspace} issue={issue} /> : null}
         </aside>
       </div>
     </div>
   )
+}
+
+// The aside sticks 80px down, under the navbar. Taller than the window, it sticks by its bottom edge instead, so the
+// page scroll (never an inner one) reaches all of it.
+function stickToFit(el: HTMLElement | null) {
+  if (!el) return
+  const fit = () => {
+    el.style.top = `${Math.min(80, innerHeight - el.offsetHeight - 24)}px`
+  }
+  const ro = new ResizeObserver(fit)
+  ro.observe(el)
+  addEventListener('resize', fit)
+  return () => {
+    ro.disconnect()
+    removeEventListener('resize', fit)
+  }
 }

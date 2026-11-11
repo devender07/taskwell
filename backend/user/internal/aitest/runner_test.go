@@ -44,7 +44,37 @@ func testIssue(t *testing.T, pool *pgxpool.Pool) (userID, wsID, issueID string) 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	dbtest.SetPlan(t, pool, userID, "pro") // Free has no AI budget
 	return userID, wsID, issueID
+}
+
+// TestAccountLimit: the AI budget is the plan's, capped by ai_test_monthly_limit_usd, and spend counts across every
+// workspace the owner created.
+func TestAccountLimit(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	ann, wsID, _ := testIssue(t, pool)
+	cfg := sysconfig.New(pool)
+	for plan, want := range map[string]float64{"free": 0, "starter": 1, "pro": 3, "advanced": 15} {
+		dbtest.SetPlan(t, pool, ann, plan)
+		if got, err := limitUSD(ctx, cfg, pool, wsID); err != nil || got != want {
+			t.Errorf("%s limit = %v, %v; want %v", plan, got, err, want)
+		}
+	}
+	var other string
+	if err := pool.QueryRow(ctx, `insert into workspaces (name, slug, created_by) values ('Second', 'second-' || left($1, 8), $1::uuid)
+		returning id::text`, ann).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	bob, bobWS, _ := testIssue(t, pool)
+	_ = bob
+	if _, err := pool.Exec(ctx, `insert into ai_usage (workspace_id, cost_micros) values ($1, 1500000), ($2, 700000), ($3, 9000000)`,
+		wsID, other, bobWS); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := spent(ctx, pool, wsID); err != nil || n != 2200000 {
+		t.Errorf("spent = %d, %v; want the account's 2200000", n, err)
+	}
 }
 
 // TestClaim checks the per-workspace cap on running AI runs and the takeover of a run a crashed tester left.
@@ -70,7 +100,7 @@ func TestClaim(t *testing.T) {
 	claimAll := func() int {
 		n := 0
 		for {
-			id, err := m.claim(ctx, 2, "")
+			id, err := m.claim(ctx, 2, "", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -181,6 +211,11 @@ func TestRecordedRuns(t *testing.T) {
 	if body := do("POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"ai"}}, 409); !strings.Contains(body, msgLimit) {
 		t.Errorf("ai run at limit 0: %s", body)
 	}
+	dbtest.SetPlan(t, pool, ann, "free")
+	if body := do("POST", "/issues/ENG-1/test-runs", url.Values{"kind": {"ai"}}, 402); !strings.Contains(body, msgNoAI) {
+		t.Errorf("ai run on Free: %s", body)
+	}
+	dbtest.SetPlan(t, pool, ann, "pro")
 	var run Run
 	if err := json.Unmarshal([]byte(do("POST", "/issues/ENG-1/test-runs", replay, 201)), &run); err != nil {
 		t.Fatal(err)
@@ -192,7 +227,7 @@ func TestRecordedRuns(t *testing.T) {
 		t.Errorf("second run: %s", body)
 	}
 	for {
-		id, err := m.claim(ctx, 2, "")
+		id, err := m.claim(ctx, 2, "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -334,7 +369,7 @@ func TestRunner(t *testing.T) {
 	r := NewRunner(pool, sysconfig.New(pool), RunnerOptions{Send: send, Key: key, Files: storage.New(sysconfig.New(pool)), ChromeURL: chromeURL,
 		ProxyURL: proxyURL, Browsers: 1, Proxy: proxy})
 	for {
-		id, err := m.claim(ctx, 2, "")
+		id, err := m.claim(ctx, 2, "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -408,7 +443,7 @@ func TestRunner(t *testing.T) {
 		values ($1, $2, 'ai', $3, 'tok2', $4) returning id::text`, wsID, issueID, ann, cs[0].ID).Scan(&replayID); err != nil {
 		t.Fatal(err)
 	}
-	if id, err := m.claim(ctx, 2, ""); err != nil || id != replayID {
+	if id, err := m.claim(ctx, 2, "", nil); err != nil || id != replayID {
 		t.Fatalf("claim replay run: %q %v", id, err)
 	}
 	r.execute(ctx, replayID)
@@ -442,7 +477,7 @@ func TestRunner(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, err := m.claim(ctx, 2, ""); err != nil || got != id {
+		if got, err := m.claim(ctx, 2, "", nil); err != nil || got != id {
 			t.Fatalf("claim replay run: %q %v", got, err)
 		}
 		r.execute(ctx, id)

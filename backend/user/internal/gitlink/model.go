@@ -93,8 +93,10 @@ func (m *model) settings(ctx context.Context, workspaceID, provider string, open
 			   merge_status_id = case when $5 then nullif($6, '')::uuid else merge_status_id end
 			 where workspace_id = $1 and provider = $2`,
 			workspaceID, provider, open.set, open.statusID, merge.set, merge.statusID)
-		found = tag.RowsAffected() > 0
-		return err
+		if found = tag.RowsAffected() > 0; err != nil || !found {
+			return err
+		}
+		return wsaudit.Record(ctx, tx, workspaceID, e.Actor, "integration.updated", provider, nil)
 	})
 	return found, err
 }

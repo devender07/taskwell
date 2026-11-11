@@ -103,6 +103,41 @@ func parseMFA(secret []byte, token string) (*mfaClaims, error) {
 	return &c, nil
 }
 
+// reauthAudience marks a re-authentication proof (the taskwell_reauth cookie): parseAccess and parseMFA refuse it.
+const reauthAudience = "taskwell-reauth"
+
+// signReauth returns a proof that userID re-authenticated just now, valid for ttl.
+func signReauth(secret []byte, userID string, ttl time.Duration) (string, error) {
+	now := time.Now()
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   userID,
+		Audience:  jwt.ClaimStrings{reauthAudience},
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+	})
+	s, err := t.SignedString(secret)
+	if err != nil {
+		return "", fmt.Errorf("sign reauth token: %w", err)
+	}
+	return s, nil
+}
+
+// parseReauth returns the user id of a valid, unexpired re-authentication proof.
+func parseReauth(secret []byte, token string) (string, error) {
+	var c jwt.RegisteredClaims
+	_, err := jwt.ParseWithClaims(token, &c, func(*jwt.Token) (any, error) { return secret, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(reauthAudience),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		return "", err
+	}
+	return c.Subject, nil
+}
+
 // EnsureJWTSecret fills an empty jwt_secret (the dev fallback when JWT_SECRET is unset) with 256 random bits. Safe to run from several instances at once.
 func EnsureJWTSecret(ctx context.Context, db *pgxpool.Pool) error {
 	b := make([]byte, 32)

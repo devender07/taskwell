@@ -1,9 +1,10 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { tokensPath, type ApiToken } from '@/api'
+import { tokensPath, type ApiToken, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { NewTokenButton, TokenRow } from '@/components/settings/api-tokens'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/api-tokens')({
+  beforeLoad: requireFeature('api'),
   loader: (ctx) => loaderApi<ApiToken[]>(ctx, tokensPath),
   component: ApiTokensSettings,
 })

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { LockIcon } from '@taskwell/shared/icons'
-import { ApiError, can, cyclesPath, projectUpdatesPath, type Cycle, type Label, type Project, type ProjectUpdatePage, type Status, workspacePath } from '@/api'
+import { ApiError, can, cyclesPath, featureOn, projectUpdatesPath, useFeatures, type Cycle, type Label, type Project, type ProjectUpdatePage, type Status, workspacePath } from '@/api'
 import { loaderApi } from '@/realtime'
 import { useShortcuts } from '@/components/app/shortcuts'
 import { formatDate } from '@/components/issues/fields'
@@ -33,7 +33,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/projects/$key')({
     const [project, page, cycles, statuses, labels, updates] = await Promise.all([
       projectReq,
       Promise.resolve(sort).then((s) => loaderApi<IssuePage>(ctx, `${source}?${issuePageQuery(ctx.deps.search, false, s)}`)),
-      loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)),
+      featureOn(ctx.context.features, 'cycles') ? loaderApi<Cycle[]>(ctx, cyclesPath(params.workspace, params.key)) : [],
       loaderApi<Status[]>(ctx, `${path}/statuses`),
       loaderApi<Label[]>(ctx, `${path}/labels`),
       loaderApi<ProjectUpdatePage>(ctx, projectUpdatesPath(params.workspace, params.key)),
@@ -57,6 +57,9 @@ function ProjectPage() {
   const navigate = useNavigate({ from: Route.fullPath })
   const [editing, setEditing] = useState(Boolean(search.edit))
   const { openCreate } = useShortcuts()
+  const features = useFeatures()
+  const cyclesOn = featureOn(features, 'cycles')
+  const milestones = featureOn(features, 'roadmap')
   const manage = can(workspace, 'projects.manage')
   const post = !project.archived && (manage || (project.private && project.members.some((m) => m.id === user.id)))
   const create = can(workspace, 'issues.create') && !project.archived
@@ -98,12 +101,16 @@ function ProjectPage() {
                 {current.name} · ends {formatDate(current.ends_on)}
               </Link>
             ) : null}
-            <Link to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
-              Cycles
-            </Link>
-            <Link to="/$workspace/projects/$key/files" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
-              Files
-            </Link>
+            {cyclesOn ? (
+              <Link to="/$workspace/projects/$key/cycles" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
+                Cycles
+              </Link>
+            ) : null}
+            {featureOn(features, 'files') ? (
+              <Link to="/$workspace/projects/$key/files" params={{ workspace: workspace.slug, key: project.key }} className="button button-ghost">
+                Files
+              </Link>
+            ) : null}
             {manage ? (
               <>
                 <Button variant="secondary" onClick={() => setEditing(true)}>
@@ -113,11 +120,11 @@ function ProjectPage() {
                 <ArchiveProject workspace={workspace} project={project} />
                 {project.archived ? <DeleteProject workspace={workspace} project={project} /> : null}
               </>
-            ) : (
+            ) : milestones ? (
               <Button variant="ghost" onClick={() => setEditing(true)}>
                 Milestones
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
@@ -148,7 +155,7 @@ function ProjectPage() {
             ) : null}
           </div>
         ) : (
-          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cycles} defaultSort={defaultSort(project)} manual />
+          <IssueView workspace={workspace} page={page} source={source} statuses={statuses} labels={labels} userId={user.id} search={search} cycles={cyclesOn ? cycles : undefined} defaultSort={defaultSort(project)} manual />
         )}
       </section>
       {manage ? (
@@ -157,7 +164,7 @@ function ProjectPage() {
             workspace={workspace}
             project={project}
             onDone={stopEditing}
-            aside={<ProjectMilestones workspace={workspace} project={project} manage={!project.archived} />}
+            aside={milestones ? <ProjectMilestones workspace={workspace} project={project} manage={!project.archived} /> : undefined}
           />
         </Dialog>
       ) : (

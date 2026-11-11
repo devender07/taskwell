@@ -36,6 +36,11 @@ func Fields(w http.ResponseWriter, status int, errs map[string]string) {
 	JSON(w, status, map[string]map[string]string{"errors": errs})
 }
 
+// Reauth answers 403 {"error": ..., "reauth": true}: the action needs a fresh POST /api/auth/reauth first.
+func Reauth(w http.ResponseWriter) {
+	JSON(w, http.StatusForbidden, map[string]any{"error": "Confirm it's you to continue.", "reauth": true})
+}
+
 // Wrap signs the request in with authenticate (401 when nobody is) and caps its body at maxBody bytes (0: the
 // handler caps it itself).
 func Wrap(authenticate func(*http.Request) (string, error), maxBody int64, fn Handler) http.HandlerFunc {

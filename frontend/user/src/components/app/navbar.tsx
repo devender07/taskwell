@@ -5,7 +5,7 @@ import { Dialog } from '@taskwell/shared/dialog'
 import { Logo } from '@taskwell/shared/logo'
 import { Popover } from '@taskwell/shared/popover'
 import { CheckIcon, ChevronDownIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon, XIcon } from '@taskwell/shared/icons'
-import { signOut as endSession, toFormErrors, type User, type Workspace } from '@/api'
+import { signOut as endSession, toFormErrors, useFeature, type User, type Workspace } from '@/api'
 import { CreateWorkspaceForm } from '@/components/workspace/create-form'
 import { JoinInviteButton } from '@/components/invite/invite-actions'
 import { useMyInvites } from '@/components/invite/invite-prompt'
@@ -178,6 +178,7 @@ export function useSignOut() {
 
 function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
   const slug = useParams({ strict: false }).workspace
+  const team = useFeature('team')
   const [error, signOut, pending] = useSignOut()
 
   return (
@@ -190,7 +191,7 @@ function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void 
         </div>
       </div>
       <hr className="popover-divider" />
-      {slug ? (
+      {slug && team ? (
         <Link to="/$workspace/members/$id" params={{ workspace: slug, id: user.id }} className="popover-item" onClick={onNavigate}>
           View your analytics
         </Link>

@@ -1,12 +1,13 @@
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useActionState } from 'react'
 import { Button } from '@taskwell/shared/button'
+import { Checkbox } from '@taskwell/shared/checkbox'
 import { Input } from '@taskwell/shared/input'
 import { email, name, password, workspaceName } from '@taskwell/shared/validate'
 import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
-type Values = { name: string; email: string; workspace: string }
+type Values = { name: string; email: string; workspace: string; accepted: boolean }
 type SignupState = {
   step: 'details' | 'code'
   values: Values
@@ -30,7 +31,7 @@ async function signupAction(prev: SignupState, form: FormData, invited: boolean)
   }
   if (prev.step === 'details') {
     const get = (key: string) => String(form.get(key) ?? '').trim()
-    const values = { name: get('name'), email: get('email'), workspace: get('workspace_name') }
+    const values = { name: get('name'), email: get('email'), workspace: get('workspace_name'), accepted: form.get('accept_terms') === 'true' }
     const pw = String(form.get('password') ?? '')
     const errors = {
       name: name(values.name),
@@ -38,6 +39,7 @@ async function signupAction(prev: SignupState, form: FormData, invited: boolean)
       workspace_name: invited ? null : workspaceName(values.workspace),
       password: password(pw),
       password_confirm: pw === String(form.get('password_confirm') ?? '') ? null : "Passwords don't match.",
+      accept_terms: values.accepted ? null : "Confirm you're 18 or older and accept the terms.",
     }
     if (Object.values(errors).some(Boolean)) return { step: 'details', values, errors }
     try {
@@ -65,7 +67,7 @@ export function SignupForm({ redirect }: { redirect?: string }) {
     const next = await signupAction(prev, form, invited)
     if (next.done) await navigate({ href: redirect ?? (await homePath()) })
     return next
-  }, { step: 'details', values: { name: '', email: '', workspace: '' } })
+  }, { step: 'details', values: { name: '', email: '', workspace: '', accepted: false } })
   const { values, errors, error } = state
 
   if (state.step === 'code') {
@@ -144,6 +146,32 @@ export function SignupForm({ redirect }: { redirect?: string }) {
         placeholder="Type it again"
         error={errors?.password_confirm}
       />
+      <div className="grid gap-1">
+        <Checkbox
+          name="accept_terms"
+          value="true"
+          defaultChecked={values.accepted}
+          aria-invalid={errors?.accept_terms ? true : undefined}
+          aria-describedby={errors?.accept_terms ? 'accept-terms-error' : undefined}
+          label={
+            <span>
+              I'm 18 or older and accept the{' '}
+              <Link to="/terms" target="_blank" className="auth-link">
+                terms
+              </Link>{' '}
+              and{' '}
+              <Link to="/privacy" target="_blank" className="auth-link">
+                privacy notice
+              </Link>
+            </span>
+          }
+        />
+        {errors?.accept_terms ? (
+          <p id="accept-terms-error" role="alert" className="text-caption text-accent">
+            {errors.accept_terms}
+          </p>
+        ) : null}
+      </div>
       <FormError>{error}</FormError>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? 'Creating account…' : 'Create account'}

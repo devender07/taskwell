@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Input } from '@taskwell/shared/input'
 import { Pagination } from '@taskwell/shared/pagination'
+import { apiUrl } from '@taskwell/shared/api-url'
 import { PAGE_SIZE, type ListSearch } from '@/api'
 
-type Props = { to: '/users' | '/workspaces'; search: ListSearch; placeholder: string }
+type Props = { to: '/users' | '/workspaces' | '/audit'; search: ListSearch; placeholder: string }
 
 export function SearchForm({ to, search, placeholder }: Props) {
   const navigate = useNavigate()
@@ -34,5 +35,14 @@ export function Pager({ to, search, total }: Omit<Props, 'placeholder'> & { tota
       onPage={(p) => navigate({ to, search: { ...(search.q && { q: search.q }), ...(p > 1 && { page: p }) } })}
       summary={`${first}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
     />
+  )
+}
+
+// A top-level navigation, so the browser sends the admin session cookie and saves the attachment.
+export function ExportLink({ path }: { path: string }) {
+  return (
+    <a href={apiUrl(`/api${path}`)} download className="button button-secondary">
+      Export CSV
+    </a>
   )
 }

@@ -1,7 +1,7 @@
 import { extractDataFromArray } from '@taskwell/shared/list'
 import { useEffect, useState } from 'react'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
-import { api, templatesPath, toFormErrors, type Label, type Project, type Status, type Template, type Workspace, workspacePath } from '@/api'
+import { api, templatesPath, toFormErrors, useFeature, type Label, type Project, type Status, type Template, type Workspace, workspacePath } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { CreateIssueForm, type Prefill } from '@/components/issues/issue-form'
 import { subscribePaths } from '@/realtime'
@@ -37,6 +37,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
   const [version, setVersion] = useState(0)
   const [picked, setPicked] = useState(false) // the user chose a project here, so a template's project doesn't replace it
   const path = `${workspacePath(workspace.slug)}`
+  const templatesOn = useFeature('templates')
 
   useEffect(
     () => subscribePaths([`${path}/projects`, `${path}/statuses`, `${path}/labels`, templatesPath(workspace.slug)], () => setVersion((v) => v + 1)),
@@ -49,7 +50,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
       api<Project[]>(`${path}/projects`),
       api<Status[]>(`${path}/statuses`),
       api<Label[]>(`${path}/labels`),
-      api<Template[]>(templatesPath(workspace.slug)).catch(() => []),
+      templatesOn ? api<Template[]>(templatesPath(workspace.slug)).catch(() => []) : [],
     ]).then(
       ([all, statuses, labels, templates]) => {
         if (!live) return
@@ -65,7 +66,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
     return () => {
       live = false
     }
-  }, [path, workspace.slug, projectKey, version])
+  }, [path, workspace.slug, projectKey, version, templatesOn])
 
   // The loading text holds roughly the form's height, so the dialog doesn't jump when it arrives.
   if (!data) return error ? <FormError>{error}</FormError> : <p className="text-body-sm text-secondary" style={{ minHeight: 548 }}>Loading…</p>
@@ -94,7 +95,7 @@ export default function QuickCreate({ workspace, projectKey, prefill }: { worksp
             statuses={data.statuses}
             labels={data.labels}
             people={peopleSearch(workspace.slug, project.key)}
-            templates={forProjectFirst(data.templates, projectKey ?? project.key)}
+            templates={templatesOn ? forProjectFirst(data.templates, projectKey ?? project.key) : []}
             onTemplateProject={(k) => !picked && data.projects.some((p) => p.key === k) && setKey(k)}
           />
         </div>

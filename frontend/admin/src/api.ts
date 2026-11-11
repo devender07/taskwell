@@ -9,7 +9,9 @@ export type AdminAccount = Admin & { created_at: string; mfa: boolean; last_seen
 export type Enrolment = { secret: string; url: string; recovery_codes: string[] }
 export type AuditEntry = { id: string; at: string; actor_id: string | null; actor_email: string; action: string; target: string; ip: string }
 export type Setting = { key: string; value: string; secret: boolean; has_value?: boolean; description: string; updated_at: string }
-export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string }
+export const PLANS = { free: 'Free', starter: 'Starter', pro: 'Pro', advanced: 'Advanced' }
+// plan, comped: the owner's.
+export type WorkspaceRow = { id: string; name: string; slug: string; members: number; projects: number; issues: number; created_at: string; plan: keyof typeof PLANS; comped?: boolean }
 export type UserRow = {
   id: string
   name: string
@@ -18,14 +20,57 @@ export type UserRow = {
   created_at: string
   suspended: boolean
   last_active_at: string | null
+  plan: keyof typeof PLANS
+  comped: boolean
+  comped_until: string | null
 }
 export type Day = { date: string; count: number }
+type Plan = keyof typeof PLANS
 export type Stats = {
-  totals: { users: number; workspaces: number; projects: number; issues: number; comments: number }
+  totals: { users: number; workspaces: number; projects: number; issues: number; comments: number; files_bytes: number; notes: number; feedback: number }
   active_users_7d: number
+  active_users_30d: number
+  signups_7d: number
+  suspended_users: number
+  mfa_users: number
+  plans: Record<Plan, number>
+  billing: {
+    paying: number
+    trialing: number
+    past_due: number
+    cancelling: number
+    monthly: number
+    yearly: number
+    renewing_7d: number
+    comped: number
+    comps_ending_7d: number
+  }
+  subscriptions: { user_id: string; email: string; name: string; plan: Plan; status: string; interval: string; next_billed_at: string | null; scheduled_change: string | null; updated_at: string }[]
+  comps_ending: { user_id: string; email: string; name: string; plan: Plan; until: string }[]
+  recent_signups: { user_id: string; email: string; name: string; plan: Plan; created_at: string }[]
+  top_workspaces: { id: string; name: string; slug: string; issues: number; members: number; plan: Plan }[]
+  health: { mail_pending: number; mail_failed_24h: number; webhooks_failed_24h: number; ai_runs_30d: number; ai_runs_failed_30d: number; ai_cost_micros_30d: number }
   signups: Day[]
   issues_created: Day[]
+  active_users: Day[]
+  workspaces_created: Day[]
+  revenue: {
+    currencies: { currency: string; mrr: number; revenue_30d: number; earnings_30d: number; refunds_30d: number; chargebacks_30d: number; revenue_all: number; per_day: Day[] }[]
+    recent: { transaction_id: string; email: string; name: string; currency: string; total: number; status: string; billed_at: string }[]
+  }
 }
+
+export type UserDetail = {
+  user: UserRow
+  mfa: boolean
+  workspaces: { id: string; name: string; slug: string; role: string; owner: boolean; members: number; issues: number }[]
+  subscriptions: { subscription_id: string; plan: Plan; status: string; interval: string; currency: string; unit_amount: number; next_billed_at: string | null; updated_at: string }[]
+  payments: { transaction_id: string; currency: string; total: number; status: string; billed_at: string }[]
+  plan_history: { at: string; actor: string | null; action: string; detail: string }[]
+  events: { action: string; detail: string; ip: string; user_agent: string; created_at: string }[]
+}
+
+export { money } from '@taskwell/shared/money'
 
 export const PAGE_SIZE = 50
 
@@ -74,4 +119,4 @@ export function validateListSearch(search: Record<string, unknown>): ListSearch 
 
 export const listQuery = ({ q, page }: ListSearch) => new URLSearchParams({ q: q ?? '', page: String(page ?? 1) }).toString()
 
-export const formatDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+export { longDate as formatDate } from '@taskwell/shared/time'

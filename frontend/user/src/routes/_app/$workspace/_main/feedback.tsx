@@ -2,7 +2,7 @@ import { createFileRoute, useLoaderData } from '@tanstack/react-router'
 import { Button } from '@taskwell/shared/button'
 import { Input } from '@taskwell/shared/input'
 import { Tabs } from '@taskwell/shared/tabs'
-import { feedbackListPath, type FeedbackPage, type FeedbackState } from '@/api'
+import { feedbackListPath, type FeedbackPage, type FeedbackState, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { AddFeedbackDialog, FeedbackList } from '@/components/feedback/feedback-list'
 
@@ -15,6 +15,7 @@ const states: { value: FeedbackState; label: string }[] = [
 type Search = { state?: 'linked' | 'archived'; q?: string; add?: true }
 
 export const Route = createFileRoute('/_app/$workspace/_main/feedback')({
+  beforeLoad: requireFeature('feedback'),
   // new, the default, stays out of the URL; `add` opens the Add feedback dialog (the command palette links to it).
   validateSearch: (search): Search => ({
     ...((search.state === 'linked' || search.state === 'archived') && { state: search.state }),

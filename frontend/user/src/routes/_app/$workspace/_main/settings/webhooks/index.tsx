@@ -1,9 +1,10 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { ApiError, webhooksPath, type Webhook } from '@/api'
+import { ApiError, webhooksPath, type Webhook, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { AddWebhookButton, WebhookRow } from '@/components/settings/webhooks'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/webhooks/')({
+  beforeLoad: requireFeature('webhooks'),
   loader: (ctx) =>
     loaderApi<Webhook[]>(ctx, webhooksPath(ctx.params.workspace)).catch((e) => {
       if (e instanceof ApiError && e.status === 403) return null

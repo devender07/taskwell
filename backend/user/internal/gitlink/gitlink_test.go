@@ -88,6 +88,10 @@ func TestWebhooks(t *testing.T) {
 	if !strings.Contains(string(in.OpenStatus), "In progress") || string(in.MergeStatus) != "null" {
 		t.Fatalf("settings %+v", in)
 	}
+	var n int
+	if err := pool.QueryRow(ctx, `select count(*) from workspace_audit where workspace_id = $1 and action = 'integration.updated' and target = 'github'`, wsID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("settings audited %d times %v", n, err)
+	}
 
 	deliver := func(step string, want int, sig string, body string) string {
 		t.Helper()

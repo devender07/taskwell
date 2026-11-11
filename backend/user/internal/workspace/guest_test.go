@@ -20,6 +20,7 @@ func TestGuests(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
 	ann, mia, otto, gus := dbtest.User(t, pool, "Ann"), dbtest.User(t, pool, "Mia"), dbtest.User(t, pool, "Otto"), dbtest.User(t, pool, "Gus")
+	dbtest.SetPlan(t, pool, ann, "starter") // room for the guest: Free allows only the owner
 	m := &model{db: pool}
 	ws, err := m.create(ctx, ann, "Guests", dbtest.Name("guests-"))
 	if err != nil {

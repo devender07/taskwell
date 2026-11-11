@@ -17,9 +17,11 @@ const (
 	googleCookie  = "taskwell_google" // state, PKCE verifier and remember flag for one Google round trip
 	signupCookie  = "taskwell_signup" // the nonce that binds a sign-up's code to the browser that signed up
 	mfaCookie     = "taskwell_mfa"    // a sign-in waiting for its second step (mfaClaims)
+	reauthCookie  = "taskwell_reauth" // proof of a recent re-authentication (signReauth)
 
 	mfaTTL      = 5 * time.Minute // to enter the second step
 	mfaMaxFails = 5               // wrong codes per pending sign-in before it ends
+	reauthTTL   = 10 * time.Minute
 )
 
 // remember reads the "Remember me" checkbox; anything but an explicit yes means a short, browser-session sign-in.
@@ -121,7 +123,9 @@ const errSuspendedMsg = "This account is suspended."
 
 // startSession begins a new sign-in that lasts refresh_ttl_hours with "Remember me", short_refresh_ttl_hours without.
 // Every sign-in method goes through here, so it is where suspended accounts are turned away.
-func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userID string, remember bool) error {
+// method ("password", "code", "google", "two-factor") goes in the sign_in event.
+func (h *Handler) startSession(w http.ResponseWriter, r *http.Request, userID string, remember bool, method string) error {
+	ctx := r.Context()
 	if suspended, err := h.model.suspended(ctx, userID); err != nil {
 		return err
 	} else if suspended {
@@ -135,18 +139,23 @@ func (h *Handler) startSession(ctx context.Context, w http.ResponseWriter, userI
 	if err != nil {
 		return err
 	}
-	return h.setTokens(ctx, w, userID, family{remember: remember, expiresAt: time.Now().Add(time.Duration(hours) * time.Hour)})
+	if err := h.setTokens(ctx, w, userID, family{remember: remember, expiresAt: time.Now().Add(time.Duration(hours) * time.Hour)}); err != nil {
+		return err
+	}
+	h.record(r, userID, "sign_in", method)
+	return nil
 }
 
 // begin signs the user in, or when they have two-factor on, starts a sign-in waiting for its second step (mfa is then
 // true and there is no session yet: mfaVerify starts it). Every first-step sign-in goes through here.
-func (h *Handler) begin(ctx context.Context, w http.ResponseWriter, userID string, remember bool) (mfa bool, err error) {
+func (h *Handler) begin(w http.ResponseWriter, r *http.Request, userID string, remember bool, method string) (mfa bool, err error) {
+	ctx := r.Context()
 	on, _, err := h.model.mfaStatus(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if !on {
-		return false, h.startSession(ctx, w, userID, remember)
+		return false, h.startSession(w, r, userID, remember, method)
 	}
 	if suspended, err := h.model.suspended(ctx, userID); err != nil {
 		return false, err
@@ -171,6 +180,41 @@ func (h *Handler) setMFACookie(ctx context.Context, w http.ResponseWriter, tok s
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{Name: mfaCookie, Value: tok, Path: "/api/auth", MaxAge: maxAge,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
+	return nil
+}
+
+// Reauthed reports whether the request carries a fresh re-authentication proof for userID. A Bearer (API token)
+// request never does.
+func (h *Handler) Reauthed(r *http.Request, userID string) (bool, error) {
+	c, err := r.Cookie(reauthCookie)
+	if _, tok := bearer(r); tok || err != nil || userID == "" {
+		return false, nil
+	}
+	key, err := h.jwtSecret(r.Context())
+	if err != nil {
+		return false, err
+	}
+	sub, err := parseReauth(key, c.Value)
+	return err == nil && sub == userID, nil
+}
+
+// setReauthCookie sets a proof that userID re-authenticated just now, for reauthTTL. Path /api: the endpoints that
+// need it are under /api/me and /api/workspaces.
+func (h *Handler) setReauthCookie(ctx context.Context, w http.ResponseWriter, userID string) error {
+	key, err := h.jwtSecret(ctx)
+	if err != nil {
+		return err
+	}
+	secure, err := h.secure(ctx)
+	if err != nil {
+		return err
+	}
+	tok, err := signReauth(key, userID, reauthTTL)
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{Name: reauthCookie, Value: tok, Path: "/api", MaxAge: int(reauthTTL.Seconds()),
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	return nil
 }
@@ -216,7 +260,7 @@ func (h *Handler) clearCookies(ctx context.Context, w http.ResponseWriter) error
 	if err != nil {
 		return err
 	}
-	for name, path := range map[string]string{accessCookie: "/api", refreshCookie: "/api/auth"} {
+	for name, path := range map[string]string{accessCookie: "/api", refreshCookie: "/api/auth", reauthCookie: "/api"} {
 		http.SetCookie(w, &http.Cookie{Name: name, Path: path, MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 	}
 	return nil

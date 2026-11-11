@@ -1,12 +1,15 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
-import type { AuditEntry } from '@/api'
+import { createFileRoute } from '@tanstack/react-router'
+import { listQuery, validateListSearch, type AuditEntry } from '@/api'
+import { Pager } from '@/components/app/list-controls'
 import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/audit')({
-  validateSearch: (search): { before?: string } => (typeof search.before === 'string' && search.before ? { before: search.before } : {}),
+  validateSearch: (search): { page?: number } => {
+    const { page } = validateListSearch(search)
+    return page ? { page } : {}
+  },
   loaderDeps: ({ search }) => search,
-  loader: (ctx) =>
-    loaderApi<{ entries: AuditEntry[]; more: boolean }>(ctx, `/audit${ctx.deps.before ? `?before=${encodeURIComponent(ctx.deps.before)}` : ''}`),
+  loader: (ctx) => loaderApi<{ entries: AuditEntry[]; total: number }>(ctx, `/audit?${listQuery(ctx.deps)}`),
   component: Audit,
 })
 
@@ -29,8 +32,8 @@ const formatTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 function Audit() {
-  const { entries, more } = Route.useLoaderData()
-  const { before } = Route.useSearch()
+  const { entries, total } = Route.useLoaderData()
+  const search = Route.useSearch()
   return (
     <main className="grid gap-6 w-full px-6 py-10">
       <header className="grid gap-2">
@@ -66,14 +69,7 @@ function Audit() {
           </tbody>
         </table>
       </div>
-      <nav className="flex gap-4 text-body-sm" aria-label="Pages">
-        {before ? <Link to="/audit">Newest</Link> : null}
-        {more ? (
-          <Link to="/audit" search={{ before: entries.at(-1)?.id }}>
-            Older
-          </Link>
-        ) : null}
-      </nav>
+      <Pager to="/audit" search={search} total={total} />
     </main>
   )
 }

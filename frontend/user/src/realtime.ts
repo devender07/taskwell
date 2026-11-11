@@ -29,7 +29,7 @@ export type Typing = { type: 'typing'; chat: string; thread: string | null; user
 export type LoaderContext = { route: { id: string; fullPath: string }; params: Record<string, string>; deps: unknown }
 
 // _app's beforeLoad fetches these; any load re-runs it.
-const APP_PATHS = ['/workspaces', '/me']
+const APP_PATHS = ['/workspaces', '/me', '/billing']
 const ALL = ['/']
 
 const loaded = loadedPaths()

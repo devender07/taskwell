@@ -1,6 +1,6 @@
 import { useParams } from '@tanstack/react-router'
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, workspacePath } from '@/api'
+import { api, useFeature, workspacePath } from '@/api'
 import { connected, subscribePaths } from '@/realtime'
 
 // count: unread notifications (the navbar bell); chats: unread chat messages (the sidebar's Inbox); feedback: new
@@ -15,14 +15,16 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{ slug: string; count: number } | null>(null)
   const [chatState, setChatState] = useState<{ slug: string; count: number } | null>(null)
   const [feedbackState, setFeedbackState] = useState<{ slug: string; count: number } | null>(null)
+  const chatOn = useFeature('chat')
+  const feedbackOn = useFeature('feedback')
 
   const refresh = useCallback(() => {
     if (!slug) return
     const ws = `${workspacePath(slug)}`
     api<{ count: number }>(`${ws}/notifications/unread-count`).then(({ count }) => setState({ slug, count }), () => {})
-    api<{ count: number }>(`${ws}/chats/unread-count`).then(({ count }) => setChatState({ slug, count }), () => {})
-    api<{ new: number }>(`${ws}/feedback/count`).then((c) => setFeedbackState({ slug, count: c.new }), () => {})
-  }, [slug])
+    if (chatOn) api<{ count: number }>(`${ws}/chats/unread-count`).then(({ count }) => setChatState({ slug, count }), () => {})
+    if (feedbackOn) api<{ new: number }>(`${ws}/feedback/count`).then((c) => setFeedbackState({ slug, count: c.new }), () => {})
+  }, [slug, chatOn, feedbackOn])
 
   useEffect(() => {
     if (!slug) return

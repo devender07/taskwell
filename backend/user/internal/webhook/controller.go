@@ -37,6 +37,8 @@ type Handler struct {
 	wake         chan struct{}
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	// Plans, when set, returns the plans the webhooks feature is on for: other workspaces' deliveries stay queued.
+	Plans func(ctx context.Context) []string
 }
 
 // New takes the auth handler's Authenticate and the workspace handler's Member.

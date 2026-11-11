@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
@@ -30,6 +32,10 @@ type Handler struct {
 	authenticate func(*http.Request) (string, error)
 	mail         *mail.Mailer
 	cfg          *sysconfig.Store
+
+	// Reauthed reports whether the request carries the user's fresh re-authentication proof (auth.Handler.Reauthed);
+	// deleting a workspace needs one.
+	Reauthed func(r *http.Request, userID string) (bool, error)
 }
 
 // New takes the auth handler's Authenticate, which returns the signed-in user ID or "".
@@ -52,6 +58,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) 
 		return nil
 	}
 	ws, err := h.model.create(r.Context(), userID, name, slug)
+	if over := plan.Exceeded(""); errors.As(err, &over) {
+		web.Err(w, http.StatusPaymentRequired, over.Error())
+		return nil
+	}
 	if errors.Is(err, errNoCreate) {
 		web.Err(w, http.StatusForbidden, "You don't have permission to create workspaces.")
 		return nil
@@ -89,7 +99,26 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok {
 		return nil
 	}
-	err = h.model.update(r.Context(), ws, userID, name, slug)
+	require := ws.RequireMFA
+	switch r.FormValue("require_mfa") {
+	case "true":
+		require = true
+	case "false":
+		require = false
+	case "":
+	default:
+		web.Fields(w, http.StatusBadRequest, map[string]string{"require_mfa": "Choose whether two-factor sign-in is required."})
+		return nil
+	}
+	if require && !ws.RequireMFA {
+		if on, err := h.model.hasMFA(r.Context(), userID); err != nil || !on {
+			if err == nil {
+				web.Fields(w, http.StatusBadRequest, map[string]string{"require_mfa": "Turn on two-factor sign-in for your account first."})
+			}
+			return err
+		}
+	}
+	err = h.model.update(r.Context(), ws, userID, name, slug, require)
 	if errors.Is(err, errTaken) {
 		web.Fields(w, http.StatusConflict, map[string]string{"slug": errSlugTaken})
 		return nil
@@ -97,7 +126,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) 
 	if err != nil {
 		return err
 	}
-	ws.Name, ws.Slug = name, slug
+	ws.Name, ws.Slug, ws.RequireMFA = name, slug, require
 	web.JSON(w, http.StatusOK, ws)
 	return nil
 }
@@ -159,6 +188,12 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request, userID string) 
 	if !ok || err != nil {
 		return err
 	}
+	if ok, err := h.Reauthed(r, userID); err != nil || !ok {
+		if err == nil {
+			web.Reauth(w)
+		}
+		return err
+	}
 	if err := h.model.delete(r.Context(), ws, userID); err != nil {
 		return err
 	}
@@ -171,7 +206,7 @@ func (h *Handler) permissions(w http.ResponseWriter, _ *http.Request, _ string) 
 	return nil
 }
 
-// audit lists a page of the workspace audit log, newest first (?before= the last id shown, ?category= one of
+// audit lists a page of the workspace audit log, newest first (?page= from 1, ?category= one of
 // wsaudit.Categories; an unknown one is ignored).
 func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, ok, err := h.access(w, r, userID, "")
@@ -183,12 +218,16 @@ func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID string) e
 		return nil
 	}
 	q := r.URL.Query()
-	before := q.Get("before")
-	if before != "" && !web.IsUUID(before) {
-		web.Err(w, http.StatusBadRequest, "Invalid cursor.")
-		return nil
+	page := 1
+	if v := q.Get("page"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 1000 {
+			web.Err(w, http.StatusBadRequest, "Invalid page.")
+			return nil
+		}
+		page = n
 	}
-	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, userID, before, wsaudit.Categories[q.Get("category")])
+	es, more, err := wsaudit.List(r.Context(), h.model.db, ws.ID, userID, page, wsaudit.Categories[q.Get("category")])
 	if err != nil {
 		return err
 	}

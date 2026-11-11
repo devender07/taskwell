@@ -1,7 +1,8 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
 import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
-import { can } from '@/api'
+import { can, featureOn, useFeatures, type Feature } from '@/api'
+import { LockedLink } from './locked-link'
 import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
 import { useUnread } from './unread'
@@ -11,7 +12,14 @@ import './sidebar.css'
 export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
   const ws = useLoaderData({ from: '/_app/$workspace' })
-  const team = can(ws, 'analytics.view')
+  const features = useFeatures()
+  const on = (name: Feature) => featureOn(features, name)
+  const upgrades = useRouteContext({ from: '/_app/$workspace', select: (c) => c.upgrades })
+  const locked = (name: Feature, label: string, Icon: typeof HomeIcon) => {
+    const plan = upgrades[name]
+    return plan ? <LockedLink workspace={workspace} feature={name} plan={plan} Icon={Icon}>{label}</LockedLink> : null
+  }
+  const team = can(ws, 'analytics.view') && on('team')
   const guest = ws.guest
   const unread = useUnread()
   const views = useLoaderData({ from: '/_app/$workspace/_main' })
@@ -50,7 +58,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <HomeIcon />
         Home
       </Link>
-      {guest ? null : (
+      {guest ? null : !on('chat') ? locked('chat', 'Inbox', InboxIcon) : (
         <Link to="/$workspace/inbox" params={{ workspace }} aria-label={count ? `Inbox, ${count} unread` : undefined} aria-current={current('inbox')}>
           <InboxIcon />
           Inbox
@@ -65,25 +73,33 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         <FolderIcon />
         Projects
       </Link>
-      <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
-        <FileIcon />
-        Files
-      </Link>
+      {on('files') ? (
+        <Link to="/$workspace/files" params={{ workspace }} aria-current={current('files')}>
+          <FileIcon />
+          Files
+        </Link>
+      ) : locked('files', 'Files', FileIcon)}
       {guest ? null : (
         <>
-          <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
-            <NoteIcon />
-            Notes
-          </Link>
-          <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
-            <RoadmapIcon />
-            Roadmap
-          </Link>
-          <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
-            <FeedbackIcon />
-            Feedback
-            {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
-          </Link>
+          {on('notes') ? (
+            <Link to="/$workspace/notes" params={{ workspace }} aria-current={current('notes')}>
+              <NoteIcon />
+              Notes
+            </Link>
+          ) : locked('notes', 'Notes', NoteIcon)}
+          {on('roadmap') ? (
+            <Link to="/$workspace/roadmap" params={{ workspace }} aria-current={current('roadmap')}>
+              <RoadmapIcon />
+              Roadmap
+            </Link>
+          ) : locked('roadmap', 'Roadmap', RoadmapIcon)}
+          {on('feedback') ? (
+            <Link to="/$workspace/feedback" params={{ workspace }} aria-label={unread.feedback ? `Feedback, ${unread.feedback} new` : undefined} aria-current={current('feedback')}>
+              <FeedbackIcon />
+              Feedback
+              {unread.feedback ? <span style={{ marginLeft: 'auto' }}>{unread.feedback}</span> : null}
+            </Link>
+          ) : locked('feedback', 'Feedback', FeedbackIcon)}
         </>
       )}
       {team && !guest ? (
@@ -91,7 +107,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
           <UsersIcon />
           Team
         </Link>
-      ) : null}
+      ) : !guest && can(ws, 'analytics.view') ? locked('team', 'Team', UsersIcon) : null}
       <Link to="/$workspace/trash" params={{ workspace }} aria-current={current('trash')}>
         <TrashIcon />
         Trash

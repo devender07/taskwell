@@ -129,4 +129,7 @@ func TestProjectAddedEmail(t *testing.T) {
 	if _, body := digestEmail([]message{m}, "http://app"); !strings.Contains(body, "- Maya added you to Leadership: http://app/acme/projects/LEAD") {
 		t.Errorf("digest:\n%s", body)
 	}
+	if html, err := instantHTML(m, "http://app/"); err != nil || !strings.Contains(html, `href="http://app/acme/projects/LEAD"`) {
+		t.Errorf("html: %v\n%s", err, html)
+	}
 }

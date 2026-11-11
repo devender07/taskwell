@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/feature"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 )
@@ -50,9 +51,10 @@ type RunnerOptions struct {
 // Runner claims queued AI runs and runs them: Claude writes the cases when the issue needs them, then drives a
 // page per case through the egress proxy until it calls finish.
 type Runner struct {
-	model *model
-	cfg   *sysconfig.Store
-	o     RunnerOptions
+	model    *model
+	cfg      *sysconfig.Store
+	features *feature.Flags
+	o        RunnerOptions
 
 	mu     sync.Mutex
 	chrome *cdp
@@ -65,7 +67,7 @@ type Runner struct {
 }
 
 func NewRunner(db *pgxpool.Pool, cfg *sysconfig.Store, o RunnerOptions) *Runner {
-	return &Runner{model: &model{db: db}, cfg: cfg, o: o, slots: make(chan struct{}, max(o.Browsers, 1)), sessions: map[string]*session{}}
+	return &Runner{model: &model{db: db}, cfg: cfg, features: feature.New(cfg, db), o: o, slots: make(chan struct{}, max(o.Browsers, 1)), sessions: map[string]*session{}}
 }
 
 // Run takes runs and ends idle browser sessions until stop ends, then ends the sessions and lets each running run
@@ -98,7 +100,7 @@ func (r *Runner) Run(stop context.Context) {
 			r.sweep(time.Now())
 		}
 		for r.takeSlot() {
-			id, err := r.model.claim(stop, r.workspaceCap(stop), r.o.LiveURL)
+			id, err := r.model.claim(stop, r.workspaceCap(stop), r.o.LiveURL, r.features.Plans(stop, feature.AITesting))
 			if err != nil && stop.Err() == nil {
 				slog.Error("claim failed", "err", err)
 			}
@@ -294,7 +296,7 @@ func (r *Runner) call(ctx, stop context.Context, j *job, p anthropic.BetaMessage
 	if cancelled {
 		return nil, errCancelled
 	}
-	limit, err := limitUSD(db, r.cfg)
+	limit, err := limitUSD(db, r.cfg, r.model.db, j.wsID)
 	if err != nil {
 		return nil, err
 	}

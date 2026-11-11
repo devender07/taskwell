@@ -1,14 +1,15 @@
-import { redirect } from '@tanstack/react-router'
+import { notFound, redirect, useMatch } from '@tanstack/react-router'
 import type { Doc } from '@taskwell/shared/rich-editor'
 import { ApiError, FALLBACK } from '@taskwell/shared/api-errors'
 import { apiUrl } from '@taskwell/shared/api-url'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
-export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean }
+export type User = { id: string; name: string; email: string; has_password: boolean; avatar_url: string | null; can_create_workspaces: boolean; terms_accepted_at: string | null }
 export type RoleRef = { id: string; name: string }
 // guest: the caller is a guest here (sees only the projects they're added to). Optional: only the single-workspace GET promises it.
-export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean }
+// require_mfa, mfa_blocked (it requires two-factor and the caller has none): also only on the single GET.
+export type Workspace = { id: string; name: string; slug: string; role: RoleRef; permissions: string[]; guest?: boolean; require_mfa?: boolean; mfa_blocked?: boolean }
 export type Member = { id: string; name: string; email: string; role: RoleRef; guest: boolean }
 export type Invite = { id: string; email: string; invited_by: string; expires_at: string; role: RoleRef }
 export type Role = { id: string; name: string; builtin: 'admin' | 'member' | 'guest' | null; permissions: string[]; member_count: number }
@@ -193,6 +194,7 @@ export type NotificationSettings = {
   chat: boolean
   weekly: boolean
   due_dates: boolean
+  projects: boolean
   timezone: string | null // null until chosen
 }
 
@@ -309,6 +311,47 @@ export type ImportSummary = {
 
 // The caller's effective permission, for gating UI; the API enforces it.
 export const can = (workspace: Workspace, key: string) => workspace.permissions.includes(key)
+
+// Staff turn features on per plan in the admin app; a missing key counts as on.
+export type Feature = 'chat' | 'notes' | 'files' | 'roadmap' | 'feedback' | 'team' | 'cycles' | 'ai_testing' | 'integrations' | 'webhooks' | 'templates' | 'api' | 'imports'
+export type Features = Partial<Record<Feature, boolean>>
+const ALL_ON: Features = {}
+export const getFeatures = (slug: string) => api<Features>(`${workspacePath(slug)}/features`).catch(() => ALL_ON)
+// Public: each feature's plan ids, for the pricing page; null when they can't load.
+export const getFeaturePlans = () => api<FeaturePlans>('/features').catch(() => null)
+export const featureOn = (features: Features, name: Feature) => features[name] !== false
+// The open workspace's flags (fetched by the $workspace route); outside a workspace everything is on.
+export const useFeatures = () => useMatch({ from: '/_app/$workspace', shouldThrow: false, select: (m) => m.context.features }) ?? ALL_ON
+export const useFeature = (name: Feature) => featureOn(useFeatures(), name)
+export type FeaturePlans = Partial<Record<Feature, string[]>>
+export type Upgrades = Partial<Record<Feature, PlanId>>
+const PLAN_RANK: PlanId[] = ['free', 'starter', 'pro', 'advanced']
+// Features that are off here but on for a higher plan, each with the lowest such plan.
+export function upgradesFor(features: Features, plans: FeaturePlans | null, plan: PlanId | undefined): Upgrades {
+  const out: Upgrades = {}
+  if (!plans || !plan) return out
+  const higher = PLAN_RANK.slice(PLAN_RANK.indexOf(plan) + 1)
+  for (const [name, ids] of Object.entries(plans) as [Feature, string[]][]) {
+    const next = !featureOn(features, name) && higher.find((p) => ids.includes(p))
+    if (next) out[name] = next
+  }
+  return out
+}
+// The plan that unlocks `name` in the open workspace, or undefined when it isn't locked (on, hidden, or a guest).
+export const useUpgrade = (name: Feature) =>
+  useMatch({ from: '/_app/$workspace', shouldThrow: false, select: (m) => m.context.upgrades[name] })
+// A feature-owned route's beforeLoad: its URLs show the upgrade page while the feature is locked, else not found while it's off.
+export const requireFeature =
+  (name: Feature) =>
+  ({ context }: { context: { slug: string; features: Features; upgrades: Upgrades } }) => {
+    if (context.upgrades[name]) throw redirect({ to: '/$workspace/upgrade', params: { workspace: context.slug }, search: { feature: name } })
+    if (!featureOn(context.features, name)) throw notFound()
+  }
+
+export type OnboardingStep = { id: 'project' | 'invite' | 'issue' | 'github'; done: boolean }
+export type Onboarding = { dismissed: boolean; steps: OnboardingStep[] }
+export const onboardingPath = (workspace: string) => `${workspacePath(workspace)}/onboarding`
+export const dismissOnboarding = (workspace: string) => api(`${onboardingPath(workspace)}/dismiss`, new FormData())
 
 export type AnalyticsWeek = { week: string; completed: number; created: number; comments: number }
 export type MemberAnalytics = {
@@ -453,10 +496,23 @@ export const deleteToken = (id: string) => api(`${tokensPath}/${encodeURICompone
 // The /auth/ calls that need a session (they sit under /auth/ for the refresh cookie), so a 401 refreshes like any other.
 const SIGNED_IN_AUTH = ['/auth/password/change', '/auth/email/code', '/auth/email/change']
 
+export type ReauthMethod = 'password' | 'totp' | 'email'
+export const getReauthMethods = () => api<{ methods: ReauthMethod[] }>('/me/reauth')
+export const reauth = (form: FormData) => api('/auth/reauth', form)
+export const sendReauthCode = () => api('/auth/reauth/code', new FormData())
+
+// The mounted ReauthDialog answers a 403 {reauth}: true once the user confirmed it's them (the call is retried).
+let confirmIdentity: (() => Promise<boolean>) | null = null
+export const setConfirmIdentity = (fn: typeof confirmIdentity) => void (confirmIdentity = fn)
+// Runs on a 403 {mfa_required}: the workspace now requires two-factor and this user has none.
+let mfaRequired = () => {}
+export const onMfaRequired = (fn: () => void) => void (mfaRequired = fn)
+
 // GET when there is no body, POST the FormData otherwise (or pass `method`, e.g. 'DELETE'). 204 resolves to undefined.
 // `signal` aborts the request (e.g. a search superseded by the next keystroke).
 // A 401 outside /auth/* (except SIGNED_IN_AUTH) refreshes the access token once and retries.
 // A failed refresh in a signed-in tab means the session ended: it goes to sign-in and the call never settles.
+// A 403 {reauth} asks the user to confirm it's them and retries; cancelling rejects with that 403.
 export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET', signal?: AbortSignal): Promise<T> {
   let res = await send(path, body, method, signal)
   if (res.status === 401 && (!path.startsWith('/auth/') || SIGNED_IN_AUTH.includes(path))) {
@@ -467,6 +523,8 @@ export async function api<T = void>(path: string, body?: FormData, method = body
     res = await send(path, body, method, signal)
   }
   const data = res.status === 204 ? undefined : await res.json().catch(() => undefined)
+  if (res.status === 403 && data?.reauth && confirmIdentity && (await confirmIdentity())) return api<T>(path, body, method, signal)
+  if (res.status === 403 && data?.mfa_required) mfaRequired()
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }
@@ -542,7 +600,8 @@ export type FilesPage = { folder: Folder | null; path: { id: string; name: strin
 // What uploads accept (the API checks the bytes too).
 export const MEDIA_TYPES = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm'
 
-export type StorageUsage = { used_bytes: number; quota_bytes: number }
+// quota_bytes: null on a plan with unlimited storage.
+export type StorageUsage = { used_bytes: number; quota_bytes: number | null }
 
 // The folder's listing (no folder = root, "attachments" = the issue attachments); q searches the whole project.
 export const projectFilesPath = (workspace: string, project: string) => `${projectPath(workspace, project)}/files`
@@ -567,6 +626,64 @@ export const deleteFolder = (workspace: string, project: string, id: string) =>
   api(`${foldersPath(workspace, project)}/${encodeURIComponent(id)}`, undefined, 'DELETE')
 export const storagePath = (workspace: string) => `${workspacePath(workspace)}/storage`
 export const startExport = (workspace: string) => api<{ url: string }>(`${workspacePath(workspace)}/export`, new FormData())
+
+export type PlanId = 'free' | 'starter' | 'pro' | 'advanced'
+export type Usage = { used: number; limit: number | null }
+// The caller's own account: plans belong to the account and cover every workspace it creates.
+// currency and interval: the subscription's, null without one.
+export type Billing = {
+  plan: PlanId
+  comped: boolean
+  comped_until: string | null
+  status: string | null
+  currency: string | null
+  interval: 'month' | 'year' | null
+  renews_at: string | null
+  cancel_at_period_end: boolean
+  trial_used: boolean
+  // While trialing. needs_payment_method: the trial was started without one, and Paddle cancels it at its end unless one is added.
+  trial_ends_at: string | null
+  needs_payment_method: boolean
+  workspaces: Usage
+  enabled: boolean
+}
+// A workspace's view of its owner's plan. owner: null when the creator is gone (Free limits).
+export type WorkspaceBilling = {
+  plan: PlanId
+  owner: PersonRef | null
+  is_owner: boolean
+  projects: Usage
+  members: Usage
+  storage: { used_bytes: number; limit_bytes: number | null }
+}
+// A plan's limits in force (the admin app can change them). 0 is unlimited; for ai_usd, none.
+export type PlanLimits = { id: PlanId; workspaces: number; projects: number; members: number; storage_gb: number; ai_usd: number }
+// Public, for the pricing page; null when they can't load.
+export const getPlans = () => api<PlanLimits[]>('/plans').catch(() => null)
+export const billingPath = '/billing'
+export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
+const priceForm = (priceId: string) => {
+  const form = new FormData()
+  form.set('price_id', priceId)
+  return form
+}
+// custom_data is signed by the API so the webhook can trust which account the subscription belongs to.
+export type Checkout = { custom_data: Record<string, string>; email: string }
+export const startCheckout = (priceId: string) => api<Checkout>(`${billingPath}/checkout`, priceForm(priceId))
+export const changePlan = (priceId: string) => api<Billing>(`${billingPath}/change`, priceForm(priceId))
+// What a plan switch would cost: today is the prorated charge or credit made now (null in a trial or when there's
+// none), recurring the price of each period after; amounts are in the currency's minor units.
+export type ChangePreview = {
+  trialing: boolean
+  today: { action: 'charge' | 'credit'; amount: string } | null
+  recurring: string
+  currency: string
+  next_billed_at: string | null
+}
+export const previewPlanChange = (priceId: string) => api<ChangePreview>(`${billingPath}/change/preview`, priceForm(priceId))
+// The Paddle transaction whose checkout adds or replaces the subscription's payment method; nothing is charged.
+export const startPaymentMethod = () => api<{ transaction_id: string }>(`${billingPath}/payment-method`, new FormData())
+export const openBillingPortal = () => api<{ url: string }>(`${billingPath}/portal`, new FormData())
 
 // The redirect is cached for 5 minutes; after changing their own avatar a user bumps it so this tab refetches.
 const avatarVersions = new Map<string, number>()
@@ -600,6 +717,17 @@ export async function signOut() {
   signedIn = false
   authChannel?.postMessage('signout')
 }
+
+// Clears the session like signOut once the API has deleted the account and its cookies.
+export async function deleteAccount(form: FormData) {
+  await api('/me/delete', form)
+  signedIn = false
+  authChannel?.postMessage('signout')
+}
+
+export type AccountEvent = { id: string; action: string; detail: string; ip: string | null; user_agent: string; at: string }
+export type AccountEventPage = { events: AccountEvent[]; has_more: boolean }
+export const accountEventsPath = '/me/account-events'
 
 export async function getMe(): Promise<User | null> {
   try {
@@ -671,7 +799,7 @@ export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
 export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
 
-export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash'
+export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash' | 'billing'
 // actor: null when the user is gone and no name was copied; id null when only the copies are left.
 export type AuditEntry = {
   id: string
@@ -685,10 +813,10 @@ export type AuditEntry = {
 export type AuditPage = { entries: AuditEntry[]; more: boolean }
 
 export const workspacePath = (workspace: Workspace | string) => `/workspaces/${encodeURIComponent(typeof workspace === 'string' ? workspace : workspace.slug)}`
-export const auditPath = (slug: string, category?: AuditCategory, before?: string) => {
+export const auditPath = (slug: string, category?: AuditCategory, page?: number) => {
   const q = new URLSearchParams()
   if (category) q.set('category', category)
-  if (before) q.set('before', before)
+  if (page && page > 1) q.set('page', String(page))
   return `${workspacePath(slug)}/audit${q.size ? `?${q}` : ''}`
 }
 export const testCasesPath = (workspace: Workspace, identifier: string) => `${issuePath(workspace, identifier)}/test-cases`

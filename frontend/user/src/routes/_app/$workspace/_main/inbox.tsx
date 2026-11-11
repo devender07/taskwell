@@ -3,11 +3,12 @@ import type { Chat, NotificationPage } from '@/api'
 import { loaderApi } from '@/realtime'
 import { ChatList } from '@/components/chat/chat-list'
 import { botPath } from '@/components/inbox/taskwell-bot'
-import { workspacePath } from '@/api'
+import { requireFeature, workspacePath } from '@/api'
 
 type Search = { new?: 'group' | 'message' }
 
 export const Route = createFileRoute('/_app/$workspace/_main/inbox')({
+  beforeLoad: requireFeature('chat'),
   validateSearch: (search): Search => (search.new === 'group' || search.new === 'message' ? { new: search.new } : {}),
   loader: async (ctx) => {
     const path = `${workspacePath(ctx.params.workspace)}`

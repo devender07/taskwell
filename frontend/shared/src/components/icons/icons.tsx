@@ -533,3 +533,11 @@ export const UploadIcon = (props: IconProps) => (
     <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
   </Icon>
 )
+
+export const CreditCardIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18" />
+    <path d="M7 15h3" />
+  </Icon>
+)

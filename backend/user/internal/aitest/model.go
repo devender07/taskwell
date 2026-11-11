@@ -14,8 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
+	"github.com/devender07/taskwell/backend/user/internal/wsaudit"
 )
 
 var (
@@ -685,6 +687,7 @@ const (
 	heartbeatKey   = "ai_tester_heartbeat"
 	heartbeatFresh = 90 * time.Second
 	msgLimit       = "This month's AI test limit is reached."
+	msgNoAI        = "Your plan doesn't include AI test runs. Upgrade to use them."
 )
 
 type Site struct {
@@ -734,6 +737,9 @@ func (m *model) createSite(ctx context.Context, wsID, slug, actorID, base, host 
 			wsID, base, host).Scan(&s.ID); err != nil {
 			return err
 		}
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, "test_site.added", host, nil); err != nil {
+			return err
+		}
 		return publishWS(ctx, tx, wsID, slug, actorID, "test_sites.changed", "/test-sites")
 	})
 	if isUnique(err) {
@@ -747,18 +753,23 @@ func (m *model) createSite(ctx context.Context, wsID, slug, actorID, base, host 
 
 // deleteSite removes the workspace's site; errNotFound when there's none.
 func (m *model) deleteSite(ctx context.Context, wsID, slug, actorID, id string) error {
-	return m.deleteRow(ctx, `delete from test_sites where id = $1 and workspace_id = $2`, wsID, slug, actorID, id,
-		"test_sites.changed", "/test-sites")
+	return m.deleteRow(ctx, `delete from test_sites where id = $1 and workspace_id = $2 returning host`, wsID, slug, actorID, id,
+		"test_site.removed", "test_sites.changed", "/test-sites")
 }
 
-func (m *model) deleteRow(ctx context.Context, sql, wsID, slug, actorID, id, kind, path string) error {
+// deleteRow runs sql (returning the name the audit entry shows), recording action and publishing kind.
+func (m *model) deleteRow(ctx context.Context, sql, wsID, slug, actorID, id, action, kind, path string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, sql, id, wsID)
+		var name string
+		err := tx.QueryRow(ctx, sql, id, wsID).Scan(&name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return errNotFound
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, action, name, nil); err != nil {
+			return err
 		}
 		return publishWS(ctx, tx, wsID, slug, actorID, kind, path)
 	})
@@ -829,6 +840,13 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 		if tag.RowsAffected() == 0 {
 			return errNotFound
 		}
+		action, detail := "test_account.added", map[string]any(nil)
+		if id != "" {
+			action, detail = "test_account.updated", map[string]any{"password_changed": password != ""}
+		}
+		if err := wsaudit.Record(ctx, tx, wsID, actorID, action, label, detail); err != nil {
+			return err
+		}
 		return publishWS(ctx, tx, wsID, slug, actorID, "test_accounts.changed", "/test-accounts")
 	})
 	switch {
@@ -841,8 +859,8 @@ func (m *model) saveAccount(ctx context.Context, key []byte, wsID, slug, actorID
 }
 
 func (m *model) deleteAccount(ctx context.Context, wsID, slug, actorID, id string) error {
-	return m.deleteRow(ctx, `delete from test_accounts where id = $1 and workspace_id = $2`, wsID, slug, actorID, id,
-		"test_accounts.changed", "/test-accounts")
+	return m.deleteRow(ctx, `delete from test_accounts where id = $1 and workspace_id = $2 returning label`, wsID, slug, actorID, id,
+		"test_account.removed", "test_accounts.changed", "/test-accounts")
 }
 
 // password returns the workspace's account's sealed password; "" when there's none.
@@ -867,10 +885,12 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// spent is the workspace's Claude spend this UTC month in micro-dollars.
+// spent is the Claude spend this UTC month, in micro-dollars, of the workspace's account: the workspace and every
+// other one its owner created, since the plan's AI budget is the account's.
 func spent(ctx context.Context, q querier, wsID string) (int64, error) {
 	var n int64
-	if err := q.QueryRow(ctx, `select coalesce(sum(cost_micros), 0)::bigint from ai_usage where workspace_id = $1 and created_at >= $2`,
+	if err := q.QueryRow(ctx, `select coalesce(sum(cost_micros), 0)::bigint from ai_usage where created_at >= $2 and (workspace_id = $1
+		or workspace_id in (select id from workspaces where created_by = (select created_by from workspaces where id = $1)))`,
 		wsID, monthStart(time.Now())).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sum ai usage: %w", err)
 	}
@@ -1020,7 +1040,7 @@ const claimLock = 0x7465737472756e // "testrun"
 // claim takes the oldest queued AI or replay run whose workspace has fewer than workspaceCap of them running (open
 // browser sessions count too), marks
 // it generating (an AI run that needs cases) or running, and returns its id; "" when there's none.
-func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (string, error) {
+func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string, plans []string) (string, error) {
 	var id string
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock($1)`, claimLock); err != nil {
@@ -1033,7 +1053,8 @@ func (m *model) claim(ctx context.Context, workspaceCap int, testerURL string) (
 			       and o.status in ('generating', 'running'))
 			    + (select count(*) from browser_sessions b where b.workspace_id = r.workspace_id and b.closed_at is null
 			       and b.created_at > now() - make_interval(secs => $2)) < $1
-			order by r.created_at, r.id limit 1 for update skip locked`, workspaceCap, sessionMax.Seconds()).Scan(&id, &issueID)
+			  and ($3::text[] is null or `+plan.SQL("r.workspace_id")+` = any($3))
+			order by r.created_at, r.id limit 1 for update skip locked`, workspaceCap, sessionMax.Seconds(), plans).Scan(&id, &issueID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

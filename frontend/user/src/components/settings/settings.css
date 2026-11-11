@@ -24,15 +24,36 @@
   .settings-nav { position: sticky; top: 56px; align-self: start; }
 }
 @media (max-width: 1023px) {
-  .settings-nav { grid-auto-flow: column; justify-content: start; padding: 16px 24px 0; overflow-x: auto; scrollbar-width: none; }
-  .settings-nav-title { display: none; }
+  .settings-layout > .settings-nav { display: none; }
+  .settings-sheet-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: 12px 0 0 16px;
+    padding: 0 12px;
+    color: var(--text);
+    font: 510 14px/21px var(--font);
+    background: transparent;
+    border: 0;
+    border-radius: 9999px;
+    cursor: pointer;
+  }
+  .settings-sheet-trigger:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 }
+@media (min-width: 1024px) {
+  .settings-sheet-trigger { display: none; }
+}
+.dialog .settings-nav { padding: 0; }
+.dialog .settings-nav-title { display: none; }
+.settings-nav-group { margin: 12px 0 4px 12px; color: var(--text-2); font: 510 12px/18px var(--font); }
 @media (pointer: coarse) {
   .settings-nav a { height: 44px; }
 }
 
 /* Audit log table: the user app's only table, so its styles live here. */
 .audit-filter { overflow-x: auto; scrollbar-width: none; justify-self: start; max-width: 100%; }
+.audit-filter .tabs { min-width: max-content; } /* scroll the row instead of squeezing it, which misplaces the indicator */
 .audit-wrap { overflow-x: auto; }
 .audit-table { width: 100%; border-collapse: collapse; font: 400 13px/19.5px var(--font); white-space: nowrap; }
 .audit-table th { padding: 12px 16px; color: var(--text-2); font-weight: 510; text-align: left; border-bottom: 1px solid var(--border); }
@@ -40,3 +61,22 @@
 .audit-table tr:last-child td { border-bottom: 0; }
 /* Target and details wrap, so every column fits beside the settings nav on a laptop; time, who and IP stay on one line. */
 .audit-table td:nth-child(4), .audit-table td:nth-child(5) { white-space: normal; overflow-wrap: anywhere; min-width: 140px; }
+
+/* Phones: each entry becomes a stacked card row (who and when, then action, then target); details and IP drop. */
+@media (max-width: 640px) {
+  .audit-table, .audit-table tbody { display: block; white-space: normal; }
+  .audit-table thead, .audit-table td:nth-child(n + 5) { display: none; }
+  .audit-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .audit-table tr:last-child { border-bottom: 0; }
+  .audit-table td { height: auto; padding: 0; border: 0; }
+  .audit-table td:nth-child(1) { grid-area: 1 / 2; font-size: 12px; line-height: 18px; }
+  .audit-table td:nth-child(2) { grid-area: 1 / 1; font-weight: 510; }
+  .audit-table td:nth-child(3), .audit-table td:nth-child(4) { grid-column: 1 / -1; min-width: 0; }
+  .audit-table td[colspan] { grid-column: 1 / -1; }
+}

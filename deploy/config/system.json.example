@@ -14,5 +14,9 @@
   "s3_region": "auto",
   "s3_bucket": "taskwell",
   "s3_access_key_id": "",
-  "s3_secret_access_key": ""
+  "s3_secret_access_key": "",
+
+  "paddle_environment": "sandbox",
+  "paddle_api_key": "",
+  "paddle_webhook_secret": ""
 }

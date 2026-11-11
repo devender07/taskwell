@@ -9,7 +9,7 @@ import { noteBody, noteTitle } from '@taskwell/shared/validate'
 import { saveNote, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from '@/components/auth/auth-card'
 import { SavedAt, useAutosave } from './autosave'
-import { COLORS, focusNote, tint, titleKeyDown } from './note-tools'
+import { focusNote, NoteColors, tint, titleKeyDown } from './note-tools'
 
 const CHECKLIST: Doc = { type: 'doc', content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph' }] }] }] }
 
@@ -105,20 +105,7 @@ export function NewNoteDialog({ slug, checklist, label, onDone }: { slug: string
         </div>
         <footer className="note-sheet-footer">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="note-swatches" role="group" aria-label="Color">
-              {COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  className="note-swatch"
-                  aria-label={c.label}
-                  title={c.label}
-                  aria-pressed={color === c.value}
-                  style={{ background: c.value || 'var(--surface)' }}
-                  onClick={() => (setColor(c.value), schedule())}
-                />
-              ))}
-            </div>
+            <NoteColors value={color} onChange={(c) => (setColor(c), schedule())} />
             <Button type="submit" variant="secondary" style={{ marginLeft: 'auto' }}>
               Close
             </Button>

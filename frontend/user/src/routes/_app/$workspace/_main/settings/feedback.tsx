@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ApiError, feedbackFormPath, type FeedbackForm } from '@/api'
+import { ApiError, feedbackFormPath, type FeedbackForm, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { FeedbackFormCard } from '@/components/settings/feedback-form'
 
 export const Route = createFileRoute('/_app/$workspace/_main/settings/feedback')({
+  beforeLoad: requireFeature('feedback'),
   loader: (ctx) =>
     loaderApi<FeedbackForm>(ctx, feedbackFormPath(ctx.params.workspace)).catch((e) => {
       if (e instanceof ApiError && e.status === 403) return null

@@ -11,12 +11,18 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as InviteRouteImport } from './routes/invite'
+import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SubprocessorsRouteImport } from './routes/subprocessors'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
 import { Route as authResetPasswordRouteImport } from './routes/(auth)/reset-password'
 import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as AppWorkspaceRouteImport } from './routes/_app/$workspace'
+import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppNewWorkspaceRouteImport } from './routes/_app/new-workspace'
+import { Route as AppWelcomeRouteImport } from './routes/_app/welcome'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as authOauthAuthorizeRouteImport } from './routes/(auth)/oauth.authorize'
@@ -33,6 +39,7 @@ import { Route as AppWorkspaceMainRoadmapRouteImport } from './routes/_app/$work
 import { Route as AppWorkspaceMainSettingsRouteImport } from './routes/_app/$workspace/_main/settings'
 import { Route as AppWorkspaceMainTeamRouteImport } from './routes/_app/$workspace/_main/team'
 import { Route as AppWorkspaceMainTrashRouteImport } from './routes/_app/$workspace/_main/trash'
+import { Route as AppWorkspaceMainUpgradeRouteImport } from './routes/_app/$workspace/_main/upgrade'
 import { Route as AppWorkspaceMainInboxIndexRouteImport } from './routes/_app/$workspace/_main/inbox/index'
 import { Route as AppWorkspaceMainInboxTaskwellRouteImport } from './routes/_app/$workspace/_main/inbox/taskwell'
 import { Route as AppWorkspaceMainIssueIdentifierRouteImport } from './routes/_app/$workspace/_main/issue/$identifier'
@@ -43,6 +50,7 @@ import { Route as AppWorkspaceMainSettingsIndexRouteImport } from './routes/_app
 import { Route as AppWorkspaceMainSettingsAiTestingRouteImport } from './routes/_app/$workspace/_main/settings/ai-testing'
 import { Route as AppWorkspaceMainSettingsApiTokensRouteImport } from './routes/_app/$workspace/_main/settings/api-tokens'
 import { Route as AppWorkspaceMainSettingsAuditRouteImport } from './routes/_app/$workspace/_main/settings/audit'
+import { Route as AppWorkspaceMainSettingsBillingRouteImport } from './routes/_app/$workspace/_main/settings/billing'
 import { Route as AppWorkspaceMainSettingsFeedbackRouteImport } from './routes/_app/$workspace/_main/settings/feedback'
 import { Route as AppWorkspaceMainSettingsIntegrationsRouteImport } from './routes/_app/$workspace/_main/settings/integrations'
 import { Route as AppWorkspaceMainSettingsLabelsRouteImport } from './routes/_app/$workspace/_main/settings/labels'
@@ -71,6 +79,26 @@ const InviteRoute = InviteRouteImport.update({
   path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubprocessorsRoute = SubprocessorsRouteImport.update({
+  id: '/subprocessors',
+  path: '/subprocessors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
   id: '/(auth)/forgot-password',
   path: '/forgot-password',
@@ -96,9 +124,19 @@ const AppWorkspaceRoute = AppWorkspaceRouteImport.update({
   path: '/$workspace',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppNewWorkspaceRoute = AppNewWorkspaceRouteImport.update({
   id: '/new-workspace',
   path: '/new-workspace',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWelcomeRoute = AppWelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => AppRoute,
 } as any)
 const DocsApiRoute = DocsApiRouteImport.update({
@@ -183,6 +221,11 @@ const AppWorkspaceMainTrashRoute = AppWorkspaceMainTrashRouteImport.update({
   path: '/trash',
   getParentRoute: () => AppWorkspaceMainRoute,
 } as any)
+const AppWorkspaceMainUpgradeRoute = AppWorkspaceMainUpgradeRouteImport.update({
+  id: '/upgrade',
+  path: '/upgrade',
+  getParentRoute: () => AppWorkspaceMainRoute,
+} as any)
 const AppWorkspaceMainInboxIndexRoute =
   AppWorkspaceMainInboxIndexRouteImport.update({
     id: '/',
@@ -241,6 +284,12 @@ const AppWorkspaceMainSettingsAuditRoute =
   AppWorkspaceMainSettingsAuditRouteImport.update({
     id: '/audit',
     path: '/audit',
+    getParentRoute: () => AppWorkspaceMainSettingsRoute,
+  } as any)
+const AppWorkspaceMainSettingsBillingRoute =
+  AppWorkspaceMainSettingsBillingRouteImport.update({
+    id: '/billing',
+    path: '/billing',
     getParentRoute: () => AppWorkspaceMainSettingsRoute,
   } as any)
 const AppWorkspaceMainSettingsFeedbackRoute =
@@ -355,12 +404,18 @@ const AppWorkspaceMainProjectsKeyCyclesNumberRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/subprocessors': typeof SubprocessorsRoute
+  '/terms': typeof TermsRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/billing': typeof AppBillingRoute
   '/new-workspace': typeof AppNewWorkspaceRoute
+  '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -375,6 +430,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
+  '/$workspace/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/$workspace/': typeof AppWorkspaceMainIndexRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -383,6 +439,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/$workspace/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -408,12 +465,18 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/subprocessors': typeof SubprocessorsRoute
+  '/terms': typeof TermsRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/reset-password': typeof authResetPasswordRoute
   '/signin': typeof authSigninRoute
   '/signup': typeof authSignupRoute
   '/$workspace': typeof AppWorkspaceMainIndexRoute
+  '/billing': typeof AppBillingRoute
   '/new-workspace': typeof AppNewWorkspaceRoute
+  '/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -426,6 +489,7 @@ export interface FileRoutesByTo {
   '/$workspace/roadmap': typeof AppWorkspaceMainRoadmapRoute
   '/$workspace/team': typeof AppWorkspaceMainTeamRoute
   '/$workspace/trash': typeof AppWorkspaceMainTrashRoute
+  '/$workspace/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/$workspace/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/$workspace/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
   '/$workspace/members/$id': typeof AppWorkspaceMainMembersIdRoute
@@ -433,6 +497,7 @@ export interface FileRoutesByTo {
   '/$workspace/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/$workspace/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/$workspace/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/$workspace/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/$workspace/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/$workspace/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/$workspace/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -459,12 +524,18 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/invite': typeof InviteRoute
+  '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/subprocessors': typeof SubprocessorsRoute
+  '/terms': typeof TermsRoute
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/reset-password': typeof authResetPasswordRoute
   '/(auth)/signin': typeof authSigninRoute
   '/(auth)/signup': typeof authSignupRoute
   '/_app/$workspace': typeof AppWorkspaceRouteWithChildren
+  '/_app/billing': typeof AppBillingRoute
   '/_app/new-workspace': typeof AppNewWorkspaceRoute
+  '/_app/welcome': typeof AppWelcomeRoute
   '/docs/api': typeof DocsApiRoute
   '/f/$token': typeof FTokenRoute
   '/(auth)/oauth/authorize': typeof authOauthAuthorizeRoute
@@ -480,6 +551,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings': typeof AppWorkspaceMainSettingsRouteWithChildren
   '/_app/$workspace/_main/team': typeof AppWorkspaceMainTeamRoute
   '/_app/$workspace/_main/trash': typeof AppWorkspaceMainTrashRoute
+  '/_app/$workspace/_main/upgrade': typeof AppWorkspaceMainUpgradeRoute
   '/_app/$workspace/_main/': typeof AppWorkspaceMainIndexRoute
   '/_app/$workspace/_main/inbox/taskwell': typeof AppWorkspaceMainInboxTaskwellRoute
   '/_app/$workspace/_main/issue/$identifier': typeof AppWorkspaceMainIssueIdentifierRoute
@@ -488,6 +560,7 @@ export interface FileRoutesById {
   '/_app/$workspace/_main/settings/ai-testing': typeof AppWorkspaceMainSettingsAiTestingRoute
   '/_app/$workspace/_main/settings/api-tokens': typeof AppWorkspaceMainSettingsApiTokensRoute
   '/_app/$workspace/_main/settings/audit': typeof AppWorkspaceMainSettingsAuditRoute
+  '/_app/$workspace/_main/settings/billing': typeof AppWorkspaceMainSettingsBillingRoute
   '/_app/$workspace/_main/settings/feedback': typeof AppWorkspaceMainSettingsFeedbackRoute
   '/_app/$workspace/_main/settings/integrations': typeof AppWorkspaceMainSettingsIntegrationsRoute
   '/_app/$workspace/_main/settings/labels': typeof AppWorkspaceMainSettingsLabelsRoute
@@ -515,12 +588,18 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/invite'
+    | '/pricing'
+    | '/privacy'
+    | '/subprocessors'
+    | '/terms'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/billing'
     | '/new-workspace'
+    | '/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
@@ -535,6 +614,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings'
     | '/$workspace/team'
     | '/$workspace/trash'
+    | '/$workspace/upgrade'
     | '/$workspace/'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
@@ -543,6 +623,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/audit'
+    | '/$workspace/settings/billing'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -568,12 +649,18 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/invite'
+    | '/pricing'
+    | '/privacy'
+    | '/subprocessors'
+    | '/terms'
     | '/forgot-password'
     | '/reset-password'
     | '/signin'
     | '/signup'
     | '/$workspace'
+    | '/billing'
     | '/new-workspace'
+    | '/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/oauth/authorize'
@@ -586,6 +673,7 @@ export interface FileRouteTypes {
     | '/$workspace/roadmap'
     | '/$workspace/team'
     | '/$workspace/trash'
+    | '/$workspace/upgrade'
     | '/$workspace/inbox/taskwell'
     | '/$workspace/issue/$identifier'
     | '/$workspace/members/$id'
@@ -593,6 +681,7 @@ export interface FileRouteTypes {
     | '/$workspace/settings/ai-testing'
     | '/$workspace/settings/api-tokens'
     | '/$workspace/settings/audit'
+    | '/$workspace/settings/billing'
     | '/$workspace/settings/feedback'
     | '/$workspace/settings/integrations'
     | '/$workspace/settings/labels'
@@ -618,12 +707,18 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/invite'
+    | '/pricing'
+    | '/privacy'
+    | '/subprocessors'
+    | '/terms'
     | '/(auth)/forgot-password'
     | '/(auth)/reset-password'
     | '/(auth)/signin'
     | '/(auth)/signup'
     | '/_app/$workspace'
+    | '/_app/billing'
     | '/_app/new-workspace'
+    | '/_app/welcome'
     | '/docs/api'
     | '/f/$token'
     | '/(auth)/oauth/authorize'
@@ -639,6 +734,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings'
     | '/_app/$workspace/_main/team'
     | '/_app/$workspace/_main/trash'
+    | '/_app/$workspace/_main/upgrade'
     | '/_app/$workspace/_main/'
     | '/_app/$workspace/_main/inbox/taskwell'
     | '/_app/$workspace/_main/issue/$identifier'
@@ -647,6 +743,7 @@ export interface FileRouteTypes {
     | '/_app/$workspace/_main/settings/ai-testing'
     | '/_app/$workspace/_main/settings/api-tokens'
     | '/_app/$workspace/_main/settings/audit'
+    | '/_app/$workspace/_main/settings/billing'
     | '/_app/$workspace/_main/settings/feedback'
     | '/_app/$workspace/_main/settings/integrations'
     | '/_app/$workspace/_main/settings/labels'
@@ -673,6 +770,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   InviteRoute: typeof InviteRoute
+  PricingRoute: typeof PricingRoute
+  PrivacyRoute: typeof PrivacyRoute
+  SubprocessorsRoute: typeof SubprocessorsRoute
+  TermsRoute: typeof TermsRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authResetPasswordRoute: typeof authResetPasswordRoute
   authSigninRoute: typeof authSigninRoute
@@ -698,6 +799,34 @@ declare module '@tanstack/react-router' {
       path: '/invite'
       fullPath: '/invite'
       preLoaderRoute: typeof InviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subprocessors': {
+      id: '/subprocessors'
+      path: '/subprocessors'
+      fullPath: '/subprocessors'
+      preLoaderRoute: typeof SubprocessorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(auth)/forgot-password': {
@@ -735,11 +864,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/billing': {
+      id: '/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/new-workspace': {
       id: '/_app/new-workspace'
       path: '/new-workspace'
       fullPath: '/new-workspace'
       preLoaderRoute: typeof AppNewWorkspaceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/welcome': {
+      id: '/_app/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof AppWelcomeRouteImport
       parentRoute: typeof AppRoute
     }
     '/docs/api': {
@@ -854,6 +997,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWorkspaceMainTrashRouteImport
       parentRoute: typeof AppWorkspaceMainRoute
     }
+    '/_app/$workspace/_main/upgrade': {
+      id: '/_app/$workspace/_main/upgrade'
+      path: '/upgrade'
+      fullPath: '/$workspace/upgrade'
+      preLoaderRoute: typeof AppWorkspaceMainUpgradeRouteImport
+      parentRoute: typeof AppWorkspaceMainRoute
+    }
     '/_app/$workspace/_main/inbox/': {
       id: '/_app/$workspace/_main/inbox/'
       path: '/'
@@ -922,6 +1072,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/$workspace/settings/audit'
       preLoaderRoute: typeof AppWorkspaceMainSettingsAuditRouteImport
+      parentRoute: typeof AppWorkspaceMainSettingsRoute
+    }
+    '/_app/$workspace/_main/settings/billing': {
+      id: '/_app/$workspace/_main/settings/billing'
+      path: '/billing'
+      fullPath: '/$workspace/settings/billing'
+      preLoaderRoute: typeof AppWorkspaceMainSettingsBillingRouteImport
       parentRoute: typeof AppWorkspaceMainSettingsRoute
     }
     '/_app/$workspace/_main/settings/feedback': {
@@ -1074,6 +1231,7 @@ interface AppWorkspaceMainSettingsRouteChildren {
   AppWorkspaceMainSettingsAiTestingRoute: typeof AppWorkspaceMainSettingsAiTestingRoute
   AppWorkspaceMainSettingsApiTokensRoute: typeof AppWorkspaceMainSettingsApiTokensRoute
   AppWorkspaceMainSettingsAuditRoute: typeof AppWorkspaceMainSettingsAuditRoute
+  AppWorkspaceMainSettingsBillingRoute: typeof AppWorkspaceMainSettingsBillingRoute
   AppWorkspaceMainSettingsFeedbackRoute: typeof AppWorkspaceMainSettingsFeedbackRoute
   AppWorkspaceMainSettingsIntegrationsRoute: typeof AppWorkspaceMainSettingsIntegrationsRoute
   AppWorkspaceMainSettingsLabelsRoute: typeof AppWorkspaceMainSettingsLabelsRoute
@@ -1098,6 +1256,7 @@ const AppWorkspaceMainSettingsRouteChildren: AppWorkspaceMainSettingsRouteChildr
     AppWorkspaceMainSettingsApiTokensRoute:
       AppWorkspaceMainSettingsApiTokensRoute,
     AppWorkspaceMainSettingsAuditRoute: AppWorkspaceMainSettingsAuditRoute,
+    AppWorkspaceMainSettingsBillingRoute: AppWorkspaceMainSettingsBillingRoute,
     AppWorkspaceMainSettingsFeedbackRoute:
       AppWorkspaceMainSettingsFeedbackRoute,
     AppWorkspaceMainSettingsIntegrationsRoute:
@@ -1141,6 +1300,7 @@ interface AppWorkspaceMainRouteChildren {
   AppWorkspaceMainSettingsRoute: typeof AppWorkspaceMainSettingsRouteWithChildren
   AppWorkspaceMainTeamRoute: typeof AppWorkspaceMainTeamRoute
   AppWorkspaceMainTrashRoute: typeof AppWorkspaceMainTrashRoute
+  AppWorkspaceMainUpgradeRoute: typeof AppWorkspaceMainUpgradeRoute
   AppWorkspaceMainIndexRoute: typeof AppWorkspaceMainIndexRoute
   AppWorkspaceMainIssueIdentifierRoute: typeof AppWorkspaceMainIssueIdentifierRoute
   AppWorkspaceMainMembersIdRoute: typeof AppWorkspaceMainMembersIdRoute
@@ -1161,6 +1321,7 @@ const AppWorkspaceMainRouteChildren: AppWorkspaceMainRouteChildren = {
   AppWorkspaceMainSettingsRoute: AppWorkspaceMainSettingsRouteWithChildren,
   AppWorkspaceMainTeamRoute: AppWorkspaceMainTeamRoute,
   AppWorkspaceMainTrashRoute: AppWorkspaceMainTrashRoute,
+  AppWorkspaceMainUpgradeRoute: AppWorkspaceMainUpgradeRoute,
   AppWorkspaceMainIndexRoute: AppWorkspaceMainIndexRoute,
   AppWorkspaceMainIssueIdentifierRoute: AppWorkspaceMainIssueIdentifierRoute,
   AppWorkspaceMainMembersIdRoute: AppWorkspaceMainMembersIdRoute,
@@ -1190,12 +1351,16 @@ const AppWorkspaceRouteWithChildren = AppWorkspaceRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppWorkspaceRoute: typeof AppWorkspaceRouteWithChildren
+  AppBillingRoute: typeof AppBillingRoute
   AppNewWorkspaceRoute: typeof AppNewWorkspaceRoute
+  AppWelcomeRoute: typeof AppWelcomeRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppWorkspaceRoute: AppWorkspaceRouteWithChildren,
+  AppBillingRoute: AppBillingRoute,
   AppNewWorkspaceRoute: AppNewWorkspaceRoute,
+  AppWelcomeRoute: AppWelcomeRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -1203,6 +1368,10 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   InviteRoute: InviteRoute,
+  PricingRoute: PricingRoute,
+  PrivacyRoute: PrivacyRoute,
+  SubprocessorsRoute: SubprocessorsRoute,
+  TermsRoute: TermsRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authResetPasswordRoute: authResetPasswordRoute,
   authSigninRoute: authSigninRoute,

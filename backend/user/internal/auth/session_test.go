@@ -27,7 +27,7 @@ func TestAuthenticateBearer(t *testing.T) {
 		return id
 	}
 	raw := apiTokenPrefix + secret.NewToken()
-	tok, err := h.model.insertAPIToken(ctx, userID, "laptop", secret.Hash(raw))
+	tok, err := h.model.insertAPIToken(ctx, userID, "laptop", secret.Hash(raw), meta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestAuthenticateBearer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := h.model.deleteAPIToken(ctx, userID, tok.ID); err != nil || !ok {
+	if ok, err := h.model.deleteAPIToken(ctx, userID, tok.ID, meta{}); err != nil || !ok {
 		t.Fatalf("revoke: %v %v", ok, err)
 	}
 	if got := auth("Bearer " + raw); got != "" {

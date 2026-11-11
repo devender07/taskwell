@@ -218,7 +218,7 @@ func TestAPI(t *testing.T) {
 	if err := f.pool.QueryRow(context.Background(), `select string_agg(action || ' ' || target, ', ' order by id) from workspace_audit
 		where workspace_id = $1 and target = 'https://hooks.example' and action like 'webhook.%' and actor_id = $2`,
 		f.wsID, f.ann).Scan(&audit); err != nil ||
-		!strings.HasPrefix(audit, "webhook.created https://hooks.example, webhook.secret_rolled https://hooks.example, ") ||
+		!strings.HasPrefix(audit, "webhook.created https://hooks.example, webhook.updated https://hooks.example, webhook.updated https://hooks.example, webhook.secret_rolled https://hooks.example, ") ||
 		!strings.HasSuffix(audit, ", webhook.deleted https://hooks.example") { // the limit check's webhooks come between
 		t.Errorf("audit log %q %v", audit, err)
 	}
@@ -351,6 +351,13 @@ func TestWorker(t *testing.T) {
 	}
 
 	f.do(t, f.ann, "POST", "/"+wh.ID+"/test", nil, 202, nil)
+	// Webhooks on for Pro only, the owner is on Free: the delivery waits, no attempt used.
+	f.h.Plans = func(context.Context) []string { return []string{"pro"} }
+	send(false)
+	if ds := list(); len(ds) != 1 || ds[0].Status != "pending" || ds[0].Attempts != 0 {
+		t.Fatalf("paused %+v", ds)
+	}
+	f.h.Plans = nil
 	send(true)
 	h := <-hits
 	ds := list()

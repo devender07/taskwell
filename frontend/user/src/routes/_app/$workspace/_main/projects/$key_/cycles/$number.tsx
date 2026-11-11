@@ -7,7 +7,7 @@ import { IconButton } from '@taskwell/shared/icon-button'
 import { Popover } from '@taskwell/shared/popover'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { MoreIcon } from '@taskwell/shared/icons'
-import { ApiError, burndownPath, can, cyclesPath, rolloverCycle, type Burndown, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath } from '@/api'
+import { ApiError, burndownPath, can, cyclesPath, rolloverCycle, type Burndown, toFormErrors, type Cycle, type Issue, type Label, type Project, type Status, type Workspace, workspacePath, requireFeature } from '@/api'
 import { loaderApi, reloadPage, trackPath } from '@/realtime'
 import { peopleSearch } from '@/components/workspace/member-pages'
 import { FormError } from '@/components/auth/auth-card'
@@ -20,6 +20,7 @@ import '@/components/issues/issues.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/projects/$key_/cycles/$number')({
+  beforeLoad: requireFeature('cycles'),
   validateSearch: validateViewSearch,
   loaderDeps: ({ search }) => ({ search }),
   loader: async (ctx) => {

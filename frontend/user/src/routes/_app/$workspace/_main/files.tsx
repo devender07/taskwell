@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { FolderIcon } from '@taskwell/shared/icons'
-import { storagePath, workspacePath, type Project, type StorageUsage } from '@/api'
+import { storagePath, workspacePath, type Project, type StorageUsage, requireFeature } from '@/api'
 import { loaderApi } from '@/realtime'
 import { formatBytes } from '@/components/files/bytes'
 import '@/components/files/files.css'
@@ -8,6 +8,7 @@ import '@/components/home/home.css'
 import '@/components/projects/projects.css'
 
 export const Route = createFileRoute('/_app/$workspace/_main/files')({
+  beforeLoad: requireFeature('files'),
   loader: async (ctx) => {
     const [projects, storage] = await Promise.all([
       loaderApi<Project[]>(ctx, `${workspacePath(ctx.params.workspace)}/projects`),
@@ -22,7 +23,7 @@ function FileManager() {
   const { workspace } = Route.useParams()
   const { projects, storage } = Route.useLoaderData()
   const { used_bytes: used, quota_bytes: quota } = storage
-  const usage = `${formatBytes(used)} of ${formatBytes(quota)} used`
+  const usage = quota === null ? `${formatBytes(used)} used` : `${formatBytes(used)} of ${formatBytes(quota)} used`
 
   return (
     <main className="grid gap-6 w-full px-6 py-10" style={{ alignContent: 'start' }}>
@@ -30,9 +31,11 @@ function FileManager() {
         <h1 className="text-h2">Files</h1>
         <div className="grid gap-2" style={{ maxWidth: 400 }}>
           <span className="text-caption text-secondary">{usage}</span>
-          <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={usage} className="home-bar">
-            <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
-          </span>
+          {quota === null ? null : (
+            <span role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={quota} aria-valuenow={used} aria-valuetext={usage} className="home-bar">
+              <span style={{ width: quota ? `${Math.min(100, (used / quota) * 100)}%` : 0 }} />
+            </span>
+          )}
         </div>
       </header>
       {projects.length ? (

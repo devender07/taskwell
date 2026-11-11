@@ -1,10 +1,10 @@
 import { Link, useRouteContext, useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useMemo, useOptimistic, useRef, type ReactNode } from 'react'
+import { startTransition, useActionState, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { DatePicker } from '@taskwell/shared/date-picker'
 import { filterOptions } from '@taskwell/shared/match'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
-import { api, canViewMember, cyclesPath, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
+import { api, canViewMember, cyclesPath, featureOn, useFeatures, issuePath, avatarSrc, listCycles, toFormErrors, type CycleRef, type Issue, type IssueRef, type Label, type Status, type Workspace } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import { reloadPage, subscribePaths } from '@/realtime'
 import { FormError } from '@/components/auth/auth-card'
@@ -14,22 +14,30 @@ import '@/components/analytics/analytics.css'
 import { byId, extractDataFromArray } from '@taskwell/shared/list'
 
 type Props = { workspace: Workspace; issue: Issue; statuses: Status[]; labels: Label[]; people: PeopleSearch }
-type Patch = { form: FormData; next: Partial<Issue> }
 
 // Each property saves on change with a partial update; read-only text without edit rights.
 export function IssueProperties({ workspace, issue: saved, statuses, labels, people }: Props) {
   const router = useRouter()
   const { user } = useRouteContext({ from: '/_app' })
-  const [issue, apply] = useOptimistic(saved, (cur, next: Partial<Issue>) => ({ ...cur, ...next }))
+  const features = useFeatures()
+  const cycles = featureOn(features, 'cycles')
+  // The change shows until the reloaded issue replaces it; useOptimistic dropped it a render before that, flashing the old value.
+  const [pending, setPending] = useState<Partial<Issue> | null>(null)
+  const [prevSaved, setPrevSaved] = useState(saved)
+  if (saved !== prevSaved) {
+    setPrevSaved(saved)
+    setPending(null)
+  }
+  const issue = pending ? { ...saved, ...pending } : saved
   const statusOpts = useMemo(() => statusOptions(statuses), [statuses])
   const found = useRef(new Map<string, IssueRef>())
   const foundCycles = useRef(new Map<string, CycleRef>())
 
-  const [error, save] = useActionState(async (_prev: string | null, { form, next }: Patch) => {
-    apply(next)
+  const [error, save] = useActionState(async (_prev: string | null, form: FormData) => {
     try {
       await api<Issue>(issuePath(workspace, saved.identifier), form)
     } catch (e) {
+      setPending(null)
       const { errors, error } = toFormErrors(e)
       return Object.values(errors).find(Boolean) ?? error
     }
@@ -41,7 +49,8 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
     const form = new FormData()
     if (values.length === 0) form.set(field, '')
     for (const v of values) form.append(field, v)
-    startTransition(() => save({ form, next }))
+    setPending((p) => ({ ...p, ...next }))
+    startTransition(() => save(form))
   }
 
   const late = overdue(issue.due_date, issue.status.category)
@@ -122,18 +131,20 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
               }}
             />
           ) : null}
-          <SmartAutocomplete
-            label="Cycle"
-            placeholder="No cycle"
-            loadOptions={loadCycles}
-            subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
-            value={issue.cycle ? cycleOption(issue.cycle) : null}
-            onChange={(o) => {
-              const id = extractDataFromArray(o, 'value', '')
-              if (id === (extractDataFromArray(issue.cycle, 'id', ''))) return
-              update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
-            }}
-          />
+          {cycles ? (
+            <SmartAutocomplete
+              label="Cycle"
+              placeholder="No cycle"
+              loadOptions={loadCycles}
+              subscribe={(reload) => subscribePaths([cyclesPath(workspace.slug, saved.project.key)], reload)}
+              value={issue.cycle ? cycleOption(issue.cycle) : null}
+              onChange={(o) => {
+                const id = extractDataFromArray(o, 'value', '')
+                if (id === (extractDataFromArray(issue.cycle, 'id', ''))) return
+                update('cycle', [id], { cycle: foundCycles.current.get(id) ?? null })
+              }}
+            />
+          ) : null}
           <div className="grid gap-2">
             <span className="text-label text-secondary">Labels</span>
             <LabelsPicker
@@ -173,7 +184,7 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
             {issue.assignee ? (
               <span className="flex items-center gap-2">
                 <Avatar name={issue.assignee.name} size={24} src={avatarSrc(issue.assignee.id)} />
-                {canViewMember(workspace, issue.assignee.id, user.id) ? (
+                {featureOn(features, 'team') && canViewMember(workspace, issue.assignee.id, user.id) ? (
                   <Link to="/$workspace/members/$id" params={{ workspace: workspace.slug, id: issue.assignee.id }} className="member-link">
                     {issue.assignee.name}
                   </Link>
@@ -200,18 +211,20 @@ export function IssueProperties({ workspace, issue: saved, statuses, labels, peo
               )}
             </Property>
           ) : null}
-          <Property label="Cycle">
-            {issue.cycle ? (
-              <Link
-                to="/$workspace/projects/$key/cycles/$number"
-                params={{ workspace: workspace.slug, key: issue.project.key, number: String(issue.cycle.number) }}
-              >
-                {issue.cycle.name}
-              </Link>
-            ) : (
-              <span className="text-secondary">No cycle</span>
-            )}
-          </Property>
+          {cycles ? (
+            <Property label="Cycle">
+              {issue.cycle ? (
+                <Link
+                  to="/$workspace/projects/$key/cycles/$number"
+                  params={{ workspace: workspace.slug, key: issue.project.key, number: String(issue.cycle.number) }}
+                >
+                  {issue.cycle.name}
+                </Link>
+              ) : (
+                <span className="text-secondary">No cycle</span>
+              )}
+            </Property>
+          ) : null}
           <Property label="Labels">
             {issue.labels.length ? <LabelChips labels={issue.labels} /> : <span className="text-secondary">No labels</span>}
           </Property>

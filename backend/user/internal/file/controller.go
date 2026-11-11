@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
@@ -106,7 +107,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request, userID string) 
 }
 
 // Upload stores the request's multipart "file" as an upload to the workspace, within upload_max_mb and what's left of
-// upload_quota_mb. place, when not nil, gets the form's other fields and says where the file goes (nil: nowhere in
+// its plan's storage. place, when not nil, gets the form's other fields and says where the file goes (nil: nowhere in
 // particular); it writes its own error response and returns ok=false to stop. On ok=false a response was written.
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request, workspaceID, userID string,
 	place func(fields url.Values) (*Placement, bool, error)) (*File, bool, error) {
@@ -126,18 +127,21 @@ func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, 
 	if err != nil {
 		return 0, "", err
 	}
-	quota, err := h.cfg.GetInt(ctx, "upload_quota_mb")
+	p, err := plan.ForWorkspace(ctx, h.model.db, workspaceID)
 	if err != nil {
 		return 0, "", err
+	}
+	limit, tooLarge := int64(mb)<<20, fmt.Sprintf("Files must be %d MB or smaller.", mb)
+	if p.StorageBytes == 0 {
+		return limit, tooLarge, nil
 	}
 	used, err := h.model.used(ctx, workspaceID)
 	if err != nil {
 		return 0, "", err
 	}
-	limit, tooLarge := int64(mb)<<20, fmt.Sprintf("Files must be %d MB or smaller.", mb)
-	if left := int64(quota)<<20 - used; left < limit {
-		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%d MB). Delete some attachments or ask "+
-			"your administrator for more space.", quota)
+	if left := p.StorageBytes - used; left < limit {
+		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.",
+			plan.GB(p.StorageBytes))
 	}
 	return limit, tooLarge, nil
 }
@@ -299,7 +303,7 @@ func (h *Handler) finishLocked(ctx context.Context, tx pgx.Tx, id string, worksp
 	return nil, errChooseMedia, nil
 }
 
-// storage answers the workspace's storage use against its quota.
+// storage answers the workspace's storage use against its plan's quota (null: unlimited).
 func (h *Handler) storage(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
 	if err != nil {
@@ -309,7 +313,7 @@ func (h *Handler) storage(w http.ResponseWriter, r *http.Request, userID string)
 		web.Err(w, http.StatusNotFound, "Workspace not found.")
 		return nil
 	}
-	quota, err := h.cfg.GetInt(r.Context(), "upload_quota_mb")
+	p, err := plan.ForWorkspace(r.Context(), h.model.db, ws.ID)
 	if err != nil {
 		return err
 	}
@@ -317,7 +321,11 @@ func (h *Handler) storage(w http.ResponseWriter, r *http.Request, userID string)
 	if err != nil {
 		return err
 	}
-	web.JSON(w, http.StatusOK, map[string]int64{"used_bytes": used, "quota_bytes": int64(quota) << 20})
+	var quota *int64 // null: unlimited
+	if p.StorageBytes > 0 {
+		quota = &p.StorageBytes
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"used_bytes": used, "quota_bytes": quota})
 	return nil
 }
 

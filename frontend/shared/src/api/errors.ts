@@ -9,8 +9,9 @@ export class ApiError extends Error {
   status: number
   errors: FieldErrors
   error: string | null
+  body?: Record<string, unknown> // the whole response, for extra fields such as a 409's `workspaces`
 
-  constructor(status: number, body?: { errors?: FieldErrors; error?: string }) {
+  constructor(status: number, body?: { errors?: FieldErrors; error?: string } & Record<string, unknown>) {
     // Field errors stand on their own; no response at all (status 0) says offline or unreachable; anything else
     // (no body, proxy 500) gets the generic message.
     const error = body?.error ?? (body?.errors ? null : status === 0 ? (navigator.onLine ? UNREACHABLE : OFFLINE) : FALLBACK)
@@ -18,6 +19,7 @@ export class ApiError extends Error {
     this.status = status
     this.errors = body?.errors ?? {}
     this.error = error
+    this.body = body
   }
 }
 

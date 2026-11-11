@@ -1,9 +1,9 @@
 import { useRouter } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
 import { Checkbox } from '@taskwell/shared/checkbox'
-import { SWATCHES } from '@taskwell/shared/color-picker'
+import { ColorPanel, SWATCHES } from '@taskwell/shared/color-picker'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
 import { ArchiveIcon, MoreIcon, PaletteIcon, PinIcon, TagIcon, UserPlusIcon, XIcon } from '@taskwell/shared/icons'
@@ -38,6 +38,73 @@ export const titleKeyDown = (e: { key: string; preventDefault: () => void }) => 
   if (e.key !== 'Enter') return
   e.preventDefault()
   focusNote(true)
+}
+
+// The preset colors, then a custom one that opens the color picker in its own popover.
+export function NoteColors({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+  const preset = COLORS.some((c) => c.value === value)
+  return (
+    <div className="note-swatches" role="group" aria-label="Color">
+      {COLORS.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          className="note-swatch"
+          aria-label={c.label}
+          title={c.label}
+          aria-pressed={value === c.value}
+          style={{ background: c.value || 'var(--surface)' }}
+          onClick={() => onChange(c.value)}
+        />
+      ))}
+      <Popover
+        aria-label="Custom color"
+        placement="bottom-start"
+        trigger={(p) => (
+          <button
+            {...p}
+            type="button"
+            className="note-swatch note-swatch-custom"
+            aria-label="Custom color"
+            title="Custom color"
+            aria-pressed={!preset}
+            aria-haspopup="dialog"
+            style={preset ? undefined : { background: value }}
+          />
+        )}
+      >
+        <ColorPanel value={value || SWATCHES[0]!} onChange={onChange} swatches={[]} alpha={false} />
+      </Popover>
+    </div>
+  )
+}
+
+// The color popover's content: a preset closes it; a custom color saves when it closes.
+function ColorMenu({ color, onDone, close }: { color: string; onDone: (color: string) => void; close: () => void }) {
+  const [value, setValue] = useState(color)
+  const latest = useRef(color)
+  const done = useRef(onDone)
+  useEffect(() => {
+    done.current = onDone
+  })
+  useEffect(
+    () => () => {
+      if (latest.current !== color) done.current(latest.current)
+    },
+    [color],
+  )
+  return (
+    <div className="p-2">
+      <NoteColors
+        value={value}
+        onChange={(c) => {
+          latest.current = c
+          setValue(c)
+          if (COLORS.some((p) => p.value === c)) close()
+        }}
+      />
+    </div>
+  )
 }
 
 export const tint = (color: string) => (color ? `color-mix(in srgb, ${color} 16%, var(--surface))` : undefined)
@@ -98,25 +165,7 @@ export function NoteTools({ slug, note, labels, me, onGone }: ToolsProps) {
             </IconButton>
           )}
         >
-          {(close) => (
-            <div className="note-swatches p-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  className="note-swatch"
-                  aria-label={c.label}
-                  title={c.label}
-                  aria-pressed={note.color === c.value}
-                  style={{ background: c.value || 'var(--surface)' }}
-                  onClick={() => {
-                    close()
-                    if (c.value !== note.color) act(() => save({ color: c.value }))
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          {(close) => <ColorMenu color={note.color} onDone={(color) => act(() => save({ color }))} close={close} />}
         </Popover>
       ) : null}
       <Popover

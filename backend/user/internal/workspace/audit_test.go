@@ -106,7 +106,7 @@ func TestAudit(t *testing.T) {
 	if p := list("?category=nope"); len(p.Entries) != len(want) {
 		t.Errorf("unknown category isn't ignored: %d entries", len(p.Entries))
 	}
-	do(ann, "GET", "/audit?before=nope", nil, 400)
+	do(ann, "GET", "/audit?page=0", nil, 400)
 	do(bob, "GET", "/audit", nil, 403)
 	do(cara, "GET", "/audit", nil, 404) // removed
 
@@ -119,7 +119,7 @@ func TestAudit(t *testing.T) {
 	if len(first.Entries) != wsaudit.PageSize || !first.More || first.Entries[0].Action != "project.archived" {
 		t.Fatalf("first page: %d entries, more %v", len(first.Entries), first.More)
 	}
-	rest := list("?before=" + first.Entries[wsaudit.PageSize-1].ID)
+	rest := list("?page=2")
 	if len(rest.Entries) != len(want) || rest.More || rest.Entries[0].Action != "member.removed" {
 		t.Fatalf("second page: %+v", rest)
 	}

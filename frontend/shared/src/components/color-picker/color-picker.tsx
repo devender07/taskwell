@@ -52,7 +52,7 @@ export function ColorPicker({ label, 'aria-label': ariaLabel, value, onChange, n
           </button>
         )}
       >
-        <Panel value={value} onChange={change} swatches={swatches} />
+        <ColorPanel value={value} onChange={change} swatches={swatches} />
       </Popover>
       {name ? <input type="hidden" name={name} value={value} /> : null}
       {error ? <span id={errorId} className="text-caption text-accent">{error}</span> : null}
@@ -68,7 +68,8 @@ function Swatch({ color }: { color: string }) {
   )
 }
 
-function Panel({ value, onChange, swatches }: { value: string; onChange: (hex: string) => void; swatches: string[] }) {
+// The picker's panel on its own, e.g. inline in another popover. alpha false: no opacity, always '#rrggbb'.
+export function ColorPanel({ value, onChange, swatches = SWATCHES, alpha = true }: { value: string; onChange: (hex: string) => void; swatches?: string[]; alpha?: boolean }) {
   // HSVA is kept here, not derived from the hex, so the hue survives dragging to gray or black.
   const [hsva, setHsva] = useState<HSVA>(() => parseHex(value) ?? { h: 0, s: 0, v: 0, a: 1 })
   const [text, setText] = useState(value)
@@ -79,6 +80,7 @@ function Panel({ value, onChange, swatches }: { value: string; onChange: (hex: s
     if (value !== toHex(hsva)) setHsva(parseHex(value) ?? hsva)
   }
   const set = (next: HSVA) => {
+    if (!alpha) next = { ...next, a: 1 }
     setHsva(next)
     const hex = toHex(next)
     setText(hex)
@@ -129,23 +131,25 @@ function Panel({ value, onChange, swatches }: { value: string; onChange: (hex: s
         value={Math.round(hsva.h)}
         onChange={(e) => set({ ...hsva, h: Number(e.target.value) })}
       />
-      <input
-        type="range"
-        className="color-picker-slider color-picker-alpha"
-        style={{ '--color': opaque } as CSSProperties}
-        aria-label="Opacity"
-        aria-valuetext={`${Math.round(hsva.a * 100)}%`}
-        min={0}
-        max={100}
-        value={Math.round(hsva.a * 100)}
-        onChange={(e) => set({ ...hsva, a: Number(e.target.value) / 100 })}
-      />
+      {alpha ? (
+        <input
+          type="range"
+          className="color-picker-slider color-picker-alpha"
+          style={{ '--color': opaque } as CSSProperties}
+          aria-label="Opacity"
+          aria-valuetext={`${Math.round(hsva.a * 100)}%`}
+          min={0}
+          max={100}
+          value={Math.round(hsva.a * 100)}
+          onChange={(e) => set({ ...hsva, a: Number(e.target.value) / 100 })}
+        />
+      ) : null}
       <div className="flex items-center gap-2">
         <input
           className="input color-picker-hex"
           aria-label="Hex"
           spellCheck={false}
-          maxLength={9}
+          maxLength={alpha ? 9 : 7}
           value={text}
           onChange={(e) => {
             const v = e.target.value.trim().toLowerCase()
@@ -155,15 +159,17 @@ function Panel({ value, onChange, swatches }: { value: string; onChange: (hex: s
           }}
           onBlur={() => setText(toHex(hsva))}
         />
-        <span className="text-caption text-secondary color-picker-percent">{Math.round(hsva.a * 100)}%</span>
+        {alpha ? <span className="text-caption text-secondary color-picker-percent">{Math.round(hsva.a * 100)}%</span> : null}
       </div>
-      <div className="color-picker-swatches">
-        {swatches.map((s) => (
-          <button key={s} type="button" className="color-picker-preset" aria-label={s} aria-pressed={s === value} onClick={() => set(parseHex(s) ?? hsva)}>
-            <Swatch color={s} />
-          </button>
-        ))}
-      </div>
+      {swatches.length ? (
+        <div className="color-picker-swatches">
+          {swatches.map((s) => (
+            <button key={s} type="button" className="color-picker-preset" aria-label={s} aria-pressed={s === value} onClick={() => set(parseHex(s) ?? hsva)}>
+              <Swatch color={s} />
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

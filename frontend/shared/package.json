@@ -13,7 +13,9 @@
     "./button.css": "./src/components/button/button.css",
     "./validate": "./src/validate/validate.ts",
     "./time": "./src/time/relative.ts",
+    "./money": "./src/money/money.ts",
     "./list": "./src/list/list.ts",
+    "./account-events": "./src/account-events/account-events.ts",
     "./api-url": "./src/api-url/api-url.ts",
     "./logo": "./src/components/logo/logo.tsx",
     "./icons": "./src/components/icons/icons.tsx",
@@ -36,7 +38,9 @@
     "./realtime": "./src/realtime/paths.ts",
     "./socket": "./src/realtime/socket.ts",
     "./api-errors": "./src/api/errors.ts",
-    "./progress-ring": "./src/components/progress-ring/progress-ring.tsx"
+    "./progress-ring": "./src/components/progress-ring/progress-ring.tsx",
+    "./plan-card": "./src/components/plan-card/plan-card.tsx",
+    "./plan-card.css": "./src/components/plan-card/plan-card.css"
   },
   "peerDependencies": {
     "@tanstack/react-router": "*",

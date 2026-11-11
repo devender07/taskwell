@@ -213,7 +213,7 @@ func (h *Handler) setForm(w http.ResponseWriter, r *http.Request, userID string)
 		v := vs[0] == "true"
 		enabled = &v
 	}
-	token, err := h.model.setForm(r.Context(), ws.ID, enabled, r.PostForm.Get("rotate") == "true", web.RandomToken())
+	token, err := h.model.setForm(r.Context(), ws.ID, userID, enabled, r.PostForm.Get("rotate") == "true", web.RandomToken())
 	if err != nil {
 		return err
 	}

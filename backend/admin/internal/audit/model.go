@@ -24,6 +24,11 @@ const (
 	MFAFailed     = "signin.mfa_failed" // wrong code after the right password
 	MFAEnrolled   = "mfa.enrolled"
 	RecoveryUsed  = "mfa.recovery_used"
+
+	PlanSet = "user.plan_set" // target: "<email>: <plan>", plus " (comped)" or " (comped until 2026-11-24)"
+
+	UsersExported    = "users.exported" // target: the search, "" for every user
+	PaymentsExported = "payments.exported"
 )
 
 // Execer is a pool or a transaction: pass the transaction that makes the change so the record commits with it.
@@ -60,18 +65,17 @@ type Entry struct {
 
 type model struct{ db *pgxpool.Pool }
 
-// list returns up to limit entries older than before (an entry id; "" for the newest), newest first.
-func (m *model) list(ctx context.Context, before string, limit int) ([]Entry, error) {
-	var cursor *string
-	if before != "" {
-		cursor = &before
+// list returns limit entries from offset, newest first, and how many there are in all.
+func (m *model) list(ctx context.Context, offset, limit int) ([]Entry, int, error) {
+	var total int
+	if err := m.db.QueryRow(ctx, `select count(*) from admin_audit`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count audit: %w", err)
 	}
 	rows, err := m.db.Query(ctx, `
 		select id::text, at, actor_id::text, actor_email, action, target, ip from admin_audit
-		where $1::uuid is null or id < $1::uuid
-		order by id desc limit $2`, cursor, limit)
+		order by id desc limit $1 offset $2`, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list audit: %w", err)
+		return nil, 0, fmt.Errorf("list audit: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Entry, error) {
 		var e Entry
@@ -79,7 +83,7 @@ func (m *model) list(ctx context.Context, before string, limit int) ([]Entry, er
 		return e, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list audit: %w", err)
+		return nil, 0, fmt.Errorf("list audit: %w", err)
 	}
-	return out, nil
+	return out, total, nil
 }

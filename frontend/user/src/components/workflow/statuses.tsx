@@ -1,5 +1,5 @@
 import { useRouter } from '@tanstack/react-router'
-import { startTransition, useActionState, useOptimistic, useState } from 'react'
+import { startTransition, useActionState, useOptimistic, useState, type DragEvent, type ReactNode } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
@@ -7,7 +7,7 @@ import { Input } from '@taskwell/shared/input'
 import { Popover } from '@taskwell/shared/popover'
 import { SmartAutocomplete } from '@taskwell/shared/smart-autocomplete'
 import { ColorPicker } from '@taskwell/shared/color-picker'
-import { STATUS_ICONS, StatusTypeIcon, ChevronDownIcon, ChevronUpIcon, MoreIcon, PlusIcon } from '@taskwell/shared/icons'
+import { STATUS_ICONS, StatusTypeIcon, ChevronDownIcon, ChevronUpIcon, GripIcon, MoreIcon, PlusIcon } from '@taskwell/shared/icons'
 import type { Option } from '@taskwell/shared/smart-autocomplete'
 import { labelColor, statusCategory, statusName, statusTypeName } from '@taskwell/shared/validate'
 import { api, deleteStatusType, saveStatusType, toFormErrors, type FieldErrors, type Status, type StatusCategory, type StatusType, type Workspace, workspacePath } from '@/api'
@@ -37,14 +37,15 @@ function typeOptions(types: StatusType[]): Option[] {
 
 type Group = { key: string; name: string; type?: StatusType; look: { category: StatusCategory; icon?: string | null; color?: string | null }; statuses: Status[] }
 
-// One group per type, built-ins in workflow order with custom types after Started.
+// One group per type, ordered by where its first status sits; empty groups keep the default order at the end.
 function groupStatuses(statuses: Status[], types: StatusType[]): Group[] {
   const [backlog, unstarted, started, completed, canceled] = CATEGORIES.map((c): Group => {
     const key = `category:${c.value}`
     return { key, name: c.label, look: { category: c.value }, statuses: statuses.filter((s) => typeKey(s) === key) }
   })
   const custom = types.map((t): Group => ({ key: `type:${t.id}`, name: t.name, type: t, look: t, statuses: statuses.filter((s) => s.type?.id === t.id) }))
-  return [backlog!, unstarted!, started!, ...custom, completed!, canceled!]
+  const first = (g: Group) => (g.statuses.length ? statuses.indexOf(g.statuses[0]!) : Infinity)
+  return [backlog!, unstarted!, started!, ...custom, completed!, canceled!].sort((a, b) => first(a) - first(b))
 }
 
 export function AddType({ workspace }: { workspace: Workspace }) {
@@ -64,6 +65,7 @@ export function AddType({ workspace }: { workspace: Workspace }) {
 export function Workflow({ workspace, statuses, types, manage }: { workspace: Workspace; statuses: Status[]; types: StatusType[]; manage: boolean }) {
   const router = useRouter()
   const [order, setOrder] = useOptimistic(statuses)
+  const [drag, setDrag] = useState<{ key: string; over: string | null } | null>(null)
   const groups = groupStatuses(order, types)
 
   // Sends every status in the order shown, so positions follow the grouping.
@@ -86,24 +88,94 @@ export function Workflow({ workspace, statuses, types, manage }: { workspace: Wo
     startTransition(() => reorder(groups.flatMap((g) => (g === group ? moved : g.statuses))))
   }
 
+  // ponytail: a group's place comes from its statuses' positions, so an empty group can't be moved; add a type position column if that matters.
+  function moveGroup(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= groups.length) return
+    const next = [...groups]
+    next.splice(to, 0, ...next.splice(from, 1))
+    startTransition(() => reorder(next.flatMap((g) => g.statuses)))
+  }
+
+  const dragProps = (g: Group, i: number) =>
+    manage
+      ? {
+          onDragOver: (e: DragEvent) => {
+            if (!drag) return
+            e.preventDefault()
+            if (drag.over !== g.key) setDrag({ ...drag, over: g.key })
+          },
+          onDrop: (e: DragEvent) => {
+            e.preventDefault()
+            if (drag) moveGroup(groups.findIndex((x) => x.key === drag.key), i)
+            setDrag(null)
+          },
+          'data-over': drag && drag.over === g.key && drag.key !== g.key ? '' : undefined,
+          'data-dragging': drag?.key === g.key ? '' : undefined,
+        }
+      : {}
+
+  const handle = (g: Group, i: number) =>
+    manage && g.statuses.length ? (
+      <button
+        type="button"
+        className="workflow-handle"
+        draggable
+        aria-label={`Reorder ${g.name}. Use the up and down arrow keys.`}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          const card = e.currentTarget.closest('section')
+          if (card) e.dataTransfer.setDragImage(card, 16, 16)
+          setDrag({ key: g.key, over: null })
+        }}
+        onDragEnd={() => setDrag(null)}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+          e.preventDefault()
+          moveGroup(i, i + (e.key === 'ArrowUp' ? -1 : 1))
+        }}
+      >
+        <GripIcon size={16} aria-hidden />
+      </button>
+    ) : null
+
   return (
     <div className="grid gap-4">
       <FormError>{moveError}</FormError>
-      {groups.map((g) => (
-        <GroupCard key={g.key} workspace={workspace} group={g} statuses={order} types={types} manage={manage} onMove={(i, dir) => move(g, i, dir)} />
+      {groups.map((g, i) => (
+        <GroupCard
+          key={g.key}
+          workspace={workspace}
+          group={g}
+          statuses={order}
+          types={types}
+          manage={manage}
+          handle={handle(g, i)}
+          dragProps={dragProps(g, i)}
+          onMove={(i, dir) => move(g, i, dir)}
+        />
       ))}
     </div>
   )
 }
 
-type GroupProps = { workspace: Workspace; group: Group; statuses: Status[]; types: StatusType[]; manage: boolean; onMove: (i: number, dir: -1 | 1) => void }
+type GroupProps = {
+  workspace: Workspace
+  group: Group
+  statuses: Status[]
+  types: StatusType[]
+  manage: boolean
+  handle: ReactNode
+  dragProps: object
+  onMove: (i: number, dir: -1 | 1) => void
+}
 
-function GroupCard({ workspace, group, statuses, types, manage, onMove }: GroupProps) {
+function GroupCard({ workspace, group, statuses, types, manage, handle, dragProps, onMove }: GroupProps) {
   const [adding, setAdding] = useState(false)
   const count = group.statuses.length
   return (
-    <section className="bg-surface border rounded-lg" aria-label={group.name}>
+    <section className="workflow-group bg-surface border rounded-lg" aria-label={group.name} {...dragProps}>
       <header className="workflow-group-header">
+        {handle}
         <StatusIcon status={group.look} />
         <h2 className="text-label text-primary m-0 ellipsis">{group.name}</h2>
         <span className="text-caption text-secondary">{count}</span>

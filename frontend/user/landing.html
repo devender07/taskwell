@@ -29,6 +29,7 @@
           <a href="#workflow">Workflow</a>
           <a href="#ai">AI testing</a>
           <a href="#integrations">Integrations</a>
+          <a href="/pricing">Pricing</a>
           <span class="site-nav-actions">
             <a href="/signin" class="button button-ghost" data-signed-out>Sign in</a>
             <a href="/signup" class="button button-secondary" data-signed-out>Get started</a>
@@ -52,16 +53,19 @@
             <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
             <a href="#features" class="button button-primary button-lg">See how it works</a>
           </div>
-          <p class="text-caption text-secondary reveal">Press <kbd>C</kbd> anywhere in the app to create an issue.</p>
+          <p class="text-caption text-secondary reveal">The board below is live. Drag a card, or press <kbd>C</kbd> to create an issue.</p>
         </div>
 
         <div class="container">
-          <div class="app-frame reveal" aria-label="Preview of a Taskwell project board" role="img">
-            <div class="app-frame-bar" aria-hidden="true">
-              <span></span><span></span><span></span>
+          <div class="app-frame reveal" role="region" aria-label="Try a Taskwell board">
+            <div class="app-frame-bar">
+              <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
               <p class="text-caption text-secondary">ENG · Board</p>
+              <button type="button" class="frame-new" aria-keyshortcuts="c">+ New issue <kbd aria-hidden="true">C</kbd></button>
             </div>
-            <div class="board" aria-hidden="true">
+            <p class="sr-only">Cards can be moved with the left and right arrow keys.</p>
+            <p class="sr-only" aria-live="polite" id="board-status"></p>
+            <div class="board">
               <div class="board-col">
                 <p class="board-col-title"><span class="status status-todo"></span>Todo <span class="count">3</span></p>
                 <div class="card-mock"><span class="issue-key">ENG-142</span><p>Invite teammates from Slack</p><span class="tags"><i class="tag">Feature</i><b class="prio">High</b></span></div>
@@ -171,8 +175,8 @@
 
       <section id="ai" class="section">
         <div class="container split">
-          <div class="terminal reveal" aria-label="Example AI test run" role="img">
-            <p class="terminal-line text-secondary">Running test: "Sign in with Google" · ENG-120</p>
+          <div class="terminal reveal" aria-label="Example AI test run" role="region">
+            <p class="terminal-line terminal-head text-secondary">Running test: "Sign in with Google" · ENG-120<button type="button" class="replay" hidden>Run again</button></p>
             <p class="terminal-line" data-step>→ Open the sign-in page</p>
             <p class="terminal-line" data-step>→ Click "Continue with Google"</p>
             <p class="terminal-line" data-step>→ Choose the test account</p>
@@ -210,6 +214,17 @@
         </div>
       </section>
 
+      <section id="pricing" class="section">
+        <div class="container grid gap-6 reveal">
+          <header class="section-head">
+            <p class="eyebrow">Pricing</p>
+            <h2 class="heading">Plans from Free to Advanced</h2>
+            <p class="lead">One price for your account covers every workspace you create. Start free, or try any paid plan free for 14 days, no card needed.</p>
+          </header>
+          <a href="/pricing" class="button button-primary button-lg" style="justify-self: start">See pricing</a>
+        </div>
+      </section>
+
       <section class="section cta">
         <div class="container grid gap-6 justify-items-center text-center reveal">
           <h2 class="display-sm">Bring your team together today</h2>
@@ -223,6 +238,12 @@
     <footer class="site-footer">
       <div class="container flex flex-wrap items-center justify-between gap-4">
         <a href="#top" class="brand"><img src="/favicon.svg" alt="" width="24" height="24" /><span>Taskwell</span></a>
+        <nav class="footer-nav" aria-label="Legal">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/subprocessors">Subprocessors</a>
+          <a href="mailto:privacy@taskwell.dev">privacy@taskwell.dev</a>
+        </nav>
         <p class="text-caption text-secondary m-0">© <span id="year"></span> Taskwell. Made for teams that ship.</p>
       </div>
     </footer>

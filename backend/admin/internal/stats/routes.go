@@ -12,4 +12,5 @@ import (
 // Register mounts the API routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/stats", web.Private(h.auth, h.get))
+	mux.HandleFunc("GET /api/payments.csv", web.Private(h.auth, h.paymentsCSV))
 }
