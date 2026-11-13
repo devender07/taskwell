@@ -6,6 +6,8 @@
     <title>Taskwell: project management for software teams</title>
     <meta name="description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- The page calls the API on every visit (/api/beta); connecting early saves a round trip. -->
+    <link rel="preconnect" href="%VITE_API_URL%" crossorigin />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Taskwell: project management for software teams" />
     <meta property="og:description" content="Issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace for SaaS teams." />
@@ -42,18 +44,18 @@
     <main id="main">
       <section id="top" class="hero">
         <div class="container hero-inner">
-          <p class="eyebrow reveal"><span class="dot" aria-hidden="true"></span> <span id="greeting">Built for SaaS teams that ship weekly</span></p>
-          <h1 class="display reveal">Plan it, build it, test it.<br /><span class="text-secondary">All in one place.</span></h1>
-          <p class="lead reveal">
+          <p class="eyebrow"><span class="dot" aria-hidden="true"></span> <span id="greeting">Built for SaaS teams that ship weekly</span></p>
+          <h1 class="display">Plan it, build it, test it.<br /><span class="text-secondary">All in one place.</span></h1>
+          <p class="lead">
             Taskwell keeps issues, cycles, docs, chat and AI testing in one fast, keyboard-first workspace, so your team spends less time
             updating tools and more time shipping.
           </p>
-          <div class="flex flex-wrap gap-3 justify-center reveal">
+          <div class="flex flex-wrap gap-3 justify-center">
             <a href="/signup" class="button button-secondary button-lg" data-signed-out>Start for free</a>
             <a href="/signin" class="button button-secondary button-lg" data-signed-in hidden>Go to dashboard</a>
             <a href="#features" class="button button-primary button-lg">See how it works</a>
           </div>
-          <p class="text-caption text-secondary reveal">The board below is live. Drag a card, or press <kbd>C</kbd> to create an issue.</p>
+          <p class="text-caption text-secondary">The board below is live. Drag a card, or press <kbd>C</kbd> to create an issue.</p>
         </div>
 
         <div class="container">

@@ -1,0 +1,33 @@
+{
+  "entries": [
+    {
+      "identifier": "urn:air:taskwell.dev:mcp:taskwell",
+      "displayName": "Taskwell",
+      "description": "Taskwell's MCP server: read, create and update issues, projects, cycles, notes and comments as a signed-in Taskwell user (OAuth).",
+      "type": "application/mcp-server-card+json",
+      "data": {
+        "name": "taskwell",
+        "title": "Taskwell",
+        "description": "Project management for software teams: issues, projects, cycles, notes, comments and AI test runs.",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.taskwell.dev/mcp"
+          }
+        ]
+      },
+      "representativeQueries": [
+        "create an issue in my Taskwell project",
+        "what issues are assigned to me in Taskwell",
+        "move a Taskwell issue to done and add a comment"
+      ],
+      "capabilities": [
+        "issues",
+        "projects",
+        "cycles",
+        "notes",
+        "comments"
+      ]
+    }
+  ]
+}

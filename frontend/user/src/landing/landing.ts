@@ -9,7 +9,7 @@ document.documentElement.classList.add('js')
 const header = document.querySelector<HTMLElement>('.site-header')!
 const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 8)
 window.addEventListener('scroll', onScroll, { passive: true })
-onScroll()
+requestAnimationFrame(onScroll) // not right after the js class above: reading scrollY then forces a layout
 
 // Mobile menu
 const toggle = document.querySelector<HTMLButtonElement>('.nav-toggle')!
