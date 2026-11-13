@@ -102,13 +102,21 @@ func (h *Handler) isBeta(ctx context.Context) (bool, error) {
 	return v == "true", err
 }
 
-// beta answers whether beta mode is on (public): the apps hide pricing and billing while it is.
+// beta answers whether beta mode is on (public): the apps hide pricing and billing while it is. feedback_url is the
+// "Report a bug" link (app_feedback_url), "" unless it's an http or https URL.
 func (h *Handler) beta(w http.ResponseWriter, r *http.Request) error {
 	on, err := h.isBeta(r.Context())
 	if err != nil {
 		return err
 	}
-	web.JSON(w, http.StatusOK, map[string]bool{"beta": on})
+	link, err := h.config(r.Context(), "app_feedback_url")
+	if err != nil {
+		return err
+	}
+	if u, err := url.Parse(link); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		link = ""
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"beta": on, "feedback_url": link})
 	return nil
 }
 

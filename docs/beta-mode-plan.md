@@ -82,7 +82,7 @@ hidden, everyone gets the Free plan's limits, and the beta notice replaces the p
 > and send email for us are listed under Subprocessors.
 >
 > **Your choices.** You can export your data and delete your account under Settings → Your data. For anything else,
-> email privacy@taskwell.dev.
+> email dev.taskwell@gmail.com.
 >
 > **Using Taskwell.** You must be 18 or older. Don't use it for anything illegal, to harm others, or to try to break
 > it. We can suspend accounts that do.

@@ -363,6 +363,13 @@ export const FeedbackIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const BugIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 7a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0v-4a4 4 0 0 1 4-4z" />
+    <path d="M10 7.5 8.5 4M14 7.5 15.5 4M3 13h5M16 13h5M4 8l4 2M20 8l-4 2M4 19l4-2M20 19l-4-2M12 11v8" />
+  </Icon>
+)
+
 export const MessageIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

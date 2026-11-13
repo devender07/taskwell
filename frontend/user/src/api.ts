@@ -660,10 +660,17 @@ export type WorkspaceBilling = {
 export type PlanLimits = { id: PlanId; workspaces: number; projects: number; members: number; storage_gb: number; ai_usd: number }
 // Public, for the pricing page; null when they can't load.
 export const getPlans = () => api<PlanLimits[]>('/plans').catch(() => null)
-// Staff's beta mode: no pricing, billing or upgrade prompts. One request per page load; false when it fails.
-let beta: Promise<boolean> | undefined
-export const getBeta = () => (beta ??= api<{ beta: boolean }>('/beta').then((r) => r.beta, () => false))
+// Staff's beta mode (no pricing, billing or upgrade prompts) and the "Report a bug" link ("" hides it). One request
+// per page load; off and no link when it fails.
+type AppInfo = { beta: boolean; feedbackUrl: string }
+let info: Promise<AppInfo> | undefined
+export const getAppInfo = () =>
+  (info ??= api<{ beta: boolean; feedback_url?: string }>('/beta').then(
+    (r) => ({ beta: r.beta, feedbackUrl: r.feedback_url ?? '' }),
+    () => ({ beta: false, feedbackUrl: '' }),
+  ))
 export const useBeta = () => useRouteContext({ from: '__root__', select: (c) => c.beta })
+export const useFeedbackUrl = () => useRouteContext({ from: '__root__', select: (c) => c.feedbackUrl })
 export const billingPath = '/billing'
 export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
 const priceForm = (priceId: string) => {

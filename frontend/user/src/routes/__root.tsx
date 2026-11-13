@@ -1,9 +1,9 @@
 import { Outlet, createRootRoute } from '@tanstack/react-router'
 import { NavigationProgress } from '@taskwell/shared/boundaries'
-import { getBeta } from '@/api'
+import { getAppInfo } from '@/api'
 
 export const Route = createRootRoute({
-  beforeLoad: async () => ({ beta: await getBeta() }),
+  beforeLoad: () => getAppInfo(),
   component: () => (
     <>
       <NavigationProgress />

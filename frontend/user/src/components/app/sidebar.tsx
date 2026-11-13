@@ -1,7 +1,7 @@
 import { Link, defaultParseSearch, useLoaderData, useLocation, useRouteContext } from '@tanstack/react-router'
-import { FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
+import { BugIcon, FeedbackIcon, FileIcon, FolderIcon, HomeIcon, InboxIcon, LayersIcon, LogOutIcon, NoteIcon, RoadmapIcon, SearchIcon, SettingsIcon, TrashIcon, UserIcon, UsersIcon } from '@taskwell/shared/icons'
 import { useState } from 'react'
-import { can, featureOn, useFeatures, type Feature } from '@/api'
+import { can, featureOn, useFeatures, useFeedbackUrl, type Feature } from '@/api'
 import { LockedLink } from './locked-link'
 import { useMenu, useSignOut, WorkspaceSwitcher } from './navbar'
 import { isApple, paletteKey, useShortcuts } from './shortcuts'
@@ -13,6 +13,7 @@ export function AppSidebar({ workspace }: { workspace: string }) {
   const { openPalette } = useShortcuts()
   const ws = useLoaderData({ from: '/_app/$workspace' })
   const features = useFeatures()
+  const feedbackUrl = useFeedbackUrl()
   const on = (name: Feature) => featureOn(features, name)
   const upgrades = useRouteContext({ from: '/_app/$workspace', select: (c) => c.upgrades })
   const locked = (name: Feature, label: string, Icon: typeof HomeIcon) => {
@@ -138,6 +139,12 @@ export function AppSidebar({ workspace }: { workspace: string }) {
         </>
       ) : null}
       <form action={signOut} className="sidebar-end">
+        {feedbackUrl ? (
+          <a href={feedbackUrl} target="_blank" rel="noreferrer">
+            <BugIcon />
+            Report a bug
+          </a>
+        ) : null}
         <button type="submit" className="sidebar-group" disabled={signingOut}>
           <LogOutIcon />
           {signingOut ? 'Signing out…' : 'Sign out'}

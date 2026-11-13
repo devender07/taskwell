@@ -4,7 +4,7 @@ import { Button } from '@taskwell/shared/button'
 import { ColorPicker } from '@taskwell/shared/color-picker'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
-import { ChevronDownIcon, ChevronUpIcon, STATUS_ICONS, StatusIcon, StatusTypeIcon } from '@taskwell/shared/icons'
+import { ChevronDownIcon, ChevronUpIcon, PlusIcon, STATUS_ICONS, StatusIcon, StatusTypeIcon } from '@taskwell/shared/icons'
 import { Input } from '@taskwell/shared/input'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import { labelColor, statusCategory, statusName, statusTypeName } from '@taskwell/shared/validate'
@@ -27,51 +27,136 @@ const typeOptions = (types: DefaultStatusType[]): Option[] => [
 
 const lookOf = (s: DefaultStatus, types: DefaultStatusType[]) => types.find((t) => t.id === s.type_id) ?? s
 
+type Group = { key: string; name: string; type?: DefaultStatusType; look: { category: StatusCategory; icon?: string | null; color?: string | null }; statuses: DefaultStatus[] }
+
+// One card per type, built-in categories included, ordered by where its first status sits (as in the user app).
+function groupStatuses(statuses: DefaultStatus[], types: DefaultStatusType[]): Group[] {
+  const [backlog, unstarted, started, completed, canceled] = CATEGORIES.map((c): Group => {
+    const key = `category:${c.value}`
+    return { key, name: c.label, look: { category: c.value }, statuses: statuses.filter((s) => typeKey(s) === key) }
+  })
+  const custom = types.map((t): Group => ({ key: `type:${t.id}`, name: t.name, type: t, look: t, statuses: statuses.filter((s) => s.type_id === t.id) }))
+  const first = (g: Group) => (g.statuses.length ? statuses.indexOf(g.statuses[0]!) : Infinity)
+  return [backlog!, unstarted!, started!, ...custom, completed!, canceled!].sort((a, b) => first(a) - first(b))
+}
+
 export function Workflow({ types, statuses }: { types: DefaultStatusType[]; statuses: DefaultStatus[] }) {
+  const router = useRouter()
+  const [order, setOrder] = useOptimistic(statuses)
+  const [adding, setAdding] = useState(false)
+  const groups = groupStatuses(order, types)
+
+  // Sends every status in the order shown, so positions follow the grouping.
+  const [moveError, reorder] = useActionState(async (_prev: string | null, next: DefaultStatus[]) => {
+    setOrder(next)
+    try {
+      await orderDefaultStatuses(next.map((s) => s.id))
+    } catch (e) {
+      const { errors, error } = toFormErrors(e)
+      return errors.id ?? error
+    }
+    await router.invalidate()
+    return null
+  }, null)
+
+  function move(group: Group, i: number, dir: -1 | 1) {
+    const moved = [...group.statuses]
+    ;[moved[i], moved[i + dir]] = [moved[i + dir]!, moved[i]!]
+    startTransition(() => reorder(groups.flatMap((g) => (g === group ? moved : g.statuses))))
+  }
+
+  // ponytail: a card's place comes from its statuses' positions, so an empty card can't move; same as the user app.
+  function moveGroup(from: number, to: number) {
+    if (to < 0 || to >= groups.length) return
+    const next = [...groups]
+    next.splice(to, 0, ...next.splice(from, 1))
+    startTransition(() => reorder(next.flatMap((g) => g.statuses)))
+  }
+
   return (
-    <Section title="Workflow" description="New workspaces start with these status types and statuses, in this order.">
-      <StatusTypes types={types} />
-      <Statuses statuses={statuses} types={types} />
+    <Section
+      title="Workflow"
+      description="New workspaces start with these status types and statuses, in this order."
+      action={<Button variant="secondary" onClick={() => setAdding(true)}>Add type</Button>}
+    >
+      <FormError>{moveError}</FormError>
+      {groups.map((g, i) => (
+        <GroupCard
+          key={g.key}
+          group={g}
+          types={types}
+          last={order.length < 2}
+          onMove={(i, dir) => move(g, i, dir)}
+          onUp={g.statuses.length && i > 0 ? () => moveGroup(i, i - 1) : undefined}
+          onDown={g.statuses.length && i < groups.length - 1 && groups[i + 1]!.statuses.length ? () => moveGroup(i, i + 1) : undefined}
+        />
+      ))}
+      <Dialog open={adding} onClose={() => setAdding(false)} title="Add type" description="A type groups statuses under its own icon and color.">
+        <TypeForm key={String(adding)} onDone={() => setAdding(false)} />
+      </Dialog>
     </Section>
   )
 }
 
-function StatusTypes({ types }: { types: DefaultStatusType[] }) {
-  const [adding, setAdding] = useState(false)
-  return (
-    <div className="grid gap-3">
-      <div className="flex items-center gap-3">
-        <h3 className="text-label text-primary m-0 flex-grow">Status types</h3>
-        <Button variant="secondary" onClick={() => setAdding(true)}>Add type</Button>
-      </div>
-      {types.length ? (
-        <ul className="m-0 p-0 bg-surface border rounded-lg" style={{ listStyle: 'none' }} aria-label="Status types">
-          {types.map((t) => (
-            <TypeRow key={t.id} type={t} />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-body-sm text-secondary m-0">No status types. Statuses use the built-in categories.</p>
-      )}
-      <Dialog open={adding} onClose={() => setAdding(false)} title="Add type" description="A type groups statuses under its own icon and color.">
-        <TypeForm key={String(adding)} onDone={() => setAdding(false)} />
-      </Dialog>
-    </div>
-  )
-}
+type GroupProps = { group: Group; types: DefaultStatusType[]; last: boolean; onMove: (i: number, dir: -1 | 1) => void; onUp?: () => void; onDown?: () => void }
 
-function TypeRow({ type }: { type: DefaultStatusType }) {
+function GroupCard({ group, types, last, onMove, onUp, onDown }: GroupProps) {
+  const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(false)
+  const count = group.statuses.length
   return (
-    <li className="defaults-row">
-      <StatusIcon status={type} />
-      <span className="text-label text-primary ellipsis flex-grow" style={{ minWidth: 0 }}>{type.name}</span>
-      <Button variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
-      <ConfirmDelete kind="status-types" id={type.id} name={type.name} noun="type" description={`Its statuses keep the ${categoryLabel(type.category).toLowerCase()} category and lose this icon.`} />
-      <Dialog open={editing} onClose={() => setEditing(false)} title={`Edit ${type.name}`}>
-        <TypeForm key={String(editing)} type={type} onDone={() => setEditing(false)} />
-      </Dialog>
-    </li>
+    <section className="bg-surface border rounded-lg" aria-label={group.name} style={{ overflow: 'hidden' }}>
+      <header className="defaults-group-header">
+        <StatusIcon status={group.look} />
+        <h3 className="text-label text-primary m-0 ellipsis">{group.name}</h3>
+        <span className="text-caption text-secondary">{count}</span>
+        {group.type ? <span className="defaults-tag">Custom</span> : null}
+        <span className="flex-grow" />
+        <IconButton aria-label={`Move ${group.name} up`} tooltip="Move up" disabled={!onUp} onClick={onUp}>
+          <ChevronUpIcon size={18} />
+        </IconButton>
+        <IconButton aria-label={`Move ${group.name} down`} tooltip="Move down" disabled={!onDown} onClick={onDown}>
+          <ChevronDownIcon size={18} />
+        </IconButton>
+        {group.type ? (
+          <>
+            <Button variant="ghost" onClick={() => setEditing(true)}>Edit</Button>
+            <ConfirmDelete
+              kind="status-types"
+              id={group.type.id}
+              name={group.type.name}
+              noun="type"
+              description={count ? `Its statuses move to ${categoryLabel(group.type.category)} and lose this icon.` : 'No statuses use it.'}
+            />
+            <Dialog open={editing} onClose={() => setEditing(false)} title={`Edit ${group.type.name}`}>
+              <TypeForm key={String(editing)} type={group.type} onDone={() => setEditing(false)} />
+            </Dialog>
+          </>
+        ) : null}
+        <IconButton aria-label={`Add status to ${group.name}`} tooltip="Add status" onClick={() => setAdding(true)}>
+          <PlusIcon size={18} />
+        </IconButton>
+      </header>
+      <ul className="m-0 p-0" style={{ listStyle: 'none' }} aria-label={`${group.name} statuses`}>
+        {group.statuses.map((s, i) => (
+          <StatusRow
+            key={s.id}
+            status={s}
+            types={types}
+            last={last}
+            onUp={i > 0 ? () => onMove(i, -1) : undefined}
+            onDown={i < count - 1 ? () => onMove(i, 1) : undefined}
+          />
+        ))}
+        {adding ? (
+          <li className="defaults-row">
+            <StatusForm choice={group.key} types={types} onDone={() => setAdding(false)} />
+          </li>
+        ) : count === 0 ? (
+          <li className="defaults-row text-caption text-secondary">No statuses yet.</li>
+        ) : null}
+      </ul>
+    </section>
   )
 }
 
@@ -125,57 +210,6 @@ function TypeForm({ type, onDone }: { type?: DefaultStatusType; onDone: () => vo
   )
 }
 
-function Statuses({ statuses, types }: { statuses: DefaultStatus[]; types: DefaultStatusType[] }) {
-  const router = useRouter()
-  const [order, setOrder] = useOptimistic(statuses)
-  const [adding, setAdding] = useState(false)
-
-  const [moveError, reorder] = useActionState(async (_prev: string | null, next: DefaultStatus[]) => {
-    setOrder(next)
-    try {
-      await orderDefaultStatuses(next.map((s) => s.id))
-    } catch (e) {
-      const { errors, error } = toFormErrors(e)
-      return errors.id ?? error
-    }
-    await router.invalidate()
-    return null
-  }, null)
-
-  function move(i: number, dir: -1 | 1) {
-    const next = [...order]
-    ;[next[i], next[i + dir]] = [next[i + dir]!, next[i]!]
-    startTransition(() => reorder(next))
-  }
-
-  return (
-    <div className="grid gap-3">
-      <div className="flex items-center gap-3">
-        <h3 className="text-label text-primary m-0 flex-grow">Statuses</h3>
-        <Button variant="secondary" onClick={() => setAdding(true)}>Add status</Button>
-      </div>
-      <FormError>{moveError}</FormError>
-      <ul className="m-0 p-0 bg-surface border rounded-lg" style={{ listStyle: 'none' }} aria-label="Statuses">
-        {order.map((s, i) => (
-          <StatusRow
-            key={s.id}
-            status={s}
-            types={types}
-            last={order.length < 2}
-            onUp={i > 0 ? () => move(i, -1) : undefined}
-            onDown={i < order.length - 1 ? () => move(i, 1) : undefined}
-          />
-        ))}
-        {adding ? (
-          <li className="defaults-row">
-            <StatusForm types={types} onDone={() => setAdding(false)} />
-          </li>
-        ) : null}
-      </ul>
-    </div>
-  )
-}
-
 type RowProps = { status: DefaultStatus; types: DefaultStatusType[]; last: boolean; onUp?: () => void; onDown?: () => void }
 
 function StatusRow({ status, types, last, onUp, onDown }: RowProps) {
@@ -187,12 +221,10 @@ function StatusRow({ status, types, last, onUp, onDown }: RowProps) {
       </li>
     )
   }
-  const type = types.find((t) => t.id === status.type_id)
   return (
     <li className="defaults-row">
       <StatusIcon status={lookOf(status, types)} />
       <span className="text-body-sm text-primary ellipsis flex-grow" style={{ minWidth: 0 }}>{status.name}</span>
-      <span className="text-caption text-secondary">{type?.name ?? categoryLabel(status.category)}</span>
       <IconButton aria-label={`Move ${status.name} up`} tooltip="Move up" disabled={!onUp} onClick={onUp}>
         <ChevronUpIcon size={18} />
       </IconButton>
@@ -205,10 +237,10 @@ function StatusRow({ status, types, last, onUp, onDown }: RowProps) {
   )
 }
 
-function StatusForm({ status, types, onDone }: { status?: DefaultStatus; types: DefaultStatusType[]; onDone: () => void }) {
+function StatusForm({ status, choice: preset, types, onDone }: { status?: DefaultStatus; choice?: string; types: DefaultStatusType[]; onDone: () => void }) {
   const router = useRouter()
   const [name, setName] = useState(status?.name ?? '')
-  const [choice, setChoice] = useState(status ? typeKey(status) : 'category:unstarted')
+  const [choice, setChoice] = useState(status ? typeKey(status) : (preset ?? 'category:unstarted'))
   const options = typeOptions(types)
 
   const [{ errors, error }, submit, pending] = useActionState(async (): Promise<State> => {

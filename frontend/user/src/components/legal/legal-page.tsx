@@ -65,7 +65,7 @@ export function BetaNotice() {
       </p>
       <p>
         <strong className="font-590">Your choices.</strong> You can export your data and delete your account under Settings → Your data. For anything
-        else, email <a href="mailto:privacy@taskwell.dev">privacy@taskwell.dev</a>.
+        else, email <a href="mailto:dev.taskwell@gmail.com">dev.taskwell@gmail.com</a>.
       </p>
       <p>
         <strong className="font-590">Using Taskwell.</strong> You must be 18 or older. Don't use it for anything illegal, to harm others, or to try to

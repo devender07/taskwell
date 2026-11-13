@@ -624,6 +624,12 @@ func TestEndpoints(t *testing.T) {
 		t.Fatalf("billing while beta: %v", b)
 	}
 	cfg["beta_mode"] = "false"
+	for link, want := range map[string]string{"": "", "https://taskwell.dev/f/abc": "https://taskwell.dev/f/abc", "javascript:alert(1)": "", "//evil.test": ""} {
+		cfg["app_feedback_url"] = link
+		if b := x.do(t, "", "GET", "/api/beta", nil, 200); b["feedback_url"] != want {
+			t.Errorf("feedback_url for %q = %v, want %q", link, b["feedback_url"], want)
+		}
+	}
 
 	got := x.do(t, ann, "POST", base+"/checkout", price("pri_pro_m"), 200)
 	if cd := got["custom_data"].(map[string]any); cd["user_id"] != ann || cd["sig"] != checkoutSig(ann) ||
