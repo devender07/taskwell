@@ -24,7 +24,8 @@ deploy/
     etc/taskwell-backup.env                    git-ignored, optional (copy the .example): off-server backup copies
     opt/taskwell-db/docker-compose.yml         Postgres
     opt/taskwell-db/.env                       git-ignored, POSTGRES_PASSWORD
-    opt/taskwell-db/backup.sh
+    opt/taskwell-db/backup.sh                  dump to R2 (cron); list, get FILE
+    opt/taskwell-db/restore.sh                 user data back from R2: the newest, or FILE
   system.json       git-ignored, copied from system.json.example: goes into the system_config table, not a file
 ```
 

@@ -94,11 +94,8 @@ stop the services and restore the backup from step 2:
 
 ```sh
 ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh list'                       # pick the dump
-ssh -t devender@<host> 'sudo systemctl stop taskwell-user taskwell-admin taskwell-mcp'
-ssh -t devender@<host> "sudo sh -c '/opt/taskwell-db/backup.sh get taskwell-<date>.dump /tmp && \
-  docker exec -i taskwell-postgres pg_restore -U taskwell -d taskwell --clean --if-exists < /tmp/taskwell-<date>.dump \
-  && rm /tmp/taskwell-<date>.dump'"
-# then deploy the last good commit as above, which starts them again
+ssh -t devender@<host> 'sudo /opt/taskwell-db/restore.sh --clear taskwell-<date>.dump'  # backs up first
+# then deploy the last good commit as above
 ```
 
 A restore loses everything written since the backup. The restore drill is in `docs/compliance/runbooks.md`.
