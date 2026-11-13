@@ -1,18 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { relativeTime, shortDate } from '@taskwell/shared/time'
-import { money, PLANS, type Setting, type Stats } from '@/api'
+import { api, money, PLANS, type Setting, type Stats } from '@/api'
 import { ExportLink } from '@/components/app/list-controls'
 import { BarChart } from '@/components/overview/bar-chart'
 import { BetaCard } from '@/components/overview/beta-card'
 import { ListCard } from '@/components/overview/list-card'
 import { PlanBars } from '@/components/overview/plan-bars'
+import { ResetCard } from '@/components/overview/reset-card'
 import { Grid, Section, Tile } from '@/components/overview/section'
 import { loaderApi } from '@/realtime'
 
 export const Route = createFileRoute('/_app/')({
   loader: async (ctx) => {
-    const [stats, settings] = await Promise.all([loaderApi<Stats>(ctx, '/stats'), loaderApi<Setting[]>(ctx, '/config')])
-    return { stats, beta: settings.find((s) => s.key === 'beta_mode')?.value === 'true' }
+    const [stats, settings, local] = await Promise.all([
+      loaderApi<Stats>(ctx, '/stats'),
+      loaderApi<Setting[]>(ctx, '/config'),
+      api('/dev/reset').then(() => true, () => false), // 404 in production or off localhost
+    ])
+    return { stats, beta: settings.find((s) => s.key === 'beta_mode')?.value === 'true', local }
   },
   component: Overview,
 })
@@ -52,7 +57,7 @@ const dollars = (micros: number) => `$${(micros / 1e6).toFixed(2)}`
 const planName = (plan: string) => PLANS[plan as keyof typeof PLANS] ?? plan
 
 function Overview() {
-  const { stats, beta } = Route.useLoaderData()
+  const { stats, beta, local } = Route.useLoaderData()
   const s = withDefaults(stats)
   const { totals, billing, health } = s
 
@@ -60,6 +65,7 @@ function Overview() {
     <main className="grid gap-10 w-full px-6 py-10">
       <h1 className="text-h2">Overview</h1>
       <BetaCard on={beta} />
+      {local ? <ResetCard /> : null}
 
       <Section title="Totals">
         <Grid>

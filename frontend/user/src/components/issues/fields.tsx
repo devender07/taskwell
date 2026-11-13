@@ -1,11 +1,13 @@
 import { extractDataFromArray } from '@taskwell/shared/list'
 import { Checkbox } from '@taskwell/shared/checkbox'
-import { CategoryGlyph, StatusTypeIcon, XIcon } from '@taskwell/shared/icons'
+import { StatusIcon, XIcon } from '@taskwell/shared/icons'
 import { Popover } from '@taskwell/shared/popover'
 import { SmartAutocomplete, type Option } from '@taskwell/shared/smart-autocomplete'
 import type { Label, Member, PersonRef, Status, StatusCategory } from '@/api'
 import type { PeopleSearch } from '@/components/workspace/member-pages'
 import './issues.css'
+
+export { StatusIcon }
 
 export const PRIORITIES = [
   { value: 0, label: 'No priority' },
@@ -64,17 +66,6 @@ export function formatDate(value: string) {
 }
 
 export const formatRange = (c: { starts_on: string; ends_on: string }) => `${formatDate(c.starts_on)} – ${formatDate(c.ends_on)}`
-
-type StatusLook = { category: StatusCategory; icon?: string | null; color?: string | null }
-
-// A status's custom icon in its color when it has one, else its category's icon. Old snapshots without icon fall back.
-export function StatusIcon({ status, label }: { status: StatusLook; label?: string }) {
-  const { category, icon } = status
-  const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
-  const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
-  if (icon) return <StatusTypeIcon icon={icon} color={!status.color || status.color.toLowerCase() === '#f7f8f8' ? color : status.color} title={label} {...a11y} />
-  return <CategoryGlyph category={category} color={color} label={label} />
-}
 
 export function LabelDot({ color }: { color: string }) {
   return <span aria-hidden className="label-dot" style={{ background: color }} />

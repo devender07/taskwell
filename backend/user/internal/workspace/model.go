@@ -22,7 +22,7 @@ const (
 	roleGuest = "guest"
 )
 
-// memberDefaults are a new workspace's Member role permissions.
+// memberDefaults are a new workspace's Member and Guest permissions when default_roles has no such role.
 var memberDefaults = []string{"issues.create", "comments.create"}
 
 var (
@@ -132,7 +132,11 @@ func create(ctx context.Context, conn interface {
 		}
 		if err := tx.QueryRow(ctx,
 			`with r as (insert into workspace_roles (workspace_id, name, builtin, permissions)
-			   values ($1, 'Admin', 'admin', '{}'), ($1, 'Member', 'member', $2), ($1, 'Guest', 'guest', $2) returning id, builtin)
+			   select $1::uuid, 'Admin', 'admin', '{}'::text[]
+			   union all select $1, name, builtin, permissions from default_roles
+			   union all select $1, v.name, v.builtin, $2::text[] from (values ('Member', 'member'), ('Guest', 'guest')) v(name, builtin)
+			     where not exists (select 1 from default_roles d where d.builtin = v.builtin)
+			   returning id, builtin)
 			 select id::text from r where builtin = 'admin'`,
 			ws.ID, memberDefaults).Scan(&ws.Role.ID); err != nil {
 			return err

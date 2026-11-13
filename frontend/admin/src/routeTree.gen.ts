@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminsRouteImport } from './routes/_app/admins'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppDefaultsRouteImport } from './routes/_app/defaults'
 import { Route as AppFeaturesRouteImport } from './routes/_app/features'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 import { Route as AppWorkspacesRouteImport } from './routes/_app/workspaces'
@@ -49,6 +50,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDefaultsRoute = AppDefaultsRouteImport.update({
+  id: '/defaults',
+  path: '/defaults',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFeaturesRoute = AppFeaturesRouteImport.update({
   id: '/features',
   path: '/features',
@@ -76,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
+  '/defaults': typeof AppDefaultsRoute
   '/features': typeof AppFeaturesRoute
   '/users': typeof AppUsersRoute
   '/workspaces': typeof AppWorkspacesRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/admins': typeof AppAdminsRoute
   '/audit': typeof AppAuditRoute
   '/config': typeof AppConfigRoute
+  '/defaults': typeof AppDefaultsRoute
   '/features': typeof AppFeaturesRoute
   '/users': typeof AppUsersRoute
   '/workspaces': typeof AppWorkspacesRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   '/_app/admins': typeof AppAdminsRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/config': typeof AppConfigRoute
+  '/_app/defaults': typeof AppDefaultsRoute
   '/_app/features': typeof AppFeaturesRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/workspaces': typeof AppWorkspacesRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
     | '/admins'
     | '/audit'
     | '/config'
+    | '/defaults'
     | '/features'
     | '/users'
     | '/workspaces'
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
     | '/admins'
     | '/audit'
     | '/config'
+    | '/defaults'
     | '/features'
     | '/users'
     | '/workspaces'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/_app/admins'
     | '/_app/audit'
     | '/_app/config'
+    | '/_app/defaults'
     | '/_app/features'
     | '/_app/users'
     | '/_app/workspaces'
@@ -191,6 +203,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/defaults': {
+      id: '/_app/defaults'
+      path: '/defaults'
+      fullPath: '/defaults'
+      preLoaderRoute: typeof AppDefaultsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/features': {
       id: '/_app/features'
       path: '/features'
@@ -226,6 +245,7 @@ interface AppRouteChildren {
   AppAdminsRoute: typeof AppAdminsRoute
   AppAuditRoute: typeof AppAuditRoute
   AppConfigRoute: typeof AppConfigRoute
+  AppDefaultsRoute: typeof AppDefaultsRoute
   AppFeaturesRoute: typeof AppFeaturesRoute
   AppUsersRoute: typeof AppUsersRoute
   AppWorkspacesRoute: typeof AppWorkspacesRoute
@@ -237,6 +257,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminsRoute: AppAdminsRoute,
   AppAuditRoute: AppAuditRoute,
   AppConfigRoute: AppConfigRoute,
+  AppDefaultsRoute: AppDefaultsRoute,
   AppFeaturesRoute: AppFeaturesRoute,
   AppUsersRoute: AppUsersRoute,
   AppWorkspacesRoute: AppWorkspacesRoute,

@@ -86,3 +86,27 @@
 @media (hover: hover) { .overview-row:hover { background: rgba(var(--ink), 0.05); } }
 .plan-track { height: 8px; background: rgba(var(--ink), 0.08); border-radius: 9999px; overflow: hidden; }
 .plan-track > div { height: 100%; background: var(--text-2); border-radius: 9999px; }
+
+.defaults-role > summary { list-style: none; border-radius: 8px; }
+.defaults-role > summary::-webkit-details-marker { display: none; }
+.defaults-role > summary:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.defaults-role[open] > summary svg { transform: rotate(180deg); }
+
+.icon-choice {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.icon-choice:hover { color: var(--text); background: rgba(var(--ink), 0.05); }
+.icon-choice[aria-pressed='true'] { color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.icon-choice:focus-visible { outline: 2px solid var(--link); outline-offset: 0; }
+
+.defaults-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 56px; padding: 6px 8px 6px 24px; }
+.defaults-row + .defaults-row { border-top: 1px solid var(--border); }

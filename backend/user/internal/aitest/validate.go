@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
 	"github.com/devender07/taskwell/backend/user/internal/netguard"
 )
 

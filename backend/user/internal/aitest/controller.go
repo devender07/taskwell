@@ -18,7 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
 	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/issue"
 	"github.com/devender07/taskwell/backend/user/internal/plan"

@@ -14,7 +14,10 @@ export const Route = createFileRoute('/_app/config')({
 const GROUPS: [string, string[]][] = [
   ['App', ['app_']],
   ['Payments', ['paddle_']],
-  ['Plan limits', ['plan_']],
+  ['Free plan limits', ['plan_free_']],
+  ['Starter plan limits', ['plan_starter_']],
+  ['Pro plan limits', ['plan_pro_']],
+  ['Advanced plan limits', ['plan_advanced_']],
   ['Email (SMTP)', ['smtp_']],
   ['Google sign-in', ['google_']],
   ['Storage and files', ['s3_', 'upload_', 'files_']],
