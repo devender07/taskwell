@@ -15,6 +15,8 @@ git diff --stat <last deployed commit> -- backend/user/internal/db/migrations de
 
 The last command shows what the release changes beyond code:
 
+- **Migrations up to 048 are squashed into `001_schema.sql`.** A server that hasn't run `048_feedback_url.sql` must
+  ship commit `b1c0096` first; a newer release refuses to start on it and says so.
 - **New migrations** run by themselves when the user API starts (step 3). Read them first: a migration that
   rewrites or drops data can't be undone except from a backup.
 - **New `system_config` keys** come in with their migration, seeded with defaults. Set real values in the admin app's
