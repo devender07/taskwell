@@ -17,7 +17,7 @@ type txRows struct{ pgx.Tx }
 func TestLoad(t *testing.T) {
 	var pool *pgxpool.Pool = dbtest.Pool(t)
 	ctx := context.Background()
-	t.Cleanup(func() { loaded.Store(nil) })
+	t.Cleanup(func() { loaded.Store(nil); beta.Store(false) })
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -48,5 +48,14 @@ func TestLoad(t *testing.T) {
 	starter, _ := Get("starter")
 	if pro.Members != 40 || pro.StorageBytes != 0 || pro.Workspaces != 3 || free.AIUSD != 0.5 || starter.Projects != 5 {
 		t.Errorf("after edits: pro %+v, free %+v, starter %+v", pro, free, starter)
+	}
+	if Beta() {
+		t.Error("beta on with beta_mode seeded false")
+	}
+	if tag, err := tx.Exec(ctx, `update system_config set value = 'true' where key = 'beta_mode'`); err != nil || tag.RowsAffected() != 1 {
+		t.Fatalf("set beta_mode: %v %v", tag, err)
+	}
+	if err := Load(ctx, txRows{tx}); err != nil || !Beta() || Msg("paid", "beta") != "beta" {
+		t.Errorf("beta_mode true: Beta() %v, err %v", Beta(), err)
 	}
 }

@@ -1,4 +1,4 @@
-import { Link, createFileRoute, redirect } from '@tanstack/react-router'
+import { Link, createFileRoute, notFound, redirect } from '@tanstack/react-router'
 import { LockIcon } from '@taskwell/shared/icons'
 import type { Feature } from '@/api'
 import { FEATURES } from '@/pricing/pricing-table'
@@ -9,6 +9,7 @@ export const Route = createFileRoute('/_app/$workspace/_main/upgrade')({
     feature: FEATURES.find(([f]) => f === search.feature)?.[0],
   }),
   beforeLoad: ({ context, params, search }) => {
+    if (context.beta) throw notFound()
     const plan = search.feature && context.upgrades[search.feature]
     if (!plan) throw redirect({ to: '/$workspace', params, replace: true })
     return { plan }

@@ -254,4 +254,9 @@ currentUser()
   })
   .catch(() => {}) // API unreachable: the page stays as it is for visitors
 
+fetch(apiUrl('/api/beta'))
+  .then((res) => (res.ok ? (res.json() as Promise<{ beta: boolean }>) : { beta: false }))
+  .then(({ beta }) => beta && document.querySelectorAll<HTMLElement>('[data-paid]').forEach((el) => (el.hidden = true)))
+  .catch(() => {})
+
 document.getElementById('year')!.textContent = String(new Date().getFullYear())

@@ -46,6 +46,8 @@ func TestCheckValue(t *testing.T) {
 		{"feature_chat", "true", true},
 		{"feature_chat", "false", true},
 		{"feature_chat", "pro", false},
+		{"beta_mode", "true", true},
+		{"beta_mode", "yes", false},
 		{"plan_pro_members", "25", true},
 		{"plan_advanced_members", "0", true},
 		{"plan_pro_members", "-1", false},

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { shortDate } from '@taskwell/shared/time'
-import { api, billingPath, type Billing } from '@/api'
+import { api, billingPath, useBeta, type Billing } from '@/api'
 import { planName } from '@/pricing/tiers'
 
 // Paddle's checkout returns here; the webhook may land a few seconds later, so the page polls until the plan shows.
@@ -13,6 +13,7 @@ export const Route = createFileRoute('/_app/welcome')({
 function Welcome() {
   const billing = Route.useLoaderData()
   const router = useRouter()
+  const beta = useBeta()
   const ready = billing.plan !== 'free'
   const [waiting, setWaiting] = useState(true)
 
@@ -49,9 +50,11 @@ function Welcome() {
         <Link to="/signin" className="button button-primary">
           Go to dashboard
         </Link>
-        <Link to="/billing" className="button button-secondary">
-          Billing settings
-        </Link>
+        {beta ? null : (
+          <Link to="/billing" className="button button-secondary">
+            Billing settings
+          </Link>
+        )}
       </div>
     </main>
   )

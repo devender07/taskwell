@@ -1,5 +1,5 @@
 import { useTransition, useState } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { Button } from '@taskwell/shared/button'
 import { longDate, shortDate } from '@taskwell/shared/time'
 import { api, billingPath, openBillingPortal, storagePath, toFormErrors, workspaceBillingPath, type Billing, type WorkspaceBilling } from '@/api'
@@ -15,6 +15,9 @@ export const Route = createFileRoute('/_app/$workspace/_main/settings/billing')(
   validateSearch: (search): { interval?: Interval } => ({
     interval: validateInterval(search.interval),
   }),
+  beforeLoad: ({ context }) => {
+    if (context.beta) throw notFound()
+  },
   loader: async (ctx) => {
     const path = workspaceBillingPath(ctx.params.workspace)
     trackPath(ctx, path)

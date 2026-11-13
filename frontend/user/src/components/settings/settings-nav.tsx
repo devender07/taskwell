@@ -2,7 +2,7 @@ import { Link, useLoaderData, useLocation, useRouteContext } from '@tanstack/rea
 import { Fragment, useState } from 'react'
 import { Dialog } from '@taskwell/shared/dialog'
 import { BellIcon, ChevronDownIcon, CreditCardIcon, FileIcon, FeedbackIcon, FlaskIcon, GridIcon, HistoryIcon, KeyIcon, PlugIcon, ShieldIcon, TagIcon, UserIcon, UsersIcon, WebhookIcon, WorkflowIcon } from '@taskwell/shared/icons'
-import { can, featureOn, useFeatures, type Feature } from '@/api'
+import { can, featureOn, useBeta, useFeatures, type Feature } from '@/api'
 import { LockedLink } from '@/components/app/locked-link'
 import './settings.css'
 
@@ -25,6 +25,7 @@ function useSections() {
     const plan = feature && !featureOn(features, feature) ? upgrades[feature] : undefined
     return { ...i, feature, plan }
   }
+  const beta = useBeta()
   const integrations = can(ws, 'integrations.manage')
   const account = [
     { to: '/$workspace/settings/profile', label: 'Profile', Icon: UserIcon },
@@ -35,7 +36,7 @@ function useSections() {
     ? []
     : [
         { to: '/$workspace/settings/workspace', label: 'Workspace', Icon: GridIcon },
-        { to: '/$workspace/settings/billing', label: 'Billing', Icon: CreditCardIcon },
+        ...(beta ? [] : [{ to: '/$workspace/settings/billing', label: 'Billing', Icon: CreditCardIcon }]),
         { to: '/$workspace/settings/members', label: 'Members', Icon: UsersIcon },
         { to: '/$workspace/settings/roles', label: 'Roles', Icon: ShieldIcon },
         { to: '/$workspace/settings/workflow', label: 'Workflow', Icon: WorkflowIcon },

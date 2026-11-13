@@ -742,7 +742,7 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		if p, err := plan.ForWorkspace(r.Context(), h.model.db, ws.ID); err != nil {
 			return err
 		} else if p.AIUSD == 0 {
-			web.Err(w, http.StatusPaymentRequired, msgNoAI)
+			web.Err(w, http.StatusPaymentRequired, plan.Msg(msgNoAI, msgNoAIBeta))
 			return nil
 		}
 	}

@@ -29,7 +29,7 @@ func checkValue(key, v string) string {
 		if !planList(v) {
 			return "Use plan ids: free, starter, pro, advanced."
 		}
-	case strings.HasPrefix(key, "feature_") && v != "true" && v != "false":
+	case (strings.HasPrefix(key, "feature_") || key == "beta_mode") && v != "true" && v != "false":
 		return "Use true or false."
 	}
 	switch key {

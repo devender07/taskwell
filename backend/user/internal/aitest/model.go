@@ -836,6 +836,7 @@ const (
 	heartbeatFresh = 90 * time.Second
 	msgLimit       = "This month's AI test limit is reached."
 	msgNoAI        = "Your plan doesn't include AI test runs. Upgrade to use them."
+	msgNoAIBeta    = "AI test runs aren't available during the beta."
 )
 
 type Site struct {

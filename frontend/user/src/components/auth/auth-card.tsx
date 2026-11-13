@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button } from '@taskwell/shared/button'
 import { LogoMark } from '@taskwell/shared/logo'
 import { apiUrl } from '@taskwell/shared/api-url'
+import { useBeta } from '@/api'
 import './auth.css'
 
 const line = { height: 1, background: 'rgba(var(--ink), 0.08)' }
@@ -36,7 +37,12 @@ export function OrDivider() {
 }
 
 export function LegalCaption() {
-  return (
+  const beta = useBeta()
+  return beta ? (
+    <p className="text-caption text-secondary text-center">
+      By continuing, you agree to the <Link to="/terms" className="auth-link">beta notice</Link>.
+    </p>
+  ) : (
     <p className="text-caption text-secondary text-center">
       By continuing, you agree to the <Link to="/terms" className="auth-link">terms</Link> and the{' '}
       <Link to="/privacy" className="auth-link">privacy notice</Link>.

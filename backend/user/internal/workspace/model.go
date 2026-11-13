@@ -105,7 +105,8 @@ func (m *model) create(ctx context.Context, userID, name, slug string) (Workspac
 		case !can:
 			return errNoCreate
 		case p.Workspaces > 0 && owned >= p.Workspaces:
-			return plan.Exceeded(fmt.Sprintf("Your plan allows %s. Upgrade to create more.", plan.Count(p.Workspaces, "workspace")))
+			n := plan.Count(p.Workspaces, "workspace")
+			return plan.Exceeded(plan.Msg(fmt.Sprintf("Your plan allows %s. Upgrade to create more.", n), fmt.Sprintf("Your plan allows %s.", n)))
 		}
 		var err error
 		ws, err = create(ctx, tx, userID, name, slug)

@@ -146,8 +146,9 @@ func (h *Handler) Room(ctx context.Context, workspaceID string) (int64, string, 
 		return 0, "", err
 	}
 	if left := p.StorageBytes - used; left < limit {
-		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.",
-			plan.GB(p.StorageBytes))
+		gb := plan.GB(p.StorageBytes)
+		limit, tooLarge = left, plan.Msg(fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.", gb),
+			fmt.Sprintf("This workspace is out of storage (%s). Delete some files.", gb))
 	}
 	return limit, tooLarge, nil
 }

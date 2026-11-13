@@ -612,6 +612,18 @@ func TestEndpoints(t *testing.T) {
 	cfg["paddle_environment"], cfg["paddle_api_key"] = "production", ""
 	x.do(t, ann, "POST", base+"/checkout", price("pri_pro_m"), 503)
 	cfg["paddle_environment"], cfg["paddle_api_key"] = "sandbox", "pdl_key"
+	if b := x.do(t, "", "GET", "/api/beta", nil, 200); b["beta"] != false {
+		t.Fatalf("beta off: %v", b)
+	}
+	cfg["beta_mode"] = "true"
+	if b := x.do(t, "", "GET", "/api/beta", nil, 200); b["beta"] != true {
+		t.Fatalf("beta on: %v", b)
+	}
+	x.do(t, ann, "POST", base+"/checkout", price("pri_pro_m"), 503)
+	if b := x.do(t, ann, "GET", base, nil, 200); b["enabled"] != false {
+		t.Fatalf("billing while beta: %v", b)
+	}
+	cfg["beta_mode"] = "false"
 
 	got := x.do(t, ann, "POST", base+"/checkout", price("pri_pro_m"), 200)
 	if cd := got["custom_data"].(map[string]any); cd["user_id"] != ann || cd["sig"] != checkoutSig(ann) ||

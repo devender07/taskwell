@@ -4,7 +4,7 @@ import { Button } from '@taskwell/shared/button'
 import { Checkbox } from '@taskwell/shared/checkbox'
 import { Input } from '@taskwell/shared/input'
 import { email, name, password, workspaceName } from '@taskwell/shared/validate'
-import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
+import { api, homePath, toFormErrors, useBeta, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
 type Values = { name: string; email: string; workspace: string; accepted: boolean }
@@ -68,6 +68,7 @@ export function SignupForm({ redirect }: { redirect?: string }) {
     return next
   }, { step: 'details', values: { name: '', email: '', workspace: '', accepted: false } })
   const { values, errors, error } = state
+  const beta = useBeta()
 
   if (state.step !== 'details') {
     return (
@@ -153,16 +154,25 @@ export function SignupForm({ redirect }: { redirect?: string }) {
           aria-invalid={errors?.accept_terms ? true : undefined}
           aria-describedby={errors?.accept_terms ? 'accept-terms-error' : undefined}
           label={
-            <span>
-              I'm 18 or older and accept the{' '}
-              <Link to="/terms" target="_blank" className="auth-link">
-                terms
-              </Link>{' '}
-              and{' '}
-              <Link to="/privacy" target="_blank" className="auth-link">
-                privacy notice
-              </Link>
-            </span>
+            beta ? (
+              <span>
+                I'm 18 or older and accept the{' '}
+                <Link to="/terms" target="_blank" className="auth-link">
+                  beta notice
+                </Link>
+              </span>
+            ) : (
+              <span>
+                I'm 18 or older and accept the{' '}
+                <Link to="/terms" target="_blank" className="auth-link">
+                  terms
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" className="auth-link">
+                  privacy notice
+                </Link>
+              </span>
+            )
           }
         />
         {errors?.accept_terms ? (

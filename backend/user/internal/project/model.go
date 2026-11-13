@@ -257,8 +257,9 @@ func roomForProject(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 		return fmt.Errorf("check project limit: %w", err)
 	}
 	if p, ok := plan.Get(id); ok && p.Projects > 0 && n >= p.Projects {
-		return plan.Exceeded(fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.",
-			plan.Count(p.Projects, "project")))
+		n := plan.Count(p.Projects, "project")
+		return plan.Exceeded(plan.Msg(fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.", n),
+			fmt.Sprintf("This workspace's plan allows %s.", n)))
 	}
 	return nil
 }
