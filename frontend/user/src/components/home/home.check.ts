@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types user/src/components/home/home.check.ts
 import { assert } from '../../../../shared/src/check.ts'
 import type { Issue, StatusCategory } from '../../api.ts'
-import { greeting, localDate, pushRecent, splitMine } from './home.ts'
+import { greeting, localDate, pruneRecent, pushRecent, readRecent, recordRecent, splitMine } from './home.ts'
 
 const now = new Date(2026, 9, 31, 9)
 const day = (n: number) => localDate(new Date(2026, 9, 31 + n))
@@ -28,5 +28,19 @@ assert.equal(list.filter((r) => r.identifier === 'ENG-5').length, 1)
 list = pushRecent(list, { identifier: 'ENG-99', title: '' })
 assert.equal(list.length, 20)
 assert.equal(list.at(-1)!.identifier, 'ENG-18')
+
+// Recently viewed belongs to the workspace's id: one made again at the same URL starts empty.
+const store = new Map<string, string>()
+globalThis.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } as Storage
+recordRecent('acme', 'ws-1', { identifier: 'ENG-1', title: 'one' })
+recordRecent('acme', 'ws-1', { identifier: 'ENG-2', title: 'two' })
+assert.deepEqual(readRecent('acme', 'ws-1').map((r) => r.identifier), ['ENG-2', 'ENG-1'])
+assert.equal(readRecent('acme', 'ws-2').length, 0)
+recordRecent('acme', 'ws-2', { identifier: 'NEW-1', title: 'new' })
+assert.deepEqual(readRecent('acme', 'ws-2').map((r) => r.identifier), ['NEW-1'])
+pruneRecent('acme', 'new-1')
+assert.equal(readRecent('acme', 'ws-2').length, 0)
+store.set('taskwell:recent:old', JSON.stringify([{ identifier: 'OLD-1', title: 'saved before ids' }]))
+assert.equal(readRecent('old', 'ws-3').length, 0)
 
 console.log('home: ok')

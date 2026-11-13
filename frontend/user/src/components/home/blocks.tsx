@@ -12,7 +12,7 @@ import { eventActor, eventText } from '@/components/issues/event-text'
 import { StatusIcon, formatDate, overdue, priorityLabel } from '@/components/issues/fields'
 import { HealthPill, healthLabel } from '@/components/projects/updates'
 import { CopyButton } from '@/components/settings/integrations'
-import { localDate, readRecent } from './home'
+import { localDate, readRecent, recentKey } from './home'
 import '@/components/issues/issues.css'
 import './home.css'
 
@@ -315,13 +315,13 @@ export function Activity({ workspace, page }: { workspace: string; page: Activit
   )
 }
 
-export function RecentlyViewed({ workspace, issues }: { workspace: string; issues: Issue[] }) {
-  const [recent, setRecent] = useState(() => readRecent(workspace))
+export function RecentlyViewed({ workspace, workspaceId, issues }: { workspace: string; workspaceId: string; issues: Issue[] }) {
+  const [recent, setRecent] = useState(() => readRecent(workspace, workspaceId))
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => e.key === `taskwell:recent:${workspace}` && setRecent(readRecent(workspace))
+    const onStorage = (e: StorageEvent) => e.key === recentKey(workspace) && setRecent(readRecent(workspace, workspaceId))
     addEventListener('storage', onStorage)
     return () => removeEventListener('storage', onStorage)
-  }, [workspace])
+  }, [workspace, workspaceId])
   const live = new Map(issues.map((i) => [i.identifier, i]))
 
   return (

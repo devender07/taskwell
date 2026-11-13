@@ -48,7 +48,7 @@ export function IssueDetail({ workspace, user, data, actions }: { workspace: Wor
   const files = useIssueFiles(workspace.slug, issue)
   const features = useFeatures()
   const create = can(workspace, 'issues.create') && !project.archived
-  useEffect(() => recordRecent(workspace.slug, { identifier: issue.identifier, title: issue.title }), [workspace.slug, issue.identifier, issue.title])
+  useEffect(() => recordRecent(workspace.slug, workspace.id, { identifier: issue.identifier, title: issue.title }), [workspace.slug, workspace.id, issue.identifier, issue.title])
 
   return (
     <div className="issue-detail grid gap-6" style={{ alignContent: 'start' }}>

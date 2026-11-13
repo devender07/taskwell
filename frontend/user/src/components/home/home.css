@@ -3,16 +3,17 @@
 @media (min-width: 1024px) {
   .home-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 }
-/* Laptop and up: Home fits the viewport under the navbar; long blocks scroll inside their card. */
+/* Laptop and up: Home fits the viewport under the navbar; long blocks scroll inside their card. While Getting started
+   shows there isn't room for that, so the page scrolls instead; a card never shrinks below a few rows, and when they
+   still don't fit the page scrolls too. */
 @media (min-width: 1024px) and (min-height: 600px) {
-  main.home { height: calc(100dvh - 56px); grid-template-rows: auto minmax(0, 1fr); gap: 16px; padding-block: 24px; }
-  main.home:has(> .home-card) { grid-template-rows: auto auto minmax(0, 1fr); }
-  .home-grid { min-height: 0; align-items: stretch; gap: 16px; }
-  .home-grid > div { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
-  .home-grid .home-card { display: flex; flex-direction: column; flex: none; max-height: 40%; }
-  .home-grid > div > .home-card:last-child { flex: 0 1 auto; max-height: none; min-height: 0; }
-  .home-grid > div > .home-activity:last-child { flex: 1 1 0; min-height: 160px; }
-  .home-grid .home-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  main.home:not(:has(> .home-card)) { height: calc(100dvh - 56px); grid-template-rows: auto minmax(0, 1fr); gap: 16px; padding-block: 24px; }
+  main.home:not(:has(> .home-card)) .home-grid { min-height: 0; align-items: stretch; gap: 16px; }
+  main.home:not(:has(> .home-card)) .home-grid > div { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  main.home:not(:has(> .home-card)) .home-grid .home-card { display: flex; flex-direction: column; flex: 0 1 auto; max-height: 40%; min-height: 112px; }
+  main.home:not(:has(> .home-card)) .home-grid > div > .home-card:last-child { max-height: none; }
+  main.home:not(:has(> .home-card)) .home-grid > div > .home-activity:last-child { flex: 1 1 0; min-height: 160px; }
+  main.home:not(:has(> .home-card)) .home-grid .home-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 }
 @media (max-width: 1023px) {
   .home-grid > div { display: contents; }
@@ -29,7 +30,9 @@
   border-bottom: 1px solid var(--border);
 }
 
-.home-list { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; }
+/* :where keeps the reset weaker than utility classes (px-6), whichever stylesheet loads last. */
+:where(.home-list) { margin: 0; padding: 0; }
+.home-list { display: grid; grid-template-columns: minmax(0, 1fr); list-style: none; }
 .home-list > li + li { border-top: 1px solid var(--border); }
 
 .home-link {

@@ -27,27 +27,37 @@ export function greeting(now = new Date()) {
 // Newest first, one entry per issue, at most 20.
 export const pushRecent = (list: Recent[], item: Recent) => [item, ...list.filter((r) => r.identifier !== item.identifier)].slice(0, 20)
 
-const key = (workspace: string) => `taskwell:recent:${workspace}`
+// Kept per workspace URL, with the workspace's id: one deleted and made again at the same URL starts empty.
+export const recentKey = (slug: string) => `taskwell:recent:${slug}`
+type Stored = { workspace: string; items: Recent[] }
 
-export function readRecent(workspace: string): Recent[] {
+function readStored(slug: string): Stored | null {
   try {
-    const v = JSON.parse(localStorage.getItem(key(workspace)) ?? '[]')
-    return Array.isArray(v) ? v.filter((r) => typeof r?.identifier === 'string' && typeof r?.title === 'string') : []
+    const v = JSON.parse(localStorage.getItem(recentKey(slug)) ?? 'null')
+    if (typeof v?.workspace !== 'string' || !Array.isArray(v.items)) return null
+    return { workspace: v.workspace, items: v.items.filter((r: Recent) => typeof r?.identifier === 'string' && typeof r?.title === 'string') }
   } catch {
-    return []
+    return null
   }
 }
 
-function writeRecent(workspace: string, list: Recent[]) {
+function writeStored(slug: string, stored: Stored) {
   try {
-    localStorage.setItem(key(workspace), JSON.stringify(list))
+    localStorage.setItem(recentKey(slug), JSON.stringify(stored))
   } catch {}
 }
 
-export const recordRecent = (workspace: string, item: Recent) => writeRecent(workspace, pushRecent(readRecent(workspace), item))
+export function readRecent(slug: string, workspaceId: string): Recent[] {
+  const stored = readStored(slug)
+  return stored?.workspace === workspaceId ? stored.items : []
+}
 
-export function pruneRecent(workspace: string, identifier: string) {
-  const list = readRecent(workspace)
-  const left = list.filter((r) => r.identifier.toUpperCase() !== identifier.toUpperCase())
-  if (left.length !== list.length) writeRecent(workspace, left)
+export const recordRecent = (slug: string, workspaceId: string, item: Recent) =>
+  writeStored(slug, { workspace: workspaceId, items: pushRecent(readRecent(slug, workspaceId), item) })
+
+export function pruneRecent(slug: string, identifier: string) {
+  const stored = readStored(slug)
+  if (!stored) return
+  const items = stored.items.filter((r) => r.identifier.toUpperCase() !== identifier.toUpperCase())
+  if (items.length !== stored.items.length) writeStored(slug, { ...stored, items })
 }
