@@ -3,8 +3,8 @@
 # live), and prints its secret for paddle_webhook_secret (docs/billing-plan.md). A destination with the same URL is
 # reused. Products and prices are managed in the Paddle dashboard; every price needs custom_data.taskwell_plan.
 # Needs curl and jq.
-# Usage: deploy/paddle-setup.sh API_KEY https://api.taskwell.dev
-#   PADDLE_API=https://api.paddle.com deploy/paddle-setup.sh ...   (live; the default is the sandbox)
+# Usage: deploy/scripts/paddle-setup.sh API_KEY https://api.taskwell.dev
+#   PADDLE_API=https://api.paddle.com deploy/scripts/paddle-setup.sh ...   (live; the default is the sandbox)
 set -euo pipefail
 shopt -s inherit_errexit
 

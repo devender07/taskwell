@@ -2,7 +2,7 @@
 # Creates an admin account (or resets its password) in the admins table, apart from app users, and prints their
 # authenticator setup key and recovery codes once, when they have none yet. One script for both places; it asks for the password so it stays out of shell
 # history and the process list.
-#   local dev (make up running):  deploy/create-admin.sh you@example.com ['Name']
+#   local dev (make up running):  deploy/scripts/create-admin.sh you@example.com ['Name']
 #   server (after scp to /tmp):   sudo sh /tmp/create-admin.sh you@example.com ['Name']
 set -eu
 
@@ -27,5 +27,5 @@ on conflict (email) do update set password_hash = excluded.password_hash;\n' \
 if [ -x "$BIN" ]; then
   systemd-run --pty --wait --quiet --uid=taskwell -p EnvironmentFile=/etc/taskwell/admin.env "$BIN" -enrol-mfa "$1"
 else
-  cd "$(dirname "$0")/../backend" && go run ./admin/cmd/admin -enrol-mfa "$1"
+  cd "$(dirname "$0")/../../backend" && go run ./admin/cmd/admin -enrol-mfa "$1"
 fi

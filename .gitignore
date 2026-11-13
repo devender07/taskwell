@@ -10,13 +10,14 @@ bin/
 .DS_Store
 .claude
 .codegraph
-deploy/systemd/*.env
+deploy/server/etc/taskwell/*.env
+deploy/server/etc/taskwell-backup.env
 
 !frontend/*/.env.development
 !frontend/*/.env.production
 !frontend/*/.env.example
 
-deploy/config/system.json
+deploy/system.json
 
 # Cloudflare Worker (cdn/): local state and dev secrets
 .wrangler/

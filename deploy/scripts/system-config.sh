@@ -1,15 +1,15 @@
 #!/bin/sh
-# Puts the keys of deploy/config/system.json into the system_config table, in one transaction. An unknown key or a
+# Puts the keys of deploy/system.json into the system_config table, in one transaction. An unknown key or a
 # value that isn't a string or number fails the whole run. The services pick the change up at once (the same
 # notification the admin Config page sends).
-# Usage, from anywhere in the repo: deploy/system-config.sh [user@host | local]   (default devender@ftp.fotospace.co.in)
-#   FILE=path/to/other.json deploy/system-config.sh local
+# Usage, from anywhere in the repo: deploy/scripts/system-config.sh [user@host | local]   (default devender@ftp.fotospace.co.in)
+#   FILE=path/to/other.json deploy/scripts/system-config.sh local
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-FILE=${FILE:-$HERE/config/system.json}
+FILE=${FILE:-$HERE/../system.json}
 TARGET=${1:-devender@ftp.fotospace.co.in}
-[ -f "$FILE" ] || { echo "no $FILE, copy deploy/config/system.json.example to it and fill it in"; exit 1; }
+[ -f "$FILE" ] || { echo "no $FILE, copy deploy/system.json.example to it and fill it in"; exit 1; }
 
 # The file goes in dollar-quoted with a random tag, so nothing in it needs escaping; Postgres parses the JSON.
 TAG=cfg$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')

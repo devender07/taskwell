@@ -1,7 +1,7 @@
 #!/bin/sh
 # Prints the current 6-digit sign-in code for an authenticator setup key (the one create-admin.sh or -reset-mfa
 # printed), like an authenticator app would. For local dev, when there's no phone at hand.
-#   deploy/mfa-code.sh SETUP_KEY      (or from backend/: make mfa-code KEY=SETUP_KEY)
+#   deploy/scripts/mfa-code.sh SETUP_KEY      (or from backend/: make mfa-code KEY=SETUP_KEY)
 set -eu
 
 [ $# -eq 1 ] || { echo "usage: $0 SETUP_KEY"; exit 1; }

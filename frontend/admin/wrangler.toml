@@ -1,4 +1,4 @@
-# The admin app on Cloudflare: an assets-only Worker at admin.taskwell.dev (deploy/frontend.sh admin builds and deploys it).
+# The admin app on Cloudflare: an assets-only Worker at admin.taskwell.dev (deploy/scripts/frontend.sh admin builds and deploys it).
 # Unknown paths fall back to index.html (the app's router); public/_headers and _redirects apply as on Pages.
 name = "admin-taskwell"
 compatibility_date = "2026-11-06"

@@ -1,9 +1,9 @@
 #!/bin/sh
-# Sends a build from deploy/build.sh to the server, installs it and restarts the service.
-# Usage, from anywhere in the repo: deploy/send.sh ENV APP PART [user@host]
-#   same ENV APP PART as build.sh; e.g. deploy/build.sh prod user all && deploy/send.sh prod user all
+# Sends a build from deploy/scripts/build.sh to the server, installs it and restarts the service.
+# Usage, from anywhere in the repo: deploy/scripts/send.sh ENV APP PART [user@host]
+#   same ENV APP PART as build.sh; e.g. deploy/scripts/build.sh prod user all && deploy/scripts/send.sh prod user all
 # On the server: binary in /opt/taskwell, frontend in /var/www/taskwell/<app>. Units, env files and the Caddyfile
-# come from deploy/config.sh, run it first. Asks for the sudo password once.
+# come from deploy/scripts/config.sh, run it first. Asks for the sudo password once.
 set -eu
 
 usage() { echo "usage: $0 dev|prod user|admin|mcp frontend|backend|all [user@host]"; exit 1; }
@@ -15,10 +15,10 @@ case $APP in user|admin|mcp) ;; *) usage ;; esac
 case $PART in frontend|backend|all) ;; *) usage ;; esac
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-BUILD=$HERE/../dist/$ENV/$APP
+BUILD=$HERE/../../dist/$ENV/$APP
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
-missing() { echo "no $1, run: deploy/build.sh $ENV $APP $PART"; exit 1; }
+missing() { echo "no $1, run: deploy/scripts/build.sh $ENV $APP $PART"; exit 1; }
 
 if [ "$PART" != backend ]; then
   [ -f "$BUILD/web/index.html" ] || missing "$BUILD/web"
@@ -42,7 +42,7 @@ if [ -f "$SRC/web.tar.gz" ]; then
   echo "frontend installed in $WEB"
 fi
 if [ -f "$SRC/taskwell-$APP" ]; then
-  [ -f "/etc/systemd/system/taskwell-$APP.service" ] || { echo "no taskwell-$APP unit, run deploy/config.sh first"; exit 1; }
+  [ -f "/etc/systemd/system/taskwell-$APP.service" ] || { echo "no taskwell-$APP unit, run deploy/scripts/config.sh first"; exit 1; }
   mkdir -p /opt/taskwell
   install -m 755 "$SRC/taskwell-$APP" "/opt/taskwell/taskwell-$APP.new"
   mv "/opt/taskwell/taskwell-$APP.new" "/opt/taskwell/taskwell-$APP"

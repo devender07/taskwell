@@ -44,7 +44,7 @@ docker exec taskwell-postgres psql -U taskwell -d restore_check -Atc "select cou
 docker exec taskwell-postgres dropdb -U taskwell restore_check
 ```
 
-Also restore one file from the off-server copy (`rclone copy "$RCLONE_REMOTE/<file>" /tmp/`). Log the date, the dump
+Also restore one file from the off-server copy (`sudo /opt/taskwell-db/backup.sh list`, then `sudo /opt/taskwell-db/backup.sh get <file> /tmp`). Log the date, the dump
 used, the counts and how long it took in the drill log. That log is the evidence an auditor asks for.
 
 ## Data subject requests

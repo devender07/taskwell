@@ -26,7 +26,7 @@ AutoPay), everyone else in USD. No AI credits.
 
 ## Paddle objects
 
-`deploy/paddle-setup.sh <api key> <taskwell api base url>` (sandbox by default, `PADDLE_API` for live): products
+`deploy/scripts/paddle-setup.sh <api key> <taskwell api base url>` (sandbox by default, `PADDLE_API` for live): products
 "Taskwell Pro" / "Taskwell Ultimate" (`tax_category=saas`), one monthly price each, base USD 1200 / 4900 with
 `unit_price_overrides` `[{country_codes: ["IN"], unit_price: {amount: "69900" / "249900", currency_code: "INR"}}]`,
 and the notification destination at `<api>/api/billing/webhook`. Prints price ids and the webhook secret. Reuses what

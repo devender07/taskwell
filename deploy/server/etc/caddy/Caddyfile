@@ -32,6 +32,5 @@ mcp.taskwell.dev {
 
 admin-api.taskwell.dev {
 	import security
-	import security
 	reverse_proxy 127.0.0.1:8080
 }

@@ -39,7 +39,7 @@ Member analytics is light workplace monitoring, covered by a short legitimate-in
       `images` job: `deploy/backend.Dockerfile` and `deploy/web.Dockerfile` are missing from git.
 - [ ] Production: set `ADMIN_ALLOWED_IPS`, ship logs off-box with a year of retention, add an external uptime check
       on `https://api.taskwell.dev/healthz`, alert on backup failure, confirm disk encryption with the host, and set
-      `RCLONE_REMOTE` (`deploy/README.md`).
+      R2 backup uploads in `taskwell-backup.env` (`deploy/README.md`).
 - [ ] People: onboarding and offboarding checklist, security training, background checks.
 - [ ] Evidence: vendor list with their SOC 2 reports, asset inventory, a yearly pentest, quarterly vulnerability scan
       records, and the restore drill log.

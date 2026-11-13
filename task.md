@@ -130,7 +130,7 @@ Plan: `docs/mcp-plan.md`.
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
 - [x] Workspaces and users list, suspend a user
 - [x] Basic usage stats
-- [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/create-admin.sh email`)
+- [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/scripts/create-admin.sh email`)
 - [x] Workspace defaults (docs/workspace-defaults-plan.md): admin app → Defaults edits the roles (Member/Guest permissions, custom roles), status types and statuses, labels and issue templates a new workspace starts with; copied once at creation (`default_*` tables, `seed_statuses()` trigger and `workspace.create`), existing workspaces untouched
 - [x] Beta mode (docs/beta-mode-plan.md): a button on the admin overview (`beta_mode` in `system_config`) hides pricing, checkout, billing settings, banners and upgrade prompts, keeps everyone on Free limits with no "upgrade" wording, and shows a short beta notice instead of the draft privacy notice and terms
 - [x] Admins page: list admins (two-step status, last active), add one (shows their setup key and recovery codes once) or remove one, both confirmed with your password; logged in the audit log

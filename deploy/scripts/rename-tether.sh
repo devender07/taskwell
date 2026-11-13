@@ -1,8 +1,8 @@
 #!/bin/sh
 # One-off: renames the server's database and role from tether to taskwell, keeping the data and the password.
 # Stops the services first (a database with connections can't be renamed) and starts them again after; install the
-# env files with the new DATABASE_URL (deploy/config.sh) right after this.
-# Usage, from your machine: deploy/postgres/rename-tether.sh [user@host]   (default devender@ftp.fotospace.co.in)
+# env files with the new DATABASE_URL (deploy/scripts/config.sh) right after this.
+# Usage, from your machine: deploy/scripts/rename-tether.sh [user@host]   (default devender@ftp.fotospace.co.in)
 set -eu
 
 if [ "${1:-}" != --here ]; then
@@ -31,4 +31,4 @@ sql taskwell_rename -c "select pg_terminate_backend(pid) from pg_stat_activity w
 sql taskwell_rename -c 'alter database tether rename to taskwell' -c 'alter role tether rename to taskwell'
 sql taskwell -c 'drop role taskwell_rename'
 echo "renamed: database and role are taskwell in $C"
-[ -n "$UNITS" ] && echo "stopped: $UNITS (start them after deploy/config.sh puts the new DATABASE_URL in place)"
+[ -n "$UNITS" ] && echo "stopped: $UNITS (start them after deploy/scripts/config.sh puts the new DATABASE_URL in place)"
