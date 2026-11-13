@@ -244,3 +244,38 @@ func TestWeeklyEmail(t *testing.T) {
 		}
 	}
 }
+
+// TestWeeklySkipsDeletedUser: a user deleted while the job adds settings rows is skipped, not a failed run.
+func TestWeeklySkipsDeletedUser(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	gone := dbtest.User(t, pool, "Gone")
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		return workspace.CreateFirst(ctx, tx, gone, "Gone", "Gone weekly")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	del, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer del.Rollback(ctx)
+	if _, err := del.Exec(ctx, `delete from workspaces where created_by = $1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := del.Exec(ctx, `delete from users where id = $1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := (&model{db: pool}).weeklyNext(ctx, monday, 8, func(pgx.Tx, string, []weeklyLine) error { return nil })
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // the job is now waiting on the deleted user's row
+	if err := del.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("weekly run failed on a user deleted meanwhile: %v", err)
+	}
+}

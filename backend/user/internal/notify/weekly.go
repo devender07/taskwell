@@ -69,11 +69,13 @@ const weeklyFrom = `with mine as (
 func (m *model) weeklyNext(ctx context.Context, now time.Time, hour int,
 	queue func(tx pgx.Tx, to string, lines []weeklyLine) error) (bool, error) {
 	// Members with no settings row have the defaults; a row lets them be locked and the send recorded. Starting at
-	// now, like the column default, their first one comes next Monday.
+	// now, like the column default, their first one comes next Monday. The key share lock skips a user deleted while
+	// this runs, which would otherwise fail the insert's foreign key.
 	if _, err := m.db.Exec(ctx,
 		`insert into notification_settings (user_id, last_weekly_at)
 		 select u.id, $1 from users u where not exists (select 1 from notification_settings s where s.user_id = u.id)
 		   and exists (select 1 from workspace_members m where m.user_id = u.id)
+		 for key share of u
 		 on conflict do nothing`, now); err != nil {
 		return false, fmt.Errorf("add weekly settings: %w", err)
 	}
