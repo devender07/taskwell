@@ -99,7 +99,7 @@ func (r *Runner) Run(stop context.Context) {
 		case <-poll.C:
 			r.sweep(time.Now())
 		}
-		for r.takeSlot() {
+		for r.serverRuns(stop) && r.takeSlot() {
 			id, err := r.model.claim(stop, r.workspaceCap(stop), r.o.LiveURL, r.features.Plans(stop, feature.AITesting))
 			if err != nil && stop.Err() == nil {
 				slog.Error("claim failed", "err", err)
@@ -114,6 +114,15 @@ func (r *Runner) Run(stop context.Context) {
 			})
 		}
 	}
+}
+
+// serverRuns is the ai_tests_server_runs switch: off, queued runs stay queued and tests run on users' machines.
+func (r *Runner) serverRuns(ctx context.Context) bool {
+	on, err := serverRuns(ctx, r.cfg)
+	if err != nil && ctx.Err() == nil {
+		slog.Error("read ai_tests_server_runs", "err", err)
+	}
+	return on
 }
 
 // takeSlot takes a free browser slot, or reports there's none.

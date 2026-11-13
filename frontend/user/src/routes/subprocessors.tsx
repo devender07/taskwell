@@ -7,8 +7,8 @@ export const Route = createFileRoute('/subprocessors')({
 
 const ROWS = [
   ['Cloudflare', 'Hosting of the web app, file storage (R2), CDN, cookieless analytics', 'Global'],
-  ['[VPS host]', 'API, database, backups', '[country]'],
-  ['[SMTP provider]', 'Email delivery', '[country]'],
+  ['VPS host', 'API, database, backups', 'India'],
+  ['Google (Gmail SMTP)', 'Email delivery', 'Global'],
   ['Anthropic', 'AI testing, only when a workspace uses it. API data is not used for training.', 'United States'],
 ]
 
@@ -46,7 +46,7 @@ function Subprocessors() {
         <li>Integrations you turn on (Google sign-in, GitHub, GitLab, webhooks) receive data at your request.</li>
       </ul>
       <p>
-        We'll update this page before adding a new subprocessor. Questions: <a href="mailto:privacy@taskwell.dev">privacy@taskwell.dev</a>. See
+        We'll update this page before adding a new subprocessor. Questions: <a href="mailto:dev.taskwell@gmail.com">dev.taskwell@gmail.com</a>. See
         also the <Link to="/terms">terms of service</Link>.
       </p>
     </LegalPage>

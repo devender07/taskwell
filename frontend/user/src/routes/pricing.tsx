@@ -1,4 +1,4 @@
-import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { Logo } from '@taskwell/shared/logo'
 import { api, billingPath, getMe, type Billing } from '@/api'
 import { PricingTable, validateInterval } from '@/pricing/pricing-table'
@@ -14,6 +14,9 @@ export const Route = createFileRoute('/pricing')({
     interval: validateInterval(search.interval),
     ...(typeof search._ptxn === 'string' ? { _ptxn: search._ptxn } : {}),
   }),
+  beforeLoad: ({ context }) => {
+    if (context.beta) throw redirect({ to: '/signin', replace: true })
+  },
   loader: async () => {
     const user = await getMe().catch(() => null)
     return { billing: user ? await api<Billing>(billingPath) : null }

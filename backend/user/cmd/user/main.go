@@ -196,8 +196,8 @@ func main() {
 		obs.Fatal(err.Error())
 	}
 	allowPrivate := !prod && os.Getenv("AI_TEST_ALLOW_PRIVATE") == "true" // dev only: URLs on this machine or the LAN
-	aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: allowPrivate},
-		authenticate, wsH.Member).Register(mux)
+	testH := aitest.New(pool, cfg, aitest.Options{Key: testKey, AllowHTTP: !prod, AllowPrivate: allowPrivate},
+		authenticate, wsH.Member)
 	webhookH := webhook.New(pool, webhook.Options{Key: gitKey, AllowHTTP: !prod, AllowPrivate: allowPrivate}, authenticate, wsH.Member)
 	webhookH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Webhooks) }
 	templateH.Plans = func(ctx context.Context) []string { return features.Plans(ctx, feature.Templates) }
@@ -266,6 +266,9 @@ func main() {
 	fileH := file.New(pool, files, authenticate, wsH.Member, cfg,
 		func(ctx context.Context, userID string) (any, error) { return authH.Profile(ctx, userID) })
 	fileH.Register(mux)
+	testH.Files, testH.FinishVideo, testH.Room = files, fileH.FinishVideo, fileH.Room
+	testH.Register(mux)
+	wg.Go(func() { testH.Run(work, time.Minute) })
 	projectfile.New(pool, files, fileH.Upload, authenticate, wsH.Member).Register(mux)
 	export.New(pool, files, jwtSecret, authenticate, wsH.Member).Register(mux)
 	billingH.Register(mux)

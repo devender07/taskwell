@@ -1,0 +1,22 @@
+# Taskwell
+
+> Project management for software teams: issues, cycles, live docs, chat and AI testing in one fast, keyboard-first workspace. Free while it's in beta.
+
+Taskwell organizes work into workspaces and projects. Issues have a status, assignee, priority, labels, due date and estimate, and show as a list or a board. Teams plan in cycles, write notes together live, chat beside the work, link GitHub and GitLab pull requests, and have AI run test cases in a real browser.
+
+AI agents work with Taskwell through its MCP server, signed in as a Taskwell user (OAuth), so they see and change only what that user can. Add it to Claude Code with `claude mcp add --transport http taskwell https://mcp.taskwell.dev/mcp`. Scripts use the REST API with a personal API token.
+
+## Docs
+
+- [MCP server](https://mcp.taskwell.dev/mcp): The endpoint for Claude and other MCP clients; tools to read, create and update issues, projects, cycles, notes and comments
+- [REST API reference](https://taskwell.dev/docs/api): Endpoints, personal API tokens and webhooks
+
+## Product
+
+- [Taskwell](https://taskwell.dev/): What Taskwell does, with a live board to try
+- [Sign up](https://taskwell.dev/signup): Create an account and a workspace
+
+## Optional
+
+- [Beta notice](https://taskwell.dev/terms): Terms of use and what data Taskwell keeps during the beta
+- [Subprocessors](https://taskwell.dev/subprocessors): The services that host Taskwell and send its email

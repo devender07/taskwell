@@ -49,7 +49,7 @@ mcp:
 #   make mfa-code KEY=SETUP_KEY                                 the same from a setup key (e.g. one printed on the server)
 admin-account:
 	@[ -n "$(EMAIL)" ] || { echo "usage: make admin-account EMAIL=you@example.com NAME='Your name'"; exit 1; }
-	@../deploy/create-admin.sh "$(EMAIL)" "$(or $(NAME),Admin)"
+	@../deploy/scripts/create-admin.sh "$(EMAIL)" "$(or $(NAME),Admin)"
 
 admin-reset-mfa:
 	@[ -n "$(EMAIL)" ] || { echo "usage: make admin-reset-mfa EMAIL=you@example.com"; exit 1; }
@@ -57,7 +57,7 @@ admin-reset-mfa:
 
 mfa-code:
 	@if [ -n "$(EMAIL)" ]; then $(ENV) go run ./admin/cmd/admin -mfa-code "$(EMAIL)" 2>&1 | grep -v ' level=WARN '; \
-	elif [ -n "$(KEY)" ]; then ../deploy/mfa-code.sh "$(KEY)"; \
+	elif [ -n "$(KEY)" ]; then ../deploy/scripts/mfa-code.sh "$(KEY)"; \
 	else echo "usage: make mfa-code EMAIL=you@example.com (or KEY=SETUP_KEY)"; exit 1; fi
 
 # Copies Paddle's past payments, refunds and subscription prices into the database (docs/revenue-plan.md); safe to rerun.

@@ -29,7 +29,7 @@ func checkValue(key, v string) string {
 		if !planList(v) {
 			return "Use plan ids: free, starter, pro, advanced."
 		}
-	case strings.HasPrefix(key, "feature_") && v != "true" && v != "false":
+	case (strings.HasPrefix(key, "feature_") || key == "beta_mode") && v != "true" && v != "false":
 		return "Use true or false."
 	}
 	switch key {
@@ -40,6 +40,14 @@ func checkValue(key, v string) string {
 		}
 		if u.Scheme != "https" && os.Getenv("APP_ENV") == "production" {
 			return "Enter a URL starting with https://."
+		}
+	case "app_feedback_url":
+		if v == "" {
+			return ""
+		}
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return "Enter a URL starting with http:// or https://, or leave it empty to hide the link."
 		}
 	case "s3_endpoint":
 		if v == "" {

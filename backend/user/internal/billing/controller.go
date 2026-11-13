@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/shared/paddle"
 	"github.com/devender07/taskwell/backend/user/internal/mail"
 	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
@@ -38,8 +39,8 @@ const (
 
 var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
 
-// granting are the subscription statuses that grant access to its plan: past_due is the grace while Paddle retries.
-var granting = []string{"active", "trialing", "past_due"}
+// granting are the subscription statuses that grant access to its plan (the admin directory uses them too).
+var granting = paddle.Granting
 
 // grantsAccess reports whether a subscription with the status grants access to its plan; a scheduled change never
 // revokes it by itself.
@@ -68,10 +69,16 @@ func New(db *pgxpool.Pool, cfg *sysconfig.Store, mailer *mail.Mailer, jwtSecret 
 // settings is billing's paddle_ config.
 type settings struct{ env, key string }
 
-// settings reads the paddle_ config, or errBillingOff while billing is off: paddle_environment isn't exactly
-// sandbox or production (logged as an error: it's seeded empty so a deploy sets it on purpose) or the key is empty.
+// settings reads the paddle_ config, or errBillingOff while billing is off: beta_mode is true, paddle_environment
+// isn't exactly sandbox or production (logged as an error: it's seeded empty so a deploy sets it on purpose) or the
+// key is empty.
 func (h *Handler) settings(ctx context.Context) (settings, error) {
 	var s settings
+	if beta, err := h.isBeta(ctx); err != nil {
+		return s, err
+	} else if beta {
+		return s, errBillingOff
+	}
 	var err error
 	if s.env, err = h.config(ctx, "paddle_environment"); err != nil {
 		return s, err
@@ -87,6 +94,30 @@ func (h *Handler) settings(ctx context.Context) (settings, error) {
 		return s, errBillingOff
 	}
 	return s, nil
+}
+
+// isBeta reports whether system_config's beta_mode is true; a missing row is false.
+func (h *Handler) isBeta(ctx context.Context) (bool, error) {
+	v, err := h.config(ctx, "beta_mode")
+	return v == "true", err
+}
+
+// beta answers whether beta mode is on (public): the apps hide pricing and billing while it is. feedback_url is the
+// "Report a bug" link (app_feedback_url), "" unless it's an http or https URL.
+func (h *Handler) beta(w http.ResponseWriter, r *http.Request) error {
+	on, err := h.isBeta(r.Context())
+	if err != nil {
+		return err
+	}
+	link, err := h.config(r.Context(), "app_feedback_url")
+	if err != nil {
+		return err
+	}
+	if u, err := url.Parse(link); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		link = ""
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"beta": on, "feedback_url": link})
+	return nil
 }
 
 // on is settings for a handler that needs billing on: false after writing the 503 while it's off.

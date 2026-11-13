@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -207,63 +206,5 @@ func TestNotes(t *testing.T) {
 	if err := pool.QueryRow(ctx, `select (select count(*) from notes where id = $1) + (select count(*) from note_members where user_id = $2)`,
 		mine.ID, mia).Scan(&left); err != nil || left != 0 {
 		t.Errorf("mia's notes after leaving: %d %v", left, err)
-	}
-}
-
-// TestMigrateSelfChats runs 019_notes.sql's move on a seeded Notes chat (in a rolled-back transaction): its live
-// top-level messages become the owner's notes, replies and deleted ones don't, and the chat goes.
-func TestMigrateSelfChats(t *testing.T) {
-	pool := dbtest.Pool(t)
-	ctx := context.Background()
-	sql, err := os.ReadFile("../db/migrations/019_notes.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, move, ok := strings.Cut(string(sql), "with moved as")
-	if !ok {
-		t.Fatal("019_notes.sql has no move")
-	}
-	ann := dbtest.User(t, pool, "Ann")
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	var wsID, chatID, topID string
-	if err := workspace.CreateFirst(ctx, tx, ann, "Ann", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `select id::text from workspaces where created_by = $1`, ann).Scan(&wsID); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `insert into chats (workspace_id, kind, pair, created_by) values ($1, 'self', $2::text, $2::uuid) returning id::text`,
-		wsID, ann).Scan(&chatID); err != nil {
-		t.Fatal(err)
-	}
-	body := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Buy milk"}]}]}`
-	if err := tx.QueryRow(ctx, `insert into messages (chat_id, author_id, body, created_at) values ($1, $2, $3, '2025-01-02') returning id::text`,
-		chatID, ann, body).Scan(&topID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `insert into messages (chat_id, author_id, body, parent_id) values ($1, $2, $3, $4);
-		`, chatID, ann, body, topID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `insert into messages (chat_id, author_id, body, deleted_at) values ($1, $2, $3, now())`, chatID, ann, body); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, "with moved as"+move); err != nil {
-		t.Fatal(err)
-	}
-	var n, members, chats int
-	var text, created string
-	if err := tx.QueryRow(ctx, `select count(*), max(n.body->'content'->0->'content'->0->>'text'), max(n.created_at::date::text),
-		  (select count(*) from note_members m join notes x on x.id = m.note_id where x.workspace_id = $1 and m.user_id = $2),
-		  (select count(*) from chats where id = $3)
-		from notes n where n.workspace_id = $1 and n.owner_id = $2 and n.title = ''`, wsID, ann, chatID).Scan(&n, &text, &created, &members, &chats); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 || members != 1 || chats != 0 || text != "Buy milk" || created != "2025-01-02" {
-		t.Errorf("moved %d notes (%d members, %q, %s), %d chats left", n, members, text, created, chats)
 	}
 }

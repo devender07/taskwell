@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
 )
 
 // Same rules and messages as frontend/shared/src/validate/validate.ts.

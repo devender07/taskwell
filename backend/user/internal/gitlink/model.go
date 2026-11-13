@@ -189,6 +189,9 @@ func (m *model) deliver(ctx context.Context, hookID, provider string, p pr) erro
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("read pull request: %w", err)
 		}
+		if before == "merged" {
+			p.State = "merged" // final: a late event for the PR (deliveries can arrive out of order) doesn't reopen it
+		}
 		var prID string
 		if err := tx.QueryRow(ctx,
 			`insert into pull_requests (workspace_id, provider, repo, number, url, title, branch, author, state)

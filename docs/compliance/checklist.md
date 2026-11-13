@@ -35,11 +35,10 @@ Member analytics is light workplace monitoring, covered by a short legitimate-in
       change management, incident response (see `runbooks.md`), business continuity and disaster recovery (RTO/RPO,
       monthly restore drill), retention and deletion, encryption and key management (env-file key rotation), vendor
       management, and risk assessment.
-- [ ] GitHub: branch protection on `master` (PR required, CI green, one review), CODEOWNERS, Dependabot. Fix the CI
-      `images` job: `deploy/backend.Dockerfile` and `deploy/web.Dockerfile` are missing from git.
+- [ ] GitHub: branch protection on `master` (PR required, CI green, one review), CODEOWNERS, Dependabot.
 - [ ] Production: set `ADMIN_ALLOWED_IPS`, ship logs off-box with a year of retention, add an external uptime check
       on `https://api.taskwell.dev/healthz`, alert on backup failure, confirm disk encryption with the host, and set
-      `RCLONE_REMOTE` (`deploy/README.md`).
+      R2 backup uploads in `taskwell-backup.env` (`deploy/README.md`).
 - [ ] People: onboarding and offboarding checklist, security training, background checks.
 - [ ] Evidence: vendor list with their SOC 2 reports, asset inventory, a yearly pentest, quarterly vulnerability scan
       records, and the restore drill log.

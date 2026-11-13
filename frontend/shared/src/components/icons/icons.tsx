@@ -363,6 +363,13 @@ export const FeedbackIcon = (props: IconProps) => (
   </Icon>
 )
 
+export const BugIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 7a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0v-4a4 4 0 0 1 4-4z" />
+    <path d="M10 7.5 8.5 4M14 7.5 15.5 4M3 13h5M16 13h5M4 8l4 2M20 8l-4 2M4 19l4-2M20 19l-4-2M12 11v8" />
+  </Icon>
+)
+
 export const MessageIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -418,6 +425,17 @@ export function CategoryGlyph({ category, color, label, size = 14 }: GlyphProps 
       ) : null}
     </svg>
   )
+}
+
+type StatusLook = { category: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'; icon?: string | null; color?: string | null }
+
+// A status's custom icon in its color when it has one, else its category's icon. Old snapshots without icon fall back.
+export function StatusIcon({ status, label }: { status: StatusLook; label?: string }) {
+  const { category, icon } = status
+  const a11y = label ? { role: 'img', 'aria-label': label, 'aria-hidden': undefined } : { 'aria-hidden': true }
+  const color = category === 'started' ? 'var(--text)' : category === 'completed' ? 'var(--success)' : 'var(--text-2)'
+  if (icon) return <StatusTypeIcon icon={icon} color={!status.color || status.color.toLowerCase() === '#f7f8f8' ? color : status.color} title={label} {...a11y} />
+  return <CategoryGlyph category={category} color={color} label={label} />
 }
 
 // A test result's mark: dashed (never run), empty (not run), check, cross, dash (skipped), alert (error), half

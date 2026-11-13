@@ -15,7 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
 )
 
 // Handler is a signed-in request's handler; a returned error is logged and answered with a generic 500.

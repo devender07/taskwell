@@ -11,6 +11,7 @@ import (
 
 	"github.com/devender07/taskwell/backend/admin/internal/audit"
 	"github.com/devender07/taskwell/backend/admin/internal/realtime"
+	"github.com/devender07/taskwell/backend/shared/paddle"
 )
 
 type Workspace struct {
@@ -168,8 +169,8 @@ func (m *model) setPlan(ctx context.Context, adminID, ip, id, plan string, compe
 		}
 		if !comped {
 			if err := tx.QueryRow(ctx, `select coalesce((select plan from paddle_subscriptions
-				  where user_id = $1 and status in ('active', 'trialing', 'past_due')
-				  order by paddle_updated_at desc limit 1), 'free')`, id).Scan(&plan); err != nil {
+				  where user_id = $1 and status = any($2)
+				  order by paddle_updated_at desc limit 1), 'free')`, id, paddle.Granting).Scan(&plan); err != nil {
 				return err
 			}
 		}

@@ -11,35 +11,62 @@ Cloudflare Workers serving static assets. Every script runs from your machine an
 | `admin-api.taskwell.dev` | server, A record | admin API, `127.0.0.1:8080` |
 | `mcp.taskwell.dev` | server, A record | MCP server, `127.0.0.1:8095` |
 
+## Layout
+
+```
+deploy/
+  scripts/          run from your machine (each takes user@host last)
+  server/           files at their server path: server/etc/caddy/Caddyfile is /etc/caddy/Caddyfile
+    etc/systemd/system/taskwell-{user,admin,mcp}.service
+    etc/taskwell/{user,admin,mcp}.env          git-ignored, real secrets
+    etc/caddy/Caddyfile
+    etc/cron.d/taskwell-backup                 nightly dump at 03:00
+    etc/taskwell-backup.env                    git-ignored, optional (copy the .example): off-server backup copies
+    opt/taskwell-db/docker-compose.yml         Postgres
+    opt/taskwell-db/.env                       git-ignored, POSTGRES_PASSWORD
+    opt/taskwell-db/backup.sh                  dump to R2 (cron); list, get FILE
+    opt/taskwell-db/restore.sh                 user data back from R2: the newest, or FILE
+  system.json       git-ignored, copied from system.json.example: goes into the system_config table, not a file
+```
+
+`deploy/scripts/config.sh` copies all of `server/` into place (skipping `*.example`), with the right modes, and
+restarts only what changed. Copying a file by hand to the same path works too; then restart what reads it.
+
 ## Before you start
 
 - **The server:** a user with sudo and your SSH key (`ssh-copy-id devender@<host>`).
 - **DNS:** the three A records, set to DNS only (grey cloud) until Caddy has its certificates.
-- **Env files:** `deploy/systemd/{user,admin,mcp}.env` (git-ignored, the secrets are real). Back them up: losing a key makes what it encrypted unreadable. `MFA_ENCRYPTION_KEY` must be the same in `user.env` and `admin.env`.
-- **System config:** `deploy/config/system.json`, copied from `system.json.example`. Set `app_base_url` (it must start with `https://`) and the SMTP, Google and S3 values; an empty one turns that feature off. For Google, the redirect URI is `https://api.taskwell.dev/api/auth/google/callback`.
+- **Env files:** `server/etc/taskwell/{user,admin,mcp}.env` and `server/opt/taskwell-db/.env`. Back them up: losing a
+  key makes what it encrypted unreadable. `MFA_ENCRYPTION_KEY` must be the same in `user.env` and `admin.env`, and
+  `POSTGRES_PASSWORD` the password in their `DATABASE_URL` (config.sh checks).
+- **System config:** `deploy/system.json`, copied from `system.json.example`. Set `app_base_url` (it must start with
+  `https://`) and the SMTP, Google and S3 values; an empty one turns that feature off. For Google, the redirect URI is
+  `https://api.taskwell.dev/api/auth/google/callback`.
 
 ## New server, in order
 
 ```sh
-deploy/server-setup.sh                       # updates, firewall, Docker, Caddy, Postgres, backups
-deploy/config.sh                             # units, /etc/taskwell/*.env, Caddyfile
-deploy/build.sh prod user backend  && deploy/send.sh prod user backend    # applies the migrations
-deploy/system-config.sh                      # system.json into system_config
+deploy/scripts/server-setup.sh                       # updates, firewall, Docker, Caddy
+deploy/scripts/config.sh                             # deploy/server/ into place, starts Postgres
+deploy/scripts/build.sh prod user backend  && deploy/scripts/send.sh prod user backend    # applies the migrations
+deploy/scripts/system-config.sh                      # system.json into system_config
 ssh -t devender@<host> sudo systemctl restart taskwell-user
-deploy/build.sh prod admin backend && deploy/send.sh prod admin backend
-deploy/build.sh prod mcp backend   && deploy/send.sh prod mcp backend
-scp deploy/create-admin.sh devender@<host>:/tmp/ && ssh -t devender@<host> 'sudo sh /tmp/create-admin.sh you@example.com "Your name"'
+deploy/scripts/build.sh prod admin backend && deploy/scripts/send.sh prod admin backend
+deploy/scripts/build.sh prod mcp backend   && deploy/scripts/send.sh prod mcp backend
+scp deploy/scripts/create-admin.sh devender@<host>:/tmp/ && ssh -t devender@<host> 'sudo sh /tmp/create-admin.sh you@example.com "Your name"'
 ```
 
 The user API won't start until `app_base_url` is `https://`. That is why `system-config.sh` runs after the first user
 deploy (which creates the tables) and is followed by a restart. `create-admin.sh` prints the authenticator setup key and
 recovery codes once, so save them.
 
-Off-server backups (needed for compliance: a lost server otherwise takes its backups with it): install rclone, configure
-a crypt remote over an R2 bucket as root (`rclone config`), then `echo 'RCLONE_REMOTE=taskwell-crypt:' | sudo tee
-/etc/taskwell-backup.env && sudo chmod 600 /etc/taskwell-backup.env`. Restore drill: `docs/compliance/runbooks.md`.
+Off-server backups (needed for compliance: a lost server otherwise takes its backups with it): make an R2 bucket and a
+token for it, copy `server/etc/taskwell-backup.env.example` to `taskwell-backup.env`, fill it in (the steps are in
+the file) and run config.sh. Each nightly dump is then encrypted and uploaded to R2. Keep `BACKUP_PASSPHRASE` off the
+server too, or the R2 copies can't be read. Try it with `ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh'`,
+then `sudo /opt/taskwell-db/backup.sh list`. Restore drill: `docs/compliance/runbooks.md`.
 
-Frontends: `deploy/frontend.sh user` (or `admin`) builds into `dist/prod/<app>/web` and deploys it to the app's
+Frontends: `deploy/scripts/frontend.sh user` (or `admin`) builds into `dist/prod/<app>/web` and deploys it to the app's
 Cloudflare Worker (assets only, `frontend/<app>/wrangler.toml`: `taskwell` at taskwell.dev, `admin-taskwell` at
 admin.taskwell.dev). Log in once with `npx wrangler@4 login`.
 
@@ -107,7 +134,7 @@ then live:
    one with the same URL, and prints its secret:
 
    ```sh
-   deploy/paddle-setup.sh pdl_sdbx_apikey_... https://api.taskwell.dev
+   deploy/scripts/paddle-setup.sh pdl_sdbx_apikey_... https://api.taskwell.dev
    ```
 
 7. **Config keys** (admin app Config page, "Payments", or `system.json`): `paddle_environment` = `sandbox`,
@@ -119,5 +146,5 @@ Test with a sandbox card (`4242 4242 4242 4242`, any future date, CVC `100`). Lo
 (a tunnel to `localhost:8090`) as the script's second argument.
 
 **Switch to production:** repeat steps 2 to 6 in the live dashboard, with `PADDLE_API=https://api.paddle.com
-deploy/paddle-setup.sh pdl_live_apikey_... https://api.taskwell.dev`, then set `paddle_environment` = `production`,
+deploy/scripts/paddle-setup.sh pdl_live_apikey_... https://api.taskwell.dev`, then set `paddle_environment` = `production`,
 the live key and secret, and the frontend's live client token and price ids.

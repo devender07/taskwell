@@ -34,7 +34,7 @@ const nextPending = (run: TestRun, after: string) => {
   return [...run.results.slice(i + 1), ...run.results.slice(0, i)].find((r) => r.status === 'pending')
 }
 
-const RUN_TITLES: Record<RunKind, string> = { ai: 'AI test run', manual: 'Manual test run', replay: 'Recorded test run' }
+const RUN_TITLES: Record<RunKind, string> = { ai: 'AI test run', manual: 'Manual test run', replay: 'Recorded test run', local: 'Local test run' }
 
 // Side panel for one run (?run=<id>). P / F / S mark the selected case of a running manual run; while the panel is
 // open they win over the issue page's S and P, and A and L keep working.
@@ -105,7 +105,7 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
         <h2 className="text-label flex-grow">{run ? RUN_TITLES[run.kind] : 'Test run'}</h2>
         {run ? <RunStatusPill status={run.status} /> : null}
         {run?.kind === 'ai' && run.cost_usd != null ? <span className="text-caption text-secondary">{formatCost(run.cost_usd)}</span> : null}
-        {run && run.kind !== 'manual' && !finished ? <WatchLive workspace={workspace.slug} runId={runId} /> : null}
+        {run && (run.kind === 'ai' || run.kind === 'replay') && !finished ? <WatchLive workspace={workspace.slug} runId={runId} /> : null}
         {cancellable ? (
           <Button variant="ghost" disabled={cancelling} onClick={() => startTransition(cancel)}>
             {cancelling ? 'Cancelling…' : 'Cancel run'}
@@ -122,7 +122,11 @@ export function RunPanel({ workspace, identifier, runId, onClose }: { workspace:
         ) : (
           <>
             <p className="text-caption text-secondary m-0">
-              {run.started_by ? `Started by ${run.started_by.name} ` : 'Started '}
+              {run.kind === 'local'
+                ? `${['Local run', run.client, run.started_by?.name].filter(Boolean).join(' · ')} · `
+                : run.started_by
+                  ? `Started by ${run.started_by.name} `
+                  : 'Started '}
               <time dateTime={run.created_at} title={fullTime(run.created_at)}>{relativeTime(run.created_at)}</time>
             </p>
             {run.error ? <p className="text-body-sm text-accent m-0" role="alert">{run.error}</p> : null}
@@ -233,6 +237,7 @@ function ResultDetail({ run, result, note, onNote, markable, marking, markError,
           </div>
         </div>
       ) : null}
+      {result.video_url ? <video controls preload="metadata" src={apiUrl(result.video_url)} aria-label={`Video of ${result.title}`} className="test-screenshot" /> : null}
       {shot ? <img src={apiUrl(shot)} alt={picked !== null && pickedShot ? `Screenshot after step ${picked}` : 'Latest screenshot'} className="test-screenshot" /> : null}
       {log.length ? (
         <div className="grid gap-1">

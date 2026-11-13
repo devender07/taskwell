@@ -201,6 +201,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 	}))
 	defer tester.Close()
+	setServerRuns(t, pool, true)
 	if err := m.heartbeat(ctx, tester.URL); err != nil {
 		t.Fatal(err)
 	}

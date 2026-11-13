@@ -173,10 +173,10 @@ func TestGetTestRun(t *testing.T) {
 			status, result = "failed", "failed"
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"r1","kind":"ai","issue":{"identifier":"ENG-1","title":"Login"},"status":"` + status + `",
+		_, _ = w.Write([]byte(`{"id":"r1","kind":"local","client":"Claude Code","issue":{"identifier":"ENG-1","title":"Login"},"status":"` + status + `",
 			"cost_usd":0.12,"counts":{"failed":1},"results":[{"id":"x1","title":"Sign in","steps":["Open"],"expected":"Home",
 			"status":"` + result + `","summary":"No button","reproduction":["Open /signin"],
-			"log":[{"screenshot_url":"/api/files/f1/shot.jpg"},{"screenshot_url":null}]}]}`))
+			"log":[{"screenshot_url":"/api/files/f1/shot.jpg"},{"screenshot_url":null}],"video_url":"/api/files/v1/case.webm"}]}`))
 	}))
 	defer srv.Close()
 	cs := connect(t, srv, "Bearer tth_test")
@@ -187,7 +187,8 @@ func TestGetTestRun(t *testing.T) {
 		t.Fatalf("error=%v %q: %v", isErr, text, err)
 	}
 	if polls != 2 || out.Status != "failed" || out.URL != "https://app.test/acme/issue/ENG-1" || len(out.Results) != 1 ||
-		!slices.Equal(out.Results[0].Screenshots, []string{"https://app.test/api/files/f1/shot.jpg"}) || out.Results[0].Summary != "No button" {
+		!slices.Equal(out.Results[0].Screenshots, []string{"https://app.test/api/files/f1/shot.jpg"}) || out.Results[0].Summary != "No button" ||
+		out.Kind != "local" || out.Client != "Claude Code" || out.Results[0].Video != "https://app.test/api/files/v1/case.webm" {
 		t.Errorf("polls=%d result %s", polls, text)
 	}
 }

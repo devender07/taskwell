@@ -25,6 +25,7 @@ const (
 	errUnverified     = "Verify your email before inviting people."
 	errInviteLimit    = "Too many invites were sent today. Try again tomorrow."
 	errFullWorkspace  = "This workspace is full. Ask its owner to upgrade."
+	errFullBeta       = "This workspace is full."
 )
 
 // members lists the workspace's members; people who can invite also get its invites. With ?limit= (1 to 100) it's
@@ -103,7 +104,9 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request, userID st
 	if full, limit, err := h.model.seatsFull(ctx, ws.ID, email); err != nil {
 		return err
 	} else if full {
-		web.Err(w, http.StatusPaymentRequired, fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.", plan.Count(limit, "member")))
+		n := plan.Count(limit, "member")
+		web.Err(w, http.StatusPaymentRequired, plan.Msg(fmt.Sprintf("This workspace's plan allows %s. Its owner can upgrade for more.", n),
+			fmt.Sprintf("This workspace's plan allows %s.", n)))
 		return nil
 	}
 	if ok, err := h.canSend(w, r, ws, userID); !ok || err != nil {
@@ -192,7 +195,7 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request, userID st
 		return nil
 	}
 	if errors.Is(err, errFull) {
-		web.Err(w, http.StatusPaymentRequired, errFullWorkspace)
+		web.Err(w, http.StatusPaymentRequired, plan.Msg(errFullWorkspace, errFullBeta))
 		return nil
 	}
 	if err != nil {
@@ -222,7 +225,7 @@ func (h *Handler) myInvites(w http.ResponseWriter, r *http.Request, userID strin
 func (h *Handler) acceptMyInvite(w http.ResponseWriter, r *http.Request, userID string) error {
 	ws, err := h.model.acceptByID(r.Context(), userID, r.PathValue("id"))
 	if errors.Is(err, errFull) {
-		web.Err(w, http.StatusPaymentRequired, errFullWorkspace)
+		web.Err(w, http.StatusPaymentRequired, plan.Msg(errFullWorkspace, errFullBeta))
 		return nil
 	}
 	if err != nil {

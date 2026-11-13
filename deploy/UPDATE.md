@@ -10,31 +10,33 @@ runs from your machine at the repo root and takes `user@host` as its last argume
 git status                                     # clean, on the commit you mean to ship
 cd backend && make vet test && cd ..
 cd frontend && npm run build && cd ..
-git diff --stat <last deployed commit> -- backend/user/internal/db/migrations deploy/systemd deploy/config
+git diff --stat <last deployed commit> -- backend/user/internal/db/migrations deploy/server
 ```
 
 The last command shows what the release changes beyond code:
 
+- **Migrations up to 048 are squashed into `001_schema.sql`.** A server that hasn't run `048_feedback_url.sql` must
+  ship commit `b1c0096` first; a newer release refuses to start on it and says so.
 - **New migrations** run by themselves when the user API starts (step 3). Read them first: a migration that
   rewrites or drops data can't be undone except from a backup.
 - **New `system_config` keys** come in with their migration, seeded with defaults. Set real values in the admin app's
   Config page after the deploy.
-- **Changed env files, units or Caddyfile** need `deploy/config.sh` (step 4).
+- **Changed files under `deploy/server/`** (env files, units, Caddyfile, cron, Postgres) need `deploy/scripts/config.sh` (step 4).
 
 ## 2. Back up the database
 
 The nightly backup runs at 03:00. Take a fresh one before any release with migrations:
 
 ```sh
-ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh'     # prints: backup ok: /backups/taskwell/taskwell-<date>.dump
+ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh'     # prints: backup ok: taskwell-<date>.dump (…) in r2:…
 ```
 
 ## 3. Deploy the backend, user API first
 
 ```sh
-deploy/build.sh prod user backend  && deploy/send.sh prod user backend
-deploy/build.sh prod admin backend && deploy/send.sh prod admin backend
-deploy/build.sh prod mcp backend   && deploy/send.sh prod mcp backend
+deploy/scripts/build.sh prod user backend  && deploy/scripts/send.sh prod user backend
+deploy/scripts/build.sh prod admin backend && deploy/scripts/send.sh prod admin backend
+deploy/scripts/build.sh prod mcp backend   && deploy/scripts/send.sh prod mcp backend
 ```
 
 The user API goes first because its unit applies pending migrations (`ExecStartPre=... -migrate`) before it starts,
@@ -47,8 +49,8 @@ Only deploy the services whose code changed. Code in `backend/shared` is in all 
 ## 4. Config changes, when there are any
 
 ```sh
-deploy/config.sh                              # units, /etc/taskwell/*.env, Caddyfile; restarts only what changed
-deploy/system-config.sh                       # only if deploy/config/system.json changed
+deploy/scripts/config.sh                              # deploy/server/ into place; restarts only what changed
+deploy/scripts/system-config.sh                       # only if deploy/system.json changed
 ```
 
 `system-config.sh` overwrites the keys in the file with the file's values. Keys changed in the admin app since then
@@ -57,8 +59,8 @@ are overwritten too, so prefer the Config page for a single value.
 ## 5. Deploy the frontends, after the API
 
 ```sh
-deploy/frontend.sh user
-deploy/frontend.sh admin
+deploy/scripts/frontend.sh user
+deploy/scripts/frontend.sh admin
 ```
 
 They go after the backend so a new page never calls an endpoint the server doesn't have yet. Both go to Cloudflare
@@ -82,7 +84,7 @@ Then sign in at taskwell.dev and click through what the release changed.
 
 ```sh
 git switch --detach <last good commit>
-deploy/build.sh prod user backend && deploy/send.sh prod user backend     # and admin, mcp, frontends as needed
+deploy/scripts/build.sh prod user backend && deploy/scripts/send.sh prod user backend     # and admin, mcp, frontends as needed
 git switch -
 ```
 
@@ -91,10 +93,9 @@ git switch -
 stop the services and restore the backup from step 2:
 
 ```sh
-ssh -t devender@<host> 'sudo systemctl stop taskwell-user taskwell-admin taskwell-mcp'
-ssh -t devender@<host> "sudo sh -c 'docker exec -i taskwell-postgres pg_restore -U taskwell -d taskwell --clean \
-  --if-exists < /backups/taskwell/taskwell-<date>.dump'"
-# then deploy the last good commit as above, which starts them again
+ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh list'                       # pick the dump
+ssh -t devender@<host> 'sudo /opt/taskwell-db/restore.sh --clear taskwell-<date>.dump'  # backs up first
+# then deploy the last good commit as above
 ```
 
 A restore loses everything written since the backup. The restore drill is in `docs/compliance/runbooks.md`.

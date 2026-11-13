@@ -1,4 +1,4 @@
-# The user app on Cloudflare: an assets-only Worker at taskwell.dev (deploy/frontend.sh user builds and deploys it).
+# The user app on Cloudflare: an assets-only Worker at taskwell.dev (deploy/scripts/frontend.sh user builds and deploys it).
 # Unknown paths fall back to index.html (the app's router); public/_headers and _redirects apply as on Pages.
 name = "taskwell"
 compatibility_date = "2026-11-06"

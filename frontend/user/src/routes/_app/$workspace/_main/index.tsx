@@ -52,7 +52,7 @@ function WorkspaceHome() {
         </div>
         <div className="grid gap-6" style={{ minWidth: 0 }}>
           <Inbox workspace={workspace.slug} page={notifications} />
-          <RecentlyViewed workspace={workspace.slug} issues={issues} />
+          <RecentlyViewed workspace={workspace.slug} workspaceId={workspace.id} issues={issues} />
           {mcp ? <ConnectClaude /> : null}
           <Projects workspace={workspace} projects={projects} stats={stats} />
         </div>

@@ -258,12 +258,17 @@ h3 { margin: 0; font: 590 16px/24px var(--font); }
   .typing::after, .card-mock.is-new { animation: none; }
 }
 
+@media (pointer: coarse) {
+  .site-nav > a, .brand { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
 @media (max-width: 1023px) {
   .container { padding: 0 24px; }
   .display { font-size: 48px; line-height: 48px; }
   .display-sm, .heading { font-size: 32px; line-height: 40px; }
   .feature-grid, .integrations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .split { grid-template-columns: 1fr; gap: 40px; }
+  .split > .terminal { order: 1; }
   .nav-toggle { display: block; }
   .site-nav {
     position: absolute;

@@ -97,6 +97,7 @@ Plan: `docs/ai-testing-plan.md`.
 
 - [x] Phase A: test cases saved on issues (add, edit, reorder, delete), manual test runs (pass / fail / skip with a note), test history, "Create bug" from a failed result
 - [x] Phase B: AI test runs: Claude writes cases and drives a sandboxed Chrome against registered test sites, live screenshots, monthly spend limit, sealed test-account passwords
+- [x] Local test runs (`docs/local-test-runner-plan.md`): `taskwell-tester` (`runner/`, Node, run with `npx`) is an MCP server the user adds to their own coding agent; the agent drives Chrome on their machine and the runner sends each step, screenshot and a video of each case to the issue ("Run with your Claude"). Server-side AI runs, recorded replays and hosted browser sessions are off unless `ai_tests_server_runs` is on (admin → Config). Not done: publishing the package to npm; API tokens are gated by the `api` feature, so a plan without it can't use the runner yet
 
 ## Cycles
 
@@ -129,7 +130,9 @@ Plan: `docs/mcp-plan.md`.
 - [x] System config editor for `system_config` (SMTP, token lifetimes; secrets masked)
 - [x] Workspaces and users list, suspend a user
 - [x] Basic usage stats
-- [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/create-admin.sh email`)
+- [x] Admin sign-in with separate admin accounts (`admins` table; create with `deploy/scripts/create-admin.sh email`)
+- [x] Workspace defaults (docs/workspace-defaults-plan.md): admin app → Defaults edits the roles (Member/Guest permissions, custom roles), status types and statuses, labels and issue templates a new workspace starts with; copied once at creation (`default_*` tables, `seed_statuses()` trigger and `workspace.create`), existing workspaces untouched
+- [x] Beta mode (docs/beta-mode-plan.md): a button on the admin overview (`beta_mode` in `system_config`) hides pricing, checkout, billing settings, banners and upgrade prompts, keeps everyone on Free limits with no "upgrade" wording, and shows a short beta notice instead of the draft privacy notice and terms
 - [x] Admins page: list admins (two-step status, last active), add one (shows their setup key and recovery codes once) or remove one, both confirmed with your password; logged in the audit log
 
 ## Later
@@ -166,4 +169,4 @@ Time tracking, gantt, resource planning, custom fields, permission matrices, SSO
 
 Phases 1–6, the admin app and Later (except Slack) are built. Next: Slack, or feedback request counts on issue lists ("Most requested" sort), once real users ask.
 
-- [x] Pricing fixes (docs/billing-plan.md, last section): AI testing budget by plan and per account (none on Free, $1 Starter, $3 Pro, $15 Advanced a month), Advanced storage capped at 500 GB per workspace, 14-day trial without a card (new Paddle prices, "Add payment method" banner and button, reminder email, Paddle cancels the trial at its end without one), plan switch previews its cost; every plan limit is an admin setting (Config → Plan limits) that the pricing page reads; pricing page opens on the subscription's interval, comped and past-due accounts get an explanation instead of dead buttons
+- [x] Pricing fixes (docs/billing-plan.md, last section): AI testing budget by plan and per account (none on Free, $1 Starter, $3 Pro, $15 Advanced a month), Advanced storage capped at 500 GB per workspace, 14-day trial without a card (new Paddle prices, "Add payment method" banner and button, reminder email, Paddle cancels the trial at its end without one), plan switch previews its cost; every plan limit is an admin setting (Config → one "plan limits" group per plan) that the pricing page reads; pricing page opens on the subscription's interval, comped and past-due accounts get an explanation instead of dead buttons

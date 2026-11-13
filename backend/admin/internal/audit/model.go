@@ -29,6 +29,9 @@ const (
 
 	UsersExported    = "users.exported" // target: the search, "" for every user
 	PaymentsExported = "payments.exported"
+
+	DefaultsUpdate = "defaults.update" // target: roles, status_types, statuses, labels or templates
+	DevReset       = "dev.reset"       // local only: every user, workspace and their data deleted
 )
 
 // Execer is a pool or a transaction: pass the transaction that makes the change so the record commits with it.

@@ -26,6 +26,8 @@ const ACTIONS: Record<string, string> = {
   'signin.mfa_failed': 'Wrong sign-in code',
   'mfa.enrolled': 'Set up two-step sign-in',
   'mfa.recovery_used': 'Used a recovery code',
+  'defaults.update': 'Changed workspace defaults',
+  'dev.reset': 'Deleted all user data',
 }
 
 const formatTime = (iso: string) =>

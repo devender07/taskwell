@@ -18,9 +18,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
+	"github.com/devender07/taskwell/backend/user/internal/file"
 	"github.com/devender07/taskwell/backend/user/internal/issue"
 	"github.com/devender07/taskwell/backend/user/internal/plan"
+	"github.com/devender07/taskwell/backend/user/internal/storage"
 	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
 	"github.com/devender07/taskwell/backend/user/internal/web"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -35,6 +37,8 @@ const (
 	errForbidden         = "You don't have permission to do that."
 	errRunFinished       = "This run is finished."
 	errAccountNotFound   = "Test account not found."
+	msgRunActive         = "A test is already running on this issue."
+	msgLocalOnly         = "Tests now run on your own machine. Set up taskwell-tester in Settings → AI testing."
 )
 
 type Handler struct {
@@ -44,6 +48,12 @@ type Handler struct {
 	authenticate func(*http.Request) (string, error)
 	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
 	tester       *http.Client // browser sessions
+
+	// Local runs: where step screenshots go, and the file handler's FinishVideo and Room (the bytes the workspace's
+	// storage quota still allows, with the message past it). Set before Register.
+	Files       *storage.Store
+	Room        func(ctx context.Context, workspaceID string) (int64, string, error)
+	FinishVideo func(ctx context.Context, workspaceID, userID, uploadID string, limit int64) (*file.File, string, error)
 }
 
 // Options are the API's settings for test sites and accounts.
@@ -58,6 +68,24 @@ func New(db *pgxpool.Pool, cfg *sysconfig.Store, opts Options, authenticate func
 	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
 	return &Handler{model: &model{db: db}, cfg: cfg, opts: opts, authenticate: authenticate, member: member,
 		tester: &http.Client{Timeout: 2 * actionTimeout}}
+}
+
+// Run ends stale runs (failStale) every every until ctx ends. The tester does the same while it's up; local runs
+// need it here, since they run with the tester off. Instances can run it side by side: each run is taken with for
+// update skip locked.
+func (h *Handler) Run(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if err := h.model.failStale(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("stale test runs", "err", err)
+		}
+	}
 }
 
 // --- cases ---
@@ -353,11 +381,13 @@ func (h *Handler) createRun(w http.ResponseWriter, r *http.Request, userID strin
 		return h.createAIRun(w, r, userID)
 	case "replay":
 		return h.createReplayRun(w, r, userID)
+	case "local":
+		return h.createLocalRun(w, r, userID)
 	}
 	if _, _, ok, err := h.issue(w, r, userID, ""); !ok || err != nil {
 		return err
 	}
-	web.Fields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai, manual or replay."})
+	web.Fields(w, http.StatusBadRequest, map[string]string{"kind": "Choose ai, manual, replay or local."})
 	return nil
 }
 
@@ -375,6 +405,157 @@ func (h *Handler) createManualRun(w http.ResponseWriter, r *http.Request, userID
 		return err
 	}
 	return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
+}
+
+// createLocalRun starts a run the caller's own agent drives on their machine through taskwell-tester: no test site,
+// tester or spend check.
+func (h *Handler) createLocalRun(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	client, caseID := strings.TrimSpace(r.PostForm.Get("client")), r.PostForm.Get("case_id")
+	if n := doc.Len(client); n < 1 || n > maxClientLen {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"client": "Name the agent running the test in 1–40 characters."})
+		return nil
+	}
+	if caseID != "" && !web.IsUUID(caseID) {
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
+		return nil
+	}
+	id, err := h.model.createLocal(r.Context(), ws.ID, i.id, userID, client, caseID)
+	switch {
+	case errors.Is(err, errNotFound):
+		web.Err(w, http.StatusNotFound, errCaseNotFound)
+	case errors.Is(err, errNoCases):
+		web.Err(w, http.StatusConflict, "Add a test case first.")
+	case errors.Is(err, errRunActive):
+		web.Err(w, http.StatusConflict, msgRunActive)
+	case err != nil:
+		return err
+	default:
+		return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
+	}
+	return nil
+}
+
+// addStep logs a step taskwell-tester took in a local run's case, with its screenshot when there is one.
+func (h *Handler) addStep(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	runID, resultID := r.PathValue("id"), r.PathValue("result_id")
+	if !web.IsUUID(runID) {
+		web.Err(w, http.StatusNotFound, errRunNotFound)
+		return nil
+	}
+	if err := r.ParseMultipartForm(maxStepBody); errors.As(err, new(*http.MaxBytesError)) {
+		web.Err(w, http.StatusRequestEntityTooLarge, "A step with its screenshot must be 2 MB or smaller.")
+		return nil
+	}
+	action, pageURL := strings.TrimSpace(r.PostForm.Get("action")), strings.TrimSpace(r.PostForm.Get("url"))
+	errs := map[string]string{}
+	if n := doc.Len(action); n < 1 || n > maxActionLen {
+		errs["action"] = "Describe the step in 1–300 characters."
+	}
+	if len(pageURL) > 2000 {
+		errs["url"] = "URL must be 2000 characters or fewer."
+	}
+	var img []byte
+	contentType := ""
+	if f, _, err := r.FormFile("screenshot"); err == nil {
+		img, err = io.ReadAll(f)
+		_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("read screenshot: %w", err)
+		}
+		if contentType = http.DetectContentType(img); contentType != "image/jpeg" && contentType != "image/png" {
+			errs["screenshot"] = "Send the screenshot as a JPEG or PNG."
+		}
+	}
+	if !web.Check(w, errs) {
+		return nil
+	}
+	if img != nil {
+		room, full, err := h.Room(r.Context(), ws.ID)
+		if err != nil {
+			return err
+		}
+		if int64(len(img)) > room {
+			web.Err(w, http.StatusRequestEntityTooLarge, full)
+			return nil
+		}
+	}
+	err = errNotFound
+	position := 0
+	if web.IsUUID(resultID) {
+		position, err = h.model.addLocalStep(r.Context(), h.Files, ws.ID, runID, resultID, userID, action, pageURL, contentType, img)
+	}
+	if errors.Is(err, errStepLimit) {
+		web.Err(w, http.StatusConflict, "A test case can have 60 steps.")
+		return nil
+	}
+	if refusedLocal(w, err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusCreated, map[string]int{"position": position})
+	return nil
+}
+
+// addVideo attaches the recording of a local run's case: upload_id is a direct upload (POST .../uploads) the client
+// has PUT.
+func (h *Handler) addVideo(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermTestsManage)
+	if !ok || err != nil {
+		return err
+	}
+	runID, resultID := r.PathValue("id"), r.PathValue("result_id")
+	if !web.IsUUID(runID) {
+		web.Err(w, http.StatusNotFound, errRunNotFound)
+		return nil
+	}
+	if !web.IsUUID(resultID) {
+		web.Err(w, http.StatusNotFound, errResultNotFound)
+		return nil
+	}
+	f, msg, err := h.FinishVideo(r.Context(), ws.ID, userID, strings.TrimSpace(r.FormValue("upload_id")), maxVideo)
+	if err != nil {
+		return err
+	}
+	if !web.Check(w, map[string]string{"upload_id": msg}) {
+		return nil
+	}
+	// A video the run refuses (it ended, or the result is marked) or replaces is referenced nowhere: the daily sweep
+	// deletes it.
+	err = h.model.setVideo(r.Context(), ws.ID, runID, resultID, userID, f.ID)
+	if refusedLocal(w, err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.respondRun(w, r, http.StatusOK, ws.ID, runID, userID)
+}
+
+// refusedLocal writes the 404 or 409 for a step or video its local run can't take, and reports whether it did.
+func refusedLocal(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, errNotFound):
+		web.Err(w, http.StatusNotFound, errResultNotFound)
+	case errors.Is(err, errNotLocal):
+		web.Err(w, http.StatusConflict, "Only local runs take steps.")
+	case errors.Is(err, errFinished):
+		web.Err(w, http.StatusConflict, errRunFinished)
+	case errors.Is(err, errMarked):
+		web.Err(w, http.StatusConflict, "This result is already marked.")
+	default:
+		return false
+	}
+	return true
 }
 
 func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID string) error {
@@ -396,6 +577,15 @@ func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID stri
 	if doc.Len(note) > maxNoteLen {
 		errs["note"] = "Note must be 2000 characters or fewer."
 	}
+	repro := []string{}
+	for _, l := range r.PostForm["reproduction"] {
+		if l = strings.TrimSpace(l); l != "" {
+			repro = append(repro, l)
+		}
+	}
+	if len(repro) > maxReproLines || slices.ContainsFunc(repro, func(l string) bool { return doc.Len(l) > maxReproLen }) {
+		errs["reproduction"] = "Use 30 lines or fewer, each 300 characters or fewer."
+	}
 	if !web.Check(w, errs) {
 		return nil
 	}
@@ -404,7 +594,7 @@ func (h *Handler) markResult(w http.ResponseWriter, r *http.Request, userID stri
 		notePtr = &note
 	}
 	if web.IsUUID(resultID) {
-		err = h.model.mark(r.Context(), ws.ID, runID, resultID, userID, status, notePtr)
+		err = h.model.mark(r.Context(), ws.ID, runID, resultID, userID, status, notePtr, repro)
 	} else {
 		err = errNotFound
 	}
@@ -530,6 +720,12 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 	if !ok || err != nil {
 		return err
 	}
+	if on, err := serverRuns(r.Context(), h.cfg); err != nil {
+		return err
+	} else if !on {
+		web.Err(w, http.StatusConflict, msgLocalOnly)
+		return nil
+	}
 	tester, err := h.model.testerURL(r.Context())
 	if err != nil {
 		return err
@@ -546,7 +742,7 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 		if p, err := plan.ForWorkspace(r.Context(), h.model.db, ws.ID); err != nil {
 			return err
 		} else if p.AIUSD == 0 {
-			web.Err(w, http.StatusPaymentRequired, msgNoAI)
+			web.Err(w, http.StatusPaymentRequired, plan.Msg(msgNoAI, msgNoAIBeta))
 			return nil
 		}
 	}
@@ -564,7 +760,7 @@ func (h *Handler) createAIRun(w http.ResponseWriter, r *http.Request, userID str
 	case errors.Is(err, errLimit):
 		web.Err(w, http.StatusConflict, msgLimit)
 	case errors.Is(err, errRunActive):
-		web.Err(w, http.StatusConflict, "A test is already running on this issue.")
+		web.Err(w, http.StatusConflict, msgRunActive)
 	case err != nil:
 		return err
 	default:
@@ -578,6 +774,12 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 	ws, i, ok, err := h.issue(w, r, userID, workspace.PermTestsManage)
 	if !ok || err != nil {
 		return err
+	}
+	if on, err := serverRuns(r.Context(), h.cfg); err != nil {
+		return err
+	} else if !on {
+		web.Err(w, http.StatusConflict, msgLocalOnly)
+		return nil
 	}
 	tester, err := h.model.testerURL(r.Context())
 	if err != nil {
@@ -594,13 +796,20 @@ func (h *Handler) createReplayRun(w http.ResponseWriter, r *http.Request, userID
 	case errors.Is(err, errNoScript):
 		web.Err(w, http.StatusConflict, "Record a test case first.")
 	case errors.Is(err, errRunActive):
-		web.Err(w, http.StatusConflict, "A test is already running on this issue.")
+		web.Err(w, http.StatusConflict, msgRunActive)
 	case err != nil:
 		return err
 	default:
 		return h.respondRun(w, r, http.StatusCreated, ws.ID, id, userID)
 	}
 	return nil
+}
+
+// serverRuns is ai_tests_server_runs: whether AI runs, replays and browser sessions run on Taskwell's tester. Off,
+// tests run on the user's machine (local runs).
+func serverRuns(ctx context.Context, cfg *sysconfig.Store) (bool, error) {
+	v, err := cfg.Get(ctx, "ai_tests_server_runs")
+	return v == "true", err
 }
 
 // limitUSD is what the workspace's account may spend on AI tests a month: its plan's AIUSD, and never more than
@@ -637,8 +846,12 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request, userID string) e
 	if err != nil {
 		return err
 	}
+	on, err := serverRuns(r.Context(), h.cfg)
+	if err != nil {
+		return err
+	}
 	web.JSON(w, http.StatusOK, map[string]any{"spent_usd": float64(n) / 1e6, "limit_usd": limit,
-		"resets_at": monthStart(time.Now()).AddDate(0, 1, 0)})
+		"resets_at": monthStart(time.Now()).AddDate(0, 1, 0), "server_runs": on})
 	return nil
 }
 
@@ -654,6 +867,12 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, userID s
 	ws, i, ok, err := h.issue(w, r, userID, workspace.PermTestsManage)
 	if !ok || err != nil {
 		return err
+	}
+	if on, err := serverRuns(r.Context(), h.cfg); err != nil {
+		return err
+	} else if !on {
+		web.Err(w, http.StatusConflict, msgLocalOnly)
+		return nil
 	}
 	tester, err := h.model.testerURL(r.Context())
 	if err != nil {

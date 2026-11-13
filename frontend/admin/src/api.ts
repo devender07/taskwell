@@ -1,6 +1,7 @@
 import { redirect } from '@tanstack/react-router'
 import { ApiError } from '@taskwell/shared/api-errors'
 import { apiUrl } from '@taskwell/shared/api-url'
+import type { Doc } from '@taskwell/shared/rich-text'
 
 export { ApiError, safeRedirect, toFormErrors, type FieldErrors } from '@taskwell/shared/api-errors'
 
@@ -80,10 +81,10 @@ export const PAGE_SIZE = 50
 let client = ''
 export const setClient = (id: string) => (client = id)
 
-export async function api<T = void>(path: string, body?: FormData): Promise<T> {
+export async function api<T = void>(path: string, body?: FormData, method = body ? 'POST' : 'GET'): Promise<T> {
   let res: Response
   try {
-    res = await fetch(apiUrl(`/api${path}`), { method: body ? 'POST' : 'GET', body, credentials: 'include', headers: client ? { 'X-Taskwell-Client': client } : undefined })
+    res = await fetch(apiUrl(`/api${path}`), { method, body, credentials: 'include', headers: client ? { 'X-Taskwell-Client': client } : undefined })
   } catch {
     throw new ApiError(0)
   }
@@ -120,3 +121,34 @@ export function validateListSearch(search: Record<string, unknown>): ListSearch 
 export const listQuery = ({ q, page }: ListSearch) => new URLSearchParams({ q: q ?? '', page: String(page ?? 1) }).toString()
 
 export { longDate as formatDate } from '@taskwell/shared/time'
+
+// What a new workspace starts with (docs/workspace-defaults-plan.md).
+export type StatusCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
+export type Permission = { key: string; group: string; label: string }
+export type DefaultRole = { id: string; name: string; builtin: 'member' | 'guest' | null; permissions: string[] }
+export type DefaultStatusType = { id: string; name: string; category: StatusCategory; icon: string; color: string | null; position: number }
+export type DefaultStatus = { id: string; name: string; category: StatusCategory; type_id: string | null; position: number }
+export type DefaultLabel = { id: string; name: string; color: string }
+export type DefaultTemplate = { id: string; name: string; title: string; description: Doc | null; status_id: string | null; priority: number; label_ids: string[] }
+export type Defaults = {
+  permissions: Permission[]
+  roles: DefaultRole[]
+  status_types: DefaultStatusType[]
+  statuses: DefaultStatus[]
+  labels: DefaultLabel[]
+  templates: DefaultTemplate[]
+}
+export type DefaultsKind = 'roles' | 'status-types' | 'statuses' | 'labels' | 'templates'
+
+const defaultPath = (kind: DefaultsKind, id?: string) => `/defaults/${kind}${id ? `/${encodeURIComponent(id)}` : ''}`
+
+// Creates without an id, updates with one.
+export const saveDefault = <T>(kind: DefaultsKind, form: FormData, id?: string) => api<T>(defaultPath(kind, id), form)
+export const deleteDefault = (kind: DefaultsKind, id: string) => api(defaultPath(kind, id), undefined, 'DELETE')
+
+// Every status id, in the new order.
+export function orderDefaultStatuses(ids: string[]) {
+  const form = new FormData()
+  for (const id of ids) form.append('id', id)
+  return api<DefaultStatus[]>('/defaults/statuses/order', form)
+}

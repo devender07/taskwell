@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/shared/paddle"
 	"github.com/devender07/taskwell/backend/shared/totp"
 	"github.com/devender07/taskwell/backend/user/internal/realtime"
 	"github.com/devender07/taskwell/backend/user/internal/workspace"
@@ -1063,7 +1064,7 @@ func (m *model) deleteAccount(ctx context.Context, userID string, codeHash []byt
 		// Its workspaces are the ones the user made, and those where they're alone.
 		var paid bool
 		if err := tx.QueryRow(ctx, `select exists (select 1 from paddle_subscriptions where user_id = $1
-			and status in ('active', 'trialing', 'past_due') and scheduled_change_action is distinct from 'cancel')`, userID).Scan(&paid); err != nil {
+			and status = any($2) and scheduled_change_action is distinct from 'cancel')`, userID, paddle.Granting).Scan(&paid); err != nil {
 			return err
 		}
 		if paid {

@@ -21,6 +21,8 @@ import (
 	"github.com/devender07/taskwell/backend/admin/internal/audit"
 	"github.com/devender07/taskwell/backend/admin/internal/auth"
 	"github.com/devender07/taskwell/backend/admin/internal/config"
+	"github.com/devender07/taskwell/backend/admin/internal/defaults"
+	"github.com/devender07/taskwell/backend/admin/internal/devreset"
 	"github.com/devender07/taskwell/backend/admin/internal/directory"
 	"github.com/devender07/taskwell/backend/admin/internal/realtime"
 	"github.com/devender07/taskwell/backend/admin/internal/stats"
@@ -157,6 +159,10 @@ func main() {
 		return id, err
 	}
 	config.New(pool, authenticate).Register(mux)
+	defaults.New(pool, authenticate).Register(mux)
+	if !prod {
+		devreset.New(pool, authenticate).Register(mux)
+	}
 	directory.New(pool, authenticate).Register(mux)
 	stats.New(pool, authenticate).Register(mux)
 	audit.New(pool, authenticate).Register(mux)
@@ -195,7 +201,7 @@ func main() {
 
 // schemaVersion is the newest migration this service's queries need. The user service applies migrations; bump
 // this when admin starts depending on a newer one.
-const schemaVersion = "027_admins.sql"
+const schemaVersion = "001_schema.sql"
 
 // checkSchema fails unless the user service has applied schemaVersion.
 func checkSchema(ctx context.Context, pool *pgxpool.Pool) error {

@@ -7,7 +7,7 @@ import { email as checkEmail } from '@taskwell/shared/validate'
 import { api, homePath, toFormErrors, type FieldErrors } from '@/api'
 import { FormError } from './auth-card'
 
-type OtpState = { step: 'email' | 'code'; email: string; resent?: boolean; remember?: boolean; errors?: FieldErrors; error?: string | null; done?: boolean; mfa?: boolean }
+type OtpState = { step: 'email' | 'code' | 'mfa' | 'done'; email: string; resent?: boolean; remember?: boolean; errors?: FieldErrors; error?: string | null }
 
 // The code step carries the email in a hidden input, so every post is just the form's own FormData.
 async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
@@ -34,15 +34,15 @@ async function otpAction(prev: OtpState, form: FormData): Promise<OtpState> {
     const { errors, error } = toFormErrors(e)
     return { ...prev, remember, errors, error: error ?? errors.email }
   }
-  return { ...prev, done: true, mfa: res?.mfa_required }
+  return { ...prev, step: res?.mfa_required ? 'mfa' : 'done' }
 }
 
 export function OtpForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate()
   const [state, submit, pending] = useActionState(async (prev: OtpState, form: FormData) => {
     const next = await otpAction(prev, form)
-    if (next.mfa) await navigate({ to: '/signin/2fa', search: redirect ? { redirect } : {} })
-    else if (next.done) await navigate({ href: redirect ?? (await homePath()) })
+    if (next.step === 'mfa') await navigate({ to: '/signin/2fa', search: redirect ? { redirect } : {} })
+    else if (next.step === 'done') await navigate({ href: redirect ?? (await homePath()) })
     return next
   }, { step: 'email', email: '' })
 

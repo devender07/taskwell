@@ -19,6 +19,9 @@ var pollEvery = 3 * time.Second
 // finished are the statuses a test run ends in.
 var finished = []string{"passed", "failed", "error", "cancelled", "limit_reached"}
 
+// serverRunsOff ends the description of each tool that needs Taskwell's own tester.
+const serverRunsOff = " Off on most servers; use taskwell-tester on your machine instead."
+
 const testingHow = " Three ways to test an issue: (1) run_ai_test has Taskwell's AI drive a browser against the workspace's test site, " +
 	"then get_test_run with wait_seconds until it finishes; (2) test it yourself with your own tools, recording the outcome with " +
 	"start_manual_test_run and mark_test_result for each result; (3) record a case's browser steps by driving Taskwell's test " +
@@ -45,7 +48,7 @@ func (t *tools) testTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "run_ai_test",
 		Description: "Start an AI test run on an issue: Taskwell's AI tests every case (or case_id only) in a sandboxed browser against " +
 			"the workspace's test site, spending the workspace's monthly AI limit. regenerate has the AI rewrite the cases from the issue first. " +
-			"Then call get_test_run with the run id and wait_seconds until it finishes." + testingHow}, t.runAITest)
+			"Then call get_test_run with the run id and wait_seconds until it finishes." + serverRunsOff + testingHow}, t.runAITest)
 	mcp.AddTool(s, &mcp.Tool{Name: "start_manual_test_run",
 		Description: "Start a test run that you carry out yourself: it returns one pending result per test case, with result ids. " +
 			"Test each case with your own tools, then call mark_test_result for each. The run finishes when every result is marked." + testingHow},
@@ -54,7 +57,8 @@ func (t *tools) testTools(s *mcp.Server) {
 		Description: "Record a manual run's result: passed, failed or skipped, with a note saying what you saw (always for a failure). " +
 			"AI runs are marked by Taskwell.", Annotations: &mcp.ToolAnnotations{IdempotentHint: true}}, t.markTestResult)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_test_run", Annotations: readOnly, Meta: viewMeta(false),
-		Description: "Read a test run: status, counts, cost, error, and each result with its summary, reproduction steps and screenshots. " +
+		Description: "Read a test run: status, counts, cost, error, and each result with its summary, reproduction steps, screenshots and, for a " +
+			"local run (kind local, run by client through taskwell-tester), the video of the case. " +
 			"wait_seconds (up to 120) waits for a running run to finish, checking every 3 seconds; call again if it is still running."},
 		t.getTestRun)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_test_runs", Annotations: readOnly,
@@ -68,7 +72,7 @@ func (t *tools) testTools(s *mcp.Server) {
 		Description: "Start a recorded test run on an issue: Taskwell replays each recorded case's steps in a sandboxed browser against " +
 			"the workspace's test site, with no AI and no AI spend. A replay or assertion that fails fails the case with the reason, " +
 			"the steps so far and screenshots; unrecorded cases are skipped. Then call get_test_run with the run id and wait_seconds " +
-			"until it finishes."}, t.runRecordedTests)
+			"until it finishes." + serverRunsOff}, t.runRecordedTests)
 	mcp.AddTool(s, &mcp.Tool{Name: "get_playwright_spec", Annotations: readOnly,
 		Description: "Get an issue's test cases as a Playwright spec (TypeScript) a developer can run locally with " +
 			"npx playwright test: stored Playwright code first, else code generated from the recorded steps, else test.fixme."},
@@ -243,9 +247,10 @@ type testCase struct {
 }
 
 type testRun struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Issue struct {
+	ID     string  `json:"id"`
+	Kind   string  `json:"kind"`
+	Client *string `json:"client"`
+	Issue  struct {
 		Identifier string `json:"identifier"`
 	} `json:"issue"`
 	Status     string   `json:"status"`
@@ -273,12 +278,14 @@ type testRun struct {
 		Log          []struct {
 			ScreenshotURL *string `json:"screenshot_url"`
 		} `json:"log"`
+		VideoURL *string `json:"video_url"`
 	} `json:"results"`
 }
 
 type runOut struct {
 	ID         string      `json:"id"`
 	Kind       string      `json:"kind"`
+	Client     string      `json:"client,omitempty"`
 	Issue      string      `json:"issue"`
 	Status     string      `json:"status"`
 	Error      string      `json:"error,omitempty"`
@@ -301,6 +308,7 @@ type resultOut struct {
 	Reproduction []string `json:"reproduction,omitempty"`
 	MarkedBy     string   `json:"marked_by,omitempty"`
 	Screenshots  []string `json:"screenshots,omitempty"`
+	Video        string   `json:"video,omitempty"`
 }
 
 func (t *tools) runOut(slug string, r testRun) runOut {
@@ -308,6 +316,9 @@ func (t *tools) runOut(slug string, r testRun) runOut {
 		CreatedAt: r.CreatedAt, CostUSD: r.CostUSD, Counts: r.Counts, URL: t.issueURL(slug, r.Issue.Identifier)}
 	if r.Error != nil {
 		o.Error = *r.Error
+	}
+	if r.Client != nil {
+		o.Client = *r.Client
 	}
 	if r.FinishedAt != nil {
 		o.FinishedAt = *r.FinishedAt
@@ -322,6 +333,9 @@ func (t *tools) runOut(slug string, r testRun) runOut {
 			if l.ScreenshotURL != nil {
 				ro.Screenshots = append(ro.Screenshots, t.app+*l.ScreenshotURL) // the app serves /api/files
 			}
+		}
+		if x.VideoURL != nil {
+			ro.Video = t.app + *x.VideoURL
 		}
 		o.Results = append(o.Results, ro)
 	}

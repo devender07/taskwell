@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { LegalPage } from '@/components/legal/legal-page'
+import { useBeta } from '@/api'
+import { BetaNotice, LegalPage } from '@/components/legal/legal-page'
 
 export const Route = createFileRoute('/privacy')({
   component: Privacy,
@@ -8,6 +9,7 @@ export const Route = createFileRoute('/privacy')({
 const mail = <a href="mailto:privacy@taskwell.dev">privacy@taskwell.dev</a>
 
 function Privacy() {
+  if (useBeta()) return <BetaNotice />
   return (
     <LegalPage title="Privacy notice">
       <p>

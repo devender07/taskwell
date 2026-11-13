@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/devender07/taskwell/backend/user/internal/doc"
+	"github.com/devender07/taskwell/backend/shared/doc"
 )
 
 // CreateFirst gives a new user their first workspace, named workspaceName (the company or team they gave at sign-up)

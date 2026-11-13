@@ -144,7 +144,7 @@ export const statusName: Check = (v) => {
   return null
 }
 
-const STATUS_CATEGORIES = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const
+export const STATUS_CATEGORIES = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const
 
 export const statusCategory: Check = (v) => ((STATUS_CATEGORIES as readonly string[]).includes(v) ? null : 'Choose a category.')
 

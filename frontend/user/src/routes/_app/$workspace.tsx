@@ -9,19 +9,19 @@ import { ReviewTokensPrompt } from '@/components/settings/review-tokens'
 
 // Children read the workspace with useLoaderData({ from: '/_app/$workspace' }); a 404 renders not found.
 // Its plan's feature flags live in context so child guards (requireFeature) can read them; refetched like _app's session.
-// upgrades: features locked behind a higher plan (empty for guests, whose billing is 403); owner/is_owner say who can upgrade.
+// upgrades: features locked behind a higher plan (empty for guests, whose billing is 403, and in beta mode); owner/is_owner say who can upgrade.
 type Plan = { slug: string; features: Features; upgrades: Upgrades; owner: PersonRef | null; is_owner: boolean }
 let last: Plan | null = null
 
 export const Route = createFileRoute('/_app/$workspace')({
-  beforeLoad: async ({ params, preload }) => {
+  beforeLoad: async ({ params, preload, context }) => {
     if ((preload || keepSession()) && last?.slug === params.workspace) return last
     const [features, plans, billing] = await Promise.all([
       getFeatures(params.workspace),
       getFeaturePlans(),
       api<WorkspaceBilling>(workspaceBillingPath(params.workspace)).catch(() => null),
     ])
-    last = { slug: params.workspace, features, upgrades: upgradesFor(features, plans, billing?.plan), owner: billing?.owner ?? null, is_owner: billing?.is_owner ?? false }
+    last = { slug: params.workspace, features, upgrades: context.beta ? {} : upgradesFor(features, plans, billing?.plan), owner: billing?.owner ?? null, is_owner: billing?.is_owner ?? false }
     return last
   },
   loader: async (ctx) => {
@@ -37,7 +37,7 @@ export const Route = createFileRoute('/_app/$workspace')({
 
 function WorkspaceLayout() {
   const { workspace } = Route.useParams()
-  const billing = useRouteContext({ from: '/_app', select: (c) => c.billing })
+  const billing = useRouteContext({ from: '/_app', select: (c) => (c.beta ? null : c.billing) })
   return (
     <Shortcuts>
       {billing?.status === 'past_due' ? <PastDueBanner plan={billing.plan} /> : null}

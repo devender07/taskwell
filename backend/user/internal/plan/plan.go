@@ -44,6 +44,20 @@ var Plans = []Plan{
 // loaded is Plans with the limits an admin set; nil until Load.
 var loaded atomic.Pointer[[]Plan]
 
+// beta is system_config's beta_mode as of the last Load.
+var beta atomic.Bool
+
+// Beta reports whether beta mode is on (docs/beta-mode-plan.md): limit messages don't mention upgrading.
+func Beta() bool { return beta.Load() }
+
+// Msg is paid, or betaMsg while beta mode is on.
+func Msg(paid, betaMsg string) string {
+	if Beta() {
+		return betaMsg
+	}
+	return paid
+}
+
 // All returns every plan in display order with the limits in force.
 func All() []Plan {
 	if p := loaded.Load(); p != nil {
@@ -69,9 +83,9 @@ type Rows interface {
 
 // Load reads the limits from system_config, so the admin app's Config page can change them: plan_<id>_workspaces,
 // _projects, _members, _storage_gb and _ai_usd, each a number from 0 (0 is unlimited; for _ai_usd, none). A missing or
-// broken value keeps the plan's default.
+// broken value keeps the plan's default. It also reads beta_mode for Beta; a missing row is off.
 func Load(ctx context.Context, db Rows) error {
-	rows, err := db.Query(ctx, `select key, value from system_config where key like 'plan\_%'`)
+	rows, err := db.Query(ctx, `select key, value from system_config where key like 'plan\_%' or key = 'beta_mode'`)
 	if err != nil {
 		return fmt.Errorf("load plan limits: %w", err)
 	}
@@ -83,7 +97,12 @@ func Load(ctx context.Context, db Rows) error {
 		return fmt.Errorf("load plan limits: %w", err)
 	}
 	next := slices.Clone(Plans)
+	betaOn := false
 	for _, kv := range vals {
+		if kv[0] == "beta_mode" {
+			betaOn = kv[1] == "true"
+			continue
+		}
 		n, err := strconv.ParseFloat(kv[1], 64)
 		if err != nil || n < 0 {
 			slog.WarnContext(ctx, "plan limit isn't a number from 0, keeping the default", "key", kv[0], "value", kv[1])
@@ -109,6 +128,7 @@ func Load(ctx context.Context, db Rows) error {
 		}
 	}
 	loaded.Store(&next)
+	beta.Store(betaOn)
 	return nil
 }
 

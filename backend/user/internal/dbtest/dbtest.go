@@ -37,6 +37,10 @@ func Pool(t testing.TB) *pgxpool.Pool {
 		if pool, openErr = db.Open(ctx, url); openErr == nil {
 			openErr = db.Migrate(ctx, pool)
 		}
+		if openErr == nil {
+			// Fixtures make their own labels (often "Bug"); the starter labels (seeded in 001_schema) would clash with them.
+			_, openErr = pool.Exec(ctx, `delete from default_labels`)
+		}
 	})
 	if openErr != nil {
 		t.Fatal(openErr)

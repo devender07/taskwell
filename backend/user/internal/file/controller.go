@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,11 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request, workspaceID, us
 // ponytail: concurrent uploads each see the same room, so the quota can be overshot by a few files; lock the
 // workspace row while checking and recording if that matters.
 func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, error) {
+	return h.Room(ctx, workspaceID)
+}
+
+// Room is room for other packages that store workspace files (aitest's step screenshots).
+func (h *Handler) Room(ctx context.Context, workspaceID string) (int64, string, error) {
 	mb, err := h.cfg.GetInt(ctx, "upload_max_mb")
 	if err != nil {
 		return 0, "", err
@@ -140,8 +146,9 @@ func (h *Handler) room(ctx context.Context, workspaceID string) (int64, string, 
 		return 0, "", err
 	}
 	if left := p.StorageBytes - used; left < limit {
-		limit, tooLarge = left, fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.",
-			plan.GB(p.StorageBytes))
+		gb := plan.GB(p.StorageBytes)
+		limit, tooLarge = left, plan.Msg(fmt.Sprintf("This workspace is out of storage (%s). Delete some files or ask its owner to upgrade.", gb),
+			fmt.Sprintf("This workspace is out of storage (%s). Delete some files.", gb))
 	}
 	return limit, tooLarge, nil
 }
@@ -301,6 +308,33 @@ func (h *Handler) finishLocked(ctx context.Context, tx pgx.Tx, id string, worksp
 		return nil, errChooseImage, nil
 	}
 	return nil, errChooseMedia, nil
+}
+
+// FinishVideo saves the user's direct upload to the workspace as a file in no project when it's an MP4 or WebM of at
+// most limit bytes. Otherwise msg says why not, and bytes that aren't such a video are deleted.
+func (h *Handler) FinishVideo(ctx context.Context, workspaceID, userID, uploadID string, limit int64) (f *File, msg string, err error) {
+	f, msg, err = h.finish(ctx, uploadID, &workspaceID, userID, false)
+	if err != nil || msg != "" {
+		return nil, msg, err
+	}
+	if !slices.Contains(videoTypes, f.ContentType) || f.Size > limit {
+		if err := h.files.Delete(ctx, f.ID); err != nil {
+			return nil, "", err
+		}
+		if err := h.model.dropUpload(ctx, h.model.db, f.ID); err != nil {
+			return nil, "", err
+		}
+		return nil, fmt.Sprintf("Upload an MP4 or WebM video of %d MB or less.", limit>>20), nil
+	}
+	err = h.model.create(ctx, f, nil)
+	if errors.Is(err, errUploadGone) {
+		return nil, errNoUpload, nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	f.URL = URL(f.ID, f.Name)
+	return f, "", nil
 }
 
 // storage answers the workspace's storage use against its plan's quota (null: unlimited).

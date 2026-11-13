@@ -187,6 +187,11 @@ func TestWebhooks(t *testing.T) {
 	if s := look(1); s.events != 3 {
 		t.Fatalf("merge redelivery logged events: %+v", s)
 	}
+	deliver("late open after merge", 200, "", opened)
+	var prState string
+	if err := pool.QueryRow(ctx, `select state from pull_requests where workspace_id = $1 and number = 12`, wsID).Scan(&prState); err != nil || prState != "merged" {
+		t.Fatalf("late open reopened the merged PR: %q %v", prState, err)
+	}
 
 	deliver("mention dropped", 200, "", payload("edited", "closed", "other", "Login", true))
 	if s := look(1); s.prs != 0 || s.events != 4 || s.status != "Done" {

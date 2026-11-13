@@ -1,4 +1,4 @@
-import { notFound, redirect, useMatch } from '@tanstack/react-router'
+import { notFound, redirect, useMatch, useRouteContext } from '@tanstack/react-router'
 import type { Doc } from '@taskwell/shared/rich-editor'
 import { ApiError, FALLBACK } from '@taskwell/shared/api-errors'
 import { apiUrl } from '@taskwell/shared/api-url'
@@ -660,6 +660,17 @@ export type WorkspaceBilling = {
 export type PlanLimits = { id: PlanId; workspaces: number; projects: number; members: number; storage_gb: number; ai_usd: number }
 // Public, for the pricing page; null when they can't load.
 export const getPlans = () => api<PlanLimits[]>('/plans').catch(() => null)
+// Staff's beta mode (no pricing, billing or upgrade prompts) and the "Report a bug" link ("" hides it). One request
+// per page load; off and no link when it fails.
+type AppInfo = { beta: boolean; feedbackUrl: string }
+let info: Promise<AppInfo> | undefined
+export const getAppInfo = () =>
+  (info ??= api<{ beta: boolean; feedback_url?: string }>('/beta').then(
+    (r) => ({ beta: r.beta, feedbackUrl: r.feedback_url ?? '' }),
+    () => ({ beta: false, feedbackUrl: '' }),
+  ))
+export const useBeta = () => useRouteContext({ from: '__root__', select: (c) => c.beta })
+export const useFeedbackUrl = () => useRouteContext({ from: '__root__', select: (c) => c.feedbackUrl })
 export const billingPath = '/billing'
 export const workspaceBillingPath = (workspace: string) => `${workspacePath(workspace)}/billing`
 const priceForm = (priceId: string) => {
@@ -696,6 +707,16 @@ export const mcpUrl = (): string => import.meta.env.VITE_MCP_URL ?? `${location.
 // True once this tab has seen a session; a failed refresh or another tab's sign-out then sends it to sign-in.
 let signedIn = false
 
+// Remembers in this browser whether there's a session, so the landing page (landing.ts, same key) only asks the API
+// who's signed in when someone has; a visitor's 401s would show up in their console.
+const SESSION_HINT = 'taskwell:session'
+function hintSession(on: boolean) {
+  try {
+    if (on) localStorage.setItem(SESSION_HINT, '1')
+    else localStorage.removeItem(SESSION_HINT)
+  } catch {}
+}
+
 // Tells other tabs about sign-in and sign-out: signed-out tabs reload into the app, signed-in ones go to sign-in.
 const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('taskwell-auth') : null
 if (authChannel) {
@@ -707,6 +728,7 @@ if (authChannel) {
 
 // Full-page navigation to sign-in and back here; the reload also drops the socket and every cached page.
 export function sessionEnded() {
+  hintSession(false)
   if (!signedIn) return
   signedIn = false
   location.assign(`/signin?redirect=${encodeURIComponent(location.pathname + location.search)}`)
@@ -715,6 +737,7 @@ export function sessionEnded() {
 export async function signOut() {
   await api('/auth/signout', new FormData())
   signedIn = false
+  hintSession(false)
   authChannel?.postMessage('signout')
 }
 
@@ -722,6 +745,7 @@ export async function signOut() {
 export async function deleteAccount(form: FormData) {
   await api('/me/delete', form)
   signedIn = false
+  hintSession(false)
   authChannel?.postMessage('signout')
 }
 
@@ -734,9 +758,13 @@ export async function getMe(): Promise<User | null> {
     const user = await api<User>('/me')
     if (!signedIn) authChannel?.postMessage('signin')
     signedIn = true
+    hintSession(true)
     return user
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) return null
+    if (e instanceof ApiError && e.status === 401) {
+      hintSession(false)
+      return null
+    }
     throw e
   }
 }
@@ -752,7 +780,7 @@ export async function homePath() {
   return last ? `/${encodeURIComponent(last.slug)}` : '/new-workspace'
 }
 
-export type RunKind = 'ai' | 'manual' | 'replay'
+export type RunKind = 'ai' | 'manual' | 'replay' | 'local'
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'error'
 export type RunStatus = 'queued' | 'generating' | 'running' | 'passed' | 'failed' | 'error' | 'cancelled' | 'limit_reached'
 export type TestCase = {
@@ -779,10 +807,12 @@ export type TestResult = {
   marked_by: PersonRef | null
   marked_at: string | null
   log: TestStep[] | null
+  video_url?: string | null
 }
 export type TestRun = {
   id: string
   kind: RunKind
+  client?: string | null
   issue: { identifier: string; title: string }
   status: RunStatus
   error: string | null
@@ -797,7 +827,9 @@ export type TestRun = {
 export type TestRunSummary = Omit<TestRun, 'results' | 'latest_screenshot_url'> & { counts?: Partial<Record<TestStatus, number>> }
 export type TestSite = { id: string; base_url: string; host: string }
 export type TestAccount = { id: string; label: string; username: string; password_set: boolean; site_id: string | null }
-export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string }
+// server_runs: Taskwell's own tester is on. Off (or absent, from an older API) means tests run on the user's machine.
+export type AiUsage = { spent_usd: number; limit_usd: number; resets_at: string; server_runs?: boolean }
+export const serverRuns = (usage: AiUsage | null | undefined) => usage?.server_runs === true
 
 export type AuditCategory = 'members' | 'roles' | 'projects' | 'workspace' | 'integrations' | 'trash' | 'billing'
 // actor: null when the user is gone and no name was copied; id null when only the copies are left.

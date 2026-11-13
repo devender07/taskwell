@@ -21,6 +21,7 @@ const (
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/billing/webhook", web.Public(maxWebhook, h.webhook))
 	mux.HandleFunc("GET /api/plans", web.Public(maxBody, h.plans))
+	mux.HandleFunc("GET /api/beta", web.Public(maxBody, h.beta))
 	mux.HandleFunc("GET /api/billing", web.Wrap(h.authenticate, maxBody, h.state))
 	mux.HandleFunc("POST /api/billing/checkout", web.Wrap(h.authenticate, maxBody, h.checkout))
 	mux.HandleFunc("POST /api/billing/change", web.Wrap(h.authenticate, maxBody, h.change))

@@ -1,11 +1,13 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { LegalPage } from '@/components/legal/legal-page'
+import { useBeta } from '@/api'
+import { BetaNotice, LegalPage } from '@/components/legal/legal-page'
 
 export const Route = createFileRoute('/terms')({
   component: Terms,
 })
 
 function Terms() {
+  if (useBeta()) return <BetaNotice />
   return (
     <LegalPage title="Terms of service">
       <p>

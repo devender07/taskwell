@@ -89,11 +89,20 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return fmt.Errorf("prepare schema_migrations: %w", err)
 	}
-	// ponytail: a database migrated before 001-043 were squashed into 001_init already has that schema; drop this once
-	// every database has started on this version.
-	if _, err := conn.Exec(ctx, `insert into schema_migrations (version) select '001_init.sql'
-		where exists (select 1 from schema_migrations where version = '043_status_types.sql') on conflict do nothing`); err != nil {
+	// ponytail: migrations up to 048 were squashed into 001_schema. A database that ran them already has that schema;
+	// one that stopped short must first run the last release with them (b1c0096). Drop this once every database has
+	// started on this version.
+	if _, err := conn.Exec(ctx, `insert into schema_migrations (version) select '001_schema.sql'
+		where exists (select 1 from schema_migrations where version = '048_feedback_url.sql') on conflict do nothing`); err != nil {
 		return fmt.Errorf("baseline squashed migrations: %w", err)
+	}
+	var behind bool
+	if err := conn.QueryRow(ctx, `select exists (select 1 from schema_migrations)
+		and not exists (select 1 from schema_migrations where version = '001_schema.sql')`).Scan(&behind); err != nil {
+		return fmt.Errorf("check squashed migrations: %w", err)
+	}
+	if behind {
+		return errors.New("this database predates the migration squash: deploy commit b1c0096 first so it applies migrations up to 048_feedback_url.sql, then this version")
 	}
 	lockTimeout := env.Get("MIGRATE_LOCK_TIMEOUT", "10s")
 	for _, name := range names {
