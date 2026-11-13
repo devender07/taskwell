@@ -1,0 +1,209 @@
+.issue-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 24px;
+  color: inherit;
+  text-decoration: none;
+}
+.issue-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (hover: hover) {
+  .issue-row:hover { background: rgba(var(--ink), 0.03); }
+}
+.issue-id { color: var(--text-2); font: 400 13px/19.5px var(--mono); }
+@media (max-width: 1023px) {
+  .issue-row-wide { display: none; }
+}
+
+/* A list row: its select checkbox, then the row link. The checkbox shows on hover and focus, while anything is
+   selected, and always on touch screens. */
+.issue-item { display: flex; align-items: center; min-width: 0; }
+.issue-item > .issue-row { flex: 1; min-width: 0; padding-left: 0; }
+.issue-select { flex-shrink: 0; justify-content: center; width: 44px; height: 44px; opacity: 0; }
+.issue-item:hover .issue-select, .issue-item:focus-within .issue-select, [data-selecting] .issue-select { opacity: 1; }
+@media (hover: none) {
+  .issue-select { opacity: 1; }
+}
+
+
+.pr-state {
+  padding: 0 8px;
+  color: var(--text-2);
+  font: 400 12px/20px var(--font);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 9999px;
+}
+.pr-state[data-state='merged'] { color: var(--success); border-color: var(--success); }
+
+.label-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 9999px; }
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 0 8px;
+  color: var(--text);
+  font: 400 12px/20px var(--font);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 9999px;
+}
+
+.labels-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 14px;
+  font: 400 13.3333px/normal var(--font);
+  color: var(--input-text);
+  text-align: left;
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 6px;
+  box-shadow: var(--input-ring) 0 0 0 1px;
+  cursor: pointer;
+}
+.labels-trigger:hover { border-color: rgba(var(--ink), 0.1); }
+.labels-trigger:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.issue-detail { container-type: inline-size; }
+.issue-layout { display: grid; gap: 32px; align-items: start; }
+@container (min-width: 720px) {
+  .issue-layout { grid-template-columns: minmax(0, 1fr) clamp(260px, 32%, 320px); }
+  /* Stays in view under the 56px navbar while the issue scrolls; stickToFit lowers top on a short window. */
+  .issue-aside { position: sticky; top: 80px; }
+}
+
+.issue-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  background: rgba(var(--ink), 0.02);
+  border-bottom: 1px solid var(--border);
+}
+/* clip, not hidden, so the group header can stick under the issue toolbar. */
+.issue-group { overflow: clip; }
+.issue-group > h2 { position: sticky; top: var(--below-toolbar, 56px); z-index: 1; background: var(--surface); }
+/* A list group's header is a button that collapses it. */
+.issue-group-toggle { width: 100%; min-height: 44px; padding-left: 16px; color: var(--text); font: inherit; text-align: left; border: 0; cursor: pointer; }
+.issue-group-toggle[aria-expanded='true'] { border-bottom: 1px solid var(--border); }
+.issue-group-toggle > svg:first-child { color: var(--text-2); }
+.issue-group-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (hover: hover) {
+  .issue-group-toggle:hover { background: rgba(var(--ink), 0.04); }
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--text);
+  font: 400 12px/20px var(--font);
+  background: transparent;
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.filter-chip:hover { border-color: rgba(var(--ink), 0.1); }
+.filter-chip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .filter-chip { min-height: 44px; }
+}
+
+.board { display: flex; gap: 12px; padding-bottom: 8px; overflow-x: auto; }
+.board-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  flex: 1 0 280px;
+  min-height: 0;
+  padding: 12px 0 0;
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.board-column[data-over] { border-color: var(--link); }
+.board-column > header { margin-inline: 8px; }
+.board-cards { display: grid; align-content: start; gap: 8px; min-height: 0; margin: 0; padding: 2px 8px 12px; overflow-y: auto; list-style: none; }
+.page-end { min-height: 1px; padding: 8px; text-align: center; }
+.board-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+  background: var(--card);
+  border: 1px solid rgba(var(--ink), 0.05);
+  border-radius: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.board-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+@media (hover: hover) {
+  .board-card:hover { border-color: rgba(var(--ink), 0.08); }
+}
+.board-card[data-draggable], .issue-row[data-draggable] { cursor: pointer; }
+body:has(.board-ghost), body:has(.board-ghost) * { cursor: grabbing !important; }
+.issue-row[data-draggable] { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.board-card[data-dragging], .issue-row[data-dragging] { opacity: 0.4; }
+[data-drop] { position: relative; }
+[data-drop]::before { content: ''; position: absolute; inset-inline: 0; z-index: 1; height: 2px; background: var(--link); border-radius: 9999px; pointer-events: none; }
+[data-drop='before']::before { top: -1px; }
+[data-drop='after']::before { bottom: -1px; }
+.board-cards > [data-drop='before']::before { top: -5px; }
+.board-cards > [data-drop='after']::before { bottom: -5px; }
+.board-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  background: var(--surface);
+  opacity: 0.8;
+  box-shadow: var(--ring) 0 0 0 1px, var(--drop);
+  pointer-events: none;
+}
+
+.issue-form { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px 32px; }
+.issue-form-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+@media (max-width: 760px) { .issue-form { grid-template-columns: minmax(0, 1fr); } }
+.issue-form-main { display: flex; flex-direction: column; gap: 16px; }
+.issue-form-main > :last-child { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor > :not(.rich-editor-toolbar):not(.autocomplete-panel) { flex: 1; display: flex; flex-direction: column; }
+.issue-form-main .rich-editor-content { flex: 1; }
+.label-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -6px;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.label-chip-remove:hover { color: var(--text); background: rgba(var(--ink), 0.08); }
+.label-chip-remove:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.page-top.issue-toolbar { z-index: 2; margin-top: 0; padding-block: 8px; }
+
+.issue-files { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.issue-file { display: grid; place-items: center; width: 96px; height: 96px; overflow: hidden; padding: 0; color: var(--text-2); font: 510 13px/1.4 var(--font); background: var(--well, var(--surface)); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.issue-file > img, .issue-file > video { width: 100%; height: 100%; object-fit: cover; }
+.issue-file:hover { border-color: rgba(var(--ink), 0.2); }
+.issue-file:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.issue-file-more:hover { color: var(--text); }
+.issue-file-sm { width: 40px; height: 40px; flex-shrink: 0; }
+.issue-file-cell { position: relative; }
+.issue-file-remove { position: absolute; top: -8px; right: -8px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 9999px; cursor: pointer; opacity: 0; }
+.issue-file-remove::before { content: ''; position: absolute; inset: -10px; } /* 44px touch target */
+.issue-file-remove:hover { color: var(--danger); }
+.issue-file-remove:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; opacity: 1; }
+.issue-file-cell:hover .issue-file-remove { opacity: 1; }
+@media (hover: none) { .issue-file-remove { opacity: 1; } }

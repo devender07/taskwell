@@ -1,0 +1,40 @@
+import { createFileRoute, notFound, useLoaderData } from '@tanstack/react-router'
+import { BackLink } from '@taskwell/shared/back-link'
+import { can, type Permission, type Role, workspacePath } from '@/api'
+import { loaderApi } from '@/realtime'
+import { DeleteRole, RoleForm } from '@/components/roles/role-form'
+import { byId } from '@taskwell/shared/list'
+
+export const Route = createFileRoute('/_app/$workspace/_main/settings/roles/$roleId')({
+  loader: async (ctx) => {
+    const { params } = ctx
+    const [catalog, roles] = await Promise.all([
+      loaderApi<Permission[]>(ctx, '/permissions'),
+      loaderApi<Role[]>(ctx, `${workspacePath(params.workspace)}/roles`),
+    ])
+    const role = byId(roles, params.roleId)
+    if (!role) throw notFound()
+    return { catalog, role }
+  },
+  component: EditRole,
+})
+
+function EditRole() {
+  const workspace = useLoaderData({ from: '/_app/$workspace' })
+  const { catalog, role } = Route.useLoaderData()
+  return (
+    <main className="grid gap-6 w-full px-8 py-10" style={{ alignContent: 'start' }}>
+      <header className="page-top grid gap-2">
+        <BackLink to="/$workspace/settings/roles" params={{ workspace: workspace.slug }}>
+          Roles
+        </BackLink>
+        <h1 className="text-h2">{role.name}</h1>
+        <p className="text-body-sm text-secondary">
+          {role.member_count} {role.member_count === 1 ? 'member' : 'members'}
+        </p>
+      </header>
+      <RoleForm key={role.id} workspace={workspace} catalog={catalog} role={role} />
+      {can(workspace, 'roles.manage') && !role.builtin ? <DeleteRole workspace={workspace} role={role} /> : null}
+    </main>
+  )
+}

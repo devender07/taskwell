@@ -1,0 +1,171 @@
+package notify
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"slices"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/taskwell/backend/user/internal/mail"
+	"github.com/devender07/taskwell/backend/user/internal/sysconfig"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
+)
+
+type Handler struct {
+	model        *model
+	authenticate func(*http.Request) (string, error)
+	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	mail         *mail.Mailer
+	cfg          *sysconfig.Store
+}
+
+// New takes the auth handler's Authenticate and the workspace handler's Member.
+func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
+	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error),
+	mailer *mail.Mailer, cfg *sysconfig.Store) *Handler {
+	return &Handler{model: &model{db: db}, authenticate: authenticate, member: member, mail: mailer, cfg: cfg}
+}
+
+func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.workspace(w, r, userID)
+	if ws == nil || err != nil {
+		return err
+	}
+	before := r.URL.Query().Get("before")
+	if before != "" && !web.IsUUID(before) {
+		web.Err(w, http.StatusBadRequest, "That page doesn't exist.")
+		return nil
+	}
+	ns, more, err := h.model.list(r.Context(), userID, ws.ID, before, r.URL.Query().Get("exclude") == "chat")
+	if err != nil {
+		return err
+	}
+	if ns == nil {
+		ns = []Notification{}
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"notifications": ns, "has_more": more})
+	return nil
+}
+
+func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, err := h.workspace(w, r, userID)
+	if ws == nil || err != nil {
+		return err
+	}
+	n, err := h.model.unreadCount(r.Context(), userID, ws.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]int{"count": n})
+	return nil
+}
+
+func (h *Handler) markRead(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.mark(w, r, userID, true)
+}
+
+func (h *Handler) markUnread(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.mark(w, r, userID, false)
+}
+
+// mark sets the form's notifications (ids, or all=true when marking read) read or unread.
+func (h *Handler) mark(w http.ResponseWriter, r *http.Request, userID string, read bool) error {
+	ws, err := h.workspace(w, r, userID)
+	if ws == nil || err != nil {
+		return err
+	}
+	_ = r.ParseMultipartForm(maxBody)
+	ids := slices.DeleteFunc(slices.Clone(r.PostForm["ids"]), func(s string) bool { return !web.IsUUID(s) })
+	all := read && r.PostForm.Get("all") == "true"
+	if !all && len(ids) == 0 {
+		web.Err(w, http.StatusBadRequest, "Choose notifications.")
+		return nil
+	}
+	if err := h.model.setRead(r.Context(), userID, ws.ID, ws.Slug, ids, all, read); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (h *Handler) settings(w http.ResponseWriter, r *http.Request, userID string) error {
+	s, err := h.model.settings(r.Context(), userID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, s)
+	return nil
+}
+
+// updateSettings changes the settings present in the form.
+func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request, userID string) error {
+	_ = r.ParseMultipartForm(maxBody)
+	form := r.PostForm
+	errs := map[string]string{}
+	var email *string
+	if v, ok := form["email"]; ok {
+		email = &v[0]
+		if !slices.Contains([]string{"instant", "digest", "off"}, *email) {
+			errs["email"] = "Choose how to get emails."
+		}
+	}
+	flag := func(k string) *bool {
+		v, ok := form[k]
+		if !ok {
+			return nil
+		}
+		on := v[0] == "true"
+		if !on && v[0] != "false" {
+			errs[k] = "Choose on or off."
+		}
+		return &on
+	}
+	mentions, assignments, status, comments, chat, weekly, dueDates, projects := flag("mentions"), flag("assignments"), flag("status"),
+		flag("comments"), flag("chat"), flag("weekly"), flag("due_dates"), flag("projects")
+	var timezone *string
+	if v, ok := form["timezone"]; ok {
+		timezone = &v[0]
+		if *timezone != "" && !validTimezone(*timezone) {
+			errs["timezone"] = errTimezone
+		}
+	}
+	if len(errs) > 0 {
+		web.JSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": errs})
+		return nil
+	}
+	s, err := h.model.update(r.Context(), userID, email, mentions, assignments, status, comments, chat, weekly, dueDates, projects, timezone)
+	if errors.Is(err, errBadTimezone) {
+		web.JSON(w, http.StatusBadRequest, map[string]map[string]string{"errors": {"timezone": errTimezone}})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, s)
+	return nil
+}
+
+const errTimezone = "Choose a timezone from the list."
+
+// validTimezone reports whether tz is an IANA zone name ("UTC", "Europe/Berlin"). "" and "Local" load in Go but
+// aren't zones a user picks.
+func validTimezone(tz string) bool {
+	if tz == "" || tz == "Local" || len(tz) > 64 {
+		return false
+	}
+	_, err := time.LoadLocation(tz)
+	return err == nil
+}
+
+// workspace returns the path's workspace, or writes a 404 and returns nil when the caller isn't a member.
+func (h *Handler) workspace(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, error) {
+	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
+	if err == nil && ws == nil {
+		web.Err(w, http.StatusNotFound, "Workspace not found.")
+	}
+	return ws, err
+}

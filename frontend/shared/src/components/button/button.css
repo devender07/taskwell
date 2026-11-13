@@ -1,0 +1,49 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  font: 510 13px/19.5px var(--font);
+  white-space: nowrap;
+  border: 0;
+  text-decoration: none;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.button:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.button-primary {
+  color: var(--text);
+  background: rgba(var(--ink), 0.05);
+  box-shadow: rgba(var(--ink), 0.03) 0 0 0 1px inset, rgba(var(--ink), 0.04) 0 1px 0 0 inset,
+    var(--ring) 0 0 0 1px, var(--drop);
+}
+.button-primary:hover:not(:disabled) { background: rgba(var(--ink), 0.08); }
+
+.button-secondary {
+  padding: 0 12px;
+  color: var(--button-strong-text);
+  background: var(--button-strong);
+  border: 1px solid color-mix(in srgb, var(--button-strong) 80%, var(--ring));
+  box-shadow: rgba(0, 0, 0, 0.01) 0 5px 2px 0, rgba(0, 0, 0, 0.04) 0 3px 2px 0,
+    rgba(0, 0, 0, 0.07) 0 1px 1px 0, rgba(0, 0, 0, 0.08) 0 0 1px 0;
+}
+.button-secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--button-strong) 94%, rgb(var(--ink))); }
+
+.button-ghost {
+  padding: 0 12px;
+  font-weight: 400;
+  color: var(--text-2);
+  background: transparent;
+}
+.button-ghost:hover:not(:disabled) { color: var(--text); background: rgba(var(--ink), 0.05); }
+
+/* Destructive actions. White text needs a pink a shade darker than --accent for 4.5:1 (5.0:1 here, 4.7:1 on hover). */
+.button-danger {
+  color: #fff;
+  background: #d61470;
+}
+.button-danger:hover:not(:disabled) { background: #e0156f; }

@@ -1,0 +1,37 @@
+@keyframes nav-progress { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes nav-progress-in { from { opacity: 0; } }
+@keyframes page-spin { to { transform: rotate(360deg); } }
+
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 997;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  animation: nav-progress-in 0s 150ms both;
+}
+.nav-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--link);
+  animation: nav-progress 1s ease-in-out infinite;
+}
+
+.page-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(var(--ink), 0.1);
+  border-top-color: var(--text-2);
+  border-radius: 9999px;
+  animation: page-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress::after { width: 100%; animation: none; opacity: 0.6; }
+  .page-spinner { animation-duration: 1.6s; }
+}

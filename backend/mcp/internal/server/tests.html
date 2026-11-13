@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taskwell tests</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: var(--color-background-primary, #08090A);
+    --surface: var(--color-background-secondary, #0F1011);
+    --text: var(--color-text-primary, #F7F8F8);
+    --muted: var(--color-text-secondary, #8A8F98);
+    --border: var(--color-border-primary, #23252A);
+    --pass: var(--color-text-success, #00BA7C);
+    --fail: var(--color-text-danger, #F91880);
+    --link: var(--color-text-info, #5E6AD2);
+  }
+  :root[data-theme="light"] {
+    --bg: var(--color-background-primary, #FFFFFF);
+    --surface: var(--color-background-secondary, #F7F8F8);
+    --text: var(--color-text-primary, #08090A);
+    --muted: var(--color-text-secondary, #5F636B);
+    --border: var(--color-border-primary, #E2E4E7);
+    --pass: var(--color-text-success, #007A52);
+    --fail: var(--color-text-danger, #C8106A);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); line-height: 1.5;
+    font: 14px/1.5 var(--font-sans, "Plus Jakarta Sans", system-ui, sans-serif); }
+  h1 { font-size: 16px; font-weight: 590; margin: 0; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .muted { color: var(--muted); }
+  .pill { border-radius: 9999px; padding: 2px 10px; font-size: 12px; font-weight: 510; border: 1px solid currentColor; }
+  .passed { color: var(--pass); } .failed, .error, .limit_reached { color: var(--fail); }
+  .skipped, .pending, .running, .queued, .generating, .cancelled { color: var(--muted); }
+  .counts { display: flex; gap: 16px; font-size: 13px; margin-bottom: 16px; }
+  .item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+  .item h2 { font-size: 14px; font-weight: 510; margin: 0; flex: 1; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  ol { margin: 8px 0; padding-left: 20px; } p { margin: 8px 0 0; }
+  button, a.btn { min-height: 32px; padding: 0 16px; border-radius: 9999px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  .shots { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .shots img { max-width: 100%; border-radius: 6px; border: 1px solid var(--border); }
+  .spacer { flex: 1; }
+</style>
+</head>
+<body>
+<main id="root"><p class="muted">Loading…</p></main>
+<script type="module">
+  import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }
+    from "https://unpkg.com/@modelcontextprotocol/ext-apps@2.0.4/app-with-deps";
+
+  const root = document.getElementById("root");
+  const app = new App({ name: "Taskwell tests", version: "1.0.0" });
+  let args = {};
+
+  // el builds an element; strings become text nodes, so tool data never becomes HTML.
+  function el(tag, props = {}, ...kids) {
+    const n = Object.assign(document.createElement(tag), props);
+    for (const k of kids.flat()) if (k != null && k !== false) n.append(k);
+    return n;
+  }
+  const show = (...kids) => root.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
+  const pill = (status) => el("span", { className: `pill ${status}` }, status.replace("_", " "));
+  const list = (items) => el("ol", {}, items.map((s) => el("li", {}, s)));
+  const openButton = (url) => url && el("button", { onclick: () => app.openLink({ url }) }, "Open in Taskwell");
+
+  function screenshots(urls) {
+    if (!urls?.length) return null;
+    const box = el("div", { className: "shots" });
+    const btn = el("button", {}, `Show screenshots (${urls.length})`);
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+      for (const url of urls) {
+        const res = await app.callServerTool({ name: "get_test_screenshot", arguments: { url } });
+        const img = res.content?.find((c) => c.type === "image");
+        box.append(img ? el("img", { src: `data:${img.mimeType};base64,${img.data}`, alt: "Test step screenshot" })
+                       : el("p", { className: "muted" }, res.content?.[0]?.text ?? "Couldn't load the screenshot."));
+      }
+      btn.remove();
+    };
+    return el("div", {}, btn, box);
+  }
+
+  function renderRun(run) {
+    const c = run.counts ?? {};
+    const done = ["passed", "failed", "error", "cancelled", "limit_reached"].includes(run.status);
+    const refresh = !done && el("button", { onclick: async (e) => {
+      e.target.disabled = true;
+      e.target.textContent = "Waiting…";
+      const res = await app.callServerTool({ name: "get_test_run",
+        arguments: { workspace: args.workspace, run_id: run.id, wait_seconds: 30 } });
+      if (res.structuredContent) renderRun(res.structuredContent);
+    } }, "Refresh");
+    show(
+      el("header", {},
+        el("h1", {}, `${run.issue} · ${run.kind === "ai" ? "AI test run" : run.kind === "replay" ? "Recorded test run" : run.kind === "local" ? `Local test run${run.client ? ` · ${run.client}` : ""}` : "Manual test run"}`), pill(run.status),
+        el("span", { className: "spacer" }), refresh, openButton(run.url)),
+      el("div", { className: "counts" },
+        el("span", { className: "passed" }, `${c.passed ?? 0} passed`),
+        el("span", { className: "failed" }, `${(c.failed ?? 0) + (c.error ?? 0)} failed`),
+        el("span", { className: "muted" }, `${c.skipped ?? 0} skipped`),
+        c.pending ? el("span", { className: "muted" }, `${c.pending} pending`) : null,
+        run.cost_usd != null ? el("span", { className: "muted" }, `$${run.cost_usd.toFixed(2)}`) : null),
+      run.error ? el("p", { className: "failed" }, run.error) : null,
+      (run.results ?? []).map((r) => el("section", { className: "item" },
+        el("div", { className: "row" }, el("h2", {}, r.title), pill(r.status)),
+        r.summary ? el("p", {}, r.summary) : null,
+        r.reproduction?.length ? el("details", { open: r.status === "failed" },
+          el("summary", {}, "Steps to reproduce"), list(r.reproduction)) : null,
+        el("details", {}, el("summary", {}, "Test case"), list(r.steps ?? []),
+          el("p", { className: "muted" }, `Expected: ${r.expected ?? ""}`)),
+        r.video ? el("button", { onclick: () => app.openLink({ url: r.video }) }, "Watch the video") : null,
+        screenshots(r.screenshots))),
+    );
+  }
+
+  function renderCases(data) {
+    show(
+      el("header", {}, el("h1", {}, `${data.issue} · test cases`),
+        el("span", { className: "muted" }, String(data.cases.length)), el("span", { className: "spacer" }), openButton(data.url)),
+      data.cases.length ? null : el("p", { className: "muted" }, "No test cases yet."),
+      data.cases.map((tc, i) => el("section", { className: "item" },
+        el("div", { className: "row" }, el("h2", {}, `${i + 1}. ${tc.title}`),
+          tc.recorded ? el("span", { className: "muted" }, "Recorded") : null,
+          tc.last_result ? pill(tc.last_result.status) : el("span", { className: "muted" }, "Not run")),
+        el("details", {}, el("summary", {}, `${tc.steps.length} steps`), list(tc.steps),
+          el("p", { className: "muted" }, `Expected: ${tc.expected}`)))),
+    );
+  }
+
+  function applyContext(ctx) {
+    if (ctx.theme) applyDocumentTheme(ctx.theme);
+    if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+    if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+    if (ctx.safeAreaInsets) {
+      const { top, right, bottom, left } = ctx.safeAreaInsets;
+      document.body.style.padding = `${top + 16}px ${right + 16}px ${bottom + 16}px ${left + 16}px`;
+    }
+  }
+
+  app.ontoolinput = (params) => { args = params.arguments ?? {}; };
+  app.ontoolresult = (result) => {
+    const data = result.structuredContent;
+    if (result.isError || !data) {
+      show(el("p", { className: "failed" }, result.content?.[0]?.text ?? "Something went wrong."));
+    } else if (Array.isArray(data.cases)) {
+      renderCases(data);
+    } else {
+      renderRun(data);
+    }
+  };
+  app.onhostcontextchanged = applyContext;
+  app.onteardown = async () => ({});
+
+  await app.connect();
+  const ctx = app.getHostContext();
+  if (ctx) applyContext(ctx);
+</script>
+</body>
+</html>

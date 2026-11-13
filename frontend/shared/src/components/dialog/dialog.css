@@ -1,0 +1,88 @@
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 8px;
+  box-shadow: var(--ring) 0 0 0 1px, var(--drop);
+  opacity: 1;
+  transform: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.dialog-wide { width: min(880px, calc(100vw - 32px)); }
+.dialog::backdrop { background: rgba(0, 0, 0, 0.6); opacity: 1; transition: opacity 120ms ease; }
+@starting-style {
+  .dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); }
+  .dialog[open]::backdrop { opacity: 0; }
+}
+.dialog[data-state='closing'] { opacity: 0; transform: translateY(8px) scale(0.98); }
+.dialog[data-state='closing']::backdrop { opacity: 0; }
+
+.dialog-body { position: relative; padding: 32px; }
+@media (max-width: 640px) { .dialog-body { padding: 24px; } }
+
+.dialog-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.dialog-close:hover { color: var(--text); background: rgba(var(--ink), 0.05); }
+.dialog-close:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+/* Full: a sheet 24px in from the top and sides, flush to the bottom, sliding up. Fullscreen on mobile. */
+.dialog-full {
+  width: calc(100vw - 48px);
+  max-width: none;
+  height: calc(100dvh - 24px);
+  max-height: none;
+  margin: 24px auto 0;
+  overflow: hidden;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@starting-style {
+  .dialog-full[open] { opacity: 1; transform: translateY(100%); }
+}
+.dialog-full[data-state='closing'] { opacity: 1; transform: translateY(100%); }
+.dialog-full .dialog-body { height: 100%; padding: 0; gap: 0; grid-template-rows: auto minmax(0, 1fr); }
+.dialog-full .dialog-body > header { min-height: 68px; align-content: center; padding: var(--space-3) 64px var(--space-3) var(--space-6); border-bottom: 1px solid var(--border); }
+.dialog-full .dialog-body > header h2 { font: 590 18px/27px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dialog-full .dialog-close { top: 12px; right: 12px; }
+@media (max-width: 640px) {
+  .dialog-full { width: 100vw; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .dialog-full .dialog-body > header { padding-left: var(--space-4); }
+}
+
+/* Sheet: pinned to the bottom edge, full width, slides up. */
+.dialog-sheet {
+  width: 100vw;
+  max-width: none;
+  max-height: 85dvh;
+  margin: auto 0 0;
+  overflow-y: auto;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@starting-style {
+  .dialog-sheet[open] { opacity: 1; transform: translateY(100%); }
+}
+.dialog-sheet[data-state='closing'] { opacity: 1; transform: translateY(100%); }
+.dialog-sheet .dialog-body { gap: 16px; padding: 24px 16px calc(16px + env(safe-area-inset-bottom)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog, .dialog::backdrop { transition: none; }
+}

@@ -1,0 +1,208 @@
+import { Link, useMatch, useNavigate, useParams } from '@tanstack/react-router'
+import { createContext, use, useActionState, useState, type ReactNode } from 'react'
+import { Avatar } from '@taskwell/shared/avatar'
+import { Dialog } from '@taskwell/shared/dialog'
+import { Logo } from '@taskwell/shared/logo'
+import { Popover } from '@taskwell/shared/popover'
+import { CheckIcon, ChevronDownIcon, MenuIcon, MoonIcon, SearchIcon, SunIcon, XIcon } from '@taskwell/shared/icons'
+import { signOut as endSession, toFormErrors, useFeature, type User, type Workspace } from '@/api'
+import { CreateWorkspaceForm } from '@/components/workspace/create-form'
+import { JoinInviteButton } from '@/components/invite/invite-actions'
+import { useMyInvites } from '@/components/invite/invite-prompt'
+import { NotificationsBell } from './notifications-bell'
+import { setTheme, useTheme } from './theme'
+import { isApple, openWorkspacePalette, paletteKey } from './shortcuts'
+import './navbar.css'
+
+// Whether the app sidebar is open as the mobile menu; the navbar's button toggles it.
+const MenuContext = createContext<[boolean, (open: boolean) => void]>([false, () => {}])
+export const useMenu = () => use(MenuContext)
+export function MenuProvider({ children }: { children: ReactNode }) {
+  return <MenuContext value={useState(false)}>{children}</MenuContext>
+}
+
+export function Navbar({ user, workspaces }: { user: User; workspaces: Workspace[] }) {
+  const current = useParams({ strict: false }).workspace
+  const inWorkspace = !!current
+  const home = current ?? workspaces[0]?.slug
+  const hasSidebar = useMatch({ from: '/_app/$workspace/_main', shouldThrow: false })
+  const [menuOpen, setMenuOpen] = useMenu()
+  return (
+    <header className="navbar sticky top-0 z-sticky flex items-center justify-between px-4">
+      <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
+        {hasSidebar ? (
+          <button
+            type="button"
+            className="navbar-menu"
+            aria-controls="app-sidebar"
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            {menuOpen ? <XIcon size={20} /> : <MenuIcon size={20} />}
+          </button>
+        ) : null}
+        <Link to={home ? '/$workspace' : '/new-workspace'} params={{ workspace: home }} aria-label="Taskwell home" className="navbar-home">
+          <Logo size={24} />
+        </Link>
+      </div>
+      <div className="flex items-center gap-2">
+        {inWorkspace ? (
+          <button type="button" className="navbar-search" aria-label="Search issues and projects" aria-keyshortcuts={isApple ? 'Meta+K' : 'Control+K'} onClick={openWorkspacePalette}>
+            <SearchIcon size={16} />
+            <span className="navbar-search-label">Search issues and projects</span>
+            <kbd className="kbd">{paletteKey}</kbd>
+          </button>
+        ) : null}
+        <ThemeButton />
+        <NotificationsBell />
+        <Popover
+          aria-label="Account"
+          placement="bottom-end"
+          trigger={(props) => (
+            <button type="button" className="navbar-avatar" aria-label="Account" {...props}>
+              <Avatar name={user.name} src={user.avatar_url} />
+            </button>
+          )}
+        >
+          {(close) => <AccountMenu user={user} onNavigate={close} />}
+        </Popover>
+      </div>
+    </header>
+  )
+}
+
+// Only inside /$workspace routes; an unknown slug (not found) shows no switcher either.
+export function WorkspaceSwitcher({ workspaces, canCreate }: { workspaces: Workspace[]; canCreate: boolean }) {
+  const slug = useParams({ strict: false }).workspace
+  const current = workspaces.find((w) => w.slug === slug)
+  const [creating, setCreating] = useState(false)
+  const invites = useMyInvites()
+  if (!current) return null
+  const closeDialog = () => setCreating(false)
+
+  return (
+    <>
+      <Popover
+        aria-label="Workspaces"
+        placement="bottom-start"
+        trigger={(props) => (
+          <button type="button" className="workspace-switcher" aria-label={`Workspace: ${current.name}`} {...props}>
+            <span className="text-caption text-secondary">Workspace</span>
+            <span className="flex items-center gap-2">
+              <span className="ellipsis font-510 flex-grow" style={{ marginLeft: 8, fontSize: 12 }}>{current.name}</span>
+              {invites.length ? <span className="text-caption text-accent flex-noshrink">{invites.length === 1 ? '1 invite' : `${invites.length} invites`}</span> : null}
+              <ChevronDownIcon size={14} strokeWidth={2} className="flex-noshrink text-secondary" />
+            </span>
+          </button>
+        )}
+      >
+        {(close) => (
+          <nav style={{ width: 264 }}>
+            <p className="popover-title">Workspaces</p>
+            {workspaces.map((w) => (
+              <Link
+                key={w.id}
+                to="/$workspace"
+                params={{ workspace: w.slug }}
+                preload={false} // the loader marks a workspace as opened; hovering must not reorder the list
+                className="popover-item justify-between gap-2"
+                aria-current={w.id === current.id ? 'page' : undefined}
+                onClick={close}
+              >
+                <span className="ellipsis">{w.name}</span>
+                {w.guest ? <span className="text-caption text-secondary flex-noshrink" style={{ marginLeft: 'auto' }}>Guest</span> : null}
+                {w.id === current.id ? <CheckIcon size={16} strokeWidth={2} className="flex-noshrink" /> : null}
+              </Link>
+            ))}
+            {invites.length ? (
+              <>
+                <hr className="popover-divider" />
+                <p className="popover-title">Invites</p>
+                {invites.map((i) => (
+                  <div key={i.id} className="popover-item justify-between gap-2">
+                    <span className="grid" style={{ minWidth: 0 }}>
+                      <span className="ellipsis">{i.workspace.name}</span>
+                      {i.invited_by ? <span className="text-caption text-secondary ellipsis">From {i.invited_by}</span> : null}
+                    </span>
+                    <JoinInviteButton id={i.id} onJoin={close} />
+                  </div>
+                ))}
+              </>
+            ) : null}
+            <hr className="popover-divider" />
+            {current.guest ? null : (
+              <Link to="/$workspace/settings/workspace" params={{ workspace: current.slug }} className="popover-item" onClick={close}>
+                Workspace settings
+              </Link>
+            )}
+            {canCreate ? (
+              <button type="button" className="popover-item" onClick={() => { close(); setCreating(true) }}>
+                Create workspace
+              </button>
+            ) : null}
+          </nav>
+        )}
+      </Popover>
+      <Dialog open={creating} onClose={closeDialog} title="Create workspace" description="A workspace holds a team's projects and issues.">
+        <CreateWorkspaceForm onDone={closeDialog} />
+      </Dialog>
+    </>
+  )
+}
+
+// Flips between light and dark; Settings → Profile also has System.
+function ThemeButton() {
+  const { shown } = useTheme()
+  const next = shown === 'dark' ? 'light' : 'dark'
+  return (
+    <button type="button" className="navbar-bell" aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`} onClick={() => setTheme(next)}>
+      {shown === 'dark' ? <SunIcon size={20} /> : <MoonIcon size={20} />}
+    </button>
+  )
+}
+
+// Ends the session and goes to sign-in: [error, action, pending].
+export function useSignOut() {
+  const navigate = useNavigate()
+  return useActionState(async () => {
+    try {
+      await endSession()
+    } catch (e) {
+      return toFormErrors(e).error
+    }
+    await navigate({ to: '/signin' })
+    return null
+  }, null)
+}
+
+function AccountMenu({ user, onNavigate }: { user: User; onNavigate: () => void }) {
+  const slug = useParams({ strict: false }).workspace
+  const team = useFeature('team')
+  const [error, signOut, pending] = useSignOut()
+
+  return (
+    <div style={{ width: 264 }}>
+      <div className="flex items-center gap-3 px-3 py-2">
+        <Avatar name={user.name} size={36} src={user.avatar_url} />
+        <div className="grid" style={{ minWidth: 0 }}>
+          <span className="text-label text-primary ellipsis">{user.name}</span>
+          <span className="text-caption text-secondary ellipsis">{user.email}</span>
+        </div>
+      </div>
+      <hr className="popover-divider" />
+      {slug && team ? (
+        <Link to="/$workspace/members/$id" params={{ workspace: slug, id: user.id }} className="popover-item" onClick={onNavigate}>
+          View your analytics
+        </Link>
+      ) : null}
+      <form action={signOut}>
+        <button type="submit" className="popover-item" disabled={pending}>
+          {pending ? 'Signing out…' : 'Sign out'}
+        </button>
+      </form>
+      {error ? <p role="alert" className="px-3 py-2 text-caption text-accent">{error}</p> : null}
+    </div>
+  )
+}
+

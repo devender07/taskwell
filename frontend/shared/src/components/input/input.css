@@ -1,0 +1,62 @@
+.input {
+  height: 40px;
+  width: 100%;
+  padding: 0 14px;
+  font: 400 13.3333px/normal var(--font);
+  color: var(--input-text);
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.08);
+  border-radius: 6px;
+  box-shadow: var(--input-ring) 0 0 0 1px;
+  outline: none;
+}
+.input::placeholder { color: var(--text-2); opacity: 0.6; }
+.input:hover { border-color: rgba(var(--ink), 0.1); }
+.input:focus { border-color: rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.04); }
+.input:disabled { opacity: 0.4; cursor: not-allowed; }
+.input[aria-invalid] { border-color: var(--accent); }
+
+/* Prefixed: the wrapper draws the field, the inner input is bare and takes the rest of the row. */
+.input-prefixed { display: flex; align-items: center; }
+.input-prefixed > span { color: var(--text-2); white-space: nowrap; user-select: none; }
+.input-prefixed > input { flex: 1; min-width: 0; height: 100%; padding: 0; font: inherit; color: inherit; background: none; border: 0; outline: none; }
+.input-prefixed:hover { border-color: rgba(var(--ink), 0.1); }
+.input-prefixed:focus-within { border-color: rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.04); }
+.input-prefixed:has(:disabled) { opacity: 0.4; cursor: not-allowed; }
+.input-prefixed:has([aria-invalid]) { border-color: var(--accent); }
+
+/* Password: room at the end for the show/hide toggle, which fills the field's height. */
+.input-password { padding-right: 44px; }
+.input-reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  padding: 0;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+}
+.input-reveal:hover { color: var(--text); }
+.input-reveal:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.input-reveal:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Edge's built-in reveal button would double ours. */
+.input-password::-ms-reveal { display: none; }
+
+/* iOS zooms into any focused field with text under 16px. */
+@supports (-webkit-touch-callout: none) {
+  .input { font-size: 16px; }
+  .input.textarea { line-height: 24px; }
+}
+
+/* Keyboard focus: a ring inside the border (--focus: grey on dark, Action Blue on light; over the 3:1 non-text minimum). */
+.input:focus-visible, .input-prefixed:has(:focus-visible), .rich-editor.input:has(.rich-editor-content:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+@media (pointer: coarse) {
+  .input:not(.textarea, .rich-editor) { height: 44px; }
+}

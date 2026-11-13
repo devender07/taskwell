@@ -1,0 +1,36 @@
+{
+	email dkathait269@gmail.com
+}
+
+# The frontends are on Cloudflare Pages (taskwell.dev, admin.taskwell.dev); this server only runs the APIs.
+# flush_interval -1 passes streams (AI test live view, MCP) straight through.
+
+# The APIs serve JSON and files only: never framed, sniffed or sent with a referrer, and HTTPS only.
+(security) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+api.taskwell.dev {
+	import security
+	reverse_proxy 127.0.0.1:8090 {
+		flush_interval -1
+	}
+}
+
+mcp.taskwell.dev {
+	import security
+	reverse_proxy 127.0.0.1:8095 {
+		flush_interval -1
+	}
+}
+
+admin-api.taskwell.dev {
+	import security
+	reverse_proxy 127.0.0.1:8080
+}

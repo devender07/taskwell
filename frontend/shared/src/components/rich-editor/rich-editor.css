@@ -1,0 +1,105 @@
+.rich-editor.input { height: auto; padding: 0; color: var(--text); }
+.rich-editor.input:focus-within { border-color: rgba(var(--ink), 0.15); background: rgba(var(--ink), 0.04); }
+.rich-editor-toolbar { padding: 0 var(--space-1); border-bottom: 1px solid rgba(var(--ink), 0.08); }
+.rich-editor-link { padding: var(--space-2) var(--space-1); border-top: 1px solid rgba(var(--ink), 0.08); }
+.rich-editor-tool { width: 44px; height: 44px; }
+.rich-editor-tool[aria-pressed='true'] { color: var(--text); background: rgba(var(--ink), 0.05); }
+
+.rich-editor-content { padding: var(--space-2) 14px; font: 400 14px/21px var(--font); color: var(--text); outline: none; overflow-wrap: anywhere; }
+.rich-editor-readonly .rich-editor-content { padding: 0; }
+/* What Tiptap's injected .ProseMirror styles give the editor, for the JSON renderer (rich-text.tsx). */
+.rich-text { position: relative; overflow-wrap: anywhere; white-space: pre-wrap; white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: 'liga' 0; }
+.rich-text pre { white-space: pre-wrap; }
+.rich-editor-content h1 { font: 590 20px/26.6px var(--font); margin-top: var(--space-4); }
+.rich-editor-content h2 { font: 590 16px/24px var(--font); margin-top: var(--space-4); }
+.rich-editor-content h3 { font: 510 15px/24px var(--font); margin-top: var(--space-3); }
+.rich-editor-content > :first-child { margin-top: 0; }
+.rich-editor-content ul, .rich-editor-content ol { padding-left: var(--space-6); }
+.rich-editor-content li + li { margin-top: var(--space-1); }
+.rich-editor-content blockquote { padding-left: var(--space-3); border-left: 2px solid var(--avatar-bg); color: var(--text-2); }
+.rich-editor-content code { font: 400 13px/19.5px var(--mono); padding: 0 var(--space-1); background: rgba(var(--ink), 0.05); border-radius: 4px; }
+.rich-editor-content pre { padding: var(--space-3) var(--space-4); background: rgba(var(--ink), 0.03); overflow-x: auto; }
+.rich-editor-content pre code { font: 400 14px/21px var(--mono); padding: 0; background: none; border-radius: 0; }
+.rich-editor-content hr { border: 0; border-top: 1px solid rgba(var(--ink), 0.08); margin-block: var(--space-4); }
+.rich-editor-content a { color: var(--text); text-decoration: underline; text-decoration-color: var(--link); text-underline-offset: 2px; }
+.rich-editor-content img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.rich-editor-content img.ProseMirror-selectednode, .rich-editor-content [data-resize-container].ProseMirror-selectednode img { outline: 2px solid var(--link); outline-offset: 2px; }
+.rich-editor-content [data-resize-wrapper] { max-width: 100%; }
+.rich-editor-resize { width: 12px; height: 12px; margin: -6px; background: var(--link); border: 2px solid var(--bg); border-radius: 9999px; opacity: 0; touch-action: none; }
+.rich-editor-resize::before { content: ''; position: absolute; inset: -16px; } /* 44px touch target */
+.rich-editor-resize[data-resize-handle='bottom-right'] { cursor: nwse-resize; }
+.rich-editor-resize[data-resize-handle='bottom-left'] { cursor: nesw-resize; }
+[data-resize-wrapper]:hover .rich-editor-resize, .ProseMirror-selectednode .rich-editor-resize, [data-resize-state='true'] .rich-editor-resize { opacity: 1; }
+@media (hover: none) { .rich-editor-resize { opacity: 1; } }
+.rich-editor-content [data-type='mention'] { padding: 0 var(--space-1); color: #fff; font-weight: 510; background: var(--link); border-radius: 4px; }
+.rich-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--text-2);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.collaboration-carets__caret { position: relative; margin-inline: -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  padding: 0 var(--space-1);
+  font: 510 13px/19.5px var(--font);
+  color: var(--bg);
+  white-space: nowrap;
+  border-radius: 4px 4px 4px 0;
+  user-select: none;
+}
+
+/* ponytail: fixed at the caret when the list opens; it doesn't follow a scroll or flip at the viewport edge. */
+.rich-editor-mentions { min-width: 200px; max-width: calc(100vw - 32px); }
+
+/* iOS zooms into any focused field with text under 16px. */
+@supports (-webkit-touch-callout: none) {
+  .input .rich-editor-content { font-size: 16px; line-height: 24px; }
+}
+.rich-editor-content [data-type='issue-mention'] { font-weight: 510; }
+
+/* Checklists: the editor's TaskItem markup and RichText's share these. */
+.rich-editor-content ul[data-type='taskList'] { padding-left: 0; list-style: none; }
+.rich-editor-content ul[data-type='taskList'] ul[data-type='taskList'] { padding-left: var(--space-6); margin-top: var(--space-1); }
+.rich-editor-content li[data-type='taskItem'] { display: flex; align-items: flex-start; gap: var(--space-2); }
+.rich-editor-content li[data-type='taskItem'] > label { display: inline-flex; flex-shrink: 0; height: 21px; align-items: center; user-select: none; }
+.rich-editor-content li[data-type='taskItem'] > label > span { display: none; }
+.rich-editor-content li[data-type='taskItem'] > div { flex: 1; min-width: 0; }
+.rich-editor-content li[data-type='taskItem'][data-checked='true'] > div { color: var(--text-2); text-decoration: line-through; }
+.rich-editor-content li[data-type='taskItem'] input {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  background: rgba(var(--ink), 0.02);
+  border: 1px solid rgba(var(--ink), 0.15);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.rich-editor-content li[data-type='taskItem'] input::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--bg);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+}
+.rich-editor-content li[data-type='taskItem'] input:checked { background: var(--button-strong); border-color: var(--button-strong); }
+.rich-editor-content li[data-type='taskItem'] input:checked::before { transform: scale(1); }
+.rich-editor-content li[data-type='taskItem'] input:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.rich-editor-content li[data-type='taskItem'] input:disabled { cursor: default; }
+
+/* Tables: the editor's markup and RichText's share these. */
+.rich-editor-content .tableWrapper { overflow-x: auto; }
+.rich-editor-content table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
+.rich-editor-content th, .rich-editor-content td { position: relative; min-width: 80px; padding: var(--space-1) var(--space-2); vertical-align: top; text-align: left; border: 1px solid rgba(var(--ink), 0.08); }
+.rich-editor-content th { font-weight: 590; background: rgba(var(--ink), 0.03); }
+.rich-editor-content th > * + *, .rich-editor-content td > * + * { margin-top: var(--space-1); }
+.rich-editor-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--link) 15%, transparent); pointer-events: none; }

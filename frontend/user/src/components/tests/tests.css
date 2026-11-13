@@ -1,0 +1,83 @@
+.test-case + .test-case { border-top: 1px solid var(--border); }
+.test-case[data-dragging] { opacity: 0.4; }
+.test-case[data-over] { box-shadow: inset 0 2px 0 var(--link); }
+
+.test-handle {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 44px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: grab;
+}
+.test-handle:hover { color: var(--text); }
+.test-handle:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+
+.test-result-link {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 44px;
+  border-radius: 6px;
+}
+.test-result-link:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+
+.test-case-toggle {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.test-case-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.run-panel {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(560px, 100vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--ring) 0 0 0 1px, var(--drop);
+}
+
+.test-result-item,
+.test-log-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+li + li > .test-result-item,
+li + li > .test-log-row { border-top: 1px solid var(--border); }
+.test-result-item[aria-current],
+.test-log-row[aria-pressed='true'] { background: rgba(var(--ink), 0.05); }
+.test-log-row:disabled { cursor: default; }
+.test-result-item:focus-visible,
+.test-log-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+@media (hover: hover) {
+  .test-result-item:hover,
+  .test-log-row:hover:not(:disabled) { background: rgba(var(--ink), 0.03); }
+}
+
+.test-screenshot { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }

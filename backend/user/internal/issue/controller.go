@@ -1,0 +1,1214 @@
+package issue
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/taskwell/backend/user/internal/collab"
+	"github.com/devender07/taskwell/backend/user/internal/realtime"
+	"github.com/devender07/taskwell/backend/user/internal/web"
+	"github.com/devender07/taskwell/backend/user/internal/workspace"
+)
+
+const (
+	errNotFound        = "Workspace not found."
+	errProjectNotFound = "Project not found."
+	errIssueNotFound   = "Issue not found."
+	errStatusNotFound  = "Status not found."
+	errLabelNotFound   = "Label not found."
+	errTypeNotFound    = "Type not found."
+	errTypeTaken       = "That type already exists."
+	errChooseType      = "Choose a type."
+	errForbidden       = "You don't have permission to do that."
+	errCommentNotFound = "Comment not found."
+	errArchivedProject = "This project is archived."
+	errCycleNotFound   = "Cycle not found."
+	errNoPage          = "That page doesn't exist."
+)
+
+type Handler struct {
+	model        *model
+	authenticate func(*http.Request) (string, error)
+	member       func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)
+	collab       *collab.Hub
+}
+
+// New takes the auth handler's Authenticate and the workspace handler's Member.
+func New(db *pgxpool.Pool, authenticate func(*http.Request) (string, error),
+	member func(ctx context.Context, userID, slug string) (*workspace.Workspace, error)) *Handler {
+	m := &model{db: db}
+	return &Handler{model: m, authenticate: authenticate, member: member, collab: collab.New(db, docs, m.saveFrame)}
+}
+
+// --- issues ---
+
+func (h *Handler) list(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	projectID, err := h.model.projectID(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	if err != nil {
+		return err
+	}
+	if projectID == "" {
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+		return nil
+	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return h.model.listPage(ctx, projectID, q)
+		})
+	}
+	sort, ok := readSort(w, r)
+	if !ok {
+		return nil
+	}
+	is, err := h.model.list(r.Context(), projectID, sort)
+	if err != nil {
+		return err
+	}
+	for i := range is {
+		allow(&is[i], userID, ws.Permissions)
+	}
+	web.JSON(w, http.StatusOK, is)
+	return nil
+}
+
+// readSort returns an unpaged list's sort ("" for none), or writes a 400 and returns ok=false when it isn't one of
+// sortBy's.
+func readSort(w http.ResponseWriter, r *http.Request) (string, bool) {
+	sort := r.URL.Query().Get("sort")
+	if _, ok := sortBy[sort]; sort != "" && !ok {
+		web.Err(w, http.StatusBadRequest, errNoPage)
+		return "", false
+	}
+	return sort, true
+}
+
+// myIssues lists the caller's assigned issues across the workspace's active projects.
+func (h *Handler) myIssues(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.userList(w, r, userID, h.model.assigned, h.model.assignedPage)
+}
+
+// watching lists the issues the caller watches across the workspace's active projects.
+func (h *Handler) watching(w http.ResponseWriter, r *http.Request, userID string) error {
+	return h.userList(w, r, userID, h.model.watched, h.model.watchedPage)
+}
+
+// userList answers a list of the caller's issues: paged with limit, else whole.
+func (h *Handler) userList(w http.ResponseWriter, r *http.Request, userID string,
+	all func(ctx context.Context, workspaceID, userID string) ([]Issue, error),
+	page func(ctx context.Context, workspaceID, userID string, q pageQuery) ([]Group, error)) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return page(ctx, ws.ID, userID, q)
+		})
+	}
+	is, err := all(r.Context(), ws.ID, userID)
+	if err != nil {
+		return err
+	}
+	for i := range is {
+		allow(&is[i], userID, ws.Permissions)
+	}
+	web.JSON(w, http.StatusOK, is)
+	return nil
+}
+
+func (h *Handler) create(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermIssuesCreate)
+	if !ok || err != nil {
+		return err
+	}
+	key := normKey(r.PathValue("key"))
+	// A project the caller can't see is not found before anything about the form is said.
+	projectID, err := h.model.projectID(r.Context(), ws.ID, key, userID)
+	if err != nil || projectID == "" {
+		if err == nil {
+			web.Err(w, http.StatusNotFound, errProjectNotFound)
+		}
+		return err
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, key, "", true)
+	if !ok || err != nil {
+		return err
+	}
+	afterID, beforeID, ok, err := h.readPlace(w, r, ws.ID, projectID, userID)
+	if !ok || err != nil {
+		return err
+	}
+	id, err := h.model.create(r.Context(), ws.ID, key, userID, f, afterID, beforeID)
+	if errors.Is(err, errArchived) {
+		web.Err(w, http.StatusConflict, errArchivedProject)
+		return nil
+	}
+	if !checkParent(w, err) {
+		return nil
+	}
+	if errors.Is(err, errNoCycle) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+		return nil
+	}
+	return h.respondIssue(w, r, http.StatusCreated, id, userID, ws)
+}
+
+// cycleIssues lists the cycle's issues like list does the project's.
+func (h *Handler) cycleIssues(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	projectID, err := h.model.projectID(r.Context(), ws.ID, normKey(r.PathValue("key")), userID)
+	if err != nil {
+		return err
+	}
+	if projectID == "" {
+		web.Err(w, http.StatusNotFound, errProjectNotFound)
+		return nil
+	}
+	cycleID := ""
+	if n, err := strconv.Atoi(r.PathValue("number")); err == nil && n > 0 {
+		if cycleID, err = h.model.cycleID(r.Context(), projectID, n); err != nil {
+			return err
+		}
+	}
+	if cycleID == "" {
+		web.Err(w, http.StatusNotFound, errCycleNotFound)
+		return nil
+	}
+	if r.URL.Query().Has("limit") {
+		return paged(w, r, userID, ws.Permissions, func(ctx context.Context, q pageQuery) ([]Group, error) {
+			return h.model.cyclePage(ctx, cycleID, q)
+		})
+	}
+	sort, ok := readSort(w, r)
+	if !ok {
+		return nil
+	}
+	is, err := h.model.inCycle(r.Context(), cycleID, sort)
+	if err != nil {
+		return err
+	}
+	for i := range is {
+		allow(&is[i], userID, ws.Permissions)
+	}
+	web.JSON(w, http.StatusOK, is)
+	return nil
+}
+
+// paged answers a paged list request (one with limit) with fetch's groups: every group's first page, or with in
+// that group's next page only. A bad limit, offset, group or sort is a 400.
+func paged(w http.ResponseWriter, r *http.Request, userID string, perms []string,
+	fetch func(context.Context, pageQuery) ([]Group, error)) error {
+	q, ok := readPage(r.URL.Query(), userID)
+	if !ok {
+		web.Err(w, http.StatusBadRequest, errNoPage)
+		return nil
+	}
+	gs, err := fetch(r.Context(), q)
+	if err != nil {
+		return err
+	}
+	total := 0
+	for g := range gs {
+		total += gs[g].Count
+		for i := range gs[g].Issues {
+			allow(&gs[g].Issues[i], userID, perms)
+		}
+	}
+	if q.in != nil {
+		page := map[string]any{"issues": []Issue{}, "has_more": false}
+		if len(gs) > 0 {
+			page["issues"], page["has_more"] = gs[0].Issues, gs[0].HasMore
+		}
+		web.JSON(w, http.StatusOK, page)
+		return nil
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"total": total, "groups": gs})
+	return nil
+}
+
+// readPage parses a paged list's query; ok=false for a bad limit (1-100), offset, group or sort. Filter values that
+// can't match (not an id, a priority out of range) are dropped; "me" is the user; q is the text search.
+func readPage(v url.Values, userID string) (pageQuery, bool) {
+	q := pageQuery{group: cmp.Or(v.Get("group"), "status"), sort: cmp.Or(v.Get("sort"), "priority")}
+	if t := []rune(strings.TrimSpace(v.Get("q"))); len(t) > 0 {
+		q.text = string(t[:min(len(t), maxQuery)])
+	}
+	limit, err := strconv.Atoi(v.Get("limit"))
+	_, okGroup := groupBy[q.group]
+	_, okSort := sortBy[q.sort]
+	if err != nil || limit < 1 || limit > 100 || !okGroup || !okSort {
+		return q, false
+	}
+	q.limit = limit
+	if v.Has("in") {
+		in := v.Get("in")
+		q.in = &in
+		if v.Has("offset") {
+			if q.offset, err = strconv.Atoi(v.Get("offset")); err != nil || q.offset < 0 {
+				return q, false
+			}
+		}
+	}
+	split := func(k string) []string { return strings.Split(v.Get(k), ",") }
+	for _, s := range split("status") {
+		if web.IsUUID(s) {
+			q.statuses = append(q.statuses, s)
+		}
+	}
+	for _, s := range split("assignee") {
+		switch {
+		case s == "me":
+			q.assignees = append(q.assignees, userID)
+		case s == "none":
+			q.noAssignee = true
+		case web.IsUUID(s):
+			q.assignees = append(q.assignees, s)
+		}
+	}
+	for _, s := range split("label") {
+		if web.IsUUID(s) {
+			q.labels = append(q.labels, s)
+		}
+	}
+	for _, s := range split("priority") {
+		if p, err := strconv.Atoi(s); err == nil && p >= 0 && p <= 4 {
+			q.priorities = append(q.priorities, p)
+		}
+	}
+	for _, s := range split("cycle") {
+		if s == "none" {
+			q.noCycle = true
+		} else if web.IsUUID(s) {
+			q.cycles = append(q.cycles, s)
+		}
+	}
+	return q, true
+}
+
+// CycleIssues returns the cycle's issues as the user sees them, like a project's list.
+func (h *Handler) CycleIssues(ctx context.Context, cycleID, userID string, perms []string) ([]Issue, error) {
+	is, err := h.model.inCycle(ctx, cycleID, "")
+	for i := range is {
+		allow(&is[i], userID, perms)
+	}
+	return is, err
+}
+
+func (h *Handler) get(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID, "status_id")
+	if !ok || err != nil {
+		return err
+	}
+	keep := ""
+	if i.Assignee != nil {
+		keep = i.Assignee.ID
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, i.Project.Key, keep, false)
+	if !ok || err != nil {
+		return err
+	}
+	err = h.model.update(r.Context(), ws.ID, i.ID, userID, f)
+	if !checkParent(w, err) {
+		return nil
+	}
+	if errors.Is(err, errNoCycle) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"cycle": errCycleNotFound})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// move places the issue in its project's manual order right after the form's after issue, else right before its
+// before issue, applying status_id, assignee_id and priority like update when they're present.
+func (h *Handler) move(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID, "status_id", "after", "before")
+	if !ok || err != nil {
+		return err
+	}
+	afterID, beforeID, ok, err := h.readPlace(w, r, ws.ID, i.projectID, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if afterID == "" && beforeID == "" {
+		web.Err(w, http.StatusBadRequest, "Pick where to move the issue.")
+		return nil
+	}
+	keep := ""
+	if i.Assignee != nil {
+		keep = i.Assignee.ID
+	}
+	f, ok, err := h.readFields(w, r, ws.ID, i.Project.Key, keep, false)
+	if !ok || err != nil {
+		return err
+	}
+	f = fields{statusID: f.statusID, assigneeID: f.assigneeID, priority: f.priority}
+	if err := h.model.move(r.Context(), ws.ID, i.projectID, i.ID, userID, afterID, beforeID, f); err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// readPlace returns the ids of the form's after and before issues ("" when absent), which must be in the project, or
+// writes a 400 and returns ok=false.
+func (h *Handler) readPlace(w http.ResponseWriter, r *http.Request, workspaceID, projectID, userID string) (afterID, beforeID string, ok bool, err error) {
+	_ = r.ParseMultipartForm(maxBody)
+	ids, errs := map[string]string{}, map[string]string{}
+	for _, k := range []string{"after", "before"} {
+		v := strings.TrimSpace(r.PostForm.Get(k))
+		if v == "" {
+			continue
+		}
+		i, err := h.find(r.Context(), workspaceID, v, userID)
+		if err != nil {
+			return "", "", false, err
+		}
+		switch {
+		case i == nil:
+			errs[k] = errIssueNotFound
+		case i.projectID != projectID:
+			errs[k] = "Pick an issue in the same project."
+		default:
+			ids[k] = i.ID
+		}
+	}
+	return ids["after"], ids["before"], web.Check(w, errs), nil
+}
+
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if allow(i, userID, ws.Permissions); !i.CanDelete {
+		web.Err(w, http.StatusForbidden, denied(i))
+		return nil
+	}
+	if err := h.model.delete(r.Context(), i.ID, userID); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (h *Handler) search(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	q := searchQuery(r)
+	key, number, _ := ParseIdentifier(q)
+	refs, err := h.model.search(r.Context(), ws.ID, userID, normKey(r.URL.Query().Get("project")), q, key, number)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, refs)
+	return nil
+}
+
+// searchAll answers the command palette: issues and projects matching q (see model.searchAll).
+func (h *Handler) searchAll(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	q := searchQuery(r)
+	key, number, _ := ParseIdentifier(q)
+	issues, projects, err := h.model.searchAll(r.Context(), ws.ID, userID, q, key, number)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"issues": issues, "projects": projects})
+	return nil
+}
+
+func (h *Handler) link(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	_ = r.ParseMultipartForm(maxBody)
+	typ := r.PostForm.Get("type")
+	other, err := h.find(r.Context(), ws.ID, r.PostForm.Get("issue"), userID)
+	if err != nil {
+		return err
+	}
+	errs := map[string]string{}
+	if typ != "blocks" && typ != "blocked_by" {
+		errs["type"] = "Choose a link type."
+	}
+	switch {
+	case other == nil:
+		errs["issue"] = errIssueNotFound
+	case other.ID == i.ID:
+		errs["issue"] = "An issue can't block itself."
+	case other.Project.Archived:
+		errs["issue"] = "That issue's project is archived."
+	}
+	if !web.Check(w, errs) {
+		return nil
+	}
+	blocker, blocked := i.ID, other.ID
+	if typ == "blocked_by" {
+		blocker, blocked = blocked, blocker
+	}
+	err = h.model.link(r.Context(), blocker, blocked, userID)
+	if errors.Is(err, errLinked) {
+		web.Fields(w, http.StatusConflict, map[string]string{"issue": "These issues are already linked."})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.respondIssue(w, r, http.StatusCreated, i.ID, userID, ws)
+}
+
+func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.editable(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	other, err := h.find(r.Context(), ws.ID, r.PathValue("other"), userID)
+	if err != nil {
+		return err
+	}
+	if other == nil {
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
+		return nil
+	}
+	found, err := h.model.unlink(r.Context(), i.ID, other.ID, userID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		web.Err(w, http.StatusNotFound, "Link not found.")
+		return nil
+	}
+	return h.respondIssue(w, r, http.StatusOK, i.ID, userID, ws)
+}
+
+// watch starts or stops the caller watching the issue, as on says.
+func (h *Handler) watch(on bool) func(w http.ResponseWriter, r *http.Request, userID string) error {
+	return func(w http.ResponseWriter, r *http.Request, userID string) error {
+		_, i, ok, err := h.issue(w, r, userID)
+		if !ok || err != nil {
+			return err
+		}
+		if err := h.model.setWatching(r.Context(), i.ID, userID, on); err != nil {
+			return err
+		}
+		web.JSON(w, http.StatusOK, map[string]bool{"watching": on})
+		return nil
+	}
+}
+
+// find returns the workspace's issue with the identifier; nil when there's none or the viewer can't see it.
+func (h *Handler) find(ctx context.Context, workspaceID, identifier, viewerID string) (*Issue, error) {
+	key, number, ok := ParseIdentifier(identifier)
+	if !ok {
+		return nil, nil
+	}
+	return h.model.get(ctx, workspaceID, key, number, viewerID)
+}
+
+// editable is issue, plus a 403 unless the caller may edit it. statusOnly are the form fields a request may send
+// to pass on can_change_status alone (a status change, and where a board drop puts it).
+func (h *Handler) editable(w http.ResponseWriter, r *http.Request, userID string, statusOnly ...string) (*workspace.Workspace, *Issue, bool, error) {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return nil, nil, false, err
+	}
+	allow(i, userID, ws.Permissions)
+	if !i.CanEdit && i.CanChangeStatus && len(statusOnly) > 0 {
+		_ = r.ParseMultipartForm(maxBody)
+		_, status := r.PostForm["status_id"]
+		only := status
+		for k := range r.PostForm {
+			only = only && slices.Contains(statusOnly, k)
+		}
+		if only {
+			return ws, i, true, nil
+		}
+	}
+	if !i.CanEdit {
+		web.Err(w, http.StatusForbidden, denied(i))
+		return nil, nil, false, nil
+	}
+	return ws, i, true, nil
+}
+
+// issue returns the path's workspace and issue, or writes a 404 and returns ok=false.
+func (h *Handler) issue(w http.ResponseWriter, r *http.Request, userID string) (*workspace.Workspace, *Issue, bool, error) {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return nil, nil, false, err
+	}
+	i, err := h.find(r.Context(), ws.ID, r.PathValue("identifier"), userID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if i == nil {
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
+		return nil, nil, false, nil
+	}
+	return ws, i, true, nil
+}
+
+// respondIssue writes the issue with the id and its relations as the caller sees it.
+func (h *Handler) respondIssue(w http.ResponseWriter, r *http.Request, status int, id, userID string, ws *workspace.Workspace) error {
+	i, err := h.model.byID(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	if i == nil {
+		web.Err(w, http.StatusNotFound, errIssueNotFound)
+		return nil
+	}
+	allow(i, userID, ws.Permissions)
+	d, err := h.model.relations(r.Context(), i, userID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, status, d)
+	return nil
+}
+
+// checkParent writes a 400 for a parentError and returns false; true for any other err, nil included.
+func checkParent(w http.ResponseWriter, err error) bool {
+	var pe parentError
+	if errors.As(err, &pe) {
+		web.Fields(w, http.StatusBadRequest, map[string]string{"parent": string(pe)})
+		return false
+	}
+	return true
+}
+
+// allow sets the caller's can_edit and can_delete: issues.edit_any, or they created it; editing also when it's
+// assigned to them or they assigned it (so handing it on doesn't lock them out). can_change_status adds
+// issues.status_any. Nobody changes an issue in an archived project.
+func allow(i *Issue, userID string, perms []string) {
+	if i.Project.Archived {
+		i.CanEdit, i.CanDelete, i.CanChangeStatus = false, false, false
+		return
+	}
+	defer func() { i.CanChangeStatus = i.CanEdit || workspace.Has(perms, workspace.PermIssuesStatusAny) }()
+	editAny := workspace.Has(perms, workspace.PermIssuesEditAny)
+	creator := i.CreatedBy != nil && i.CreatedBy.ID == userID
+	i.CanDelete = editAny || creator
+	i.CanEdit = i.CanDelete || i.Assignee != nil && (i.Assignee.ID == userID || i.AssignedBy != nil && i.AssignedBy.ID == userID)
+}
+
+// denied is the 403 message for a change allow refused.
+func denied(i *Issue) string {
+	if i.Project.Archived {
+		return errArchivedProject
+	}
+	return errForbidden
+}
+
+// readFields returns the issue fields present in the form, or writes a 400 with field errors and returns ok=false.
+// On create the title is always checked, and an empty status_id or priority means the default. key is the issue's
+// project, whose assignees must see it, and keep its current assignee (kept even when they can't).
+func (h *Handler) readFields(w http.ResponseWriter, r *http.Request, workspaceID, key, keep string, create bool) (fields, bool, error) {
+	_ = r.ParseMultipartForm(maxBody)
+	form := r.PostForm
+	value := func(k string) *string {
+		v, ok := form[k]
+		if !ok || create && v[0] == "" && (k == "status_id" || k == "priority" || k == "parent" || k == "cycle") {
+			return nil
+		}
+		return &v[0]
+	}
+	var f fields
+	errs := map[string]string{}
+	if t := value("title"); t != nil || create {
+		title := strings.TrimSpace(form.Get("title"))
+		f.title, errs["title"] = &title, checkTitle(title)
+	}
+	if d := value("description"); d != nil {
+		f.setDescription = true
+		if *d != "" {
+			f.description, errs["description"] = checkDescription([]byte(*d))
+		}
+	}
+	if f.statusID = value("status_id"); f.statusID != nil && *f.statusID == "" {
+		f.statusID, errs["status_id"] = nil, "Choose a status."
+	}
+	if p := value("priority"); p != nil {
+		n, _ := parsePriority(*p)
+		f.priority, errs["priority"] = &n, checkPriority(*p)
+	}
+	if f.dueDate = value("due_date"); f.dueDate != nil {
+		errs["due_date"] = checkDueDate(*f.dueDate)
+	}
+	if f.estimate = value("estimate"); f.estimate != nil {
+		errs["estimate"] = checkEstimate(*f.estimate)
+	}
+	f.assigneeID = value("assignee_id")
+	f.parent = value("parent")
+	if f.cycleID = value("cycle"); f.cycleID != nil && *f.cycleID != "" && !web.IsUUID(*f.cycleID) {
+		errs["cycle"] = errCycleNotFound
+	}
+	if ids, ok := form["label_ids"]; ok {
+		f.setLabels = true
+		f.labelIDs = slices.Compact(slices.Sorted(slices.Values(slices.DeleteFunc(slices.Clone(ids), func(s string) bool { return s == "" }))))
+	}
+	// Ids that aren't uuids can't be the workspace's; checking here keeps them out of uuid comparisons.
+	if f.statusID != nil && !web.IsUUID(*f.statusID) {
+		errs["status_id"] = "Choose a status."
+	}
+	if f.assigneeID != nil && *f.assigneeID != "" && !web.IsUUID(*f.assigneeID) {
+		errs["assignee_id"] = "Choose someone in this workspace."
+	}
+	if slices.ContainsFunc(f.labelIDs, func(s string) bool { return !web.IsUUID(s) }) {
+		errs["label_ids"] = "Choose labels from this workspace."
+	}
+	if !web.Check(w, errs) {
+		return f, false, nil
+	}
+	refErrs, err := h.model.checkRefs(r.Context(), workspaceID, key, keep, f)
+	if err != nil || !web.Check(w, refErrs) {
+		return f, false, err
+	}
+	return f, true, nil
+}
+
+// --- comments and activity ---
+
+// readBefore returns ?before= (nil when absent), or writes a 400 and returns ok=false.
+func readBefore(w http.ResponseWriter, r *http.Request) (*time.Time, bool) {
+	v := r.URL.Query().Get("before")
+	if v == "" {
+		return nil, true
+	}
+	t, err := time.Parse(time.RFC3339Nano, v)
+	if err != nil {
+		web.Err(w, http.StatusBadRequest, "before must be an RFC 3339 time.")
+		return nil, false
+	}
+	return &t, true
+}
+
+// activity is the workspace's feed for Home.
+func (h *Handler) activity(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	before, ok := readBefore(w, r)
+	if !ok {
+		return nil
+	}
+	as, more, err := h.model.activity(r.Context(), ws.ID, userID, before)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"items": as, "has_more": more})
+	return nil
+}
+
+func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	before, ok := readBefore(w, r)
+	if !ok {
+		return nil
+	}
+	cs, es, more, err := h.model.timeline(r.Context(), i.ID, userID, before)
+	if err != nil {
+		return err
+	}
+	for i := range cs {
+		allowComment(&cs[i], userID, ws.Permissions)
+	}
+	web.JSON(w, http.StatusOK, map[string]any{"comments": cs, "events": es, "has_more": more})
+	return nil
+}
+
+func (h *Handler) createComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, i, ok, err := h.issue(w, r, userID)
+	if !ok || err != nil {
+		return err
+	}
+	if !workspace.Has(ws.Permissions, workspace.PermCommentsCreate) {
+		web.Err(w, http.StatusForbidden, errForbidden)
+		return nil
+	}
+	archived, err := h.model.archived(r.Context(), i.ID)
+	if err != nil {
+		return err
+	}
+	if archived {
+		web.Err(w, http.StatusForbidden, errArchivedProject)
+		return nil
+	}
+	body, ok := readComment(w, r)
+	if !ok {
+		return nil
+	}
+	id, err := h.model.createComment(r.Context(), i.ID, userID, body)
+	if err != nil {
+		return err
+	}
+	return h.respondComment(w, r, http.StatusCreated, id, userID, ws)
+}
+
+func (h *Handler) updateComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, c, ok, err := h.ownComment(w, r, userID, func(c *Comment) bool { return c.CanEdit })
+	if !ok || err != nil {
+		return err
+	}
+	body, ok := readComment(w, r)
+	if !ok {
+		return nil
+	}
+	if err := h.model.updateComment(r.Context(), c.ID, c.issueID, userID, body); err != nil {
+		return err
+	}
+	return h.respondComment(w, r, http.StatusOK, c.ID, userID, ws)
+}
+
+func (h *Handler) deleteComment(w http.ResponseWriter, r *http.Request, userID string) error {
+	_, c, ok, err := h.ownComment(w, r, userID, func(c *Comment) bool { return c.CanDelete })
+	if !ok || err != nil {
+		return err
+	}
+	if err := h.model.deleteComment(r.Context(), c.ID, c.issueID, userID); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// ownComment returns the path's workspace and comment when the caller may change it (can reports that), or writes
+// a 404 or 403 and returns ok=false.
+func (h *Handler) ownComment(w http.ResponseWriter, r *http.Request, userID string, can func(*Comment) bool) (*workspace.Workspace, *Comment, bool, error) {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return nil, nil, false, err
+	}
+	c, err := h.model.comment(r.Context(), ws.ID, r.PathValue("id"), userID)
+	switch {
+	case err != nil:
+		return nil, nil, false, err
+	case c == nil:
+		web.Err(w, http.StatusNotFound, errCommentNotFound)
+		return nil, nil, false, nil
+	case c.archived:
+		web.Err(w, http.StatusForbidden, errArchivedProject)
+		return nil, nil, false, nil
+	}
+	if allowComment(c, userID, ws.Permissions); !can(c) {
+		web.Err(w, http.StatusForbidden, errForbidden)
+		return nil, nil, false, nil
+	}
+	return ws, c, true, nil
+}
+
+func (h *Handler) respondComment(w http.ResponseWriter, r *http.Request, status int, id, userID string, ws *workspace.Workspace) error {
+	c, err := h.model.comment(r.Context(), ws.ID, id, userID)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		web.Err(w, http.StatusNotFound, errCommentNotFound)
+		return nil
+	}
+	allowComment(c, userID, ws.Permissions)
+	web.JSON(w, status, c)
+	return nil
+}
+
+// allowComment sets the caller's can_edit and can_delete: comments.manage, or they wrote it (and editing still needs
+// comments.create). Nothing in an archived project.
+func allowComment(c *Comment, userID string, perms []string) {
+	manage := workspace.Has(perms, workspace.PermCommentsManage)
+	author := c.Author != nil && c.Author.ID == userID
+	c.CanEdit = !c.archived && (manage || author && workspace.Has(perms, workspace.PermCommentsCreate))
+	c.CanDelete = !c.archived && (manage || author)
+}
+
+// readComment returns the form's checked body, or writes a 400 and returns ok=false.
+func readComment(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
+	_ = r.ParseMultipartForm(maxBody)
+	body, msg := checkComment(r.PostForm.Get("body"))
+	return body, web.Check(w, map[string]string{"body": msg})
+}
+
+// --- statuses ---
+
+func (h *Handler) listStatuses(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	ss, err := h.model.listStatuses(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, ss)
+	return nil
+}
+
+func (h *Handler) createStatus(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, typeID, ok := readStatus(w, r)
+	if !ok {
+		return nil
+	}
+	s, err := h.model.createStatus(r.Context(), ws.ID, name, category, typeID, workflowChanged(ws, userID, "statuses"))
+	switch {
+	case errors.Is(err, errNameTaken):
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
+	case errors.Is(err, errNoType):
+		web.Fields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
+	case err != nil:
+		return err
+	default:
+		web.JSON(w, http.StatusCreated, s)
+	}
+	return nil
+}
+
+func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, typeID, ok := readStatus(w, r)
+	if !ok {
+		return nil
+	}
+	// Issues show their status's name, category and icon.
+	s, err := h.model.updateStatus(r.Context(), ws.ID, r.PathValue("id"), name, category, typeID, workflowChanged(ws, userID, "statuses", realtime.All(ws.Slug)))
+	switch {
+	case errors.Is(err, errNameTaken):
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A status with that name already exists."})
+	case errors.Is(err, errNoType):
+		web.Fields(w, http.StatusBadRequest, map[string]string{"type_id": errChooseType})
+	case err != nil:
+		return err
+	case s == nil:
+		web.Err(w, http.StatusNotFound, errStatusNotFound)
+	default:
+		web.JSON(w, http.StatusOK, s)
+	}
+	return nil
+}
+
+func (h *Handler) orderStatuses(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	_ = r.ParseMultipartForm(maxBody)
+	err = h.model.reorderStatuses(r.Context(), ws.ID, r.PostForm["ids"], workflowChanged(ws, userID, "statuses"))
+	if errors.Is(err, errBadOrder) {
+		web.Err(w, http.StatusBadRequest, "Send every status once.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	ss, err := h.model.listStatuses(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, ss)
+	return nil
+}
+
+func (h *Handler) deleteStatus(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	found, err := h.model.deleteStatus(r.Context(), ws.ID, r.PathValue("id"), r.URL.Query().Get("move_to"), workflowChanged(ws, userID, "statuses"))
+	switch {
+	case errors.Is(err, errLastStatus):
+		web.Err(w, http.StatusConflict, "A workspace needs at least one status.")
+	case errors.Is(err, errInUse):
+		web.Err(w, http.StatusConflict, "Move its issues to another status first.")
+	case err != nil:
+		return err
+	case !found:
+		web.Err(w, http.StatusNotFound, errStatusNotFound)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+	return nil
+}
+
+// readStatus returns the trimmed name, the category and the type id (nil for none; the category is the type's then),
+// or writes a 400 with field errors and returns ok=false.
+func readStatus(w http.ResponseWriter, r *http.Request) (name, category string, typeID *string, ok bool) {
+	name, category = strings.TrimSpace(r.FormValue("name")), r.FormValue("category")
+	errs := map[string]string{"name": checkStatusName(name)}
+	if t := r.FormValue("type_id"); t != "" {
+		typeID = &t
+		if !web.IsUUID(t) {
+			errs["type_id"] = errChooseType
+		}
+	} else {
+		errs["category"] = checkCategory(category)
+	}
+	return name, category, typeID, web.Check(w, errs)
+}
+
+// --- status types ---
+
+func (h *Handler) listTypes(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	ts, err := h.model.listTypes(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, ts)
+	return nil
+}
+
+func (h *Handler) createType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, icon, color, ok := readType(w, r)
+	if !ok {
+		return nil
+	}
+	t, err := h.model.createType(r.Context(), ws.ID, name, category, icon, color, typesChanged(ws, userID))
+	if errors.Is(err, errNameTaken) {
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusCreated, t)
+	return nil
+}
+
+func (h *Handler) updateType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, category, icon, color, ok := readType(w, r)
+	if !ok {
+		return nil
+	}
+	// Its statuses show its icon and count as its category everywhere.
+	t, err := h.model.updateType(r.Context(), ws.ID, r.PathValue("id"), name, category, icon, color, typesChanged(ws, userID, realtime.All(ws.Slug)))
+	switch {
+	case errors.Is(err, errNameTaken):
+		web.Fields(w, http.StatusConflict, map[string]string{"name": errTypeTaken})
+	case err != nil:
+		return err
+	case t == nil:
+		web.Err(w, http.StatusNotFound, errTypeNotFound)
+	default:
+		web.JSON(w, http.StatusOK, t)
+	}
+	return nil
+}
+
+func (h *Handler) deleteType(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	found, err := h.model.deleteType(r.Context(), ws.ID, r.PathValue("id"), typesChanged(ws, userID, realtime.All(ws.Slug)))
+	if err != nil {
+		return err
+	}
+	if !found {
+		web.Err(w, http.StatusNotFound, errTypeNotFound)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// readType returns the trimmed name, category, icon and normalized color (nil for none), or writes a 400 with field
+// errors and returns ok=false.
+func readType(w http.ResponseWriter, r *http.Request) (name, category, icon string, color *string, ok bool) {
+	name, category, icon = strings.TrimSpace(r.FormValue("name")), r.FormValue("category"), r.FormValue("icon")
+	errs := map[string]string{"name": checkTypeName(name), "icon": checkTypeIcon(icon)}
+	if checkCategory(category) != "" {
+		errs["category"] = "Choose how it counts."
+	}
+	if c := normColor(r.FormValue("color")); c != "" {
+		color = &c
+		errs["color"] = checkColor(c)
+	}
+	return name, category, icon, color, web.Check(w, errs)
+}
+
+// typesChanged is the event for a change to the workspace's status types, which its statuses show too.
+func typesChanged(ws *workspace.Workspace, userID string, paths ...string) realtime.Event {
+	return workflowChanged(ws, userID, "status-types", append(paths, realtime.Workspace(ws.Slug)+"/statuses")...)
+}
+
+// --- labels ---
+
+func (h *Handler) listLabels(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, "")
+	if !ok || err != nil {
+		return err
+	}
+	ls, err := h.model.listLabels(r.Context(), ws.ID)
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusOK, ls)
+	return nil
+}
+
+func (h *Handler) createLabel(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, color, ok := readLabel(w, r)
+	if !ok {
+		return nil
+	}
+	l, err := h.model.createLabel(r.Context(), ws.ID, name, color, workflowChanged(ws, userID, "labels"))
+	if errors.Is(err, errNameTaken) {
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	web.JSON(w, http.StatusCreated, l)
+	return nil
+}
+
+func (h *Handler) updateLabel(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	name, color, ok := readLabel(w, r)
+	if !ok {
+		return nil
+	}
+	// Issue rows show label names.
+	l, err := h.model.updateLabel(r.Context(), ws.ID, r.PathValue("id"), name, color, workflowChanged(ws, userID, "labels", realtime.All(ws.Slug)))
+	switch {
+	case errors.Is(err, errNameTaken):
+		web.Fields(w, http.StatusConflict, map[string]string{"name": "A label with that name already exists."})
+	case err != nil:
+		return err
+	case l == nil:
+		web.Err(w, http.StatusNotFound, errLabelNotFound)
+	default:
+		web.JSON(w, http.StatusOK, l)
+	}
+	return nil
+}
+
+func (h *Handler) deleteLabel(w http.ResponseWriter, r *http.Request, userID string) error {
+	ws, ok, err := h.access(w, r, userID, workspace.PermWorkflowManage)
+	if !ok || err != nil {
+		return err
+	}
+	found, err := h.model.deleteLabel(r.Context(), ws.ID, r.PathValue("id"), workflowChanged(ws, userID, "labels", realtime.All(ws.Slug)))
+	if err != nil {
+		return err
+	}
+	if !found {
+		web.Err(w, http.StatusNotFound, errLabelNotFound)
+		return nil
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// readLabel returns the trimmed name and normalized color, or writes a 400 with field errors and returns ok=false.
+func readLabel(w http.ResponseWriter, r *http.Request) (name, color string, ok bool) {
+	name, color = strings.TrimSpace(r.FormValue("name")), normColor(r.FormValue("color"))
+	return name, color, web.Check(w, map[string]string{"name": checkLabelName(name), "color": checkColor(color)})
+}
+
+// workflowChanged is the event for a change to the workspace's "statuses" or "labels" (what), plus the other paths
+// it touches.
+func workflowChanged(ws *workspace.Workspace, userID, what string, paths ...string) realtime.Event {
+	return realtime.Event{Kind: "workflow.changed", Workspace: ws.Slug, Actor: userID, Audience: realtime.ToWorkspace(ws.ID),
+		Paths: append(paths, realtime.Workspace(ws.Slug)+"/"+what)}
+}
+
+// --- shared ---
+
+// access returns the path's workspace. It writes a 404 when the caller isn't a member, or a 403 when perm is set
+// and they lack it, and returns ok=false.
+func (h *Handler) access(w http.ResponseWriter, r *http.Request, userID, perm string) (*workspace.Workspace, bool, error) {
+	ws, err := h.member(r.Context(), userID, r.PathValue("slug"))
+	switch {
+	case err != nil:
+		return nil, false, err
+	case ws == nil:
+		web.Err(w, http.StatusNotFound, errNotFound)
+		return nil, false, nil
+	case perm != "" && !workspace.Has(ws.Permissions, perm):
+		web.Err(w, http.StatusForbidden, errForbidden)
+		return nil, false, nil
+	}
+	return ws, true, nil
+}
+
+func normKey(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
+
+// --- responses ---
+
+// maxQuery caps search text: longer queries only make trigram scans slower.
+const maxQuery = 200
+
+// searchQuery is the trimmed ?q=, cut to maxQuery characters.
+func searchQuery(r *http.Request) string {
+	q := []rune(strings.TrimSpace(r.URL.Query().Get("q")))
+	return string(q[:min(len(q), maxQuery)])
+}

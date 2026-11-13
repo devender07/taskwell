@@ -7,7 +7,7 @@ colors:
   on-surface: "#FFFFFF"
 typography:
   body-md:
-    fontFamily: Inter Variable
+    fontFamily: Plus Jakarta Sans
     fontSize: 15px
     fontWeight: 400
 rounded:
@@ -24,7 +24,7 @@ Linear's design system embodies a modern, minimalist aesthetic purpose-built for
 
 - Dark-first design with sophisticated neutral palette
 - Minimal, functional aesthetic with no unnecessary ornamentation
-- Premium typography using Inter Variable and Berkeley Mono
+- Premium typography using Plus Jakarta Sans and Berkeley Mono
 - Generous spacing and whitespace for clarity and focus
 - Subtle shadow and opacity systems for depth
 - Strategic use of neon accent colors for key interactions
@@ -77,12 +77,17 @@ Linear's design system embodies a modern, minimalist aesthetic purpose-built for
 - **Shadow Medium** (`rgba(0, 0, 0, 0.4)`): Medium shadow for navigation and floating components
 - **Shadow Strong** (`rgba(0, 0, 0, 0.6)`): Deep shadow for layered UI and elevation emphasis
 
+### Light mode
+
+`DESIGN-LIGHT.md` defines the light theme's colors (Apple-inspired: white canvas, ink `#1D1D1F`, hairline `#E0E0E0`,
+Action Blue `#0066CC`). Everything else in this file applies to both themes.
+
 ## 3. Typography Rules
 
 ### Font Family
 
-**Primary Font:** Inter Variable  
-Fallback stack: `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+**Primary Font:** Plus Jakarta Sans (self-hosted variable font, weights 200–800)  
+Fallback stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
 
 **Code Font:** Berkeley Mono  
 Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
@@ -91,25 +96,25 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 
 | Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
 |------|------|------|--------|-------------|----------------|-------|
-| **Display 1** | Inter Variable | `64px` | `510` | `64px` | `0px` | Hero headlines, maximum prominence |
-| **Display 2** | Inter Variable | `72px` | `510` | `72px` | `0px` | Extra-large hero text for impact |
-| **Display 3** | Inter Variable | `48px` | `510` | `48px` | `0px` | Large section headings |
-| **Display 4** | Inter Variable | `48px` | `590` | `48px` | `0px` | Bold variant of display text |
-| **Heading 1** | Inter Variable | `40px` | `510` | `44px` | `0px` | Primary page headings |
-| **Heading 2** | Inter Variable | `24px` | `590` | `31.92px` | `0px` | Subsection headings |
-| **Heading 3** | Inter Variable | `20px` | `590` | `26.6px` | `0px` | Section subheadings |
-| **Heading 4** | Inter Variable | `16px` | `590` | `24px` | `0px` | Card and component titles |
-| **Heading 5** | Inter Variable | `15px` | `510` | `24px` | `0px` | Secondary headings and labels |
-| **Heading 6** | Inter Variable | `13px` | `510` | `19.5px` | `0px` | Small UI headings |
-| **Body Large** | Inter Variable | `20px` | `510` | `26.6px` | `0px` | Large body copy for emphasis |
-| **Body** | Inter Variable | `16px` | `400` | `24px` | `0px` | Default body text |
-| **Body Medium** | Inter Variable | `15px` | `400` | `24px` | `0px` | Standard content text |
-| **Body Small** | Inter Variable | `14px` | `400` | `21px` | `0px` | Secondary content and labels |
-| **Link** | Inter Variable | `14px` | `510` | `21px` | `0px` | Hyperlinks and navigation items |
-| **Button** | Inter Variable | `13px` | `400` | `19.5px` | `0px` | Interactive button text |
-| **Button Medium** | Inter Variable | `13px` | `510` | `19.5px` | `0px` | Emphasized button states |
-| **Caption** | Inter Variable | `13px` | `400` | `19.5px` | `0px` | Small utility text |
-| **Input** | Inter Variable | `13.3333px` | `400` | `normal` | `0px` | Form field text |
+| **Display 1** | Plus Jakarta Sans | `64px` | `510` | `64px` | `0px` | Hero headlines, maximum prominence |
+| **Display 2** | Plus Jakarta Sans | `72px` | `510` | `72px` | `0px` | Extra-large hero text for impact |
+| **Display 3** | Plus Jakarta Sans | `48px` | `510` | `48px` | `0px` | Large section headings |
+| **Display 4** | Plus Jakarta Sans | `48px` | `590` | `48px` | `0px` | Bold variant of display text |
+| **Heading 1** | Plus Jakarta Sans | `40px` | `510` | `44px` | `0px` | Primary page headings |
+| **Heading 2** | Plus Jakarta Sans | `24px` | `590` | `31.92px` | `0px` | Subsection headings |
+| **Heading 3** | Plus Jakarta Sans | `20px` | `590` | `26.6px` | `0px` | Section subheadings |
+| **Heading 4** | Plus Jakarta Sans | `16px` | `590` | `24px` | `0px` | Card and component titles |
+| **Heading 5** | Plus Jakarta Sans | `15px` | `510` | `24px` | `0px` | Secondary headings and labels |
+| **Heading 6** | Plus Jakarta Sans | `13px` | `510` | `19.5px` | `0px` | Small UI headings |
+| **Body Large** | Plus Jakarta Sans | `20px` | `510` | `26.6px` | `0px` | Large body copy for emphasis |
+| **Body** | Plus Jakarta Sans | `16px` | `400` | `24px` | `0px` | Default body text |
+| **Body Medium** | Plus Jakarta Sans | `15px` | `400` | `24px` | `0px` | Standard content text |
+| **Body Small** | Plus Jakarta Sans | `14px` | `400` | `21px` | `0px` | Secondary content and labels |
+| **Link** | Plus Jakarta Sans | `14px` | `510` | `21px` | `0px` | Hyperlinks and navigation items |
+| **Button** | Plus Jakarta Sans | `13px` | `400` | `19.5px` | `0px` | Interactive button text |
+| **Button Medium** | Plus Jakarta Sans | `13px` | `510` | `19.5px` | `0px` | Emphasized button states |
+| **Caption** | Plus Jakarta Sans | `13px` | `400` | `19.5px` | `0px` | Small utility text |
+| **Input** | Plus Jakarta Sans | `13.3333px` | `400` | `normal` | `0px` | Form field text |
 | **Code** | Berkeley Mono | `14px` | `400` | `21px` | `0px` | Inline and block code |
 
 ### Principles
@@ -117,7 +122,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - **Consistent vertical rhythm:** Line heights maintain 4px baseline grid alignment
 - **Weight stratification:** Weight values (400, 510, 590) create clear hierarchy without multiple fonts
 - **Size steps:** Font sizes follow logical progression for readable scanning
-- **Font pairing:** Inter Variable for UI/content, Berkeley Mono for technical elements
+- **Font pairing:** Plus Jakarta Sans for UI/content, Berkeley Mono for technical elements
 - **Accessibility:** Minimum `14px` for body text ensures readability; line heights `≥ 1.4x` font size
 - **Responsive scaling:** Font sizes scale down on mobile breakpoints while maintaining hierarchy
 
@@ -130,7 +135,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `13px`
 - Font Weight: `510`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 14px`
 - Height: `40px`
 - Border Radius: `9999px`
@@ -144,7 +149,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#08090A`
 - Font Size: `13px`
 - Font Weight: `510`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 12px`
 - Height: `32px`
 - Border Radius: `9999px`
@@ -158,7 +163,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#8A8F98`
 - Font Size: `13px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 12px`
 - Height: `32px`
 - Border Radius: `9999px`
@@ -172,7 +177,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px`
 - Height: `72px`
 - Border Radius: `0px`
@@ -186,7 +191,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#FFFFFF`
 - Font Size: `13.3333px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 4px`
 - Height: `28px`
 - Border Radius: `4px`
@@ -202,7 +207,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 24px 28px 24px`
 - Border Radius: `8px`
 - Border: `1px solid rgba(255, 255, 255, 0.05)`
@@ -215,7 +220,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 32px 0px 32px` or `32px 0px 0px 0px` depending on context
 - Border Radius: `0px`
 - Border: `0px none`
@@ -227,7 +232,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px`
 - Border Radius: `0px`
 - Border: `0px none`
@@ -241,7 +246,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#D0D6E0`
 - Font Size: `13.3333px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `12px 14px`
 - Height: `68px`
 - Border Radius: `6px`
@@ -256,7 +261,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#FFFFFF`
 - Font Size: `14px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 10px`
 - Height: `40px`
 - Border Radius: `8px`
@@ -270,7 +275,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `1px 32px`
 - Height: `64px`
 - Border Radius: `0px`
@@ -299,7 +304,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px`
 - Height: `72px`
 - Border Radius: `0px`
@@ -316,7 +321,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#FFFFFF`
 - Font Size: `14px`
 - Font Weight: `510`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 16px`
 - Height: `32px`
 - Border Radius: `0px`
@@ -330,7 +335,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#F7F8F8`
 - Font Size: `16px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 8px`
 - Height: `32px`
 - Border Radius: `6px`
@@ -344,7 +349,7 @@ Fallback stack: `"Berkeley Mono", "Monaco", "Courier New", monospace`
 - Text Color: `#8A8F98`
 - Font Size: `13px`
 - Font Weight: `400`
-- Font Family: Inter Variable
+- Font Family: Plus Jakarta Sans
 - Padding: `0px 12px`
 - Height: `32px`
 - Border Radius: `9999px`
@@ -516,7 +521,7 @@ This layering strategy ensures predictable stacking behavior while reserving hea
 
 1. **Establish the grid:** All spacing must conform to the `8px` scale; no arbitrary padding or margin values. Use `8px, 12px, 16px, 24px, 32px, 40px, 48px, 56px, 96px` only.
 
-2. **Set typography hierarchy:** Apply exact font sizes and weights from the Typography Hierarchy table. Never create custom sizes; hierarchy must be instantly recognizable. Use `Inter Variable` for all UI text and `Berkeley Mono` for code.
+2. **Set typography hierarchy:** Apply exact font sizes and weights from the Typography Hierarchy table. Never create custom sizes; hierarchy must be instantly recognizable. Use `Plus Jakarta Sans` for all UI text and `Berkeley Mono` for code.
 
 3. **Color consistently:** Use the semantic color roles (Primary, Accent, Interactive, Neutral). Maintain high contrast on dark backgrounds; verify WCAG AA compliance (`4.5:1` for text). Limit accent colors to high-priority interactions.
 

@@ -1,0 +1,14 @@
+{
+  "name": "taskwell-tester",
+  "version": "0.1.0",
+  "description": "Runs Taskwell test cases in Chrome on your machine, driven by your own coding agent (MCP).",
+  "type": "module",
+  "bin": { "taskwell-tester": "index.mjs" },
+  "files": ["index.mjs", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node check.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "playwright-core": "1.65.0"
+  }
+}

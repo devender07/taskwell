@@ -9,3 +9,19 @@ bin/
 .env.*
 .DS_Store
 .claude
+.codegraph
+deploy/server/etc/taskwell/*.env
+deploy/server/etc/taskwell-backup.env
+
+!frontend/*/.env.development
+!frontend/*/.env.production
+!frontend/*/.env.example
+
+deploy/system.json
+
+# Cloudflare Worker (cdn/): local state and dev secrets
+.wrangler/
+.dev.vars
+
+# Feature worktrees (git worktree add .worktrees/<name>)
+.worktrees/

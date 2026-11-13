@@ -1,0 +1,10 @@
+# The admin app on Cloudflare: an assets-only Worker at admin.taskwell.dev (deploy/scripts/frontend.sh admin builds and deploys it).
+# Unknown paths fall back to index.html (the app's router); public/_headers and _redirects apply as on Pages.
+name = "admin-taskwell"
+compatibility_date = "2026-11-06"
+workers_dev = false
+routes = [{ pattern = "admin.taskwell.dev", custom_domain = true }]
+
+[assets]
+directory = "../../dist/prod/admin/web"
+not_found_handling = "single-page-application"

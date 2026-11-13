@@ -1,5 +1,17 @@
 {
-  "name": "tether-frontend",
+  "name": "taskwell-frontend",
   "private": true,
-  "workspaces": ["admin", "user"]
+  "workspaces": [
+    "shared",
+    "admin",
+    "user"
+  ],
+  "scripts": {
+    "dev": "npm run dev:user & npm run dev:admin & wait",
+    "dev:user": "npm run dev -w user",
+    "dev:admin": "npm run dev -w admin",
+    "build": "npm run build --workspaces --if-present",
+    "check": "for f in $(find shared admin user -name '*.check.ts' -not -path '*/node_modules/*'); do node --disable-warning=ExperimentalWarning --experimental-strip-types \"$f\" || exit 1; done",
+    "e2e": "node e2e/user.mjs && node e2e/invite.mjs && node e2e/admin.mjs && node e2e/landing.mjs"
+  }
 }

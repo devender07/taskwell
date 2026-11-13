@@ -1,0 +1,2 @@
+# /etc/cron.d/taskwell-backup: nightly database dump at 03:00 (opt/taskwell-db/backup.sh).
+0 3 * * * root /opt/taskwell-db/backup.sh >>/var/log/taskwell-backup.log 2>&1
