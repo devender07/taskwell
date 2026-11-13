@@ -37,14 +37,15 @@ Keep this outside the product (a private doc). Record every incident, including 
 Proves the backups work (SOC 2 A1.3). On the server:
 
 ```sh
-F=$(ls -t /backups/taskwell/*.dump | head -1)
+F=$(sudo /opt/taskwell-db/backup.sh list | sort -k2,3 | tail -1 | awk '{print $NF}')   # the newest in R2
+sudo /opt/taskwell-db/backup.sh get "$F" /tmp && F=/tmp/$F
 docker exec taskwell-postgres createdb -U taskwell restore_check
 docker exec -i taskwell-postgres pg_restore -U taskwell -d restore_check --no-owner < "$F"
 docker exec taskwell-postgres psql -U taskwell -d restore_check -Atc "select count(*) from users; select count(*) from issues"
-docker exec taskwell-postgres dropdb -U taskwell restore_check
+docker exec taskwell-postgres dropdb -U taskwell restore_check && sudo rm "$F"
 ```
 
-Also restore one file from the off-server copy (`sudo /opt/taskwell-db/backup.sh list`, then `sudo /opt/taskwell-db/backup.sh get <file> /tmp`). Log the date, the dump
+Log the date, the dump
 used, the counts and how long it took in the drill log. That log is the evidence an auditor asks for.
 
 ## Data subject requests

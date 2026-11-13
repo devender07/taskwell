@@ -1,8 +1,9 @@
 #!/bin/sh
-# Nightly dump of the taskwell database, kept here for KEEP_DAYS days. Run from /etc/cron.d/taskwell-backup.
-# With R2_BUCKET set in /etc/taskwell-backup.env (root only), each dump is also encrypted with BACKUP_PASSPHRASE
-# (rclone crypt) and uploaded to that Cloudflare R2 bucket, kept there for R2_KEEP_DAYS days. Without it a lost server
-# takes its backups with it.
+# Nightly dump of the taskwell database. Run from /etc/cron.d/taskwell-backup.
+# With R2_BUCKET set in /etc/taskwell-backup.env (root only), each dump is encrypted with BACKUP_PASSPHRASE (rclone
+# crypt) and moved to that Cloudflare R2 bucket, kept there for R2_KEEP_DAYS days; nothing stays on the server once it
+# uploaded (a dump whose upload failed stays and goes up with the next run). Without R2_BUCKET dumps stay here for
+# KEEP_DAYS days, and a lost server takes them with it.
 #   backup.sh                 dump now (and upload)
 #   backup.sh list            the dumps in R2
 #   backup.sh get FILE [DIR]  download and decrypt one from R2 into DIR (default .)
@@ -38,9 +39,11 @@ mv "$FILE.tmp" "$FILE" # a failed dump never replaces a good file name
 find "$DIR" -name 'taskwell-*.dump' -mtime +"$KEEP_DAYS" -delete
 
 if [ -n "${R2_BUCKET:-}" ]; then
+  SIZE=$(du -h "$FILE" | cut -f1)
   r2
-  rclone copy "$FILE" backup:
+  rclone move "$DIR" backup: --include 'taskwell-*.dump' # deletes each local dump once it's uploaded
   rclone delete --min-age "${R2_KEEP_DAYS:-30}d" backup:
-  echo "uploaded to r2:$R2_BUCKET"
+  echo "backup ok: $(basename "$FILE") ($SIZE) in r2:$R2_BUCKET"
+else
+  echo "backup ok: $FILE ($(du -h "$FILE" | cut -f1))"
 fi
-echo "backup ok: $FILE ($(du -h "$FILE" | cut -f1))"

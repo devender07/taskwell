@@ -28,7 +28,7 @@ The last command shows what the release changes beyond code:
 The nightly backup runs at 03:00. Take a fresh one before any release with migrations:
 
 ```sh
-ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh'     # prints: backup ok: /backups/taskwell/taskwell-<date>.dump
+ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh'     # prints: backup ok: taskwell-<date>.dump (…) in r2:…
 ```
 
 ## 3. Deploy the backend, user API first
@@ -93,9 +93,11 @@ git switch -
 stop the services and restore the backup from step 2:
 
 ```sh
+ssh -t devender@<host> 'sudo /opt/taskwell-db/backup.sh list'                       # pick the dump
 ssh -t devender@<host> 'sudo systemctl stop taskwell-user taskwell-admin taskwell-mcp'
-ssh -t devender@<host> "sudo sh -c 'docker exec -i taskwell-postgres pg_restore -U taskwell -d taskwell --clean \
-  --if-exists < /backups/taskwell/taskwell-<date>.dump'"
+ssh -t devender@<host> "sudo sh -c '/opt/taskwell-db/backup.sh get taskwell-<date>.dump /tmp && \
+  docker exec -i taskwell-postgres pg_restore -U taskwell -d taskwell --clean --if-exists < /tmp/taskwell-<date>.dump \
+  && rm /tmp/taskwell-<date>.dump'"
 # then deploy the last good commit as above, which starts them again
 ```
 
