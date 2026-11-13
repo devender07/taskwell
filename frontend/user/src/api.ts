@@ -707,6 +707,16 @@ export const mcpUrl = (): string => import.meta.env.VITE_MCP_URL ?? `${location.
 // True once this tab has seen a session; a failed refresh or another tab's sign-out then sends it to sign-in.
 let signedIn = false
 
+// Remembers in this browser whether there's a session, so the landing page (landing.ts, same key) only asks the API
+// who's signed in when someone has; a visitor's 401s would show up in their console.
+const SESSION_HINT = 'taskwell:session'
+function hintSession(on: boolean) {
+  try {
+    if (on) localStorage.setItem(SESSION_HINT, '1')
+    else localStorage.removeItem(SESSION_HINT)
+  } catch {}
+}
+
 // Tells other tabs about sign-in and sign-out: signed-out tabs reload into the app, signed-in ones go to sign-in.
 const authChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('taskwell-auth') : null
 if (authChannel) {
@@ -718,6 +728,7 @@ if (authChannel) {
 
 // Full-page navigation to sign-in and back here; the reload also drops the socket and every cached page.
 export function sessionEnded() {
+  hintSession(false)
   if (!signedIn) return
   signedIn = false
   location.assign(`/signin?redirect=${encodeURIComponent(location.pathname + location.search)}`)
@@ -726,6 +737,7 @@ export function sessionEnded() {
 export async function signOut() {
   await api('/auth/signout', new FormData())
   signedIn = false
+  hintSession(false)
   authChannel?.postMessage('signout')
 }
 
@@ -733,6 +745,7 @@ export async function signOut() {
 export async function deleteAccount(form: FormData) {
   await api('/me/delete', form)
   signedIn = false
+  hintSession(false)
   authChannel?.postMessage('signout')
 }
 
@@ -745,9 +758,13 @@ export async function getMe(): Promise<User | null> {
     const user = await api<User>('/me')
     if (!signedIn) authChannel?.postMessage('signin')
     signedIn = true
+    hintSession(true)
     return user
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) return null
+    if (e instanceof ApiError && e.status === 401) {
+      hintSession(false)
+      return null
+    }
     throw e
   }
 }

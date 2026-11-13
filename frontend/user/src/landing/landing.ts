@@ -230,12 +230,19 @@ document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => 
   })
 })
 
-// Signed in (the access cookie, or one refresh of it): swap sign-up buttons for a way back into the app.
+// Signed in (the access cookie, or one refresh of it): swap sign-up buttons for a way back into the app. Only asked
+// when this browser has had a session (the app sets taskwell:session, see api.ts), so visitors see no 401s.
 async function currentUser() {
+  try {
+    if (!localStorage.getItem('taskwell:session')) return null
+  } catch {
+    return null
+  }
   const get = (path: string, init?: RequestInit) => fetch(apiUrl(path), { credentials: 'include', ...init })
   const me = () => get('/api/me')
   let res = await me()
   if (res.status === 401 && (await get('/api/auth/refresh', { method: 'POST' })).ok) res = await me()
+  if (res.status === 401) localStorage.removeItem('taskwell:session') // the session ended: don't ask again
   return res.ok ? ((await res.json()) as { name: string }) : null
 }
 currentUser()
