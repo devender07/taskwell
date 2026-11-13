@@ -751,18 +751,21 @@ func (m *model) mark(ctx context.Context, workspaceID, runID, resultID, userID, 
 }
 
 // finishRun ends the run with status (and the user-facing message, if any), logs it on the issue as its starter's
-// unless it was cancelled, and publishes it as actorID's change.
+// unless it was cancelled, and publishes it as actorID's change; errFinished when it already ended.
 func finishRun(ctx context.Context, tx pgx.Tx, runID, actorID, status string, msg *string) error {
 	var issueID, kind string
 	var startedBy *string
 	var c Counts
 	err := tx.QueryRow(ctx, `update test_runs r set status = $2, error = $3, finished_at = now(), cancel_requested = false
-		where id = $1 returning issue_id::text, kind, started_by::text,
+		where id = $1 and status <> all($4) returning issue_id::text, kind, started_by::text,
 		  (select count(*) filter (where status = 'passed') from test_results where run_id = r.id),
 		  (select count(*) filter (where status = 'failed') from test_results where run_id = r.id),
 		  (select count(*) filter (where status = 'skipped') from test_results where run_id = r.id),
-		  (select count(*) filter (where status = 'error') from test_results where run_id = r.id)`, runID, status, msg).
+		  (select count(*) filter (where status = 'error') from test_results where run_id = r.id)`, runID, status, msg, finished).
 		Scan(&issueID, &kind, &startedBy, &c.Passed, &c.Failed, &c.Skipped, &c.Error)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errFinished
+	}
 	if err != nil {
 		return fmt.Errorf("finish run: %w", err)
 	}
@@ -1152,6 +1155,8 @@ func (m *model) heartbeat(ctx context.Context, testerURL string) error {
 	return nil
 }
 
+// staleAfter must stay above runTimeout: an AI run's claimed_at is set once at claim and never refreshed, so a
+// shorter staleAfter would fail runs still going (TestStaleAfterRunTimeout).
 const (
 	staleAfter    = 15 * time.Minute
 	msgStale      = "The test runner stopped. Run it again."
@@ -1396,12 +1401,19 @@ func (m *model) pending(ctx context.Context, runID string) ([]Result, error) {
 	return rs, nil
 }
 
-// setResult records an AI result's status (running, or how it ended) and publishes the run.
+// setResult records an AI result's status (running, or how it ended) and publishes the run; a no-op once the run
+// ended (failStale or a cancel got there first).
 func (m *model) setResult(ctx context.Context, j *job, resultID, status string, summary *string, repro []string) error {
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `update test_results set status = $2, summary = $3, reproduction = $4,
-			marked_at = case when $2 <> 'running' then now() end where id = $1`, resultID, status, summary, repro); err != nil {
+		tag, err := tx.Exec(ctx, `update test_results set status = $2, summary = $3, reproduction = $4,
+			marked_at = case when $2 <> 'running' then now() end
+			where id = $1 and exists (select 1 from test_runs where id = $5 and status <> all($6))`,
+			resultID, status, summary, repro, j.runID, finished)
+		if err != nil {
 			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
 		}
 		return publishRun(ctx, tx, j.issueID, j.runID, "", false)
 	})

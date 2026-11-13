@@ -174,8 +174,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
   const runs = useLive<RunPage>(testRunsPath(workspace, issue.identifier))
   const sites = useLive<TestSite[]>(runAi ? testSitesPath(workspace) : null)
   const [adding, setAdding] = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
-  const [localOpen, setLocalOpen] = useState(false)
+  const [dialog, setDialog] = useState<'regenerate' | 'local' | null>(null)
   const list = cases.data ?? []
   const noSite = sites.data?.length === 0
   const recorded = list.some((c) => c.recorded)
@@ -187,7 +186,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
     } catch (e) {
       return toFormErrors(e).error
     }
-    setRegenerating(false)
+    setDialog(null)
     refetchPaths([testRunsPath(workspace, issue.identifier)])
     await navigate({ to: '/$workspace/issue/$identifier', params: { workspace: workspace.slug, identifier: issue.identifier }, search: { run: run.id } })
     return null
@@ -220,7 +219,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
                       className="w-full"
                       onClick={() => {
                         close()
-                        setRegenerating(true)
+                        setDialog('regenerate')
                       }}
                     >
                       Regenerate cases and run
@@ -231,7 +230,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
             </span>
           ) : null}
           {runLocal ? (
-            <Button variant="secondary" onClick={() => setLocalOpen(true)}>
+            <Button variant="secondary" onClick={() => setDialog('local')}>
               Run with your Claude
             </Button>
           ) : null}
@@ -255,7 +254,7 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
           No test case is recorded yet. Ask Claude Code to record them with the Taskwell MCP server, or pass one AI run, to run them without AI.
         </p>
       ) : null}
-      <FormError>{regenerating ? null : startError}</FormError>
+      <FormError>{dialog === 'regenerate' ? null : startError}</FormError>
       <FormError>{cases.error}</FormError>
       {cases.data === null && !cases.error ? (
         <p className="text-body-sm text-secondary m-0">Loading…</p>
@@ -283,9 +282,9 @@ export function TestsSection({ workspace, issue }: { workspace: Workspace; issue
         )
       ) : null}
       <History workspace={workspace} issue={issue} page={runs.data} error={runs.error} />
-      {runLocal ? <LocalRunDialog open={localOpen} onClose={() => setLocalOpen(false)} slug={workspace.slug} identifier={issue.identifier} hasCases={list.length > 0} /> : null}
+      {runLocal ? <LocalRunDialog open={dialog === 'local'} onClose={() => setDialog(null)} slug={workspace.slug} identifier={issue.identifier} hasCases={list.length > 0} /> : null}
       {runAi ? (
-        <Dialog open={regenerating} onClose={() => setRegenerating(false)} title="Regenerate cases and run?" description="This replaces the current test cases.">
+        <Dialog open={dialog === 'regenerate'} onClose={() => setDialog(null)} title="Regenerate cases and run?" description="This replaces the current test cases.">
           <form action={() => start({ kind: 'ai', regenerate: true })} className="grid gap-4">
             <FormError>{startError}</FormError>
             <Button type="submit" variant="danger" className="w-full" disabled={starting}>

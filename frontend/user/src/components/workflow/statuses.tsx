@@ -288,13 +288,12 @@ function Menu({ label, items }: { label: string; items: [string, () => void, boo
 type RowProps = { workspace: Workspace; status: Status; statuses: Status[]; types: StatusType[]; manage: boolean; onUp?: () => void; onDown?: () => void }
 
 function StatusRow({ workspace, status, statuses, types, manage, onUp, onDown }: RowProps) {
-  const [editing, setEditing] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [mode, setMode] = useState<'edit' | 'delete' | null>(null)
 
-  if (editing) {
+  if (mode === 'edit') {
     return (
       <li className="workflow-row">
-        <StatusForm workspace={workspace} status={status} choice={typeKey(status)} types={types} onDone={() => setEditing(false)} />
+        <StatusForm workspace={workspace} status={status} choice={typeKey(status)} types={types} onDone={() => setMode(null)} />
       </li>
     )
   }
@@ -311,9 +310,9 @@ function StatusRow({ workspace, status, statuses, types, manage, onUp, onDown }:
           <IconButton aria-label={`Move ${status.name} down`} tooltip="Move down" disabled={!onDown} onClick={onDown}>
             <ChevronDownIcon size={18} />
           </IconButton>
-          <Menu label={`${status.name} actions`} items={[['Edit', () => setEditing(true)], ['Delete', () => setDeleting(true), statuses.length < 2]]} />
-          <Dialog open={deleting} onClose={() => setDeleting(false)} title={`Delete ${status.name}?`} description="Issues with this status move to the one you pick.">
-            <DeleteStatusForm workspace={workspace} status={status} statuses={statuses} onDone={() => setDeleting(false)} />
+          <Menu label={`${status.name} actions`} items={[['Edit', () => setMode('edit')], ['Delete', () => setMode('delete'), statuses.length < 2]]} />
+          <Dialog open={mode === 'delete'} onClose={() => setMode(null)} title={`Delete ${status.name}?`} description="Issues with this status move to the one you pick.">
+            <DeleteStatusForm workspace={workspace} status={status} statuses={statuses} onDone={() => setMode(null)} />
           </Dialog>
         </div>
       ) : null}

@@ -546,3 +546,9 @@ func message(t *testing.T, block, stop string) *anthropic.BetaMessage {
 	}
 	return &m
 }
+
+func TestStaleAfterRunTimeout(t *testing.T) {
+	if staleAfter <= runTimeout {
+		t.Fatalf("staleAfter %v must exceed runTimeout %v, or failStale ends AI runs still going", staleAfter, runTimeout)
+	}
+}

@@ -3,10 +3,13 @@ package stats
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/devender07/taskwell/backend/shared/paddle"
 )
 
 type Totals struct {
@@ -141,8 +144,8 @@ type Stats struct {
 // model owns every stats query.
 type model struct{ db *pgxpool.Pool }
 
-// granting is the subscription statuses that give the plan, as in the user API's billing.
-const granting = `status in ('active', 'trialing', 'past_due')`
+// granting is the subscription statuses that give the plan, as in the user API's billing (constants, not input).
+var granting = `status in ('` + strings.Join(paddle.Granting, `', '`) + `')`
 
 func (m *model) stats(ctx context.Context) (Stats, error) {
 	var s Stats

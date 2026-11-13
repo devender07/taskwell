@@ -9,13 +9,12 @@ import { FormError } from './auth-card'
 
 type Values = { name: string; email: string; workspace: string; accepted: boolean }
 type SignupState = {
-  step: 'details' | 'code'
+  step: 'details' | 'code' | 'done'
   values: Values
   signup?: FormData // re-posted by "Resend code"
   resent?: boolean
   errors?: FieldErrors
   error?: string | null
-  done?: boolean
 }
 
 async function signupAction(prev: SignupState, form: FormData, invited: boolean): Promise<SignupState> {
@@ -57,7 +56,7 @@ async function signupAction(prev: SignupState, form: FormData, invited: boolean)
     const { errors, error } = toFormErrors(e)
     return { ...prev, errors, error: error ?? errors.email }
   }
-  return { ...prev, done: true }
+  return { ...prev, step: 'done' }
 }
 
 export function SignupForm({ redirect }: { redirect?: string }) {
@@ -65,12 +64,12 @@ export function SignupForm({ redirect }: { redirect?: string }) {
   const invited = redirect?.startsWith('/invite') ?? false // they join the inviter's workspace, so no name for their own
   const [state, submit, pending] = useActionState(async (prev: SignupState, form: FormData) => {
     const next = await signupAction(prev, form, invited)
-    if (next.done) await navigate({ href: redirect ?? (await homePath()) })
+    if (next.step === 'done') await navigate({ href: redirect ?? (await homePath()) })
     return next
   }, { step: 'details', values: { name: '', email: '', workspace: '', accepted: false } })
   const { values, errors, error } = state
 
-  if (state.step === 'code') {
+  if (state.step !== 'details') {
     return (
       <form action={submit} noValidate className="grid gap-4">
         <div role="status" className="grid gap-1">

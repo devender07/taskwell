@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/devender07/taskwell/backend/shared/paddle"
 	"github.com/devender07/taskwell/backend/user/internal/mail"
 	"github.com/devender07/taskwell/backend/user/internal/plan"
 	"github.com/devender07/taskwell/backend/user/internal/secret"
@@ -38,8 +39,8 @@ const (
 
 var errBillingOff = errors.New("billing is off: paddle_environment isn't sandbox or production, or paddle_api_key is empty")
 
-// granting are the subscription statuses that grant access to its plan: past_due is the grace while Paddle retries.
-var granting = []string{"active", "trialing", "past_due"}
+// granting are the subscription statuses that grant access to its plan (the admin directory uses them too).
+var granting = paddle.Granting
 
 // grantsAccess reports whether a subscription with the status grants access to its plan; a scheduled change never
 // revokes it by itself.
