@@ -10,11 +10,12 @@ set -eu
 [ -f /etc/taskwell-backup.env ] && . /etc/taskwell-backup.env
 umask 077 # the dumps hold every workspace's data: root only
 
-# The "backup:" rclone remote, from env vars only (no rclone.conf): crypt over the R2 bucket.
+# The "backup:" rclone remote, from env vars only (no rclone.conf): crypt over the R2 bucket. no_head: rclone 1.60
+# checks an upload with a versioned HEAD that R2 answers 501; the PUT is still checked by its Content-MD5.
 r2() {
   [ -n "${R2_BUCKET:-}" ] || { echo "no R2_BUCKET in /etc/taskwell-backup.env"; exit 1; }
   : "${R2_ACCOUNT_ID:?set in /etc/taskwell-backup.env}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}" "${BACKUP_PASSPHRASE:?}"
-  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true \
+  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true RCLONE_CONFIG_R2_NO_HEAD=true \
     RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
     RCLONE_CONFIG_R2_ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
     RCLONE_CONFIG_BACKUP_TYPE=crypt RCLONE_CONFIG_BACKUP_REMOTE="r2:$R2_BUCKET"
