@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -375,6 +376,26 @@ func TestChat(t *testing.T) {
 	errOf(cat, "GET", "/chats/"+dg.ID, nil, 404)
 	do(cat, "POST", "/chats/direct", url.Values{"user_id": {ann}}, 200, &dd)
 	post(ann, dd.ID, text("hi"), "")
+	// Deleting it for me: my list and history lose it, the other person's don't, and a new message brings it back.
+	errOf(ann, "DELETE", "/chats/"+general+"?for=me", nil, 403)
+	do(cat, "DELETE", "/chats/"+dd.ID+"?for=me", nil, 204, nil)
+	inList := func(cookie string) bool {
+		var l []Chat
+		do(cookie, "GET", "/chats", nil, 200, &l)
+		return slices.ContainsFunc(l, func(c Chat) bool { return c.ID == dd.ID })
+	}
+	count := func(cookie string) int {
+		var p struct{ Messages []Message }
+		do(cookie, "GET", "/chats/"+dd.ID+"/messages", nil, 200, &p)
+		return len(p.Messages)
+	}
+	if inList(cat) || count(cat) != 0 || !inList(ann) || count(ann) != 1 {
+		t.Errorf("delete for me: cat list %v msgs %d, ann list %v msgs %d", inList(cat), count(cat), inList(ann), count(ann))
+	}
+	post(ann, dd.ID, text("again"), "")
+	if !inList(cat) || count(cat) != 1 || count(ann) != 2 {
+		t.Errorf("after a new message: cat list %v msgs %d, ann msgs %d", inList(cat), count(cat), count(ann))
+	}
 	do(cat, "DELETE", "/chats/"+dd.ID, nil, 204, nil)
 	errOf(ann, "GET", "/chats/"+dd.ID, nil, 404)
 

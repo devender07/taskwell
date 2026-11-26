@@ -4,6 +4,7 @@ import { Avatar } from '@taskwell/shared/avatar'
 import { Button } from '@taskwell/shared/button'
 import { Dialog } from '@taskwell/shared/dialog'
 import { IconButton } from '@taskwell/shared/icon-button'
+import { Input } from '@taskwell/shared/input'
 import { Popover } from '@taskwell/shared/popover'
 import { RichText, type Doc } from '@taskwell/shared/rich-text'
 import { clockTime, fullTime, relativeTime, shortDate } from '@taskwell/shared/time'
@@ -15,13 +16,13 @@ import { useUnread } from '@/components/app/unread'
 import { RichEditor } from '@/components/issues/rich-editor'
 import { onTyping, reloadRoutes, sendTyping, subscribePaths } from '@/realtime'
 import { docText, firstName, firstUnread, groupMessages, typingText } from './chat'
+import { searchEmoji } from './emoji'
 import { AddPeopleDialog, CloseIcon, DeleteChatDialog, INBOX_ROUTES, LeaveDialog, PeoplePanel, RenameDialog, chatsPath } from './chat-dialogs'
 import { ChatAvatar } from './chat-list'
 import { searchMembers } from '@/components/workspace/member-pages'
 import './chat.css'
 import { extractDataFromArray } from '@taskwell/shared/list'
 
-const EMOJI = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅']
 const FROM = '/$workspace/inbox/c/$chatId'
 
 type Ctx = {
@@ -253,11 +254,11 @@ export function ChatView({ slug, workspaceName, me, chat, page, thread, message,
                 <div ref={top} aria-hidden style={{ height: 1 }} />
                 {hasMore ? <p className="text-caption text-secondary text-center m-0 py-2">{olderError ?? 'Loading older messages…'}</p> : <ChatStart workspaceName={workspaceName} />}
                 <ol className="chat-messages" aria-label="Messages">
-                  {rows.map(({ msg, day, compact }) => (
+                  {rows.map(({ msg, day, compact, follows }) => (
                     <li key={msg.id}>
                       {day ? <Divider label={day} /> : null}
                       {msg.id === newId ? <Divider label="New" accent /> : null}
-                      <MessageItem msg={msg} compact={compact && msg.id !== newId} highlight={msg.id === message} />
+                      <MessageItem msg={msg} compact={compact && msg.id !== newId} follows={follows && msg.id !== newId} highlight={msg.id === message} />
                     </li>
                   ))}
                 </ol>
@@ -455,7 +456,7 @@ function PinnedBar({ pinned }: { pinned: Message[] }) {
   )
 }
 
-function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; compact: boolean; highlight?: boolean; inThread?: boolean }) {
+function MessageItem({ msg, compact, follows, highlight, inThread }: { msg: Message; compact: boolean; follows?: boolean; highlight?: boolean; inThread?: boolean }) {
   const ctx = use(ChatContext)
   const navigate = useNavigate({ from: FROM })
   const [deleting, setDeleting] = useState(false)
@@ -496,7 +497,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
   }
 
   return (
-    <article className="chat-msg" data-msg={msg.id} data-compact={compact || undefined} data-highlight={highlight || undefined} aria-label={`Message from ${name}`}>
+    <article className="chat-msg" data-msg={msg.id} data-compact={compact || undefined} data-follows={(follows && !compact) || undefined} data-highlight={highlight || undefined} data-mine={msg.author?.id === ctx.me.id || undefined} data-editing={editing || undefined} aria-label={`Message from ${name}`}>
       <div className="chat-msg-gutter">
         {compact ? (
           <time dateTime={msg.created_at} title={fullTime(msg.created_at)} className="chat-msg-hover-time text-caption text-secondary">
@@ -506,7 +507,7 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
           <Avatar name={name} size={32} src={msg.author && avatarSrc(msg.author.id)} />
         )}
       </div>
-      <div className="grid gap-1" style={{ minWidth: 0 }}>
+      <div className="chat-msg-content grid gap-1">
         {compact ? null : (
           <header className="flex items-baseline gap-2">
             <span className="text-label text-primary ellipsis">{name}</span>
@@ -526,13 +527,79 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
         ) : msg.deleted || !msg.body ? (
           <p className="text-body-sm text-secondary m-0">This message was deleted.</p>
         ) : (
-          <div className="chat-body">
-            <RichText doc={msg.body} issueHref={ctx.issueHref} />
-            {msg.edited_at ? (
-              <span className="text-caption text-secondary" title={fullTime(msg.edited_at)}>
-                (edited)
-              </span>
-            ) : null}
+          <div className="chat-bubble">
+            <div className="chat-body">
+              <RichText doc={msg.body} issueHref={ctx.issueHref} />
+              {msg.edited_at ? (
+                <span className="text-caption text-secondary" title={fullTime(msg.edited_at)}>
+                  (edited)
+                </span>
+              ) : null}
+            </div>
+            <div className="chat-msg-tools" role="toolbar" aria-label="Message actions">
+              <Popover
+                aria-label="Add reaction"
+                placement="bottom-end"
+                trigger={(props) => (
+                  <IconButton aria-label="Add reaction" tooltip="Add reaction" className="chat-tool chat-hover-only" {...props}>
+                    <SmileIcon />
+                  </IconButton>
+                )}
+              >
+                {(close) => <EmojiPicker onPick={(e) => (close(), react(e, msg.reactions.some((r) => r.emoji === e && r.mine)))} />}
+              </Popover>
+              {inThread ? null : (
+                <IconButton aria-label="Reply in thread" tooltip="Reply in thread" className="chat-tool chat-hover-only" onClick={openThread}>
+                  <MessageIcon />
+                </IconButton>
+              )}
+              {pinnable ? (
+                <IconButton
+                  aria-label={msg.pinned_until ? 'Unpin' : 'Pin message'}
+                  tooltip={msg.pinned_until ? 'Unpin' : 'Pin message'}
+                  className="chat-tool chat-hover-only"
+                  onClick={() => (msg.pinned_until ? unpin() : setPinning(true))}
+                >
+                  <PinIcon />
+                </IconButton>
+              ) : null}
+              <Popover
+                aria-label="More actions"
+                placement="bottom-end"
+                trigger={(props) => (
+                  <IconButton aria-label="More actions" tooltip="More actions" className="chat-tool" {...props}>
+                    <MoreIcon />
+                  </IconButton>
+                )}
+              >
+                {(close) => (
+                  <div>
+                    <EmojiPicker onPick={(e) => (close(), react(e, msg.reactions.some((r) => r.emoji === e && r.mine)))} />
+                    <hr className="popover-divider" />
+                    {inThread ? null : (
+                      <button type="button" className="popover-item" onClick={() => (close(), openThread())}>
+                        Reply in thread
+                      </button>
+                    )}
+                    {pinnable ? (
+                      <button type="button" className="popover-item" onClick={() => (close(), msg.pinned_until ? unpin() : setPinning(true))}>
+                        {msg.pinned_until ? 'Unpin' : 'Pin message…'}
+                      </button>
+                    ) : null}
+                    {msg.can_edit ? (
+                      <button type="button" className="popover-item" onClick={() => (close(), ctx.setEditing(msg.id))}>
+                        Edit
+                      </button>
+                    ) : null}
+                    {msg.can_delete ? (
+                      <button type="button" className="popover-item" onClick={() => (close(), setDeleting(true))}>
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </Popover>
+            </div>
           </div>
         )}
         {msg.reactions.length ? (
@@ -568,76 +635,29 @@ function MessageItem({ msg, compact, highlight, inThread }: { msg: Message; comp
         ) : null}
         {error ? <p role="alert" className="text-caption text-accent m-0">{error}</p> : null}
       </div>
-      {!msg.deleted && !editing ? (
-        <div className="chat-msg-tools" role="toolbar" aria-label="Message actions">
-          <Popover
-            aria-label="Add reaction"
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton aria-label="Add reaction" tooltip="Add reaction" className="chat-tool chat-hover-only" {...props}>
-                <SmileIcon />
-              </IconButton>
-            )}
-          >
-            {(close) => <EmojiPicker onPick={(e) => (close(), react(e, msg.reactions.some((r) => r.emoji === e && r.mine)))} />}
-          </Popover>
-          {inThread ? null : (
-            <IconButton aria-label="Reply in thread" tooltip="Reply in thread" className="chat-tool chat-hover-only" onClick={openThread}>
-              <MessageIcon />
-            </IconButton>
-          )}
-          <Popover
-            aria-label="More actions"
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton aria-label="More actions" tooltip="More actions" className="chat-tool" {...props}>
-                <MoreIcon />
-              </IconButton>
-            )}
-          >
-            {(close) => (
-              <div style={{ width: 216 }}>
-                <EmojiPicker onPick={(e) => (close(), react(e, msg.reactions.some((r) => r.emoji === e && r.mine)))} />
-                <hr className="popover-divider" />
-                {inThread ? null : (
-                  <button type="button" className="popover-item" onClick={() => (close(), openThread())}>
-                    Reply in thread
-                  </button>
-                )}
-                {pinnable ? (
-                  <button type="button" className="popover-item" onClick={() => (close(), msg.pinned_until ? unpin() : setPinning(true))}>
-                    {msg.pinned_until ? 'Unpin' : 'Pin message…'}
-                  </button>
-                ) : null}
-                {msg.can_edit ? (
-                  <button type="button" className="popover-item" onClick={() => (close(), ctx.setEditing(msg.id))}>
-                    Edit
-                  </button>
-                ) : null}
-                {msg.can_delete ? (
-                  <button type="button" className="popover-item" onClick={() => (close(), setDeleting(true))}>
-                    Delete
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </Popover>
-        </div>
-      ) : null}
       {msg.can_delete ? <DeleteMessage msg={msg} open={deleting} onClose={() => setDeleting(false)} /> : null}
       {pinnable ? <PinMessage msg={msg} open={pinning} onClose={() => setPinning(false)} /> : null}
     </article>
   )
 }
 
-function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
+function EmojiPicker({ onPick, verb = 'React with' }: { onPick: (emoji: string) => void; verb?: string }) {
+  const [q, setQ] = useState('')
+  const found = searchEmoji(q)
   return (
-    <div className="chat-emoji-row" role="group" aria-label="Reactions">
-      {EMOJI.map((e) => (
-        <button key={e} type="button" className="chat-emoji" aria-label={`React with ${e}`} onClick={() => onPick(e)}>
-          {e}
-        </button>
-      ))}
+    <div className="chat-emoji-picker">
+      <Input aria-label="Search emoji" placeholder="Search emoji" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      {found.length ? (
+        <div className="chat-emoji-row" role="group" aria-label="Emoji">
+          {found.map(({ emoji }) => (
+            <button key={emoji} type="button" className="chat-emoji" aria-label={`${verb} ${emoji}`} onClick={() => onPick(emoji)}>
+              {emoji}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-body-sm text-secondary text-center m-0 p-4">No emoji found.</p>
+      )}
     </div>
   )
 }
@@ -865,6 +885,14 @@ function Composer({ thread, placeholder, editable }: { thread: string | null; pl
     ctx.setEditing(mine.id)
   }
 
+  function insertEmoji(emoji: string) {
+    const el = root.current?.querySelector<HTMLElement>('[contenteditable="true"]')
+    if (!el) return
+    el.focus()
+    // ponytail: execCommand is deprecated but types into the editor from outside it; give RichEditor an insert handle if a browser drops it.
+    document.execCommand('insertText', false, emoji)
+  }
+
   return (
     <div className="chat-composer" ref={root} onKeyDown={onKeyDown} aria-busy={state.pending || undefined}>
       <p className="chat-typing text-caption text-secondary m-0" aria-live="polite">
@@ -885,6 +913,17 @@ function Composer({ thread, placeholder, editable }: { thread: string | null; pl
             onSubmit={send}
           />
         </div>
+        <Popover
+          aria-label="Emoji"
+          placement="top-end"
+          trigger={(props) => (
+            <IconButton aria-label="Add emoji" tooltip="Emoji" className="chat-send" {...props}>
+              <SmileIcon />
+            </IconButton>
+          )}
+        >
+          {(close) => <EmojiPicker verb="Insert" onPick={(e) => (close(), insertEmoji(e))} />}
+        </Popover>
         <IconButton aria-label={thread ? 'Send reply' : 'Send message'} tooltip="Send" className="chat-send" disabled={state.pending || !draft.doc} onClick={send}>
           <SendIcon />
         </IconButton>
@@ -974,9 +1013,9 @@ function ThreadPanel({ rootId }: { rootId: string }) {
               </div>
             ) : null}
             <ol className="chat-messages" aria-label="Replies">
-              {rows.map(({ msg, compact }) => (
+              {rows.map(({ msg, compact, follows }) => (
                 <li key={msg.id}>
-                  <MessageItem msg={msg} compact={compact} inThread />
+                  <MessageItem msg={msg} compact={compact} follows={follows} inThread />
                 </li>
               ))}
             </ol>

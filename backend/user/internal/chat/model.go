@@ -82,7 +82,11 @@ type LastMessage struct {
 const unread = `m.chat_id = c.id and m.id > coalesce(r.last_read_id, '00000000-0000-0000-0000-000000000000')
 	and m.deleted_at is null and m.author_id is distinct from $1 and m.created_at > wm.created_at`
 
-// chatQuery selects the user $1's chats in workspace $2 (only chat $3 unless it's null), in list order.
+// uncleared matches the messages m the user $1 hasn't deleted for themselves (see clearChat).
+const uncleared = `not exists (select 1 from chat_members cl where cl.chat_id = m.chat_id and cl.user_id = $1 and cl.cleared_id > m.id)`
+
+// chatQuery selects the user $1's chats in workspace $2 (only chat $3 unless it's null), in list order. The list leaves
+// out a chat they deleted for themselves until it has a newer message.
 const chatQuery = `
 	select c.id::text, c.kind, chat_name(c, $1),
 	  case when c.kind = 'workspace' then '[]'::json else coalesce((
@@ -99,9 +103,11 @@ const chatQuery = `
 	left join chat_members r on r.chat_id = c.id and r.user_id = $1
 	left join lateral (
 	  select (select json_build_object('id', u.id, 'name', u.name) from users u where u.id = m.author_id) author, m.body, m.created_at
-	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null order by m.id desc limit 1) lm on true
+	  from messages m where m.chat_id = c.id and m.parent_id is null and m.deleted_at is null
+	    and (r.cleared_id is null or m.id > r.cleared_id) order by m.id desc limit 1) lm on true
 	where c.workspace_id = $2 and (c.kind = 'workspace' and not is_guest(c.workspace_id, $1) or c.kind <> 'workspace' and r.user_id is not null)
 	  and ($3::uuid is null or c.id = $3)
+	  and ($3::uuid is not null or r.cleared_id is null or lm.created_at is not null)
 	order by c.kind = 'workspace' desc, c.last_message_at desc nulls last, lower(chat_name(c, $1)), c.id`
 
 func (m *model) queryChats(ctx context.Context, userID, wsID string, chatID *string) ([]Chat, error) {
@@ -447,6 +453,30 @@ func (m *model) deleteChat(ctx context.Context, sc scope, chatID string) error {
 	return nil
 }
 
+// clearChat deletes the chat for the user alone: its messages so far are hidden from them and marked read, and the
+// chat leaves their list until a new message arrives.
+func (m *model) clearChat(ctx context.Context, sc scope, chatID string) error {
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var upTo string
+		if err := tx.QueryRow(ctx,
+			`update chat_members cm set cleared_id = n.id, last_read_id = n.id from (select uuidv7() id) n
+			 where cm.chat_id = $1 and cm.user_id = $2 returning n.id::text`, chatID, sc.userID).Scan(&upTo); err != nil {
+			return err
+		}
+		if err := notify.ReadChat(ctx, tx, sc.userID, chatID, sc.slug, upTo); err != nil {
+			return err
+		}
+		ws := realtime.Workspace(sc.slug)
+		e := chatChanged(sc, chatID)
+		e.Paths = append(e.Paths, ws+"/chats/unread-count", ws+"/chats/"+chatID+"/messages")
+		return publish(ctx, tx, e, []string{realtime.ToUser(sc.userID)})
+	})
+	if err != nil {
+		return fmt.Errorf("clear chat: %w", err)
+	}
+	return nil
+}
+
 // --- messages ---
 
 type Message struct {
@@ -503,7 +533,7 @@ const pageSize = 50
 // page returns the newest pageSize messages matching where ($2 the chat or root, $3 the cursor) before the cursor,
 // oldest first, and whether there are older ones.
 func (m *model) page(ctx context.Context, userID, where, id, before string) ([]Message, bool, error) {
-	rows, err := m.db.Query(ctx, `select `+msgCols+` from messages m where `+where+` and ($3 = '' or m.id < $3::uuid)
+	rows, err := m.db.Query(ctx, `select `+msgCols+` from messages m where `+where+` and `+uncleared+` and ($3 = '' or m.id < $3::uuid)
 		order by m.id desc limit $4`, userID, id, before, pageSize+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("list messages: %w", err)
@@ -536,7 +566,7 @@ func (m *model) replies(ctx context.Context, userID, rootID, before string) ([]M
 // pinned returns the chat's pinned messages, newest first.
 func (m *model) pinned(ctx context.Context, userID, chatID string) ([]Message, error) {
 	rows, err := m.db.Query(ctx, `select `+msgCols+` from messages m
-		where m.chat_id = $2 and m.pinned_until > now() and m.deleted_at is null order by m.id desc`, userID, chatID)
+		where m.chat_id = $2 and m.pinned_until > now() and m.deleted_at is null and `+uncleared+` order by m.id desc`, userID, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("list pinned messages: %w", err)
 	}
@@ -571,7 +601,7 @@ func (m *model) messageRef(ctx context.Context, userID, wsID, id string) (*msgRe
 		        coalesce(m.pinned_until > now(), false), case when m.pinned_until > now() then coalesce(m.pinned_by::text, '') else '' end,
 		        c.id::text, c.kind, coalesce(c.created_by::text, '')
 		 from messages m join chats c on c.id = m.chat_id
-		 where m.id = $2 and c.workspace_id = $3 and `+access, userID, id, wsID).
+		 where m.id = $2 and c.workspace_id = $3 and `+uncleared+` and `+access, userID, id, wsID).
 		Scan(&r.id, &r.parentID, &r.mine, &r.deleted, &r.pinned, &r.pinnedBy, &r.chat.id, &r.chat.kind, &r.chat.createdBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

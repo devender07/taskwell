@@ -390,15 +390,15 @@ export function LeaveDialog({ open, onClose, slug, chat, me }: { open: boolean; 
   )
 }
 
-// Deletes the whole chat for everyone in it (a group: its creator only; the API checks).
+// Deletes the whole chat for everyone in it (a group: its creator only; the API checks), or a direct chat for me alone.
 export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean; onClose: () => void; slug: string; chat: Chat }) {
   const router = useRouter()
   const navigate = useNavigate()
   const [state, setState] = useState<{ pending?: boolean; error?: string | null }>({})
-  async function remove() {
+  async function remove(forMe?: boolean) {
     setState({ pending: true })
     try {
-      await api(`${chatsPath(slug)}/${encodeURIComponent(chat.id)}`, undefined, 'DELETE')
+      await api(`${chatsPath(slug)}/${encodeURIComponent(chat.id)}${forMe ? '?for=me' : ''}`, undefined, 'DELETE')
     } catch (e) {
       setState({ error: toFormErrors(e).error })
       return
@@ -410,15 +410,22 @@ export function DeleteChatDialog({ open, onClose, slug, chat }: { open: boolean;
   const [title, description, action] =
     chat.kind === 'group'
       ? [`Delete ${chat.name}?`, `The group and all its messages are deleted for everyone in it. This can't be undone.`, 'Delete group']
-      : ['Delete this chat?', `The chat and all its messages are deleted for both of you. This can't be undone.`, 'Delete chat']
+      : chat.kind === 'direct'
+        ? ['Delete this chat?', `Delete it just for you, and ${chat.name} keeps the chat and its messages. Or delete it for both of you. This can't be undone.`, 'Delete for everyone']
+        : ['Delete this chat?', `The chat and all its messages are deleted. This can't be undone.`, 'Delete chat']
   return (
     <Dialog open={open} onClose={onClose} title={title} description={description}>
       <FormError>{state.error}</FormError>
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end flex-wrap gap-3">
         <Button variant="ghost" onClick={onClose} disabled={state.pending}>
           Cancel
         </Button>
-        <Button variant="danger" onClick={remove} disabled={state.pending}>
+        {chat.kind === 'direct' ? (
+          <Button variant="secondary" onClick={() => remove(true)} disabled={state.pending}>
+            Delete for me
+          </Button>
+        ) : null}
+        <Button variant="danger" onClick={() => remove()} disabled={state.pending}>
           {state.pending ? 'Deleting…' : action}
         </Button>
       </div>

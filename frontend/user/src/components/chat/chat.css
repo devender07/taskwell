@@ -117,7 +117,8 @@
 /* A message: avatar gutter, body, and actions that show on hover or focus (and always, as "⋯", on touch). */
 .chat-msg { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; padding: 8px 24px 4px; }
 .chat-msg[data-compact] { padding-top: 0; }
-.chat-msg-gutter { padding-top: 2px; }
+.chat-msg-gutter { padding-top: 24px; } /* the avatar sits beside the first bubble, under the name */
+.chat-msg[data-compact] .chat-msg-gutter { padding-top: 2px; }
 .chat-msg-hover-time { display: block; visibility: hidden; font-size: 12px; text-align: right; white-space: nowrap; }
 .chat-msg:hover .chat-msg-hover-time, .chat-msg:focus-within .chat-msg-hover-time { visibility: visible; }
 .chat-msg[data-highlight] { animation: chat-highlight 2.4s ease-out; }
@@ -125,15 +126,31 @@
   from { background: color-mix(in srgb, var(--link) 24%, transparent); }
   to { background: transparent; }
 }
-@media (hover: hover) {
-  .chat-msg:hover { background: rgba(var(--ink), 0.02); }
-}
-.chat-body { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
+/* Left and right: others' messages are bubbles on the left; your own sit on the right, without the avatar and name. */
+.chat-msg-content { min-width: 0; justify-items: start; }
+.chat-msg-content > * { min-width: 0; max-width: 100%; }
+.chat-msg[data-editing] .chat-msg-content { justify-items: stretch; }
+.chat-msg[data-mine] { grid-template-columns: minmax(0, 1fr); padding-left: 68px; }
+.chat-msg[data-mine] .chat-msg-gutter, .chat-msg[data-mine] header > :first-child, .chat-msg[data-follows] header > :first-child { display: none; }
+.chat-msg[data-follows] .chat-msg-gutter { visibility: hidden; } /* same person as the message above: only the time */
+.chat-msg[data-mine]:not([data-editing]) .chat-msg-content { justify-items: end; }
+.chat-msg:not([data-mine]) { padding-right: 68px; }
+.chat-body { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; padding: 5.5px 12px; background: rgba(var(--ink), 0.05); border-radius: 16px; }
+.chat-msg[data-mine] .chat-body { background: color-mix(in srgb, var(--link) 16%, transparent); }
+/* Bubbles in a run join on the author's side. */
+.chat-msg[data-compact]:not([data-mine]) .chat-body { border-top-left-radius: 4px; }
+li:has(+ li > .chat-msg[data-compact]) > .chat-msg:not([data-mine]) .chat-body { border-bottom-left-radius: 4px; }
+.chat-msg[data-compact][data-mine] .chat-body { border-top-right-radius: 4px; }
+li:has(+ li > .chat-msg[data-compact]) > .chat-msg[data-mine] .chat-body { border-bottom-right-radius: 4px; }
+.chat-msg header time { font-size: 11px; line-height: 16px; }
+.chat-msg[data-mine] header { padding-right: 12px; }
+.chat-msg:not([data-mine]) header { padding-left: 12px; }
 .chat-body > .rich-editor { flex: 1 1 100%; min-width: 0; }
+.chat-bubble { position: relative; }
 .chat-msg-tools {
   position: absolute;
-  top: -12px;
-  right: 16px;
+  bottom: calc(100% - 8px);
+  left: 8px;
   z-index: 2;
   display: flex;
   padding: 2px;
@@ -145,12 +162,13 @@
   box-shadow: var(--drop);
 }
 .chat-msg:hover .chat-msg-tools, .chat-msg:focus-within .chat-msg-tools, .chat-msg-tools:has([aria-expanded='true']) { opacity: 1; pointer-events: auto; }
+.chat-msg[data-mine] .chat-msg-tools { left: auto; right: 8px; }
 .chat-tool { width: 32px; height: 32px; }
 @media (hover: none) {
-  .chat-msg-tools { top: 4px; right: 8px; padding: 0; background: none; border: 0; box-shadow: none; opacity: 1; pointer-events: auto; }
+  .chat-msg-tools { top: 50%; bottom: auto; left: 100%; padding: 0; background: none; border: 0; box-shadow: none; opacity: 1; pointer-events: auto; transform: translateY(-50%); }
+  .chat-msg[data-mine] .chat-msg-tools { left: auto; right: 100%; }
   .chat-msg-tools .chat-hover-only { display: none; }
   .chat-tool { width: 44px; height: 44px; }
-  .chat-msg { padding-right: 56px; }
 }
 
 .chat-reaction {
@@ -158,7 +176,7 @@
   align-items: center;
   gap: 4px;
   min-height: 28px;
-  padding: 0 8px;
+  padding: 0 14px;
   color: var(--text);
   font: 400 14px/21px var(--font);
   background: rgba(var(--ink), 0.04);
@@ -172,7 +190,11 @@
 @media (pointer: coarse) {
   .chat-reaction { min-height: 44px; }
 }
-.chat-emoji-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; }
+.chat-emoji-picker { display: grid; gap: 4px; width: 292px; max-width: calc(100vw - 48px); padding: 4px; }
+.chat-emoji-row { display: grid; grid-template-columns: repeat(6, 44px); gap: 4px; max-height: 244px; overflow-y: auto; }
+@media (max-width: 640px) {
+  .chat-emoji-row { grid-template-columns: repeat(5, 44px); }
+}
 .chat-emoji { height: 44px; font-size: 20px; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .chat-emoji:hover { background: rgba(var(--ink), 0.05); }
 .chat-emoji:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
@@ -188,8 +210,10 @@
 
 /* Composer */
 .chat-composer { display: grid; gap: 4px; padding: 0 24px 16px; }
-.chat-composer .rich-editor-content { max-height: 40vh; overflow-y: auto; }
+.chat-composer .rich-editor-content { max-height: 40vh; padding-block: 11.5px; overflow-y: auto; } /* one 21px line centred in the 44px box */
 .chat-composer .rich-editor-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+/* The formatting toolbar shows once the composer is in use: focused, or with its emoji picker open. */
+.chat-composer:not(:focus-within, :has([aria-expanded='true'])) .rich-editor-toolbar { display: none; }
 .chat-typing { min-height: 19.5px; }
 .chat-send { width: 44px; height: 44px; color: var(--text); background: rgba(var(--ink), 0.05); }
 @media (max-width: 640px) {

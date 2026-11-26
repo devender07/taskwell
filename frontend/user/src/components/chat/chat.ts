@@ -4,7 +4,7 @@ import { DAY } from '@taskwell/shared/time'
 
 type Msg = { id: string; author: { id: string } | null; created_at: string; deleted: boolean }
 
-const COLLAPSE_MS = 5 * 60_000
+const COLLAPSE_MS = 60_000
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
@@ -18,19 +18,20 @@ export function dayLabel(iso: string, now = new Date(), locale?: string) {
   return d.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric', year })
 }
 
-export type Row<M> = { msg: M; day: string | null; compact: boolean }
+export type Row<M> = { msg: M; day: string | null; compact: boolean; follows: boolean }
 
-// Messages (oldest first) as rendered rows: a day divider before the first message of each day, and `compact` (no
-// avatar or name) for a message by the same author as the one before it within 5 minutes on the same day.
+// Messages (oldest first) as rendered rows: a day divider before the first message of each day; `follows` (no avatar
+// or name, only the time) for a message by the same author as the one before it on the same day, and `compact` (no
+// time either) when it's within a minute of that one.
 export function groupMessages<M extends Msg>(messages: M[], now = new Date(), locale?: string): Row<M>[] {
   let prev: M | undefined
   return messages.map((msg) => {
     const t = Date.parse(msg.created_at)
     const newDay = !prev || dayStart(new Date(prev.created_at)) !== dayStart(new Date(t))
-    const compact =
-      !!prev && !newDay && !msg.deleted && !prev.deleted && !!msg.author && msg.author.id === prev.author?.id && t - Date.parse(prev.created_at) < COLLAPSE_MS
+    const follows = !!prev && !newDay && !msg.deleted && !prev.deleted && !!msg.author && msg.author.id === prev.author?.id
+    const compact = follows && t - Date.parse(prev!.created_at) <= COLLAPSE_MS
     prev = msg
-    return { msg, day: newDay ? dayLabel(msg.created_at, now, locale) : null, compact }
+    return { msg, day: newDay ? dayLabel(msg.created_at, now, locale) : null, compact, follows }
   })
 }
 

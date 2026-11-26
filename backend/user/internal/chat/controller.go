@@ -210,13 +210,23 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request, userID st
 }
 
 // deleteChat deletes the chat and all its messages for everyone in it: a direct chat by either person,
-// a group by its creator. The workspace chat can't be deleted.
+// a group by its creator. The workspace chat can't be deleted. With ?for=me a direct chat is deleted for the user alone.
 func (h *Handler) deleteChat(w http.ResponseWriter, r *http.Request, userID string) error {
 	sc, c, err := h.chat(w, r, userID)
 	if c == nil || err != nil {
 		return err
 	}
 	switch {
+	case r.URL.Query().Get("for") == "me":
+		if c.kind != "direct" {
+			web.Err(w, http.StatusForbidden, "Only a direct chat can be deleted just for you.")
+			return nil
+		}
+		if err := h.model.clearChat(r.Context(), sc, c.id); err != nil {
+			return err
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return nil
 	case c.kind == "workspace":
 		web.Err(w, http.StatusForbidden, "The workspace chat can't be deleted.")
 		return nil

@@ -14,8 +14,8 @@ assert.equal(dayLabel(new Date(2025, 9, 31, 12).toISOString(), now, 'en-US'), 'F
 const rows = groupMessages(
   [
     msg('a', 'maya', at(30, 9)),
-    msg('b', 'maya', at(30, 9, 4)), // same author within 5 min: compact
-    msg('c', 'maya', at(30, 9, 10)), // 6 min later: new group
+    msg('b', 'maya', at(30, 9, 1)), // same author within a minute: compact
+    msg('c', 'maya', at(30, 9, 3)), // 2 min later: its own time, still follows
     msg('d', 'demo', at(30, 9, 11)),
     msg('e', 'demo', at(31, 0, 1)), // new day: divider, not compact
     msg('f', 'demo', at(31, 0, 2), true), // deleted: never compact
@@ -28,6 +28,7 @@ const rows = groupMessages(
 )
 assert.deepEqual(rows.map((r) => r.day), ['Yesterday', null, null, null, 'Today', null, null, null, null])
 assert.deepEqual(rows.map((r) => r.compact), [false, true, false, false, false, false, false, false, false])
+assert.deepEqual(rows.map((r) => r.follows), [false, true, true, false, false, false, false, false, false])
 
 const list = [msg('1', 'maya', at(31, 1)), msg('2', 'demo', at(31, 2)), msg('3', 'maya', at(31, 3)), msg('4', 'demo', at(31, 4))]
 assert.equal(firstUnread(list, 0, 'demo'), null)
