@@ -1,0 +1,26 @@
+{
+  "name": "taskwell-launch-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Launch out/taskwell-launch.mp4",
+    "still": "remotion still Launch out/frame.png --frame=60",
+    "sound": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/sound.ts",
+    "synth": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/synth.ts",
+    "voice": ".venv/bin/python scripts/voice.py",
+    "render:reel": "remotion render Reel out/taskwell-reel.mp4",
+    "still:reel": "remotion still Reel out/reel-frame.png --frame=60"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.543",
+    "@remotion/transitions": "^4.0.543",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.543"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^5.9.3"
+  }
+}
